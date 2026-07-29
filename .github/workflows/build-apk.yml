@@ -29,13 +29,10 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install current Android command-line tools
-        run: sdkmanager --install "cmdline-tools;latest"
-
-      - name: Install Android API 37 preview SDK
+      - name: Install Android API 36
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager --channel=3 "platforms;android-37" "build-tools;36.0.0"
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
       - name: Set up Gradle 9.5
         uses: gradle/actions/setup-gradle@v4
