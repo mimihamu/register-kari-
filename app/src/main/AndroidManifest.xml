@@ -2,10 +2,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application
+        android:name=".RegisterApplication"
         android:allowBackup="false"
         android:label="REGISTER（仮）"
         android:supportsRtl="true"
         android:theme="@style/Theme.Register">
+
+        <activity
+            android:name=".OperationsActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
 
         <activity
             android:name=".MainActivity"
