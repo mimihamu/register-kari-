@@ -40,7 +40,9 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 unit_price INTEGER NOT NULL,
                 tax_category TEXT NOT NULL,
                 display_order INTEGER NOT NULL,
-                quantity INTEGER NOT NULL
+                quantity INTEGER NOT NULL,
+                discount_amount INTEGER NOT NULL DEFAULT 0,
+                note TEXT NOT NULL DEFAULT ''
             )
             """.trimIndent(),
         )
@@ -65,6 +67,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 tax_category TEXT NOT NULL,
                 display_order INTEGER NOT NULL,
                 quantity INTEGER NOT NULL,
+                discount_amount INTEGER NOT NULL DEFAULT 0,
+                note TEXT NOT NULL DEFAULT '',
                 FOREIGN KEY(ticket_id) REFERENCES held_tickets(id) ON DELETE CASCADE
             )
             """.trimIndent(),
@@ -94,15 +98,19 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 unit_price INTEGER NOT NULL,
                 tax_category TEXT NOT NULL,
                 quantity INTEGER NOT NULL,
+                discount_amount INTEGER NOT NULL DEFAULT 0,
+                note TEXT NOT NULL DEFAULT '',
                 FOREIGN KEY(sale_id) REFERENCES sales(id) ON DELETE CASCADE
             )
             """.trimIndent(),
         )
+        createSalePaymentsTable(db)
         insertSeedProducts(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
+            db.execSQL("DROP TABLE IF EXISTS sale_payments")
             db.execSQL("DROP TABLE IF EXISTS sale_items")
             db.execSQL("DROP TABLE IF EXISTS sales")
             db.execSQL("DROP TABLE IF EXISTS held_ticket_items")
@@ -110,6 +118,16 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             db.execSQL("DROP TABLE IF EXISTS cart_items")
             db.execSQL("DROP TABLE IF EXISTS products")
             onCreate(db)
+            return
+        }
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE cart_items ADD COLUMN discount_amount INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE cart_items ADD COLUMN note TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE held_ticket_items ADD COLUMN discount_amount INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE held_ticket_items ADD COLUMN note TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE sale_items ADD COLUMN discount_amount INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE sale_items ADD COLUMN note TEXT NOT NULL DEFAULT ''")
+            createSalePaymentsTable(db)
         }
     }
 
@@ -145,7 +163,16 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
     fun loadCart(): List<CartItem> {
         readableDatabase.query(
             "cart_items",
-            arrayOf("product_id", "product_name", "unit_price", "tax_category", "display_order", "quantity"),
+            arrayOf(
+                "product_id",
+                "product_name",
+                "unit_price",
+                "tax_category",
+                "display_order",
+                "quantity",
+                "discount_amount",
+                "note",
+            ),
             null,
             null,
             null,
@@ -154,16 +181,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         ).use { cursor ->
             val result = mutableListOf<CartItem>()
             while (cursor.moveToNext()) {
-                result += CartItem(
-                    product = Product(
-                        id = cursor.getString(0),
-                        name = cursor.getString(1),
-                        unitPrice = cursor.getLong(2),
-                        taxCategory = TaxCategory.valueOf(cursor.getString(3)),
-                        displayOrder = cursor.getInt(4),
-                    ),
-                    quantity = cursor.getInt(5),
-                )
+                result += cursor.toCartItem()
             }
             return result
         }
@@ -194,15 +212,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 insertOrThrow(
                     "held_ticket_items",
                     null,
-                    ContentValues().apply {
-                        put("ticket_id", ticketId)
-                        put("product_id", item.product.id)
-                        put("product_name", item.product.name)
-                        put("unit_price", item.product.unitPrice)
-                        put("tax_category", item.product.taxCategory.name)
-                        put("display_order", item.product.displayOrder)
-                        put("quantity", item.quantity)
-                    },
+                    item.toContentValues().apply { put("ticket_id", ticketId) },
                 )
             }
             ticketId
@@ -213,8 +223,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         readableDatabase.rawQuery(
             """
             SELECT t.id, t.name, t.operator_name, t.created_at,
-                   COALESCE(SUM(i.quantity), 0) AS item_count,
-                   COALESCE(SUM(i.unit_price * i.quantity), 0) AS base_total
+                   COALESCE(SUM(i.quantity), 0) AS item_count
             FROM held_tickets t
             LEFT JOIN held_ticket_items i ON i.ticket_id = t.id
             GROUP BY t.id, t.name, t.operator_name, t.created_at
@@ -241,7 +250,16 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
     fun loadHeldTicket(ticketId: Long): List<CartItem> {
         readableDatabase.query(
             "held_ticket_items",
-            arrayOf("product_id", "product_name", "unit_price", "tax_category", "display_order", "quantity"),
+            arrayOf(
+                "product_id",
+                "product_name",
+                "unit_price",
+                "tax_category",
+                "display_order",
+                "quantity",
+                "discount_amount",
+                "note",
+            ),
             "ticket_id = ?",
             arrayOf(ticketId.toString()),
             null,
@@ -250,16 +268,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         ).use { cursor ->
             val result = mutableListOf<CartItem>()
             while (cursor.moveToNext()) {
-                result += CartItem(
-                    product = Product(
-                        id = cursor.getString(0),
-                        name = cursor.getString(1),
-                        unitPrice = cursor.getLong(2),
-                        taxCategory = TaxCategory.valueOf(cursor.getString(3)),
-                        displayOrder = cursor.getInt(4),
-                    ),
-                    quantity = cursor.getInt(5),
-                )
+                result += cursor.toCartItem()
             }
             return result
         }
@@ -271,25 +280,24 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
 
     fun saveSale(
         operatorName: String,
-        paymentMethod: String,
         items: List<CartItem>,
-        deposit: Long,
-        change: Long,
+        paymentState: PaymentState,
     ): Long {
         require(items.isNotEmpty()) { "Cannot save an empty sale" }
         val summary = TaxEngine.calculate(items)
+        require(paymentState.remaining(summary.grossAmount) == 0L) { "Payment is incomplete" }
         return writableDatabase.runInTransactionWithResult {
             val saleId = insertOrThrow(
                 "sales",
                 null,
                 ContentValues().apply {
                     put("operator_name", operatorName)
-                    put("payment_method", paymentMethod)
+                    put("payment_method", paymentState.allocations.joinToString("+") { it.method.displayName })
                     put("net_amount", summary.netAmount)
                     put("tax_amount", summary.taxAmount)
                     put("total_amount", summary.grossAmount)
-                    put("deposit_amount", deposit)
-                    put("change_amount", change)
+                    put("deposit_amount", paymentState.allocations.sumOf { it.receivedAmount })
+                    put("change_amount", paymentState.changeAmount)
                     put("created_at", System.currentTimeMillis())
                 },
             )
@@ -301,9 +309,24 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                         put("sale_id", saleId)
                         put("product_id", item.product.id)
                         put("product_name", item.product.name)
-                        put("unit_price", item.product.unitPrice)
+                        put("unit_price", item.unitPrice)
                         put("tax_category", item.product.taxCategory.name)
                         put("quantity", item.quantity)
+                        put("discount_amount", item.discountAmount)
+                        put("note", item.note)
+                    },
+                )
+            }
+            paymentState.allocations.forEachIndexed { index, payment ->
+                insertOrThrow(
+                    "sale_payments",
+                    null,
+                    ContentValues().apply {
+                        put("sale_id", saleId)
+                        put("sequence_no", index + 1)
+                        put("payment_method", payment.method.name)
+                        put("applied_amount", payment.appliedAmount)
+                        put("received_amount", payment.receivedAmount)
                     },
                 )
             }
@@ -311,13 +334,48 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         }
     }
 
+    private fun android.database.Cursor.toCartItem(): CartItem {
+        val product = Product(
+            id = getString(0),
+            name = getString(1),
+            unitPrice = getLong(2),
+            taxCategory = TaxCategory.valueOf(getString(3)),
+            displayOrder = getInt(4),
+        )
+        return CartItem(
+            product = product,
+            quantity = getInt(5),
+            unitPrice = getLong(2),
+            discountAmount = getLong(6),
+            note = getString(7),
+        )
+    }
+
     private fun CartItem.toContentValues() = ContentValues().apply {
         put("product_id", product.id)
         put("product_name", product.name)
-        put("unit_price", product.unitPrice)
+        put("unit_price", unitPrice)
         put("tax_category", product.taxCategory.name)
         put("display_order", product.displayOrder)
         put("quantity", quantity)
+        put("discount_amount", discountAmount)
+        put("note", note)
+    }
+
+    private fun createSalePaymentsTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS sale_payments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sale_id INTEGER NOT NULL,
+                sequence_no INTEGER NOT NULL,
+                payment_method TEXT NOT NULL,
+                applied_amount INTEGER NOT NULL,
+                received_amount INTEGER NOT NULL,
+                FOREIGN KEY(sale_id) REFERENCES sales(id) ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
     }
 
     private fun insertSeedProducts(db: SQLiteDatabase) {
@@ -350,7 +408,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
 
     companion object {
         private const val DATABASE_NAME = "register.db"
-        private const val DATABASE_VERSION = 2
+        private const val DATABASE_VERSION = 3
     }
 }
 
