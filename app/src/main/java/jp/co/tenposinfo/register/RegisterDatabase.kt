@@ -2,6 +2,7 @@ package jp.co.tenposinfo.register
 
 import android.content.ContentValues
 import android.content.Context
+import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
@@ -21,102 +22,18 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
     DATABASE_VERSION,
 ) {
     override fun onCreate(db: SQLiteDatabase) {
-        db.execSQL(
-            """
-            CREATE TABLE products (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                unit_price INTEGER NOT NULL,
-                tax_category TEXT NOT NULL,
-                display_order INTEGER NOT NULL
-            )
-            """.trimIndent(),
-        )
-        db.execSQL(
-            """
-            CREATE TABLE cart_items (
-                product_id TEXT PRIMARY KEY,
-                product_name TEXT NOT NULL,
-                unit_price INTEGER NOT NULL,
-                tax_category TEXT NOT NULL,
-                display_order INTEGER NOT NULL,
-                quantity INTEGER NOT NULL,
-                discount_amount INTEGER NOT NULL DEFAULT 0,
-                note TEXT NOT NULL DEFAULT ''
-            )
-            """.trimIndent(),
-        )
-        db.execSQL(
-            """
-            CREATE TABLE held_tickets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                operator_name TEXT NOT NULL,
-                created_at INTEGER NOT NULL
-            )
-            """.trimIndent(),
-        )
-        db.execSQL(
-            """
-            CREATE TABLE held_ticket_items (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                ticket_id INTEGER NOT NULL,
-                product_id TEXT NOT NULL,
-                product_name TEXT NOT NULL,
-                unit_price INTEGER NOT NULL,
-                tax_category TEXT NOT NULL,
-                display_order INTEGER NOT NULL,
-                quantity INTEGER NOT NULL,
-                discount_amount INTEGER NOT NULL DEFAULT 0,
-                note TEXT NOT NULL DEFAULT '',
-                FOREIGN KEY(ticket_id) REFERENCES held_tickets(id) ON DELETE CASCADE
-            )
-            """.trimIndent(),
-        )
-        db.execSQL(
-            """
-            CREATE TABLE sales (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                operator_name TEXT NOT NULL,
-                payment_method TEXT NOT NULL,
-                net_amount INTEGER NOT NULL,
-                tax_amount INTEGER NOT NULL,
-                total_amount INTEGER NOT NULL,
-                deposit_amount INTEGER NOT NULL,
-                change_amount INTEGER NOT NULL,
-                created_at INTEGER NOT NULL
-            )
-            """.trimIndent(),
-        )
-        db.execSQL(
-            """
-            CREATE TABLE sale_items (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                sale_id INTEGER NOT NULL,
-                product_id TEXT NOT NULL,
-                product_name TEXT NOT NULL,
-                unit_price INTEGER NOT NULL,
-                tax_category TEXT NOT NULL,
-                quantity INTEGER NOT NULL,
-                discount_amount INTEGER NOT NULL DEFAULT 0,
-                note TEXT NOT NULL DEFAULT '',
-                FOREIGN KEY(sale_id) REFERENCES sales(id) ON DELETE CASCADE
-            )
-            """.trimIndent(),
-        )
+        createProductsTable(db)
+        createCartTable(db)
+        createHeldTicketTables(db)
+        createSalesTables(db)
         createSalePaymentsTable(db)
+        createPrintJobsTable(db)
         insertSeedProducts(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
-            db.execSQL("DROP TABLE IF EXISTS sale_payments")
-            db.execSQL("DROP TABLE IF EXISTS sale_items")
-            db.execSQL("DROP TABLE IF EXISTS sales")
-            db.execSQL("DROP TABLE IF EXISTS held_ticket_items")
-            db.execSQL("DROP TABLE IF EXISTS held_tickets")
-            db.execSQL("DROP TABLE IF EXISTS cart_items")
-            db.execSQL("DROP TABLE IF EXISTS products")
+            dropAllTables(db)
             onCreate(db)
             return
         }
@@ -128,6 +45,11 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             db.execSQL("ALTER TABLE sale_items ADD COLUMN discount_amount INTEGER NOT NULL DEFAULT 0")
             db.execSQL("ALTER TABLE sale_items ADD COLUMN note TEXT NOT NULL DEFAULT ''")
             createSalePaymentsTable(db)
+        }
+        if (oldVersion < 4) {
+            migrateCartToLineNumber(db)
+            db.execSQL("ALTER TABLE sales ADD COLUMN print_count INTEGER NOT NULL DEFAULT 0")
+            createPrintJobsTable(db)
         }
     }
 
@@ -163,26 +85,15 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
     fun loadCart(): List<CartItem> {
         readableDatabase.query(
             "cart_items",
-            arrayOf(
-                "product_id",
-                "product_name",
-                "unit_price",
-                "tax_category",
-                "display_order",
-                "quantity",
-                "discount_amount",
-                "note",
-            ),
+            CART_COLUMNS,
             null,
             null,
             null,
             null,
-            "display_order ASC",
+            "line_no ASC",
         ).use { cursor ->
             val result = mutableListOf<CartItem>()
-            while (cursor.moveToNext()) {
-                result += cursor.toCartItem()
-            }
+            while (cursor.moveToNext()) result += cursor.toCartItem()
             return result
         }
     }
@@ -190,8 +101,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
     fun saveCart(items: List<CartItem>) {
         writableDatabase.runInTransaction {
             delete("cart_items", null, null)
-            items.forEach { item ->
-                insertOrThrow("cart_items", null, item.toContentValues())
+            items.forEachIndexed { index, item ->
+                insertOrThrow("cart_items", null, item.toContentValues().apply { put("line_no", index + 1) })
             }
         }
     }
@@ -250,16 +161,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
     fun loadHeldTicket(ticketId: Long): List<CartItem> {
         readableDatabase.query(
             "held_ticket_items",
-            arrayOf(
-                "product_id",
-                "product_name",
-                "unit_price",
-                "tax_category",
-                "display_order",
-                "quantity",
-                "discount_amount",
-                "note",
-            ),
+            CART_COLUMNS,
             "ticket_id = ?",
             arrayOf(ticketId.toString()),
             null,
@@ -267,9 +169,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             "id ASC",
         ).use { cursor ->
             val result = mutableListOf<CartItem>()
-            while (cursor.moveToNext()) {
-                result += cursor.toCartItem()
-            }
+            while (cursor.moveToNext()) result += cursor.toCartItem()
             return result
         }
     }
@@ -278,14 +178,19 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         writableDatabase.delete("held_tickets", "id = ?", arrayOf(ticketId.toString()))
     }
 
+    /**
+     * 売上・明細・支払・印刷キューを同一SQLiteトランザクションで確定する。
+     */
     fun saveSale(
         operatorName: String,
         items: List<CartItem>,
         paymentState: PaymentState,
+        paperWidthMm: Int = 80,
     ): Long {
         require(items.isNotEmpty()) { "Cannot save an empty sale" }
         val summary = TaxEngine.calculate(items)
         require(paymentState.remaining(summary.grossAmount) == 0L) { "Payment is incomplete" }
+        val createdAt = System.currentTimeMillis()
         return writableDatabase.runInTransactionWithResult {
             val saleId = insertOrThrow(
                 "sales",
@@ -298,7 +203,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     put("total_amount", summary.grossAmount)
                     put("deposit_amount", paymentState.allocations.sumOf { it.receivedAmount })
                     put("change_amount", paymentState.changeAmount)
-                    put("created_at", System.currentTimeMillis())
+                    put("created_at", createdAt)
+                    put("print_count", 0)
                 },
             )
             items.forEach { item ->
@@ -330,11 +236,248 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     },
                 )
             }
+            insertPrintJob(this, saleId, paperWidthMm, createdAt)
             saleId
         }
     }
 
-    private fun android.database.Cursor.toCartItem(): CartItem {
+    fun listSales(limit: Int = 200): List<SaleSummaryRecord> {
+        readableDatabase.query(
+            "sales",
+            arrayOf(
+                "id",
+                "operator_name",
+                "payment_method",
+                "total_amount",
+                "tax_amount",
+                "change_amount",
+                "created_at",
+                "print_count",
+            ),
+            null,
+            null,
+            null,
+            null,
+            "created_at DESC",
+            limit.coerceIn(1, 1_000).toString(),
+        ).use { cursor ->
+            val result = mutableListOf<SaleSummaryRecord>()
+            while (cursor.moveToNext()) result += cursor.toSaleSummary()
+            return result
+        }
+    }
+
+    fun loadSaleDetail(saleId: Long): SaleDetailRecord? {
+        val summary = readableDatabase.query(
+            "sales",
+            arrayOf(
+                "id",
+                "operator_name",
+                "payment_method",
+                "total_amount",
+                "tax_amount",
+                "change_amount",
+                "created_at",
+                "print_count",
+            ),
+            "id = ?",
+            arrayOf(saleId.toString()),
+            null,
+            null,
+            null,
+        ).use { cursor -> if (cursor.moveToFirst()) cursor.toSaleSummary() else null } ?: return null
+
+        val items = readableDatabase.query(
+            "sale_items",
+            arrayOf(
+                "product_id",
+                "product_name",
+                "unit_price",
+                "tax_category",
+                "quantity",
+                "discount_amount",
+                "note",
+            ),
+            "sale_id = ?",
+            arrayOf(saleId.toString()),
+            null,
+            null,
+            "id ASC",
+        ).use { cursor ->
+            val result = mutableListOf<CartItem>()
+            while (cursor.moveToNext()) {
+                val category = TaxCategory.valueOf(cursor.getString(3))
+                val product = Product(
+                    id = cursor.getString(0),
+                    name = cursor.getString(1),
+                    unitPrice = cursor.getLong(2),
+                    taxCategory = category,
+                    displayOrder = result.size + 1,
+                )
+                result += CartItem(
+                    product = product,
+                    quantity = cursor.getInt(4),
+                    unitPrice = cursor.getLong(2),
+                    discountAmount = cursor.getLong(5),
+                    note = cursor.getString(6),
+                )
+            }
+            result
+        }
+
+        val payments = readableDatabase.query(
+            "sale_payments",
+            arrayOf("payment_method", "applied_amount", "received_amount"),
+            "sale_id = ?",
+            arrayOf(saleId.toString()),
+            null,
+            null,
+            "sequence_no ASC",
+        ).use { cursor ->
+            val result = mutableListOf<PaymentAllocation>()
+            while (cursor.moveToNext()) {
+                result += PaymentAllocation(
+                    method = PaymentMethod.valueOf(cursor.getString(0)),
+                    appliedAmount = cursor.getLong(1),
+                    receivedAmount = cursor.getLong(2),
+                )
+            }
+            result
+        }
+        return SaleDetailRecord(summary, items, payments, TaxEngine.calculate(items))
+    }
+
+    fun enqueueReprint(saleId: Long, paperWidthMm: Int): Long {
+        require(loadSaleDetail(saleId) != null) { "Sale not found" }
+        val now = System.currentTimeMillis()
+        return writableDatabase.insertOrThrow(
+            "print_jobs",
+            null,
+            ContentValues().apply {
+                put("sale_id", saleId)
+                put("paper_width_mm", if (paperWidthMm >= 80) 80 else 58)
+                put("status", PrintJobStatus.PENDING.name)
+                put("attempt_count", 0)
+                putNull("last_error")
+                put("created_at", now)
+                put("updated_at", now)
+            },
+        )
+    }
+
+    fun listPrintJobs(limit: Int = 100): List<PrintJobRecord> {
+        readableDatabase.query(
+            "print_jobs",
+            PRINT_JOB_COLUMNS,
+            null,
+            null,
+            null,
+            null,
+            "created_at DESC",
+            limit.coerceIn(1, 500).toString(),
+        ).use { cursor ->
+            val result = mutableListOf<PrintJobRecord>()
+            while (cursor.moveToNext()) result += cursor.toPrintJob()
+            return result
+        }
+    }
+
+    fun nextPrintableJob(): PrintJobRecord? {
+        readableDatabase.query(
+            "print_jobs",
+            PRINT_JOB_COLUMNS,
+            "status IN (?, ?)",
+            arrayOf(PrintJobStatus.PENDING.name, PrintJobStatus.RETRY.name),
+            null,
+            null,
+            "created_at ASC",
+            "1",
+        ).use { cursor -> return if (cursor.moveToFirst()) cursor.toPrintJob() else null }
+    }
+
+    fun markPrintStarted(jobId: Long) {
+        updatePrintJob(jobId, PrintJobStatus.PRINTING, null, incrementAttempt = true)
+    }
+
+    fun markPrintCompleted(jobId: Long) {
+        writableDatabase.runInTransaction {
+            val saleId = query(
+                "print_jobs",
+                arrayOf("sale_id"),
+                "id = ?",
+                arrayOf(jobId.toString()),
+                null,
+                null,
+                null,
+            ).use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else null }
+            update(
+                "print_jobs",
+                ContentValues().apply {
+                    put("status", PrintJobStatus.COMPLETED.name)
+                    putNull("last_error")
+                    put("updated_at", System.currentTimeMillis())
+                },
+                "id = ?",
+                arrayOf(jobId.toString()),
+            )
+            if (saleId != null) {
+                execSQL("UPDATE sales SET print_count = print_count + 1 WHERE id = ?", arrayOf(saleId))
+            }
+        }
+    }
+
+    fun markPrintFailed(jobId: Long, error: String, permanent: Boolean) {
+        val current = listPrintJobs(500).firstOrNull { it.id == jobId } ?: return
+        val status = if (permanent || current.attemptCount >= 4) PrintJobStatus.FAILED else PrintJobStatus.RETRY
+        updatePrintJob(jobId, status, error.take(500), incrementAttempt = false)
+    }
+
+    fun retryPrintJob(jobId: Long) {
+        updatePrintJob(jobId, PrintJobStatus.RETRY, null, incrementAttempt = false)
+    }
+
+    private fun updatePrintJob(
+        jobId: Long,
+        status: PrintJobStatus,
+        error: String?,
+        incrementAttempt: Boolean,
+    ) {
+        writableDatabase.runInTransaction {
+            val values = ContentValues().apply {
+                put("status", status.name)
+                if (error == null) putNull("last_error") else put("last_error", error)
+                put("updated_at", System.currentTimeMillis())
+            }
+            update("print_jobs", values, "id = ?", arrayOf(jobId.toString()))
+            if (incrementAttempt) {
+                execSQL("UPDATE print_jobs SET attempt_count = attempt_count + 1 WHERE id = ?", arrayOf(jobId))
+            }
+        }
+    }
+
+    private fun Cursor.toSaleSummary() = SaleSummaryRecord(
+        id = getLong(0),
+        operatorName = getString(1),
+        paymentLabel = getString(2),
+        totalAmount = getLong(3),
+        taxAmount = getLong(4),
+        changeAmount = getLong(5),
+        createdAt = getLong(6),
+        printCount = getInt(7),
+    )
+
+    private fun Cursor.toPrintJob() = PrintJobRecord(
+        id = getLong(0),
+        saleId = getLong(1),
+        paperWidthMm = getInt(2),
+        status = PrintJobStatus.valueOf(getString(3)),
+        attemptCount = getInt(4),
+        lastError = if (isNull(5)) null else getString(5),
+        createdAt = getLong(6),
+        updatedAt = getLong(7),
+    )
+
+    private fun Cursor.toCartItem(): CartItem {
         val product = Product(
             id = getString(0),
             name = getString(1),
@@ -362,6 +505,103 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         put("note", note)
     }
 
+    private fun createProductsTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE products (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                unit_price INTEGER NOT NULL,
+                tax_category TEXT NOT NULL,
+                display_order INTEGER NOT NULL
+            )
+            """.trimIndent(),
+        )
+    }
+
+    private fun createCartTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE cart_items (
+                line_no INTEGER PRIMARY KEY,
+                product_id TEXT NOT NULL,
+                product_name TEXT NOT NULL,
+                unit_price INTEGER NOT NULL,
+                tax_category TEXT NOT NULL,
+                display_order INTEGER NOT NULL,
+                quantity INTEGER NOT NULL,
+                discount_amount INTEGER NOT NULL DEFAULT 0,
+                note TEXT NOT NULL DEFAULT ''
+            )
+            """.trimIndent(),
+        )
+    }
+
+    private fun createHeldTicketTables(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE held_tickets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                operator_name TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            CREATE TABLE held_ticket_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticket_id INTEGER NOT NULL,
+                product_id TEXT NOT NULL,
+                product_name TEXT NOT NULL,
+                unit_price INTEGER NOT NULL,
+                tax_category TEXT NOT NULL,
+                display_order INTEGER NOT NULL,
+                quantity INTEGER NOT NULL,
+                discount_amount INTEGER NOT NULL DEFAULT 0,
+                note TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY(ticket_id) REFERENCES held_tickets(id) ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+    }
+
+    private fun createSalesTables(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE sales (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                operator_name TEXT NOT NULL,
+                payment_method TEXT NOT NULL,
+                net_amount INTEGER NOT NULL,
+                tax_amount INTEGER NOT NULL,
+                total_amount INTEGER NOT NULL,
+                deposit_amount INTEGER NOT NULL,
+                change_amount INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                print_count INTEGER NOT NULL DEFAULT 0
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            CREATE TABLE sale_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sale_id INTEGER NOT NULL,
+                product_id TEXT NOT NULL,
+                product_name TEXT NOT NULL,
+                unit_price INTEGER NOT NULL,
+                tax_category TEXT NOT NULL,
+                quantity INTEGER NOT NULL,
+                discount_amount INTEGER NOT NULL DEFAULT 0,
+                note TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY(sale_id) REFERENCES sales(id) ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+    }
+
     private fun createSalePaymentsTable(db: SQLiteDatabase) {
         db.execSQL(
             """
@@ -376,6 +616,70 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             )
             """.trimIndent(),
         )
+    }
+
+    private fun createPrintJobsTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS print_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sale_id INTEGER NOT NULL,
+                paper_width_mm INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                FOREIGN KEY(sale_id) REFERENCES sales(id) ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_print_jobs_status ON print_jobs(status, created_at)")
+    }
+
+    private fun insertPrintJob(db: SQLiteDatabase, saleId: Long, paperWidthMm: Int, now: Long) {
+        db.insertOrThrow(
+            "print_jobs",
+            null,
+            ContentValues().apply {
+                put("sale_id", saleId)
+                put("paper_width_mm", if (paperWidthMm >= 80) 80 else 58)
+                put("status", PrintJobStatus.PENDING.name)
+                put("attempt_count", 0)
+                putNull("last_error")
+                put("created_at", now)
+                put("updated_at", now)
+            },
+        )
+    }
+
+    private fun migrateCartToLineNumber(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE cart_items RENAME TO cart_items_v3")
+        createCartTable(db)
+        db.execSQL(
+            """
+            INSERT INTO cart_items (
+                line_no, product_id, product_name, unit_price, tax_category,
+                display_order, quantity, discount_amount, note
+            )
+            SELECT rowid, product_id, product_name, unit_price, tax_category,
+                   display_order, quantity, discount_amount, note
+            FROM cart_items_v3
+            ORDER BY rowid
+            """.trimIndent(),
+        )
+        db.execSQL("DROP TABLE cart_items_v3")
+    }
+
+    private fun dropAllTables(db: SQLiteDatabase) {
+        db.execSQL("DROP TABLE IF EXISTS print_jobs")
+        db.execSQL("DROP TABLE IF EXISTS sale_payments")
+        db.execSQL("DROP TABLE IF EXISTS sale_items")
+        db.execSQL("DROP TABLE IF EXISTS sales")
+        db.execSQL("DROP TABLE IF EXISTS held_ticket_items")
+        db.execSQL("DROP TABLE IF EXISTS held_tickets")
+        db.execSQL("DROP TABLE IF EXISTS cart_items")
+        db.execSQL("DROP TABLE IF EXISTS products")
     }
 
     private fun insertSeedProducts(db: SQLiteDatabase) {
@@ -408,7 +712,29 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
 
     companion object {
         private const val DATABASE_NAME = "register.db"
-        private const val DATABASE_VERSION = 3
+        private const val DATABASE_VERSION = 4
+
+        private val CART_COLUMNS = arrayOf(
+            "product_id",
+            "product_name",
+            "unit_price",
+            "tax_category",
+            "display_order",
+            "quantity",
+            "discount_amount",
+            "note",
+        )
+
+        private val PRINT_JOB_COLUMNS = arrayOf(
+            "id",
+            "sale_id",
+            "paper_width_mm",
+            "status",
+            "attempt_count",
+            "last_error",
+            "created_at",
+            "updated_at",
+        )
     }
 }
 

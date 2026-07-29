@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,8 +19,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -40,18 +44,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import java.math.BigDecimal
-import java.math.RoundingMode
 import java.text.NumberFormat
+import java.text.SimpleDateFormat
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.util.Date
 import java.util.Locale
 
 private val Navy = Color(0xFF173F6B)
@@ -84,6 +88,10 @@ private enum class AppScreen {
     TICKETS,
     PAYMENT,
     COMPLETE,
+    SALES_HISTORY,
+    SALE_DETAIL,
+    RECEIPT_PREVIEW,
+    PRINT_QUEUE,
 }
 
 @Composable
@@ -96,9 +104,10 @@ private fun RegisterApp() {
     val cart = remember { mutableStateListOf<CartItem>().apply { addAll(database.loadCart()) } }
     var selectedIndex by remember { mutableStateOf<Int?>(null) }
     var paymentState by remember { mutableStateOf(PaymentState()) }
-    var completedTotal by remember { mutableStateOf(0L) }
-    var completedChange by remember { mutableStateOf(0L) }
-    var completedPayments by remember { mutableStateOf(emptyList<PaymentAllocation>()) }
+    var lastSaleId by remember { mutableStateOf<Long?>(null) }
+    var selectedSaleId by remember { mutableStateOf<Long?>(null) }
+    var receiptPaper by remember { mutableStateOf(ReceiptPaper.MM80) }
+    var queueMessage by remember { mutableStateOf<String?>(null) }
 
     fun replaceCart(items: List<CartItem>) {
         cart.clear()
@@ -118,6 +127,9 @@ private fun RegisterApp() {
         when (screen) {
             AppScreen.DIAGNOSTIC -> DiagnosticScreen(
                 restoredCount = cart.sumOf { it.quantity },
+                pendingPrints = database.listPrintJobs().count {
+                    it.status == PrintJobStatus.PENDING || it.status == PrintJobStatus.RETRY
+                },
                 onComplete = { screen = AppScreen.LOGIN },
             )
 
@@ -180,6 +192,8 @@ private fun RegisterApp() {
                     paymentState = PaymentState()
                     screen = AppScreen.PAYMENT
                 },
+                onSalesHistory = { screen = AppScreen.SALES_HISTORY },
+                onPrintQueue = { screen = AppScreen.PRINT_QUEUE },
             )
 
             AppScreen.LINE_EDIT -> {
@@ -231,21 +245,85 @@ private fun RegisterApp() {
                 onStateChange = { paymentState = it },
                 onBack = { screen = AppScreen.SALES },
                 onComplete = {
-                    val summary = TaxEngine.calculate(cart)
-                    database.saveSale(operatorName, cart.toList(), paymentState)
-                    completedTotal = summary.grossAmount
-                    completedChange = paymentState.changeAmount
-                    completedPayments = paymentState.allocations
+                    val saleId = database.saveSale(operatorName, cart.toList(), paymentState, receiptPaper.widthMm)
+                    lastSaleId = saleId
+                    selectedSaleId = saleId
                     replaceCart(emptyList())
                     screen = AppScreen.COMPLETE
                 },
             )
 
             AppScreen.COMPLETE -> CompleteScreen(
-                total = completedTotal,
-                change = completedChange,
-                payments = completedPayments,
+                detail = lastSaleId?.let { database.loadSaleDetail(it) },
+                onReceipt = {
+                    selectedSaleId = lastSaleId
+                    screen = AppScreen.RECEIPT_PREVIEW
+                },
+                onHistory = { screen = AppScreen.SALES_HISTORY },
+                onQueue = { screen = AppScreen.PRINT_QUEUE },
                 onNext = { screen = AppScreen.SALES },
+            )
+
+            AppScreen.SALES_HISTORY -> SalesHistoryScreen(
+                sales = database.listSales(),
+                onOpen = {
+                    selectedSaleId = it.id
+                    screen = AppScreen.SALE_DETAIL
+                },
+                onQueue = { screen = AppScreen.PRINT_QUEUE },
+                onBack = { screen = AppScreen.SALES },
+            )
+
+            AppScreen.SALE_DETAIL -> {
+                val detail = selectedSaleId?.let { database.loadSaleDetail(it) }
+                if (detail == null) {
+                    screen = AppScreen.SALES_HISTORY
+                } else {
+                    SaleDetailScreen(
+                        detail = detail,
+                        onReceipt = { screen = AppScreen.RECEIPT_PREVIEW },
+                        onBack = { screen = AppScreen.SALES_HISTORY },
+                    )
+                }
+            }
+
+            AppScreen.RECEIPT_PREVIEW -> {
+                val detail = selectedSaleId?.let { database.loadSaleDetail(it) }
+                if (detail == null) {
+                    screen = AppScreen.SALES_HISTORY
+                } else {
+                    ReceiptPreviewScreen(
+                        detail = detail,
+                        paper = receiptPaper,
+                        onPaperChange = { receiptPaper = it },
+                        onEnqueue = {
+                            database.enqueueReprint(detail.summary.id, receiptPaper.widthMm)
+                            queueMessage = "再印字をキューへ登録しました"
+                        },
+                        message = queueMessage,
+                        onQueue = { screen = AppScreen.PRINT_QUEUE },
+                        onBack = { screen = AppScreen.SALE_DETAIL },
+                    )
+                }
+            }
+
+            AppScreen.PRINT_QUEUE -> PrintQueueScreen(
+                jobs = database.listPrintJobs(),
+                message = queueMessage,
+                onProcessOne = {
+                    val gateway = MemoryPrinterGateway()
+                    val success = PrintQueueProcessor(database, gateway).processNext()
+                    queueMessage = if (success) "テストプリンタへ送信しました" else "送信対象がないか、送信に失敗しました"
+                    screen = AppScreen.SALES
+                    screen = AppScreen.PRINT_QUEUE
+                },
+                onRetry = {
+                    database.retryPrintJob(it.id)
+                    queueMessage = "再試行待ちへ戻しました"
+                    screen = AppScreen.SALES
+                    screen = AppScreen.PRINT_QUEUE
+                },
+                onBack = { screen = AppScreen.SALES },
             )
         }
     }
@@ -274,7 +352,7 @@ private fun Header(screenId: String, title: String) {
 }
 
 @Composable
-private fun DiagnosticScreen(restoredCount: Int, onComplete: () -> Unit) {
+private fun DiagnosticScreen(restoredCount: Int, pendingPrints: Int, onComplete: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
         Header("SCR-001", "起動・自己診断")
         Column(
@@ -284,30 +362,24 @@ private fun DiagnosticScreen(restoredCount: Int, onComplete: () -> Unit) {
         ) {
             Text("起動チェックを実行しました", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Navy)
             Spacer(Modifier.height(24.dp))
-            val checks = listOf(
-                "データベース" to "正常（Schema v3）",
-                "作業中取引" to if (restoredCount > 0) "${restoredCount}点を復元" else "なし",
-                "プリンタ" to "未設定（販売可能）",
-                "Google Drive" to "未接続（販売可能）",
-            )
-            Card(
-                modifier = Modifier.width(680.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                border = BorderStroke(1.dp, Border),
-            ) {
-                checks.forEach { (label, value) ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(label, modifier = Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Medium)
-                        Text(value, color = Blue, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
+            CardPanel(Modifier.width(700.dp)) {
+                StatusRow("データベース", "正常（Schema v4）")
+                StatusRow("作業中取引", if (restoredCount > 0) "${restoredCount}点を復元" else "なし")
+                StatusRow("印刷キュー", if (pendingPrints > 0) "${pendingPrints}件待機" else "待機なし")
+                StatusRow("プリンタ", "未設定でも販売可能")
+                StatusRow("Google Drive", "未接続でも販売可能")
             }
             Spacer(Modifier.height(26.dp))
-            BlueButton("診断完了・担当者選択へ", onComplete, Modifier.width(320.dp).height(58.dp))
+            BlueButton("診断完了・担当者選択へ", onComplete, Modifier.width(340.dp).height(58.dp))
         }
+    }
+}
+
+@Composable
+private fun StatusRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, modifier = Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Medium)
+        Text(value, color = Blue, fontSize = 16.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -325,36 +397,37 @@ private fun LoginScreen(onLogin: (String) -> Unit) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("担当者を選択", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Navy)
                 Spacer(Modifier.height(18.dp))
-                operators.chunked(3).forEach { row ->
+                for (rowStart in operators.indices step 3) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        row.forEach { name ->
+                        for (index in rowStart until minOf(rowStart + 3, operators.size)) {
+                            val name = operators[index]
                             OutlinedButton(
                                 onClick = { selected = name },
                                 modifier = Modifier.weight(1f).height(82.dp),
-                                border = BorderStroke(if (selected == name) 3.dp else 1.dp, if (selected == name) Danger else Border),
+                                border = BorderStroke(
+                                    if (selected == name) 3.dp else 1.dp,
+                                    if (selected == name) Danger else Border,
+                                ),
                             ) { Text(name, fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Navy) }
+                        }
+                        for (unused in minOf(rowStart + 3, operators.size) until rowStart + 3) {
+                            Spacer(Modifier.weight(1f))
                         }
                     }
                     Spacer(Modifier.height(16.dp))
                 }
             }
-            Card(
-                modifier = Modifier.width(390.dp).fillMaxHeight(),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                border = BorderStroke(1.dp, Border),
-            ) {
-                Column(Modifier.padding(22.dp)) {
-                    Text("PIN入力", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Navy)
-                    Spacer(Modifier.height(12.dp))
-                    ValueBox(if (pin.isEmpty()) "選択のみでもログイン可" else "●".repeat(pin.length))
-                    Spacer(Modifier.height(14.dp))
-                    NumberPad(
-                        onDigit = { if (pin.length < 8) pin += it },
-                        onClear = { pin = "" },
-                        bottomActionLabel = "ログイン",
-                        onBottomAction = { onLogin(selected) },
-                    )
-                }
+            CardPanel(Modifier.width(390.dp).fillMaxHeight()) {
+                Text("PIN入力", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Navy)
+                Spacer(Modifier.height(12.dp))
+                ValueBox(if (pin.isEmpty()) "選択のみでもログイン可" else "●".repeat(pin.length))
+                Spacer(Modifier.height(14.dp))
+                NumberPad(
+                    onDigit = { if (pin.length < 8) pin += it },
+                    onClear = { pin = "" },
+                    bottomActionLabel = "ログイン",
+                    onBottomAction = { onLogin(selected) },
+                )
             }
         }
     }
@@ -377,134 +450,120 @@ private fun SalesScreen(
     onTickets: () -> Unit,
     onHold: () -> Unit,
     onPayment: () -> Unit,
+    onSalesHistory: () -> Unit,
+    onPrintQueue: () -> Unit,
 ) {
     val summary = TaxEngine.calculate(cart)
-    var numberBuffer by remember { mutableStateOf("") }
-    Column(modifier = Modifier.fillMaxSize()) {
+    var numericInput by remember { mutableStateOf("") }
+    Column(Modifier.fillMaxSize()) {
         Header("SCR-100", "販売画面")
         Row(
-            modifier = Modifier.fillMaxWidth().height(38.dp).background(Color.White).padding(horizontal = 18.dp),
+            Modifier.fillMaxWidth().height(38.dp).background(Color.White).padding(horizontal = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("店舗：サンプル居酒屋  |  担当：$operatorName", color = Navy, fontWeight = FontWeight.Medium)
             Spacer(Modifier.weight(1f))
-            Text("長押し：行編集", color = Blue, fontWeight = FontWeight.Bold)
+            Text("SQLite保存・オフライン販売", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
         }
-        Row(
-            modifier = Modifier.weight(1f).padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            CardPanel(Modifier.weight(0.34f).fillMaxHeight()) {
+        Row(Modifier.weight(1f).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            CardPanel(Modifier.weight(0.36f).fillMaxHeight()) {
                 Text("注文一覧", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Navy)
                 Spacer(Modifier.height(8.dp))
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                    if (cart.isEmpty()) Text("商品ボタンを押して登録してください", color = Color.Gray, modifier = Modifier.padding(12.dp))
-                    cart.forEachIndexed { index, item ->
+                LazyColumn(Modifier.weight(1f)) {
+                    itemsIndexed(cart) { index, item ->
                         val selected = selectedIndex == index
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(if (selected) PaleBlue else Color.Transparent, RoundedCornerShape(8.dp))
+                                .background(if (selected) PaleBlue else Color.Transparent, RoundedCornerShape(6.dp))
                                 .combinedClickable(onClick = { onSelect(index) }, onLongClick = { onEdit(index) })
-                                .padding(10.dp),
+                                .padding(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
-                                Text(item.product.name, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                                Text("${item.quantity} × ${yen(item.unitPrice)}  ${item.product.taxCategory.symbol}", color = Color.Gray, fontSize = 13.sp)
-                                if (item.discountAmount > 0) Text("値引 -${yen(item.discountAmount)}", color = Danger, fontSize = 13.sp)
-                                if (item.note.isNotBlank()) Text("メモ：${item.note}", color = Blue, fontSize = 12.sp)
+                                Text(item.product.name, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "${item.quantity} × ${yen(item.unitPrice)}  ${item.product.taxCategory.symbol}",
+                                    fontSize = 13.sp,
+                                    color = Color.Gray,
+                                )
+                                if (item.discountAmount > 0) Text("値引 -${yen(item.discountAmount)}", color = Danger, fontSize = 12.sp)
                             }
-                            Text(yen(item.baseAmount), fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                            Text(yen(item.baseAmount), fontWeight = FontWeight.Bold)
                         }
-                        Spacer(Modifier.height(4.dp))
                     }
                 }
                 Row(verticalAlignment = Alignment.Bottom) {
-                    Text("${cart.sumOf { it.quantity }}点", fontSize = 17.sp)
+                    Text("${cart.sumOf { it.quantity }}点")
                     Spacer(Modifier.weight(1f))
                     Text("合計 ${yen(summary.grossAmount)}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Navy)
                 }
             }
 
-            CardPanel(Modifier.weight(0.23f).fillMaxHeight()) {
+            CardPanel(Modifier.weight(0.24f).fillMaxHeight()) {
                 Text("置数・機能", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Navy)
                 Spacer(Modifier.height(8.dp))
-                ValueBox(if (numberBuffer.isEmpty()) "0" else numberBuffer)
+                ValueBox(if (numericInput.isBlank()) "0" else numericInput)
                 Spacer(Modifier.height(8.dp))
-                CompactNumberPad(
-                    value = numberBuffer,
-                    onValueChange = { numberBuffer = it },
+                NumberPad(
+                    onDigit = { if (numericInput.length < 5) numericInput += it },
+                    onClear = { numericInput = "" },
+                    bottomActionLabel = "数量",
+                    onBottomAction = {
+                        numericInput.toIntOrNull()?.let(onChangeQuantity)
+                        numericInput = ""
+                    },
                 )
                 Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OutlinedButton(
-                        onClick = {
-                            numberBuffer.toIntOrNull()?.let(onChangeQuantity)
-                            numberBuffer = ""
-                        },
-                        modifier = Modifier.weight(1f),
-                    ) { Text("数量") }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onRemove, modifier = Modifier.weight(1f)) { Text("訂正") }
-                }
-                Spacer(Modifier.height(6.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OutlinedButton(onClick = onDiscount, modifier = Modifier.weight(1f)) { Text("値引") }
                     OutlinedButton(
                         onClick = { selectedIndex?.let(onEdit) },
                         enabled = selectedIndex != null,
                         modifier = Modifier.weight(1f),
                     ) { Text("行編集") }
                 }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = onDiscount, enabled = cart.isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
+                    Text("値引・割引")
+                }
                 Spacer(Modifier.weight(1f))
                 Button(
                     onClick = onCancelTransaction,
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFBE9E7), contentColor = Danger),
                 ) { Text("取引中止", fontWeight = FontWeight.Bold) }
             }
 
-            CardPanel(Modifier.weight(0.43f).fillMaxHeight()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("おすすめ", "ドリンク", "料理", "物販").forEachIndexed { index, label ->
-                        Button(
-                            onClick = {},
-                            modifier = Modifier.weight(1f).height(42.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (index == 0) Blue else Color(0xFFECEFF1),
-                                contentColor = if (index == 0) Color.White else Navy,
-                            ),
-                        ) { Text(label, fontSize = 13.sp) }
-                    }
-                }
-                Spacer(Modifier.height(10.dp))
+            CardPanel(Modifier.weight(0.40f).fillMaxHeight()) {
+                Text("商品", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Navy)
+                Spacer(Modifier.height(8.dp))
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                    products.chunked(3).forEach { row ->
+                    for (rowStart in products.indices step 3) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            row.forEach { product ->
+                            for (index in rowStart until minOf(rowStart + 3, products.size)) {
+                                val product = products[index]
+                                val buttonColor = when (index % 3) {
+                                    0 -> PaleGreen
+                                    1 -> PaleYellow
+                                    else -> PaleBlue
+                                }
                                 Button(
                                     onClick = { onAddProduct(product) },
-                                    modifier = Modifier.weight(1f).height(90.dp),
-                                    shape = RoundedCornerShape(10.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = when (product.displayOrder % 3) {
-                                            0 -> PaleBlue
-                                            1 -> PaleGreen
-                                            else -> PaleYellow
-                                        },
-                                        contentColor = Navy,
-                                    ),
+                                    modifier = Modifier.weight(1f).height(88.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = buttonColor, contentColor = Navy),
                                     border = BorderStroke(1.dp, Border),
                                 ) {
                                     Text(
                                         "${product.name}\n${yen(product.unitPrice)} ${product.taxCategory.symbol}",
                                         textAlign = TextAlign.Center,
-                                        fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold,
                                     )
                                 }
                             }
-                            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                            for (unused in minOf(rowStart + 3, products.size) until rowStart + 3) {
+                                Spacer(Modifier.weight(1f))
+                            }
                         }
                         Spacer(Modifier.height(10.dp))
                     }
@@ -512,17 +571,14 @@ private fun SalesScreen(
             }
         }
         Row(
-            modifier = Modifier.fillMaxWidth().height(74.dp).padding(horizontal = 12.dp, vertical = 7.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            Modifier.fillMaxWidth().height(76.dp).padding(horizontal = 12.dp, vertical = 7.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            OutlinedButton(onClick = onTickets, modifier = Modifier.width(190.dp).fillMaxHeight()) { Text("伝票一覧", fontSize = 18.sp) }
-            OutlinedButton(onClick = onHold, enabled = cart.isNotEmpty(), modifier = Modifier.width(160.dp).fillMaxHeight()) { Text("保留", fontSize = 18.sp) }
-            Button(
-                onClick = onPayment,
-                enabled = cart.isNotEmpty(),
-                modifier = Modifier.weight(1f).fillMaxHeight(),
-                colors = ButtonDefaults.buttonColors(containerColor = Blue),
-            ) { Text("小計／会計  ${yen(summary.grossAmount)}", fontSize = 23.sp, fontWeight = FontWeight.Bold) }
+            OutlinedButton(onClick = onTickets, modifier = Modifier.width(130.dp).fillMaxHeight()) { Text("伝票一覧") }
+            OutlinedButton(onClick = onHold, enabled = cart.isNotEmpty(), modifier = Modifier.width(100.dp).fillMaxHeight()) { Text("保留") }
+            OutlinedButton(onClick = onSalesHistory, modifier = Modifier.width(120.dp).fillMaxHeight()) { Text("売上一覧") }
+            OutlinedButton(onClick = onPrintQueue, modifier = Modifier.width(120.dp).fillMaxHeight()) { Text("印刷待ち") }
+            BlueButton("小計／会計  ${yen(summary.grossAmount)}", onPayment, Modifier.weight(1f).fillMaxHeight(), cart.isNotEmpty())
         }
     }
 }
@@ -534,19 +590,19 @@ private fun LineEditScreen(
     onDiscount: () -> Unit,
     onBack: () -> Unit,
 ) {
-    var quantity by remember(item) { mutableStateOf(item.quantity.toString()) }
-    var unitPrice by remember(item) { mutableStateOf(item.unitPrice.toString()) }
-    var discount by remember(item) { mutableStateOf(item.discountAmount.toString()) }
-    var note by remember(item) { mutableStateOf(item.note) }
-    var category by remember(item) { mutableStateOf(item.product.taxCategory) }
-    val q = quantity.toIntOrNull() ?: 0
-    val price = unitPrice.toLongOrNull() ?: 0
-    val disc = discount.toLongOrNull() ?: 0
-    val valid = q > 0 && price >= 0 && disc in 0..(price * q)
+    var quantity by remember { mutableStateOf(item.quantity.toString()) }
+    var unitPrice by remember { mutableStateOf(item.unitPrice.toString()) }
+    var discount by remember { mutableStateOf(item.discountAmount.toString()) }
+    var note by remember { mutableStateOf(item.note) }
+    var category by remember { mutableStateOf(item.product.taxCategory) }
+    val parsedQuantity = quantity.toIntOrNull()?.coerceAtLeast(1) ?: 1
+    val parsedUnitPrice = unitPrice.toLongOrNull()?.coerceAtLeast(0) ?: 0
+    val maxDiscount = parsedUnitPrice * parsedQuantity
+    val parsedDiscount = discount.toLongOrNull()?.coerceIn(0, maxDiscount) ?: 0
 
     Column(Modifier.fillMaxSize()) {
         Header("SCR-120", "行編集")
-        Row(Modifier.fillMaxSize().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        Row(Modifier.weight(1f).padding(20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             CardPanel(Modifier.weight(1f).fillMaxHeight()) {
                 Text(item.product.name, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Navy)
                 Spacer(Modifier.height(18.dp))
@@ -558,16 +614,20 @@ private fun LineEditScreen(
                 Spacer(Modifier.height(18.dp))
                 Text("税区分", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
-                TaxCategory.values().chunked(3).forEach { row ->
+                val taxes = TaxCategory.entries
+                for (rowStart in taxes.indices step 3) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        row.forEach { tax ->
+                        for (index in rowStart until minOf(rowStart + 3, taxes.size)) {
+                            val tax = taxes[index]
                             OutlinedButton(
                                 onClick = { category = tax },
                                 modifier = Modifier.weight(1f),
                                 border = BorderStroke(if (category == tax) 3.dp else 1.dp, if (category == tax) Danger else Border),
                             ) { Text("${tax.displayName} ${tax.symbol}") }
                         }
-                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                        for (unused in minOf(rowStart + 3, taxes.size) until rowStart + 3) {
+                            Spacer(Modifier.weight(1f))
+                        }
                     }
                     Spacer(Modifier.height(8.dp))
                 }
@@ -578,36 +638,33 @@ private fun LineEditScreen(
                     label = { Text("行メモ") },
                     modifier = Modifier.fillMaxWidth().height(110.dp),
                 )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    "変更後金額：${yen((price * q - disc).coerceAtLeast(0))}",
-                    fontSize = 25.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Navy,
-                )
             }
-            Column(Modifier.width(260.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = onDiscount, modifier = Modifier.fillMaxWidth().height(60.dp)) { Text("値引・割引設定") }
+            CardPanel(Modifier.width(330.dp).fillMaxHeight()) {
+                Text("変更後", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Navy)
+                Spacer(Modifier.height(18.dp))
+                AmountRow("数量", "${parsedQuantity}点")
+                AmountRow("単価", yen(parsedUnitPrice))
+                AmountRow("値引", "-${yen(parsedDiscount)}")
+                AmountRow("金額", yen(maxDiscount - parsedDiscount), emphasized = true)
                 Spacer(Modifier.weight(1f))
-                OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth().height(60.dp)) { Text("戻る") }
-                BlueButton(
-                    "保存",
-                    {
-                        onSave(
-                            item.copy(
-                                product = item.product.copy(taxCategory = category),
-                                quantity = q,
-                                unitPrice = price,
-                                discountAmount = disc,
-                                note = note.trim(),
-                            ),
-                        )
-                    },
-                    Modifier.fillMaxWidth().height(64.dp),
-                    enabled = valid,
-                )
+                OutlinedButton(onClick = onDiscount, modifier = Modifier.fillMaxWidth()) { Text("値引・割引画面") }
             }
         }
+        BottomActions(
+            onBack = onBack,
+            confirmLabel = "保存",
+            onConfirm = {
+                onSave(
+                    item.copy(
+                        product = item.product.copy(taxCategory = category),
+                        quantity = parsedQuantity,
+                        unitPrice = parsedUnitPrice,
+                        discountAmount = parsedDiscount,
+                        note = note.trim(),
+                    ),
+                )
+            },
+        )
     }
 }
 
@@ -620,68 +677,62 @@ private fun DiscountScreen(
 ) {
     var scope by remember { mutableStateOf(if (selectedIndex != null) DiscountScope.ITEM else DiscountScope.TRANSACTION) }
     var type by remember { mutableStateOf(DiscountType.FIXED) }
-    var input by remember { mutableStateOf("") }
-    val value = if (type == DiscountType.FIXED) input.toLongOrNull() else percentToBasisPoints(input)
-    val preview = try {
-        when {
-            value == null -> items
-            scope == DiscountScope.ITEM && selectedIndex != null && selectedIndex in items.indices ->
-                items.toMutableList().also { it[selectedIndex] = DiscountEngine.applyToItem(it[selectedIndex], type, value) }
-            scope == DiscountScope.TRANSACTION -> DiscountEngine.applyToTransaction(items, type, value)
-            else -> items
+    var value by remember { mutableStateOf("") }
+    val numericValue = value.toLongOrNull()?.coerceAtLeast(0) ?: 0
+    val preview = runCatching {
+        when (scope) {
+            DiscountScope.ITEM -> {
+                val index = selectedIndex ?: 0
+                items.mapIndexed { rowIndex, item ->
+                    if (rowIndex == index) {
+                        DiscountEngine.applyToItem(item, type, if (type == DiscountType.PERCENT) numericValue * 100 else numericValue)
+                    } else item
+                }
+            }
+            DiscountScope.TRANSACTION -> DiscountEngine.applyToTransaction(
+                items,
+                type,
+                if (type == DiscountType.PERCENT) numericValue * 100 else numericValue,
+            )
         }
-    } catch (_: IllegalArgumentException) {
-        items
-    }
+    }.getOrElse { items }
     val before = TaxEngine.calculate(items)
     val after = TaxEngine.calculate(preview)
 
     Column(Modifier.fillMaxSize()) {
-        Header("SCR-121", "値引・割引設定")
-        Row(Modifier.fillMaxSize().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+        Header("SCR-121", "値引・割引")
+        Row(Modifier.weight(1f).padding(20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             CardPanel(Modifier.weight(1f).fillMaxHeight()) {
-                Text("対象", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Navy)
+                Text("適用範囲", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Navy)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ChoiceButton("商品", scope == DiscountScope.ITEM, selectedIndex != null, Modifier.weight(1f)) { scope = DiscountScope.ITEM }
-                    ChoiceButton("伝票", scope == DiscountScope.TRANSACTION, true, Modifier.weight(1f)) { scope = DiscountScope.TRANSACTION }
-                    ChoiceButton("部門（次版）", false, false, Modifier.weight(1f)) {}
+                    ChoiceButton("選択商品", scope == DiscountScope.ITEM, selectedIndex != null, Modifier.weight(1f)) { scope = DiscountScope.ITEM }
+                    ChoiceButton("伝票全体", scope == DiscountScope.TRANSACTION, true, Modifier.weight(1f)) { scope = DiscountScope.TRANSACTION }
                 }
                 Spacer(Modifier.height(18.dp))
                 Text("方式", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Navy)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ChoiceButton("定額値引", type == DiscountType.FIXED, true, Modifier.weight(1f)) { type = DiscountType.FIXED; input = "" }
-                    ChoiceButton("率割引", type == DiscountType.PERCENT, true, Modifier.weight(1f)) { type = DiscountType.PERCENT; input = "" }
+                    ChoiceButton("定額値引", type == DiscountType.FIXED, true, Modifier.weight(1f)) { type = DiscountType.FIXED }
+                    ChoiceButton("率割引", type == DiscountType.PERCENT, true, Modifier.weight(1f)) { type = DiscountType.PERCENT }
                 }
                 Spacer(Modifier.height(18.dp))
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { if (it.length <= 10) input = it.filter { ch -> ch.isDigit() || ch == '.' } },
-                    label = { Text(if (type == DiscountType.FIXED) "値引額（円）" else "割引率（%）") },
-                    keyboardOptions = KeyboardOptions(keyboardType = if (type == DiscountType.FIXED) KeyboardType.Number else KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(18.dp))
-                Text("税率別プレビュー", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Navy)
-                Spacer(Modifier.height(8.dp))
-                TaxPreview(after)
-                Spacer(Modifier.weight(1f))
-                Row(Modifier.fillMaxWidth()) {
-                    Text("変更前 ${yen(before.grossAmount)}", fontSize = 20.sp)
-                    Spacer(Modifier.weight(1f))
-                    Text("変更後 ${yen(after.grossAmount)}", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Navy)
-                }
+                NumericField(if (type == DiscountType.FIXED) "値引額" else "割引率（%）", value, { value = it }, Modifier.fillMaxWidth())
+                Spacer(Modifier.height(12.dp))
+                Text("伝票値引は各明細へ比例配賦し、端数を最終行へ配賦します", color = Color.Gray)
             }
-            Column(Modifier.width(260.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                CardPanel(Modifier.fillMaxWidth()) {
-                    Text("権限確認", fontWeight = FontWeight.Bold, color = Navy)
-                    Text("v0.3：販売担当に許可", color = Color.Gray)
-                    Text("上限・責任者PINは設定画面実装時に接続", color = Color.Gray, fontSize = 12.sp)
+            CardPanel(Modifier.width(390.dp).fillMaxHeight()) {
+                Text("税率別プレビュー", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Navy)
+                Spacer(Modifier.height(14.dp))
+                AmountRow("変更前合計", yen(before.grossAmount))
+                AmountRow("変更後合計", yen(after.grossAmount), emphasized = true)
+                AmountRow("値引合計", "-${yen((before.grossAmount - after.grossAmount).coerceAtLeast(0))}")
+                Spacer(Modifier.height(12.dp))
+                after.buckets.forEach { bucket ->
+                    val label = if (bucket.taxable) "${bucket.ratePercent}%対象" else "非課税"
+                    AmountRow(label, "${yen(bucket.grossAmount)} / 税 ${yen(bucket.taxAmount)}")
                 }
-                Spacer(Modifier.weight(1f))
-                OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth().height(60.dp)) { Text("キャンセル") }
-                BlueButton("適用", { onApply(preview) }, Modifier.fillMaxWidth().height(64.dp), enabled = value != null && preview != items)
             }
         }
+        BottomActions(onBack, "適用", { onApply(preview) }, items.isNotEmpty() && numericValue > 0)
     }
 }
 
@@ -694,29 +745,28 @@ private fun TicketListScreen(
 ) {
     Column(Modifier.fillMaxSize()) {
         Header("SCR-200", "伝票一覧")
-        Column(Modifier.weight(1f).padding(24.dp).verticalScroll(rememberScrollState())) {
-            if (tickets.isEmpty()) Text("保留伝票はありません", fontSize = 22.sp, color = Color.Gray)
-            tickets.forEach { ticket ->
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = BorderStroke(1.dp, Border),
-                ) {
-                    Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("No.${ticket.id}  ${ticket.name}", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Navy)
-                            Text("担当 ${ticket.operatorName}　${ticket.itemCount}点", color = Color.Gray)
+        CardPanel(Modifier.weight(1f).fillMaxWidth().padding(18.dp)) {
+            if (tickets.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("保留伝票はありません", fontSize = 24.sp, color = Color.Gray) }
+            } else {
+                LazyColumn {
+                    itemsIndexed(tickets) { _, ticket ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(ticket.name, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                Text("担当 ${ticket.operatorName} / ${ticket.itemCount}点", color = Color.Gray)
+                            }
+                            Text(yen(ticket.totalAmount), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.width(12.dp))
+                            OutlinedButton(onClick = { onDelete(ticket) }) { Text("削除", color = Danger) }
+                            Spacer(Modifier.width(8.dp))
+                            BlueButton("呼出", { onLoad(ticket) }, Modifier.width(110.dp))
                         }
-                        Text(yen(ticket.totalAmount), fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.width(18.dp))
-                        OutlinedButton(onClick = { onDelete(ticket) }) { Text("削除", color = Danger) }
-                        Spacer(Modifier.width(8.dp))
-                        BlueButton("呼出", { onLoad(ticket) }, Modifier.width(130.dp).height(52.dp))
                     }
                 }
             }
         }
-        OutlinedButton(onClick = onBack, modifier = Modifier.padding(18.dp).width(180.dp).height(58.dp)) { Text("戻る") }
+        BottomActions(onBack, "販売へ戻る", onBack)
     }
 }
 
@@ -729,184 +779,329 @@ private fun PaymentScreen(
     onComplete: () -> Unit,
 ) {
     val summary = TaxEngine.calculate(items)
-    val mixed = TaxEngine.validateMixedTax(items, MixedTaxPolicy.WARN)
-    var input by remember { mutableStateOf("") }
-    var mixedConfirmed by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
     val remaining = state.remaining(summary.grossAmount)
+    var input by remember { mutableStateOf("") }
+    var acknowledgedMixedTax by remember { mutableStateOf(false) }
+    val mixed = TaxEngine.validateMixedTax(items, MixedTaxPolicy.WARN)
 
-    fun addPayment(method: PaymentMethod) {
-        try {
-            onStateChange(PaymentEngine.addPayment(state, summary.grossAmount, method, input.toLongOrNull()))
-            input = ""
-            error = null
-        } catch (e: IllegalArgumentException) {
-            error = e.message
-        }
+    fun add(method: PaymentMethod) {
+        val amount = input.toLongOrNull()
+        runCatching { PaymentEngine.addPayment(state, summary.grossAmount, method, amount) }
+            .onSuccess {
+                onStateChange(it)
+                input = ""
+            }
     }
 
     Column(Modifier.fillMaxSize()) {
         Header("SCR-300 / SCR-310", "会計・支払追加")
-        if (mixed.message != null) {
-            Row(
-                Modifier.fillMaxWidth().background(Warning).padding(horizontal = 18.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(mixed.message, modifier = Modifier.weight(1f), color = Danger, fontWeight = FontWeight.Bold)
-                Button(onClick = { mixedConfirmed = true }, enabled = !mixedConfirmed) {
-                    Text(if (mixedConfirmed) "確認済み" else "内容を確認")
-                }
-            }
-        }
-        Row(Modifier.weight(1f).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            CardPanel(Modifier.weight(0.42f).fillMaxHeight()) {
+        Row(Modifier.weight(1f).padding(18.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            CardPanel(Modifier.weight(1f).fillMaxHeight()) {
                 Text("会計内訳", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = Navy)
-                Spacer(Modifier.height(8.dp))
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                    items.forEach { item ->
-                        Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
-                            Text("${item.product.name} ×${item.quantity}", Modifier.weight(1f))
-                            if (item.discountAmount > 0) Text("-${yen(item.discountAmount)}  ", color = Danger)
-                            Text(yen(item.baseAmount), fontWeight = FontWeight.Bold)
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    TaxPreview(summary)
-                }
-                AmountRow("合計", summary.grossAmount, 29.sp)
-            }
-
-            CardPanel(Modifier.weight(0.30f).fillMaxHeight()) {
-                Text("支払明細", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Navy)
-                Spacer(Modifier.height(8.dp))
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                    if (state.allocations.isEmpty()) Text("支払方法を選択してください", color = Color.Gray)
-                    state.allocations.forEachIndexed { index, payment ->
-                        Card(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            colors = CardDefaults.cardColors(containerColor = PaleBlue),
-                        ) {
-                            Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(payment.method.displayName, fontWeight = FontWeight.Bold)
-                                    Text("充当 ${yen(payment.appliedAmount)}", fontSize = 13.sp)
-                                    if (payment.receivedAmount != payment.appliedAmount) Text("お預り ${yen(payment.receivedAmount)}", fontSize = 13.sp)
-                                }
-                                OutlinedButton(onClick = { onStateChange(PaymentEngine.removeAt(state, index)) }) { Text("取消", color = Danger) }
-                            }
-                        }
+                Spacer(Modifier.height(10.dp))
+                LazyColumn(Modifier.weight(1f)) {
+                    itemsIndexed(items) { _, item ->
+                        AmountRow("${item.product.name} × ${item.quantity} ${item.product.taxCategory.symbol}", yen(item.baseAmount))
                     }
                 }
-                AmountRow("支払済", state.paidAmount, 20.sp)
-                AmountRow("残額", remaining, 26.sp)
-                AmountRow("お釣り", state.changeAmount, 26.sp)
-            }
-
-            CardPanel(Modifier.weight(0.28f).fillMaxHeight()) {
-                Text("金額入力", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Navy)
-                Spacer(Modifier.height(6.dp))
-                ValueBox(if (input.isEmpty()) "残額全額" else input)
-                Spacer(Modifier.height(8.dp))
-                CompactNumberPad(input) { input = it }
-                Spacer(Modifier.height(8.dp))
-                PaymentMethod.values().forEach { method ->
-                    Button(
-                        onClick = { addPayment(method) },
-                        enabled = remaining > 0,
-                        modifier = Modifier.fillMaxWidth().height(48.dp).padding(vertical = 2.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = if (method == PaymentMethod.CASH) Blue else Navy),
-                    ) { Text(method.displayName, fontWeight = FontWeight.Bold) }
+                summary.buckets.forEach { bucket ->
+                    val label = if (bucket.taxable) "${bucket.ratePercent}% 消費税" else "非課税"
+                    AmountRow(label, yen(bucket.taxAmount))
                 }
-                if (error != null) Text(error.orEmpty(), color = Danger, fontSize = 12.sp)
+                if (mixed.hasMixedTax) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Warning),
+                        modifier = Modifier.fillMaxWidth().clickable { acknowledgedMixedTax = !acknowledgedMixedTax },
+                    ) {
+                        Text(
+                            "${mixed.message}\n税率単位で税抜基準へ統一して計算します。タップして確認：${if (acknowledgedMixedTax) "確認済" else "未確認"}",
+                            modifier = Modifier.padding(12.dp),
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
+            CardPanel(Modifier.width(430.dp).fillMaxHeight()) {
+                AmountRow("合計", yen(summary.grossAmount), emphasized = true)
+                AmountRow("支払済", yen(state.paidAmount))
+                AmountRow("残額", yen(remaining), emphasized = true)
+                AmountRow("お釣り", yen(state.changeAmount))
+                Spacer(Modifier.height(10.dp))
+                LazyColumn(Modifier.height(120.dp)) {
+                    itemsIndexed(state.allocations) { index, payment ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("${payment.method.displayName} ${yen(payment.appliedAmount)}", Modifier.weight(1f))
+                            OutlinedButton(onClick = { onStateChange(PaymentEngine.removeAt(state, index)) }) { Text("取消") }
+                        }
+                    }
+                }
+                ValueBox(if (input.isBlank()) "残額全額" else input)
+                Spacer(Modifier.height(8.dp))
+                NumberPad(
+                    onDigit = { if (input.length < 10) input += it },
+                    onClear = { input = "" },
+                    bottomActionLabel = "現金",
+                    onBottomAction = { add(PaymentMethod.CASH) },
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { add(PaymentMethod.CARD) }, enabled = remaining > 0, modifier = Modifier.weight(1f)) { Text("カード") }
+                    OutlinedButton(onClick = { add(PaymentMethod.GIFT_CERTIFICATE) }, enabled = remaining > 0, modifier = Modifier.weight(1f)) { Text("商品券") }
+                    OutlinedButton(onClick = { add(PaymentMethod.ACCOUNT_RECEIVABLE) }, enabled = remaining > 0, modifier = Modifier.weight(1f)) { Text("掛売") }
+                }
             }
         }
-        Row(
-            modifier = Modifier.fillMaxWidth().height(72.dp).padding(horizontal = 18.dp, vertical = 7.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            OutlinedButton(onClick = onBack, modifier = Modifier.width(180.dp).fillMaxHeight()) { Text("戻る", fontSize = 18.sp) }
-            Button(
-                onClick = onComplete,
-                enabled = remaining == 0L && (!mixed.hasMixedTax || mixedConfirmed),
-                modifier = Modifier.weight(1f).fillMaxHeight(),
-                colors = ButtonDefaults.buttonColors(containerColor = Blue),
-            ) { Text("会計確定", fontSize = 23.sp, fontWeight = FontWeight.Bold) }
-        }
+        BottomActions(
+            onBack = onBack,
+            confirmLabel = "会計確定",
+            onConfirm = onComplete,
+            confirmEnabled = remaining == 0L && (!mixed.hasMixedTax || acknowledgedMixedTax),
+        )
     }
 }
 
 @Composable
 private fun CompleteScreen(
-    total: Long,
-    change: Long,
-    payments: List<PaymentAllocation>,
+    detail: SaleDetailRecord?,
+    onReceipt: () -> Unit,
+    onHistory: () -> Unit,
+    onQueue: () -> Unit,
     onNext: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
         Header("SCR-320", "会計完了")
         Column(
-            Modifier.fillMaxSize().padding(32.dp),
+            Modifier.fillMaxSize().padding(30.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Text("会計が完了しました", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Navy)
+            Text("会計が完了しました", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Navy)
             Spacer(Modifier.height(20.dp))
-            CardPanel(Modifier.width(650.dp)) {
-                AmountRow("合計", total, 27.sp)
-                payments.forEach { AmountRow(it.method.displayName, it.appliedAmount, 20.sp) }
-                AmountRow("お釣り", change, 34.sp)
-                Spacer(Modifier.height(10.dp))
-                Text("売上・明細・支払内訳をSQLiteへ保存しました", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
-                Text("レシート印刷Gatewayは次段階で接続します", color = Color.Gray)
+            CardPanel(Modifier.width(620.dp)) {
+                AmountRow("売上番号", detail?.summary?.id?.toString() ?: "-")
+                AmountRow("合計", yen(detail?.summary?.totalAmount ?: 0), emphasized = true)
+                AmountRow("お釣り", yen(detail?.summary?.changeAmount ?: 0), emphasized = true)
+                Text("売上・支払・印刷キューを同一トランザクションで保存済み", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
             }
-            Spacer(Modifier.height(24.dp))
-            BlueButton("次の取引", onNext, Modifier.width(320.dp).height(64.dp))
+            Spacer(Modifier.height(20.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick = onReceipt, enabled = detail != null) { Text("レシート確認") }
+                OutlinedButton(onClick = onQueue) { Text("印刷キュー") }
+                OutlinedButton(onClick = onHistory) { Text("売上一覧") }
+                BlueButton("次の取引", onNext, Modifier.width(180.dp).height(54.dp))
+            }
         }
     }
 }
 
 @Composable
-private fun CardPanel(
-    modifier: Modifier = Modifier,
-    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+private fun SalesHistoryScreen(
+    sales: List<SaleSummaryRecord>,
+    onOpen: (SaleSummaryRecord) -> Unit,
+    onQueue: () -> Unit,
+    onBack: () -> Unit,
 ) {
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, Border),
-    ) {
-        Column(Modifier.fillMaxWidth().padding(14.dp), content = content)
-    }
-}
-
-@Composable
-private fun ValueBox(value: String) {
-    Box(
-        modifier = Modifier.fillMaxWidth().height(56.dp).background(PaleBlue, RoundedCornerShape(8.dp)),
-        contentAlignment = Alignment.CenterEnd,
-    ) {
-        Text(value, modifier = Modifier.padding(horizontal = 14.dp), fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Navy)
-    }
-}
-
-@Composable
-private fun CompactNumberPad(value: String, onValueChange: (String) -> Unit) {
-    (1..9).toList().chunked(3).forEach { row ->
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            row.forEach { digit ->
-                OutlinedButton(
-                    onClick = { if (value.length < 10) onValueChange(value + digit) },
-                    modifier = Modifier.weight(1f).height(42.dp),
-                ) { Text(digit.toString()) }
+    Column(Modifier.fillMaxSize()) {
+        Header("SCR-400", "売上一覧")
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("確定売上 ${sales.size}件", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Navy)
+            Spacer(Modifier.weight(1f))
+            OutlinedButton(onClick = onQueue) { Text("印刷キュー") }
+        }
+        CardPanel(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp)) {
+            if (sales.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("売上はまだありません", color = Color.Gray, fontSize = 22.sp) }
+            } else {
+                LazyColumn {
+                    itemsIndexed(sales) { _, sale ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { onOpen(sale) }.padding(vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("#${sale.id}", Modifier.width(80.dp), fontWeight = FontWeight.Bold)
+                            Text(formatDate(sale.createdAt), Modifier.width(165.dp))
+                            Text(sale.operatorName, Modifier.width(90.dp))
+                            Text(sale.paymentLabel, Modifier.weight(1f))
+                            Text("印字 ${sale.printCount}回", Modifier.width(85.dp), color = Color.Gray)
+                            Text(yen(sale.totalAmount), Modifier.width(130.dp), textAlign = TextAlign.End, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
         }
-        Spacer(Modifier.height(5.dp))
+        BottomActions(onBack, "販売へ戻る", onBack)
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        OutlinedButton(onClick = { onValueChange("") }, modifier = Modifier.weight(1f).height(42.dp)) { Text("C", color = Danger) }
-        OutlinedButton(onClick = { if (value.length < 10) onValueChange(value + "0") }, modifier = Modifier.weight(1f).height(42.dp)) { Text("0") }
-        OutlinedButton(onClick = { if (value.length < 9) onValueChange(value + "00") }, modifier = Modifier.weight(1f).height(42.dp)) { Text("00") }
+}
+
+@Composable
+private fun SaleDetailScreen(
+    detail: SaleDetailRecord,
+    onReceipt: () -> Unit,
+    onBack: () -> Unit,
+) {
+    Column(Modifier.fillMaxSize()) {
+        Header("SCR-410", "売上詳細")
+        Row(Modifier.weight(1f).padding(18.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            CardPanel(Modifier.weight(1f).fillMaxHeight()) {
+                Text("売上 #${detail.summary.id}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Navy)
+                Text("${formatDate(detail.summary.createdAt)} / 担当 ${detail.summary.operatorName}", color = Color.Gray)
+                Spacer(Modifier.height(12.dp))
+                LazyColumn(Modifier.weight(1f)) {
+                    itemsIndexed(detail.items) { _, item ->
+                        Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                            AmountRow("${item.product.name} ${item.product.taxCategory.symbol} × ${item.quantity}", yen(item.baseAmount))
+                            if (item.discountAmount > 0) Text("値引 -${yen(item.discountAmount)}", color = Danger, fontSize = 12.sp)
+                            if (item.note.isNotBlank()) Text("メモ ${item.note}", color = Color.Gray, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+            CardPanel(Modifier.width(380.dp).fillMaxHeight()) {
+                AmountRow("税抜", yen(detail.taxSummary.netAmount))
+                AmountRow("消費税", yen(detail.taxSummary.taxAmount))
+                AmountRow("合計", yen(detail.taxSummary.grossAmount), emphasized = true)
+                Spacer(Modifier.height(10.dp))
+                detail.taxSummary.buckets.forEach { bucket ->
+                    val label = if (bucket.taxable) "${bucket.ratePercent}%対象" else "非課税"
+                    AmountRow(label, "${yen(bucket.grossAmount)} / 税 ${yen(bucket.taxAmount)}")
+                }
+                Spacer(Modifier.height(14.dp))
+                Text("支払", fontWeight = FontWeight.Bold)
+                detail.payments.forEach { payment ->
+                    AmountRow(payment.method.displayName, yen(payment.receivedAmount))
+                }
+                AmountRow("お釣り", yen(detail.summary.changeAmount))
+                Spacer(Modifier.weight(1f))
+                BlueButton("レシート／再印字", onReceipt, Modifier.fillMaxWidth().height(52.dp))
+            }
+        }
+        BottomActions(onBack, "一覧へ戻る", onBack)
     }
+}
+
+@Composable
+private fun ReceiptPreviewScreen(
+    detail: SaleDetailRecord,
+    paper: ReceiptPaper,
+    onPaperChange: (ReceiptPaper) -> Unit,
+    onEnqueue: () -> Unit,
+    message: String?,
+    onQueue: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val data = ReceiptFactory.fromSale(detail, reprint = detail.summary.printCount > 0)
+    val receipt = ReceiptRenderer.render(data, paper)
+    Column(Modifier.fillMaxSize()) {
+        Header("SCR-645 / SCR-646", "レシートプレビュー・後レシート")
+        Row(Modifier.weight(1f).padding(18.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            CardPanel(Modifier.weight(1f).fillMaxHeight()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("用紙幅", fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(12.dp))
+                    ChoiceButton("58mm", paper == ReceiptPaper.MM58, true, Modifier.width(120.dp)) { onPaperChange(ReceiptPaper.MM58) }
+                    Spacer(Modifier.width(8.dp))
+                    ChoiceButton("80mm", paper == ReceiptPaper.MM80, true, Modifier.width(120.dp)) { onPaperChange(ReceiptPaper.MM80) }
+                    Spacer(Modifier.weight(1f))
+                    Text("構造化データから生成", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(10.dp))
+                Box(
+                    Modifier.weight(1f).fillMaxWidth().background(Color.White, RoundedCornerShape(8.dp)).padding(18.dp),
+                ) {
+                    Text(
+                        receipt,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = if (paper == ReceiptPaper.MM58) 14.sp else 15.sp,
+                        lineHeight = 20.sp,
+                    )
+                }
+            }
+            CardPanel(Modifier.width(310.dp).fillMaxHeight()) {
+                Text("印刷操作", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Navy)
+                Spacer(Modifier.height(14.dp))
+                Text("ESC/POSデータは同じレシート構造から生成されます。印刷失敗時も売上は確定済みのまま、キューから再試行します。")
+                Spacer(Modifier.height(14.dp))
+                if (!message.isNullOrBlank()) {
+                    Text(message, color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(10.dp))
+                }
+                BlueButton("再印字をキュー登録", onEnqueue, Modifier.fillMaxWidth().height(52.dp))
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(onClick = onQueue, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("印刷キューを開く") }
+                Spacer(Modifier.weight(1f))
+                Text("TCP 9100 Gateway実装済み\n現在の画面テストはMemory Printerを使用", color = Color.Gray, fontSize = 13.sp)
+            }
+        }
+        BottomActions(onBack, "詳細へ戻る", onBack)
+    }
+}
+
+@Composable
+private fun PrintQueueScreen(
+    jobs: List<PrintJobRecord>,
+    message: String?,
+    onProcessOne: () -> Unit,
+    onRetry: (PrintJobRecord) -> Unit,
+    onBack: () -> Unit,
+) {
+    Column(Modifier.fillMaxSize()) {
+        Header("SCR-700", "印刷キュー・障害復旧")
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("印刷ジョブ ${jobs.size}件", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Navy)
+            Spacer(Modifier.weight(1f))
+            if (!message.isNullOrBlank()) Text(message, color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+            Spacer(Modifier.width(14.dp))
+            BlueButton("1件テスト送信", onProcessOne, Modifier.width(170.dp).height(46.dp))
+        }
+        CardPanel(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp)) {
+            if (jobs.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("印刷ジョブはありません", color = Color.Gray, fontSize = 22.sp) }
+            } else {
+                LazyColumn {
+                    itemsIndexed(jobs) { _, job ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("#${job.id}", Modifier.width(70.dp), fontWeight = FontWeight.Bold)
+                            Text("売上 ${job.saleId}", Modifier.width(100.dp))
+                            Text("${job.paperWidthMm}mm", Modifier.width(70.dp))
+                            Text(job.status.name, Modifier.width(110.dp), color = statusColor(job.status), fontWeight = FontWeight.Bold)
+                            Text("試行 ${job.attemptCount}", Modifier.width(80.dp))
+                            Text(job.lastError ?: "", Modifier.weight(1f), color = Danger, maxLines = 2)
+                            if (job.status == PrintJobStatus.FAILED || job.status == PrintJobStatus.RETRY) {
+                                OutlinedButton(onClick = { onRetry(job) }) { Text("再試行") }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        BottomActions(onBack, "販売へ戻る", onBack)
+    }
+}
+
+private fun statusColor(status: PrintJobStatus): Color = when (status) {
+    PrintJobStatus.COMPLETED -> Color(0xFF2E7D32)
+    PrintJobStatus.FAILED -> Danger
+    PrintJobStatus.RETRY -> Color(0xFFEF6C00)
+    PrintJobStatus.PRINTING -> Blue
+    PrintJobStatus.PENDING -> Navy
+}
+
+@Composable
+private fun NumericField(label: String, value: String, onValueChange: (String) -> Unit, modifier: Modifier) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { text -> if (text.all { it.isDigit() } && text.length <= 10) onValueChange(text) },
+        label = { Text(label) },
+        modifier = modifier,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        singleLine = true,
+    )
 }
 
 @Composable
@@ -916,30 +1111,57 @@ private fun NumberPad(
     bottomActionLabel: String,
     onBottomAction: () -> Unit,
 ) {
-    (1..9).toList().chunked(3).forEach { row ->
+    for (rowStart in 1..9 step 3) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            row.forEach { digit ->
-                OutlinedButton(onClick = { onDigit(digit.toString()) }, modifier = Modifier.weight(1f).height(50.dp)) { Text(digit.toString()) }
+            for (digit in rowStart until rowStart + 3) {
+                OutlinedButton(onClick = { onDigit(digit.toString()) }, modifier = Modifier.weight(1f).height(44.dp)) {
+                    Text(digit.toString())
+                }
             }
         }
-        Spacer(Modifier.height(7.dp))
+        Spacer(Modifier.height(6.dp))
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f).height(50.dp)) { Text("C", color = Danger) }
-        OutlinedButton(onClick = { onDigit("0") }, modifier = Modifier.weight(1f).height(50.dp)) { Text("0") }
-        BlueButton(bottomActionLabel, onBottomAction, Modifier.weight(1.5f).height(50.dp))
+        OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f).height(44.dp)) { Text("C", color = Danger) }
+        OutlinedButton(onClick = { onDigit("0") }, modifier = Modifier.weight(1f).height(44.dp)) { Text("0") }
+        BlueButton(bottomActionLabel, onBottomAction, Modifier.weight(1.4f).height(44.dp))
     }
 }
 
 @Composable
-private fun NumericField(label: String, value: String, onValueChange: (String) -> Unit, modifier: Modifier = Modifier) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = { if (it.length <= 10) onValueChange(it.filter(Char::isDigit)) },
-        label = { Text(label) },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+private fun ValueBox(value: String) {
+    Box(
+        Modifier.fillMaxWidth().height(54.dp).background(PaleBlue, RoundedCornerShape(8.dp)).padding(horizontal = 14.dp),
+        contentAlignment = Alignment.CenterEnd,
+    ) {
+        Text(value, fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Navy)
+    }
+}
+
+@Composable
+private fun CardPanel(modifier: Modifier = Modifier, content: @Composable Column.() -> Unit) {
+    Card(
         modifier = modifier,
-    )
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, Border),
+    ) {
+        Column(Modifier.fillMaxSize().padding(16.dp), content = content)
+    }
+}
+
+@Composable
+private fun BlueButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        colors = ButtonDefaults.buttonColors(containerColor = Blue),
+    ) { Text(label, fontWeight = FontWeight.Bold) }
 }
 
 @Composable
@@ -953,54 +1175,36 @@ private fun ChoiceButton(
     OutlinedButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.height(54.dp),
-        border = BorderStroke(if (selected) 3.dp else 1.dp, if (selected) Danger else Border),
-    ) { Text(label, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) }
-}
-
-@Composable
-private fun TaxPreview(summary: TaxSummary) {
-    summary.buckets.forEach { bucket ->
-        Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-            Text(if (bucket.taxable) "${bucket.ratePercent}%対象" else "非課税", Modifier.weight(1f))
-            Text("税 ${yen(bucket.taxAmount)}", color = Color.Gray)
-            Spacer(Modifier.width(12.dp))
-            Text(yen(bucket.grossAmount), fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-@Composable
-private fun AmountRow(label: String, amount: Long, fontSize: androidx.compose.ui.unit.TextUnit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.Bottom) {
-        Text(label, modifier = Modifier.weight(1f), fontSize = (fontSize.value * 0.72f).sp)
-        Text(yen(amount), fontSize = fontSize, fontWeight = FontWeight.Bold, color = Navy)
-    }
-}
-
-@Composable
-private fun BlueButton(
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier,
-    enabled: Boolean = true,
-) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
         modifier = modifier,
-        colors = ButtonDefaults.buttonColors(containerColor = Blue),
-    ) { Text(label, fontWeight = FontWeight.Bold) }
+        border = BorderStroke(if (selected) 3.dp else 1.dp, if (selected) Danger else Border),
+    ) { Text(label, color = Navy, fontWeight = FontWeight.Bold) }
 }
 
-private fun percentToBasisPoints(text: String): Long? = try {
-    BigDecimal(text)
-        .multiply(BigDecimal(100))
-        .setScale(0, RoundingMode.HALF_UP)
-        .longValueExact()
-        .takeIf { it in 1..10_000 }
-} catch (_: Exception) {
-    null
+@Composable
+private fun AmountRow(label: String, value: String, emphasized: Boolean = false) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), fontSize = if (emphasized) 20.sp else 16.sp, fontWeight = if (emphasized) FontWeight.Bold else FontWeight.Normal)
+        Text(value, fontSize = if (emphasized) 23.sp else 16.sp, fontWeight = FontWeight.Bold, color = if (emphasized) Navy else Color.Unspecified)
+    }
 }
 
-private fun yen(value: Long): String = NumberFormat.getCurrencyInstance(Locale.JAPAN).format(value)
+@Composable
+private fun BottomActions(
+    onBack: () -> Unit,
+    confirmLabel: String,
+    onConfirm: () -> Unit,
+    confirmEnabled: Boolean = true,
+) {
+    Row(
+        Modifier.fillMaxWidth().height(72.dp).padding(horizontal = 18.dp, vertical = 7.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        OutlinedButton(onClick = onBack, modifier = Modifier.width(190.dp).fillMaxHeight()) { Text("戻る") }
+        BlueButton(confirmLabel, onConfirm, Modifier.weight(1f).fillMaxHeight(), confirmEnabled)
+    }
+}
+
+private fun yen(amount: Long): String = NumberFormat.getCurrencyInstance(Locale.JAPAN).format(amount)
+
+private fun formatDate(epochMillis: Long): String =
+    SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.JAPAN).format(Date(epochMillis))
