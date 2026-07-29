@@ -238,11 +238,23 @@ class TcpEscPosPrinterGateway(
     }
 }
 
+/**
+ * 自動テストでは従来どおりメモリーへ保持する。
+ * Android実行時に有効なプリンター設定がある場合は、同じデータを実機にも送信する。
+ */
 class MemoryPrinterGateway : PrinterGateway {
     val sentPayloads = mutableListOf<ByteArray>()
 
     override fun send(payload: ByteArray): Result<Unit> = runCatching {
         sentPayloads += payload.copyOf()
+        val configuration = PrinterConfigurationRegistry.current()
+        if (configuration?.usable == true) {
+            TcpEscPosPrinterGateway(
+                host = configuration.host,
+                port = configuration.port,
+                timeoutMillis = configuration.timeoutMillis,
+            ).send(payload).getOrThrow()
+        }
     }
 }
 
