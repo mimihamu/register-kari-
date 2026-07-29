@@ -9,9 +9,18 @@
         android:theme="@style/Theme.Register">
 
         <activity
-            android:name=".OperationsActivity"
+            android:name=".AdvancedOperationsActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
+
+        <!--
+          MainActivityは従来どおりOperationsActivityを明示起動する。
+          v0.6ではactivity-aliasで統合業務画面へ安全に差し替える。
+        -->
+        <activity-alias
+            android:name=".OperationsActivity"
+            android:exported="false"
+            android:targetActivity=".AdvancedOperationsActivity" />
 
         <activity
             android:name=".MainActivity"
