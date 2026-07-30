@@ -121,28 +121,14 @@ val generateV08Sources = tasks.register("generateV08Sources") {
         )
         main = replaceRequired(
             main,
-            """
-                    val saleId = database.saveSale(operatorName, cart.toList(), paymentState, receiptPaper.widthMm)
-                    lastSaleId = saleId
-""".trimIndent(),
-            """
-                    val saleId = database.saveSale(operatorName, cart.toList(), paymentState, receiptPaper.widthMm)
-                    AutomaticPrintScheduler.enqueueNow(context.applicationContext)
-                    lastSaleId = saleId
-""".trimIndent(),
+            "                    val saleId = database.saveSale(operatorName, cart.toList(), paymentState, receiptPaper.widthMm)",
+            "                    val saleId = database.saveSale(operatorName, cart.toList(), paymentState, receiptPaper.widthMm)\n                    AutomaticPrintScheduler.enqueueNow(context.applicationContext)",
             "sale immediate print",
         )
         main = replaceRequired(
             main,
-            """
-                            database.enqueueReprint(detail.summary.id, receiptPaper.widthMm)
-                            queueMessage = "再印字をキューへ登録しました"
-""".trimIndent(),
-            """
-                            database.enqueueReprint(detail.summary.id, receiptPaper.widthMm)
-                            AutomaticPrintScheduler.enqueueNow(context.applicationContext)
-                            queueMessage = "再印字をキューへ登録しました"
-""".trimIndent(),
+            "                            database.enqueueReprint(detail.summary.id, receiptPaper.widthMm)",
+            "                            database.enqueueReprint(detail.summary.id, receiptPaper.widthMm)\n                            AutomaticPrintScheduler.enqueueNow(context.applicationContext)",
             "reprint immediate work",
         )
         packageDir.resolve("MainActivityGeneratedV08.kt").writeText(main)
