@@ -1,0 +1,63 @@
+            CardPanel(Modifier.weight(0.40f).fillMaxHeight()) {
+                val salesContext = LocalContext.current
+                val pages = products.map { it.pageNo }.distinct().sorted().ifEmpty { listOf(1) }
+                var currentPage by remember(products) { mutableStateOf(pages.first()) }
+                androidx.compose.runtime.LaunchedEffect(pages) {
+                    if (currentPage !in pages) currentPage = pages.first()
+                }
+                val pageProducts = products.filter { it.pageNo == currentPage }.associateBy { it.slotNo }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("商品", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Navy)
+                        Text(CatalogProductRuntime.status(salesContext), fontSize = 12.sp, color = Color.Gray)
+                    }
+                    Text("${currentPage}/${pages.maxOrNull() ?: 1}ページ", color = Navy, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    pages.forEach { page ->
+                        OutlinedButton(
+                            onClick = { currentPage = page },
+                            modifier = Modifier.width(60.dp).height(38.dp),
+                            border = BorderStroke(if (currentPage == page) 3.dp else 1.dp, if (currentPage == page) Danger else Border),
+                        ) { Text(page.toString(), fontWeight = FontWeight.Bold) }
+                    }
+                }
+                Spacer(Modifier.height(7.dp))
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                    for (row in 0 until 8) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            for (column in 0 until 3) {
+                                val slot = row * 3 + column + 1
+                                val product = pageProducts[slot]
+                                if (product == null) {
+                                    Spacer(Modifier.weight(1f).height(72.dp))
+                                } else {
+                                    Button(
+                                        onClick = { onAddProduct(product) },
+                                        modifier = Modifier.weight(1f).height(72.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = ProductButtonPalette.background(product.buttonColor),
+                                            contentColor = ProductButtonPalette.foreground(product.buttonColor),
+                                        ),
+                                        border = BorderStroke(1.dp, Border),
+                                    ) {
+                                        Text(
+                                            "${product.name}\n${yen(product.unitPrice)} ${product.taxSymbol}",
+                                            textAlign = TextAlign.Center,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            maxLines = 3,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(7.dp))
+                    }
+                }
+            }
+        }
