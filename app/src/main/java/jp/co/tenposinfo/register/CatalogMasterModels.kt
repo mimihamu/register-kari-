@@ -103,14 +103,14 @@ object CatalogValidation {
 
     fun requireCode(value: String, label: String): String {
         val code = normalizeCode(value)
-        require(codePattern.matches(code)) { "$labelは英数字・_・-で20文字以内です" }
+        require(codePattern.matches(code)) { "${label}は英数字・_・-で20文字以内です" }
         return code
     }
 
     fun requireName(value: String, label: String): String {
         val name = value.trim()
-        require(name.isNotBlank()) { "$labelを入力してください" }
-        require(name.length <= 60) { "$labelは60文字以内です" }
+        require(name.isNotBlank()) { "${label}を入力してください" }
+        require(name.length <= 60) { "${label}は60文字以内です" }
         return name
     }
 
