@@ -18,6 +18,17 @@ val generateV010Sources = tasks.register<Exec>("generateV010Sources") {
         projectDir.absolutePath,
         generatedV010Dir.get().asFile.absolutePath,
     )
+    doLast {
+        val generatedFile = generatedV010Dir.get().asFile
+            .resolve("jp/co/tenposinfo/register/DynamicCatalogRuntime.kt")
+        val source = generatedFile.readText()
+        generatedFile.writeText(
+            source.replace(
+                "error(\"${'$'}labelはyyyy-MM-dd形式です\")",
+                "error(\"${'$'}{label}はyyyy-MM-dd形式です\")",
+            ),
+        )
+    }
 }
 
 android {
