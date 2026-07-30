@@ -169,9 +169,9 @@ def main() -> None:
     )
     database = replace_required(
         database,
-        "            insertPrintJob(this, saleId, paperWidthMm, createdAt)\n            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_SALE, saleId, items)\n            saleId",
+        "            insertPrintJob(this, saleId, paperWidthMm, createdAt)\n            saleId",
         "            insertPrintJob(this, saleId, paperWidthMm, createdAt)\n            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_SALE, saleId, items)\n            JournalOutboxSchema.recordSale(this, saleId, summary.grossAmount, summary.taxAmount, createdAt)\n            saleId",
-        "save sale journal and outbox",
+        "save sale tax snapshot, journal, and outbox",
     )
     database = replace_required(
         database,
