@@ -8,7 +8,7 @@ from pathlib import Path
 
 def replace_required(source: str, old: str, new: str, label: str) -> str:
     if old not in source:
-        raise RuntimeError(f"v0.10 source generation failed: {label}")
+        raise RuntimeError(f"v0.11 source generation failed: {label}")
     return source.replace(old, new)
 
 
@@ -16,7 +16,7 @@ def replace_inclusive(source: str, start_marker: str, end_marker: str, replaceme
     start = source.find(start_marker)
     end_start = source.find(end_marker, start + len(start_marker))
     if start < 0 or end_start < start:
-        raise RuntimeError(f"v0.10 source generation failed: {label}")
+        raise RuntimeError(f"v0.11 source generation failed: {label}")
     end = end_start + len(end_marker)
     return source[:start] + replacement + source[end:]
 
@@ -25,7 +25,7 @@ def replace_before(source: str, start_marker: str, next_marker: str, replacement
     start = source.find(start_marker)
     end = source.find(next_marker, start + len(start_marker))
     if start < 0 or end <= start:
-        raise RuntimeError(f"v0.10 source generation failed: {label}")
+        raise RuntimeError(f"v0.11 source generation failed: {label}")
     return source[:start] + replacement.rstrip() + "\n\n" + source[end:]
 
 
@@ -109,18 +109,30 @@ def main() -> None:
         "item.product.withLegacyTaxCategory(category)",
         "line edit tax snapshot",
     )
-    main_text = main_text.replace("正常（Schema v4）", "正常（動的税・改定対応）")
+    main_text = main_text.replace("正常（Schema v4）", "正常（動的税・改定・Outbox対応）")
     main_text = replace_required(
         main_text,
         "                    val saleId = database.saveSale(operatorName, cart.toList(), paymentState, receiptPaper.widthMm)",
-        "                    val saleId = database.saveSale(operatorName, cart.toList(), paymentState, receiptPaper.widthMm)\n                    AutomaticPrintScheduler.enqueueNow(context.applicationContext)",
-        "sale immediate print",
+        "                    val saleId = database.saveSale(operatorName, cart.toList(), paymentState, receiptPaper.widthMm)\n                    AutomaticPrintScheduler.enqueueNow(context.applicationContext)\n                    DriveOutboxScheduler.enqueueNow(context.applicationContext)",
+        "sale immediate workers",
     )
     main_text = replace_required(
         main_text,
         "                            database.enqueueReprint(detail.summary.id, receiptPaper.widthMm)",
         "                            database.enqueueReprint(detail.summary.id, receiptPaper.widthMm)\n                            AutomaticPrintScheduler.enqueueNow(context.applicationContext)",
         "reprint immediate work",
+    )
+    main_text = replace_required(
+        main_text,
+        "                            \"${mixed.message}\\n税率単位で税抜基準へ統一して計算します。タップして確認：${if (acknowledgedMixedTax) \"確認済\" else \"未確認\"}\",",
+        "                            \"${mixed.message}\\n同率の内税・外税混在は禁止です。商品税区分を修正してください。\",",
+        "mixed tax blocked message",
+    )
+    main_text = replace_required(
+        main_text,
+        "            confirmEnabled = remaining == 0L && (!mixed.hasMixedTax || acknowledgedMixedTax),",
+        "            confirmEnabled = remaining == 0L && !mixed.hasMixedTax,",
+        "mixed tax complete block",
     )
     (package_generated / "MainActivity.kt").write_text(main_text, encoding="utf-8")
 
@@ -151,9 +163,15 @@ def main() -> None:
     )
     database = replace_required(
         database,
-        "            insertPrintJob(this, saleId, paperWidthMm, createdAt)\n            saleId",
+        "        require(items.isNotEmpty()) { \"Cannot save an empty sale\" }\n        val summary = TaxEngine.calculate(items)",
+        "        require(items.isNotEmpty()) { \"Cannot save an empty sale\" }\n        TaxEngine.validateMixedTax(items, MixedTaxPolicy.BLOCK)\n        val summary = TaxEngine.calculate(items)",
+        "database mixed tax block",
+    )
+    database = replace_required(
+        database,
         "            insertPrintJob(this, saleId, paperWidthMm, createdAt)\n            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_SALE, saleId, items)\n            saleId",
-        "save sale tax snapshots",
+        "            insertPrintJob(this, saleId, paperWidthMm, createdAt)\n            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_SALE, saleId, items)\n            JournalOutboxSchema.recordSale(this, saleId, summary.grossAmount, summary.taxAmount, createdAt)\n            saleId",
+        "save sale journal and outbox",
     )
     database = replace_required(
         database,
@@ -194,16 +212,24 @@ def main() -> None:
     operations = replace_required(
         operations,
         "store.recordSettlement(type, actualCash, operator, paperWidth)",
-        "store.recordSettlement(type, actualCash, operator, paperWidth).also { AutomaticPrintScheduler.enqueueNow(context.applicationContext) }",
-        "settlement immediate print",
+        "store.recordSettlement(type, actualCash, operator, paperWidth).also { AutomaticPrintScheduler.enqueueNow(context.applicationContext); DriveOutboxScheduler.enqueueNow(context.applicationContext) }",
+        "settlement immediate workers",
     )
     operations = replace_required(
         operations,
         "store.createReversal(saleId, type, quantities, reason, operator, paperWidth)",
-        "store.createReversal(saleId, type, quantities, reason, operator, paperWidth).also { AutomaticPrintScheduler.enqueueNow(context.applicationContext) }",
-        "reversal immediate print",
+        "store.createReversal(saleId, type, quantities, reason, operator, paperWidth).also { AutomaticPrintScheduler.enqueueNow(context.applicationContext); DriveOutboxScheduler.enqueueNow(context.applicationContext) }",
+        "reversal immediate workers",
     )
     (package_generated / "AdvancedOperationsActivity.kt").write_text(operations, encoding="utf-8")
+
+    dynamic_runtime_file = package_generated / "DynamicCatalogRuntime.kt"
+    dynamic_runtime = dynamic_runtime_file.read_text(encoding="utf-8")
+    dynamic_runtime = dynamic_runtime.replace(
+        "LocalDate.now()",
+        "BusinessDateResolver.current(applicationContext)",
+    )
+    dynamic_runtime_file.write_text(dynamic_runtime, encoding="utf-8")
 
     for kotlin_file in generated_root.rglob("*.kt"):
         text = kotlin_file.read_text(encoding="utf-8")
