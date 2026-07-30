@@ -1,0 +1,47 @@
+            AdvancedScreen.MENU -> AdvancedMenuScreen(
+                session = session,
+                summary = summary,
+                message = message,
+                onBusiness = {
+                    if (RegisterPermission.SETTLEMENT in permissions) {
+                        message = null
+                        screen = AdvancedScreen.BUSINESS
+                    } else message = "営業開始・終了の権限がありません"
+                },
+                onDaily = {
+                    if (RegisterPermission.VIEW_SALES in permissions) {
+                        message = null
+                        screen = AdvancedScreen.DAILY
+                    } else message = "売上確認の権限がありません"
+                },
+                onSettlement = {
+                    if (RegisterPermission.SETTLEMENT in permissions) {
+                        message = null
+                        screen = AdvancedScreen.SETTLEMENT
+                    } else message = "点検・精算の権限がありません"
+                },
+                onCash = {
+                    if (RegisterPermission.CASH_MOVEMENT in permissions) {
+                        message = null
+                        screen = AdvancedScreen.CASH
+                    } else message = "入出金の権限がありません"
+                },
+                onReversal = {
+                    if (RegisterPermission.REVERSAL in permissions) {
+                        message = null
+                        screen = AdvancedScreen.REVERSAL
+                    } else message = "返品・取消の権限がありません"
+                },
+                onPrintQueue = {
+                    if (permissions.any {
+                            it == RegisterPermission.VIEW_SALES ||
+                                it == RegisterPermission.SETTLEMENT ||
+                                it == RegisterPermission.REVERSAL
+                        }
+                    ) {
+                        message = null
+                        screen = AdvancedScreen.PRINT_QUEUE
+                    } else message = "印刷キュー確認の権限がありません"
+                },
+                onClose = onClose,
+            )
