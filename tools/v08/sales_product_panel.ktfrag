@@ -5,26 +5,22 @@
                 androidx.compose.runtime.LaunchedEffect(pages) {
                     if (currentPage !in pages) currentPage = pages.first()
                 }
+                val pageIndex = pages.indexOf(currentPage).coerceAtLeast(0)
                 val pageProducts = products.filter { it.pageNo == currentPage }.associateBy { it.slotNo }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("商品", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Navy)
                         Text(CatalogProductRuntime.status(salesContext), fontSize = 12.sp, color = Color.Gray)
                     }
-                    Text("${currentPage}/${pages.maxOrNull() ?: 1}ページ", color = Navy, fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.height(6.dp))
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    pages.forEach { page ->
-                        OutlinedButton(
-                            onClick = { currentPage = page },
-                            modifier = Modifier.width(60.dp).height(38.dp),
-                            border = BorderStroke(if (currentPage == page) 3.dp else 1.dp, if (currentPage == page) Danger else Border),
-                        ) { Text(page.toString(), fontWeight = FontWeight.Bold) }
-                    }
+                    OutlinedButton(
+                        onClick = { currentPage = pages[(pageIndex - 1 + pages.size) % pages.size] },
+                        modifier = Modifier.width(54.dp).height(38.dp),
+                    ) { Text("＜") }
+                    Text(" ${currentPage}/${pages.maxOrNull() ?: 1} ", color = Navy, fontWeight = FontWeight.Bold)
+                    OutlinedButton(
+                        onClick = { currentPage = pages[(pageIndex + 1) % pages.size] },
+                        modifier = Modifier.width(54.dp).height(38.dp),
+                    ) { Text("＞") }
                 }
                 Spacer(Modifier.height(7.dp))
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
