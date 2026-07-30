@@ -13,5 +13,8 @@
         }
     }
     val products = remember(catalogEpoch) {
+        runCatching {
+            CatalogMasterStore(context.applicationContext).use { it.synchronizeEffectiveProducts() }
+        }
         CatalogProductRuntime.visibleProducts(context.applicationContext, database.loadProducts())
     }
