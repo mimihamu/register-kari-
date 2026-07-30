@@ -5,4 +5,6 @@
     var operatorName by remember { mutableStateOf(currentOperator?.name ?: "未選択") }
     var loginMessage by remember { mutableStateOf<String?>(null) }
     var accessMessage by remember { mutableStateOf<String?>(null) }
-    val products = remember { database.loadProducts() }
+    val products = remember {
+        CatalogProductRuntime.visibleProducts(context.applicationContext, database.loadProducts())
+    }
