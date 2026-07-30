@@ -20,7 +20,28 @@ data class Product(
     val unitPrice: Long,
     val taxCategory: TaxCategory,
     val displayOrder: Int,
-)
+    val taxKey: String = taxCategory.name,
+    val taxLabel: String = taxCategory.displayName,
+    val taxSymbol: String = taxCategory.symbol,
+    val taxRatePercent: Int = taxCategory.ratePercent,
+    val taxIncluded: Boolean = taxCategory.taxIncluded,
+    val taxable: Boolean = taxCategory.taxable,
+    val reducedTax: Boolean = taxCategory.symbol.contains("※"),
+    val buttonColor: String = "BLUE",
+    val pageNo: Int = ((displayOrder.coerceAtLeast(1) - 1) / 24) + 1,
+    val slotNo: Int = ((displayOrder.coerceAtLeast(1) - 1) % 24) + 1,
+) {
+    fun withLegacyTaxCategory(category: TaxCategory): Product = copy(
+        taxCategory = category,
+        taxKey = category.name,
+        taxLabel = category.displayName,
+        taxSymbol = category.symbol,
+        taxRatePercent = category.ratePercent,
+        taxIncluded = category.taxIncluded,
+        taxable = category.taxable,
+        reducedTax = category.symbol.contains("※"),
+    )
+}
 
 data class CartItem(
     val product: Product,
@@ -47,6 +68,7 @@ data class TaxBucket(
     val netAmount: Long,
     val taxAmount: Long,
     val grossAmount: Long,
+    val sourceTaxKeys: Set<String> = sourceCategories.mapTo(linkedSetOf()) { it.name },
 )
 
 data class TaxSummary(val buckets: List<TaxBucket>) {
@@ -62,20 +84,18 @@ data class MixedTaxResult(val hasMixedTax: Boolean, val message: String?)
 object TaxEngine {
     /**
      * 値引後の金額を税率単位に合算し、1インボイス・税率ごとに一度だけ端数処理する。
-     * 同一税率の内税・外税混在時は税抜基準へ統一して計算する。
+     * 商品が任意税率マスターを使用している場合も、商品スナップショットの税率・内外税方式で計算する。
      */
     fun calculate(items: List<CartItem>): TaxSummary {
         val taxableBuckets = items
-            .filter { it.product.taxCategory.taxable }
-            .groupBy { it.product.taxCategory.ratePercent }
+            .filter { it.product.taxable }
+            .groupBy { it.product.taxRatePercent }
             .map { (rate, rows) ->
-                val includedGross = rows
-                    .filter { it.product.taxCategory.taxIncluded }
-                    .sumOf { it.baseAmount }
-                val excludedNet = rows
-                    .filterNot { it.product.taxCategory.taxIncluded }
-                    .sumOf { it.baseAmount }
+                require(rate in 0..100) { "tax rate must be between 0 and 100" }
+                val includedGross = rows.filter { it.product.taxIncluded }.sumOf { it.baseAmount }
+                val excludedNet = rows.filterNot { it.product.taxIncluded }.sumOf { it.baseAmount }
                 val categories = rows.map { it.product.taxCategory }.toSet()
+                val keys = rows.mapTo(linkedSetOf()) { it.product.taxKey }
 
                 val net: Long
                 val tax: Long
@@ -98,33 +118,36 @@ object TaxEngine {
                         gross = net + tax
                     }
                 }
-                TaxBucket(rate, true, categories, net, tax, gross)
+                TaxBucket(rate, true, categories, net, tax, gross, keys)
             }
 
-        val nonTaxable = items
-            .filterNot { it.product.taxCategory.taxable }
-            .sumOf { it.baseAmount }
+        val nonTaxableRows = items.filterNot { it.product.taxable }
+        val nonTaxable = nonTaxableRows.sumOf { it.baseAmount }
         val buckets = taxableBuckets.toMutableList()
         if (nonTaxable > 0) {
             buckets += TaxBucket(
                 ratePercent = 0,
                 taxable = false,
-                sourceCategories = setOf(TaxCategory.NON_TAXABLE),
+                sourceCategories = nonTaxableRows.map { it.product.taxCategory }.toSet()
+                    .ifEmpty { setOf(TaxCategory.NON_TAXABLE) },
                 netAmount = nonTaxable,
                 taxAmount = 0,
                 grossAmount = nonTaxable,
+                sourceTaxKeys = nonTaxableRows.mapTo(linkedSetOf()) { it.product.taxKey },
             )
         }
         return TaxSummary(buckets.sortedWith(compareBy<TaxBucket> { !it.taxable }.thenByDescending { it.ratePercent }))
     }
 
     fun validateMixedTax(items: List<CartItem>, policy: MixedTaxPolicy): MixedTaxResult {
-        val categories = items.map { it.product.taxCategory }.toSet()
-        val mixed10 = TaxCategory.INCLUDED_10 in categories && TaxCategory.EXCLUDED_10 in categories
-        val mixed8 = TaxCategory.INCLUDED_8 in categories && TaxCategory.EXCLUDED_8 in categories
-        val mixed = mixed10 || mixed8
-        if (!mixed) return MixedTaxResult(false, null)
-        val message = "同一税率の内税商品と外税商品が混在しています"
+        val mixedRates = items
+            .filter { it.product.taxable }
+            .groupBy { it.product.taxRatePercent }
+            .filterValues { rows -> rows.map { it.product.taxIncluded }.toSet().size > 1 }
+            .keys
+            .sorted()
+        if (mixedRates.isEmpty()) return MixedTaxResult(false, null)
+        val message = "同一税率の内税商品と外税商品が混在しています（${mixedRates.joinToString("・") { "$it%" }}）"
         if (policy == MixedTaxPolicy.BLOCK) throw IllegalStateException(message)
         return MixedTaxResult(true, if (policy == MixedTaxPolicy.WARN) message else null)
     }
