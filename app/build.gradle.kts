@@ -114,10 +114,7 @@ val generateV08Sources = tasks.register("generateV08Sources") {
         )
         main = replaceBefore(
             main,
-            """
-        Row(
-            Modifier.fillMaxWidth().height(38.dp).background(Color.White).padding(horizontal = 18.dp),
-""".trimIndent(),
+            "        Row(\n            Modifier.fillMaxWidth().height(38.dp).background(Color.White).padding(horizontal = 18.dp),",
             "        Row(Modifier.weight(1f).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {",
             fragment("sales_header.ktfrag"),
             "SalesScreen header",
@@ -228,7 +225,7 @@ android {
 
     sourceSets {
         getByName("main") {
-            java.setSrcDirs(listOf(generatedV08Dir))
+            java.setSrcDirs(listOf(generatedV08Dir.get().asFile))
         }
     }
 
