@@ -8,8 +8,6 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
-import androidx.work.Worker
-import androidx.work.WorkerParameters
 import java.util.concurrent.TimeUnit
 
 object AutomaticPrintPolicy {
@@ -23,11 +21,16 @@ object AutomaticPrintPolicy {
  */
 class AutomaticPrintWorker(
     appContext: Context,
-    params: WorkerParameters,
-) : Worker(appContext, params) {
-    override fun doWork(): Result {
-        val configuration = AdminSettingsStore(applicationContext).use { it.loadPrinterConfiguration() }
-        if (!configuration.usable) return Result.success()
+    params: androidx.work.WorkerParameters,
+) : androidx.work.Worker(appContext, params) {
+    override fun doWork(): androidx.work.ListenableWorker.Result {
+        val settingsStore = AdminSettingsStore(applicationContext)
+        val configuration = try {
+            settingsStore.loadPrinterConfiguration()
+        } finally {
+            settingsStore.close()
+        }
+        if (!configuration.usable) return androidx.work.ListenableWorker.Result.success()
 
         val gateway = TcpEscPosPrinterGateway(
             host = configuration.host,
@@ -40,13 +43,14 @@ class AutomaticPrintWorker(
         val database = RegisterDatabase(applicationContext)
         try {
             val processor = PrintQueueProcessor(database, gateway)
-            repeat(MAX_JOBS_PER_RUN) {
-                if (database.nextPrintableJob() == null) return@repeat
+            var index = 0
+            while (index < MAX_JOBS_PER_RUN && database.nextPrintableJob() != null) {
                 attempted++
                 if (!processor.processNext()) {
                     failures++
-                    return@repeat
+                    break
                 }
+                index++
             }
         } finally {
             database.close()
@@ -54,22 +58,23 @@ class AutomaticPrintWorker(
 
         val operations = AdvancedOperationsStore(applicationContext)
         try {
-            operations.listDocumentPrintJobs(500)
-                .asSequence()
-                .filter { it.status == PrintJobStatus.PENDING || it.status == PrintJobStatus.RETRY }
-                .take(MAX_JOBS_PER_RUN)
-                .forEach { job ->
-                    attempted++
-                    if (operations.processDocumentPrint(job.id, gateway).isFailure) failures++
-                }
+            val jobs = operations.listDocumentPrintJobs(500)
+            var processed = 0
+            for (job in jobs) {
+                if (processed >= MAX_JOBS_PER_RUN) break
+                if (job.status != PrintJobStatus.PENDING && job.status != PrintJobStatus.RETRY) continue
+                attempted++
+                processed++
+                if (operations.processDocumentPrint(job.id, gateway).isFailure) failures++
+            }
         } finally {
             operations.close()
         }
 
         return if (AutomaticPrintPolicy.shouldRetry(configuration.usable, attempted, failures)) {
-            Result.retry()
+            androidx.work.ListenableWorker.Result.retry()
         } else {
-            Result.success()
+            androidx.work.ListenableWorker.Result.success()
         }
     }
 
