@@ -1,0 +1,15 @@
+        Row(
+            Modifier.fillMaxWidth().height(48.dp).background(Color.White).padding(horizontal = 18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("店舗：サンプル居酒屋  |  担当：$operatorName", color = Navy, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.weight(1f))
+            if (accessMessage != null) {
+                Text(accessMessage, color = Danger, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.width(12.dp))
+            } else {
+                Text("SQLite保存・オフライン販売", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                Spacer(Modifier.width(12.dp))
+            }
+            OutlinedButton(onClick = onLogout, modifier = Modifier.height(40.dp)) { Text("担当者切替") }
+        }
