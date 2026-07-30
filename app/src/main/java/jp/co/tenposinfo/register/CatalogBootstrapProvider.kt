@@ -16,7 +16,7 @@ import android.widget.Button
 import android.widget.FrameLayout
 
 /**
- * Applicationの既存実装を壊さず、商品マスターの初期化と販売プロファイル反映を行う。
+ * Applicationの既存実装を壊さず、商品マスターの初期化・販売プロファイル・改定予約を反映する。
  */
 class CatalogBootstrapProvider : ContentProvider() {
     override fun onCreate(): Boolean {
@@ -24,6 +24,7 @@ class CatalogBootstrapProvider : ContentProvider() {
         val token = runCatching {
             CatalogMasterStore(appContext).use { it.synchronizeEffectiveProducts() }
         }.getOrNull()
+        runCatching { DynamicCatalogStore(appContext).close() }
         if (token != null) CatalogRuntimeState.saveToken(appContext, token)
         (appContext as? Application)?.registerActivityLifecycleCallbacks(CatalogLifecycleCallbacks())
         return true
@@ -43,7 +44,11 @@ private class CatalogLifecycleCallbacks : Application.ActivityLifecycleCallbacks
                 synchronizeAndRefresh(activity)
                 installCatalogButton(activity)
             }
-            is CatalogSettingsActivity -> guardCatalogActivity(activity)
+            is CatalogSettingsActivity -> {
+                guardSettingsActivity(activity)
+                installDynamicCatalogButton(activity)
+            }
+            is DynamicCatalogSettingsActivity -> guardSettingsActivity(activity)
         }
     }
 
@@ -87,7 +92,29 @@ private class CatalogLifecycleCallbacks : Application.ActivityLifecycleCallbacks
         )
     }
 
-    private fun guardCatalogActivity(activity: CatalogSettingsActivity) {
+    private fun installDynamicCatalogButton(activity: CatalogSettingsActivity) {
+        val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
+        if (content.findViewWithTag<View>(DYNAMIC_BUTTON_TAG) != null) return
+        val button = Button(activity).apply {
+            tag = DYNAMIC_BUTTON_TAG
+            text = "任意税率・改定"
+            isAllCaps = false
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.rgb(25, 118, 185))
+            elevation = dp(activity, 10).toFloat()
+            setOnClickListener { activity.startActivity(Intent(activity, DynamicCatalogSettingsActivity::class.java)) }
+        }
+        content.addView(
+            button,
+            FrameLayout.LayoutParams(dp(activity, 176), dp(activity, 48), Gravity.TOP or Gravity.END).apply {
+                topMargin = dp(activity, 70)
+                marginEnd = dp(activity, 18)
+            },
+        )
+    }
+
+    private fun guardSettingsActivity(activity: Activity) {
         val operator = OperatorSessionRegistry.current(activity.applicationContext)
         if (operator?.isManager == true && operator.allows(RegisterPermission.SETTINGS)) {
             OperatorSessionRegistry.touch(activity.applicationContext)
@@ -108,6 +135,7 @@ private class CatalogLifecycleCallbacks : Application.ActivityLifecycleCallbacks
 
     companion object {
         private const val BUTTON_TAG = "register-catalog-settings"
+        private const val DYNAMIC_BUTTON_TAG = "register-dynamic-catalog-settings"
     }
 }
 
