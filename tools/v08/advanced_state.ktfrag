@@ -1,0 +1,5 @@
+    val store = remember { AdvancedOperationsStore(context.applicationContext) }
+    val registerDatabase = remember { RegisterDatabase(context.applicationContext) }
+    val currentOperator = remember { OperatorSessionRegistry.current(context.applicationContext) }
+    val permissions = currentOperator?.permissions.orEmpty()
+    var screen by remember { mutableStateOf(AdvancedScreen.MENU) }
