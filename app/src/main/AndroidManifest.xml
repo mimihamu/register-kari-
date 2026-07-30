@@ -12,6 +12,17 @@
         android:theme="@style/Theme.Register"
         android:usesCleartextTraffic="true">
 
+        <provider
+            android:name=".CatalogBootstrapProvider"
+            android:authorities="${applicationId}.catalog-bootstrap"
+            android:exported="false"
+            android:initOrder="100" />
+
+        <activity
+            android:name=".CatalogSettingsActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
         <activity
             android:name=".AdminSettingsActivity"
             android:exported="false"
