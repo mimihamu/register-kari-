@@ -19,6 +19,11 @@
             android:initOrder="100" />
 
         <activity
+            android:name=".DynamicCatalogSettingsActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
             android:name=".CatalogSettingsActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
