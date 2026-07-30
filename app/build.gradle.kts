@@ -10,6 +10,7 @@ val generateV08Sources = tasks.register("generateV08Sources") {
     val sourceRoot = file("src/main/java")
     val mainSource = sourceRoot.resolve("jp/co/tenposinfo/register/MainActivity.kt")
     val operationsSource = sourceRoot.resolve("jp/co/tenposinfo/register/AdvancedOperationsActivity.kt")
+    val databaseSource = sourceRoot.resolve("jp/co/tenposinfo/register/RegisterDatabase.kt")
     val fragments = fileTree(v08FragmentsDir)
     inputs.dir(sourceRoot)
     inputs.files(fragments)
@@ -27,7 +28,7 @@ val generateV08Sources = tasks.register("generateV08Sources") {
         ): String {
             val start = source.indexOf(startMarker)
             val endStart = source.indexOf(endMarker, start + startMarker.length)
-            check(start >= 0 && endStart >= start) { "v0.8 source generation failed: $label" }
+            check(start >= 0 && endStart >= start) { "v0.10 source generation failed: $label" }
             val end = endStart + endMarker.length
             return source.substring(0, start) + replacement + source.substring(end)
         }
@@ -41,12 +42,12 @@ val generateV08Sources = tasks.register("generateV08Sources") {
         ): String {
             val start = source.indexOf(startMarker)
             val end = source.indexOf(nextMarker, start + startMarker.length)
-            check(start >= 0 && end > start) { "v0.8 source generation failed: $label" }
+            check(start >= 0 && end > start) { "v0.10 source generation failed: $label" }
             return source.substring(0, start) + replacement + "\n\n" + source.substring(end)
         }
 
         fun replaceRequired(source: String, old: String, new: String, label: String): String {
-            check(source.contains(old)) { "v0.8 source generation failed: $label" }
+            check(source.contains(old)) { "v0.10 source generation failed: $label" }
             return source.replace(old, new)
         }
 
@@ -60,6 +61,14 @@ val generateV08Sources = tasks.register("generateV08Sources") {
                 val destination = generatedRoot.resolve(sourceFile.relativeTo(sourceRoot).path)
                 destination.parentFile.mkdirs()
                 sourceFile.copyTo(destination, overwrite = true)
+            }
+
+        generatedRoot.walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .forEach { generatedFile ->
+                val original = generatedFile.readText()
+                val updated = original.replace(".taxCategory.symbol", ".taxSymbol")
+                if (updated != original) generatedFile.writeText(updated)
             }
 
         val packageDir = generatedRoot.resolve("jp/co/tenposinfo/register")
@@ -119,6 +128,21 @@ val generateV08Sources = tasks.register("generateV08Sources") {
             fragment("sales_header.ktfrag"),
             "SalesScreen header",
         )
+        main = replaceBefore(
+            main,
+            "            CardPanel(Modifier.weight(0.40f).fillMaxHeight()) {",
+            "        Row(\n            Modifier.fillMaxWidth().height(76.dp).padding(horizontal = 12.dp, vertical = 7.dp),",
+            fragment("sales_product_panel.ktfrag"),
+            "paged product panel",
+        )
+        main = main.replace(".taxCategory.symbol", ".taxSymbol")
+        main = replaceRequired(
+            main,
+            "item.product.copy(taxCategory = category)",
+            "item.product.withLegacyTaxCategory(category)",
+            "line edit tax snapshot",
+        )
+        main = main.replace("正常（Schema v4）", "正常（動的税・改定対応）")
         main = replaceRequired(
             main,
             "                    val saleId = database.saveSale(operatorName, cart.toList(), paymentState, receiptPaper.widthMm)",
@@ -132,6 +156,119 @@ val generateV08Sources = tasks.register("generateV08Sources") {
             "reprint immediate work",
         )
         packageDir.resolve("MainActivityGeneratedV08.kt").writeText(main)
+
+        var database = databaseSource.readText()
+        database = replaceRequired(
+            database,
+            """
+            val result = mutableListOf<CartItem>()
+            while (cursor.moveToNext()) result += cursor.toCartItem()
+            return result
+        }
+    }
+
+    fun saveCart
+""".trimIndent(),
+            """
+            val result = mutableListOf<CartItem>()
+            while (cursor.moveToNext()) result += cursor.toCartItem()
+            return LineTaxSnapshotStore.apply(readableDatabase, LineTaxSnapshotStore.SCOPE_CART, 0L, result)
+        }
+    }
+
+    fun saveCart
+""".trimIndent(),
+            "load cart tax snapshots",
+        )
+        database = replaceRequired(
+            database,
+            """
+            items.forEachIndexed { index, item ->
+                insertOrThrow("cart_items", null, item.toContentValues().apply { put("line_no", index + 1) })
+            }
+""".trimIndent(),
+            """
+            items.forEachIndexed { index, item ->
+                insertOrThrow("cart_items", null, item.toContentValues().apply { put("line_no", index + 1) })
+            }
+            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_CART, 0L, items)
+""".trimIndent(),
+            "save cart tax snapshots",
+        )
+        database = replaceRequired(
+            database,
+            """
+            items.forEach { item ->
+                insertOrThrow(
+                    "held_ticket_items",
+                    null,
+                    item.toContentValues().apply { put("ticket_id", ticketId) },
+                )
+            }
+            ticketId
+""".trimIndent(),
+            """
+            items.forEach { item ->
+                insertOrThrow(
+                    "held_ticket_items",
+                    null,
+                    item.toContentValues().apply { put("ticket_id", ticketId) },
+                )
+            }
+            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_HELD, ticketId, items)
+            ticketId
+""".trimIndent(),
+            "save held ticket tax snapshots",
+        )
+        database = replaceRequired(
+            database,
+            """
+            val result = mutableListOf<CartItem>()
+            while (cursor.moveToNext()) result += cursor.toCartItem()
+            return result
+        }
+    }
+
+    fun deleteHeldTicket(ticketId: Long) {
+        writableDatabase.delete("held_tickets", "id = ?", arrayOf(ticketId.toString()))
+    }
+""".trimIndent(),
+            """
+            val result = mutableListOf<CartItem>()
+            while (cursor.moveToNext()) result += cursor.toCartItem()
+            return LineTaxSnapshotStore.apply(readableDatabase, LineTaxSnapshotStore.SCOPE_HELD, ticketId, result)
+        }
+    }
+
+    fun deleteHeldTicket(ticketId: Long) {
+        writableDatabase.runInTransaction {
+            delete("held_tickets", "id = ?", arrayOf(ticketId.toString()))
+            delete("line_tax_snapshots", "scope = ? AND owner_id = ?", arrayOf(LineTaxSnapshotStore.SCOPE_HELD, ticketId.toString()))
+        }
+    }
+""".trimIndent(),
+            "load and delete held ticket tax snapshots",
+        )
+        database = replaceRequired(
+            database,
+            """
+            insertPrintJob(this, saleId, paperWidthMm, createdAt)
+            saleId
+""".trimIndent(),
+            """
+            insertPrintJob(this, saleId, paperWidthMm, createdAt)
+            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_SALE, saleId, items)
+            saleId
+""".trimIndent(),
+            "save sale tax snapshots",
+        )
+        database = replaceRequired(
+            database,
+            "return SaleDetailRecord(summary, items, payments, TaxEngine.calculate(items))",
+            "val snapshotItems = LineTaxSnapshotStore.apply(readableDatabase, LineTaxSnapshotStore.SCOPE_SALE, saleId, items)\n        return SaleDetailRecord(summary, snapshotItems, payments, TaxEngine.calculate(snapshotItems))",
+            "load sale tax snapshots",
+        )
+        packageDir.resolve("RegisterDatabase.kt").writeText(database)
 
         var operations = operationsSource.readText()
         operations = replaceInclusive(
@@ -149,12 +286,13 @@ val generateV08Sources = tasks.register("generateV08Sources") {
             "AdvancedOperations menu",
         )
         val fixedPin = "require(pin == \"0000\") { \"責任者PINが違います（テストPIN：0000）\" }"
-        check(operations.contains(fixedPin)) { "v0.8 source generation failed: fixed manager PIN" }
+        check(operations.contains(fixedPin)) { "v0.10 source generation failed: fixed manager PIN" }
         operations = operations.replace(
             fixedPin,
             "require(OperatorSessionRegistry.verifyManagerPin(context.applicationContext, pin)) { \"責任者PINが違います\" }",
         )
         operations = operations.replace("責任者PIN（テスト：0000）", "責任者PIN")
+        operations = operations.replace(".taxCategory.symbol", ".taxSymbol")
         operations = operations.replace(
             "var operator by remember { mutableStateOf(\"責任者\") }",
             "var operator by remember { mutableStateOf(OperatorSessionRegistry.lastKnownName() ?: \"責任者\") }",
@@ -183,8 +321,8 @@ android {
         applicationId = "jp.co.tenposinfo.register"
         minSdk = 31
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.9.0-dev"
+        versionCode = 10
+        versionName = "0.10.0-dev"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
