@@ -7,10 +7,12 @@ val generatedV08Dir = layout.buildDirectory.dir("generated/source/v08/main")
 val v08FragmentsDir = rootProject.file("tools/v08")
 
 val generateV08Sources = tasks.register("generateV08Sources") {
-    val mainSource = file("src/main/java/jp/co/tenposinfo/register/MainActivity.kt")
-    val operationsSource = file("src/main/java/jp/co/tenposinfo/register/AdvancedOperationsActivity.kt")
+    val sourceRoot = file("src/main/java")
+    val mainSource = sourceRoot.resolve("jp/co/tenposinfo/register/MainActivity.kt")
+    val operationsSource = sourceRoot.resolve("jp/co/tenposinfo/register/AdvancedOperationsActivity.kt")
     val fragments = fileTree(v08FragmentsDir)
-    inputs.files(mainSource, operationsSource, fragments)
+    inputs.dir(sourceRoot)
+    inputs.files(fragments)
     outputs.dir(generatedV08Dir)
 
     doLast {
@@ -48,7 +50,19 @@ val generateV08Sources = tasks.register("generateV08Sources") {
             return source.replace(old, new)
         }
 
-        val packageDir = generatedV08Dir.get().asFile.resolve("jp/co/tenposinfo/register")
+        val generatedRoot = generatedV08Dir.get().asFile
+        generatedRoot.deleteRecursively()
+        generatedRoot.mkdirs()
+        sourceRoot.walkTopDown()
+            .filter { it.isFile }
+            .filterNot { it == mainSource || it == operationsSource }
+            .forEach { sourceFile ->
+                val destination = generatedRoot.resolve(sourceFile.relativeTo(sourceRoot).path)
+                destination.parentFile.mkdirs()
+                sourceFile.copyTo(destination, overwrite = true)
+            }
+
+        val packageDir = generatedRoot.resolve("jp/co/tenposinfo/register")
         packageDir.mkdirs()
 
         var main = mainSource.readText()
@@ -214,9 +228,7 @@ android {
 
     sourceSets {
         getByName("main") {
-            java.exclude("jp/co/tenposinfo/register/MainActivity.kt")
-            java.exclude("jp/co/tenposinfo/register/AdvancedOperationsActivity.kt")
-            java.srcDir(generatedV08Dir)
+            java.setSrcDirs(listOf(generatedV08Dir))
         }
     }
 
