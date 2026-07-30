@@ -7,6 +7,7 @@
     var accessMessage by remember { mutableStateOf<String?>(null) }
     var catalogEpoch by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
+        DriveOutboxScheduler.ensurePeriodic(context.applicationContext)
         while (true) {
             kotlinx.coroutines.delay(15_000L)
             catalogEpoch++
@@ -16,5 +17,5 @@
         runCatching {
             CatalogMasterStore(context.applicationContext).use { it.synchronizeEffectiveProducts() }
         }
-        CatalogProductRuntime.visibleProducts(context.applicationContext, database.loadProducts())
+        V11CatalogRuntime.visibleProducts(context.applicationContext, database.loadProducts())
     }

@@ -18,6 +18,22 @@
             android:exported="false"
             android:initOrder="100" />
 
+        <provider
+            android:name=".JournalOutboxBootstrapProvider"
+            android:authorities="${applicationId}.journal-outbox-bootstrap"
+            android:exported="false"
+            android:initOrder="110" />
+
+        <activity
+            android:name=".MenuRevisionEditorActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".SyncSettingsActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
         <activity
             android:name=".DynamicCatalogSettingsActivity"
             android:exported="false"

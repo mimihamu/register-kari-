@@ -48,7 +48,12 @@ private class CatalogLifecycleCallbacks : Application.ActivityLifecycleCallbacks
                 guardSettingsActivity(activity)
                 installDynamicCatalogButton(activity)
             }
-            is DynamicCatalogSettingsActivity -> guardSettingsActivity(activity)
+            is DynamicCatalogSettingsActivity -> {
+                guardSettingsActivity(activity)
+                installRevisionEditorButton(activity)
+                installSyncButton(activity)
+            }
+            is MenuRevisionEditorActivity, is SyncSettingsActivity -> guardSettingsActivity(activity)
         }
     }
 
@@ -114,6 +119,50 @@ private class CatalogLifecycleCallbacks : Application.ActivityLifecycleCallbacks
         )
     }
 
+    private fun installRevisionEditorButton(activity: DynamicCatalogSettingsActivity) {
+        val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
+        if (content.findViewWithTag<View>(REVISION_EDITOR_BUTTON_TAG) != null) return
+        val button = Button(activity).apply {
+            tag = REVISION_EDITOR_BUTTON_TAG
+            text = "改定内容編集"
+            isAllCaps = false
+            textSize = 13f
+            setTextColor(Color.rgb(23, 63, 107))
+            setBackgroundColor(Color.WHITE)
+            elevation = dp(activity, 10).toFloat()
+            setOnClickListener { activity.startActivity(Intent(activity, MenuRevisionEditorActivity::class.java)) }
+        }
+        content.addView(
+            button,
+            FrameLayout.LayoutParams(dp(activity, 154), dp(activity, 48), Gravity.TOP or Gravity.END).apply {
+                topMargin = dp(activity, 70)
+                marginEnd = dp(activity, 196)
+            },
+        )
+    }
+
+    private fun installSyncButton(activity: DynamicCatalogSettingsActivity) {
+        val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
+        if (content.findViewWithTag<View>(SYNC_BUTTON_TAG) != null) return
+        val button = Button(activity).apply {
+            tag = SYNC_BUTTON_TAG
+            text = "同期基盤"
+            isAllCaps = false
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.rgb(25, 118, 185))
+            elevation = dp(activity, 10).toFloat()
+            setOnClickListener { activity.startActivity(Intent(activity, SyncSettingsActivity::class.java)) }
+        }
+        content.addView(
+            button,
+            FrameLayout.LayoutParams(dp(activity, 160), dp(activity, 48), Gravity.TOP or Gravity.END).apply {
+                topMargin = dp(activity, 70)
+                marginEnd = dp(activity, 18)
+            },
+        )
+    }
+
     private fun guardSettingsActivity(activity: Activity) {
         val operator = OperatorSessionRegistry.current(activity.applicationContext)
         if (operator?.isManager == true && operator.allows(RegisterPermission.SETTINGS)) {
@@ -136,6 +185,8 @@ private class CatalogLifecycleCallbacks : Application.ActivityLifecycleCallbacks
     companion object {
         private const val BUTTON_TAG = "register-catalog-settings"
         private const val DYNAMIC_BUTTON_TAG = "register-dynamic-catalog-settings"
+        private const val REVISION_EDITOR_BUTTON_TAG = "register-revision-editor"
+        private const val SYNC_BUTTON_TAG = "register-sync-foundation"
     }
 }
 

@@ -10,7 +10,7 @@
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("商品", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Navy)
-                        Text(CatalogProductRuntime.status(salesContext), fontSize = 12.sp, color = Color.Gray)
+                        Text(V11CatalogRuntime.status(salesContext), fontSize = 12.sp, color = Color.Gray)
                     }
                     OutlinedButton(
                         onClick = { currentPage = pages[(pageIndex - 1 + pages.size) % pages.size] },
