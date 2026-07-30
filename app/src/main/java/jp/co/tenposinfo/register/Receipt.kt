@@ -9,6 +9,8 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * 売上一覧に表示する不変の集計スナップショット。
@@ -238,11 +240,31 @@ class TcpEscPosPrinterGateway(
     }
 }
 
+/**
+ * 自動テストでは従来どおりメモリーへ保持する。
+ * Android実行時に有効なプリンター設定がある場合は、別スレッドで実機にも送信する。
+ */
 class MemoryPrinterGateway : PrinterGateway {
     val sentPayloads = mutableListOf<ByteArray>()
 
     override fun send(payload: ByteArray): Result<Unit> = runCatching {
         sentPayloads += payload.copyOf()
+        val configuration = PrinterConfigurationRegistry.current()
+        if (configuration?.usable == true) {
+            val executor = Executors.newSingleThreadExecutor()
+            try {
+                val future = executor.submit<Unit> {
+                    TcpEscPosPrinterGateway(
+                        host = configuration.host,
+                        port = configuration.port,
+                        timeoutMillis = configuration.timeoutMillis,
+                    ).send(payload).getOrThrow()
+                }
+                future.get((configuration.timeoutMillis + 2_000).toLong(), TimeUnit.MILLISECONDS)
+            } finally {
+                executor.shutdownNow()
+            }
+        }
     }
 }
 

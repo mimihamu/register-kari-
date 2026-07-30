@@ -14,12 +14,13 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * 販売画面の状態を変更せず、仕様上の［メニュー］導線を追加する。
- * v0.6では営業開始前・Z精算後の販売を画面上でブロックする。
+ * 販売画面の状態を変更せず、［メニュー］と［設定］の導線を追加する。
+ * 営業開始前・Z精算後は販売を画面上でブロックする。
  */
 class RegisterApplication : Application(), Application.ActivityLifecycleCallbacks {
     override fun onCreate() {
         super.onCreate()
+        PrinterConfigurationRegistry.reload(this)
         registerActivityLifecycleCallbacks(this)
     }
 
@@ -27,6 +28,7 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         if (activity !is MainActivity) return
         val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
         addManagementButton(activity, content)
+        addSettingsButton(activity, content)
         updateBusinessDayGate(activity, content)
     }
 
@@ -49,6 +51,29 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         ).apply {
             topMargin = dp(activity, 68)
             marginEnd = dp(activity, 12)
+        }
+        content.addView(button, params)
+    }
+
+    private fun addSettingsButton(activity: Activity, content: ViewGroup) {
+        if (content.findViewWithTag<View>(SETTINGS_BUTTON_TAG) != null) return
+        val button = Button(activity).apply {
+            tag = SETTINGS_BUTTON_TAG
+            text = "設定"
+            isAllCaps = false
+            textSize = 16f
+            setTextColor(Color.rgb(23, 63, 107))
+            setBackgroundColor(Color.WHITE)
+            elevation = dp(activity, 8).toFloat()
+            setOnClickListener { activity.startActivity(Intent(activity, AdminSettingsActivity::class.java)) }
+        }
+        val params = FrameLayout.LayoutParams(
+            dp(activity, 116),
+            dp(activity, 48),
+            Gravity.TOP or Gravity.END,
+        ).apply {
+            topMargin = dp(activity, 68)
+            marginEnd = dp(activity, 154)
         }
         content.addView(button, params)
     }
@@ -97,6 +122,17 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
             gravity = Gravity.CENTER_HORIZONTAL
             topMargin = dp(activity, 12)
         })
+        panel.addView(Button(activity).apply {
+            text = "各種設定"
+            isAllCaps = false
+            textSize = 17f
+            setTextColor(Color.rgb(23, 63, 107))
+            setBackgroundColor(Color.WHITE)
+            setOnClickListener { activity.startActivity(Intent(activity, AdminSettingsActivity::class.java)) }
+        }, LinearLayout.LayoutParams(dp(activity, 320), dp(activity, 52)).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            topMargin = dp(activity, 10)
+        })
         overlay.addView(panel, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -120,6 +156,7 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
 
     private companion object {
         const val MANAGEMENT_BUTTON_TAG = "register-management-menu"
+        const val SETTINGS_BUTTON_TAG = "register-settings-menu"
         const val BUSINESS_GATE_TAG = "register-business-day-gate"
     }
 }
