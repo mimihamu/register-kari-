@@ -1,0 +1,8 @@
+    val database = remember { RegisterDatabase(context.applicationContext) }
+    val authStore = remember { OperatorAuthenticationStore(context.applicationContext) }
+    var currentOperator by remember { mutableStateOf(OperatorSessionRegistry.current(context.applicationContext)) }
+    var screen by remember { mutableStateOf(if (currentOperator == null) AppScreen.DIAGNOSTIC else AppScreen.SALES) }
+    var operatorName by remember { mutableStateOf(currentOperator?.name ?: "未選択") }
+    var loginMessage by remember { mutableStateOf<String?>(null) }
+    var accessMessage by remember { mutableStateOf<String?>(null) }
+    val products = remember { database.loadProducts() }

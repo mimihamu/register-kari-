@@ -14,72 +14,159 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * 販売画面の状態を変更せず、［メニュー］と［設定］の導線を追加する。
- * 営業開始前・Z精算後は販売を画面上でブロックする。
+ * 販売画面へ管理導線・権限制御・営業日制御を重ねるアプリケーション層。
+ * v0.8では認証済み担当者の権限だけを有効にし、印刷Workerもここで起動する。
  */
 class RegisterApplication : Application(), Application.ActivityLifecycleCallbacks {
     override fun onCreate() {
         super.onCreate()
         PrinterConfigurationRegistry.reload(this)
+        AutomaticPrintScheduler.schedule(this)
         registerActivityLifecycleCallbacks(this)
     }
 
     override fun onActivityResumed(activity: Activity) {
-        if (activity !is MainActivity) return
+        when (activity) {
+            is MainActivity -> updateMainActivity(activity)
+            is AdvancedOperationsActivity -> guardManagementActivity(activity)
+            is AdminSettingsActivity -> guardSettingsActivity(activity)
+        }
+    }
+
+    private fun updateMainActivity(activity: Activity) {
         val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
-        addManagementButton(activity, content)
-        addSettingsButton(activity, content)
-        updateBusinessDayGate(activity, content)
+        val operator = OperatorSessionRegistry.current(activity.applicationContext)
+        if (operator != null) OperatorSessionRegistry.touch(activity.applicationContext)
+        updateActionButtons(activity, content, operator)
+        updateSalesPermissionGate(activity, content, operator)
+        updateBusinessDayGate(activity, content, operator)
+        AutomaticPrintScheduler.enqueueNow(activity.applicationContext)
     }
 
-    private fun addManagementButton(activity: Activity, content: ViewGroup) {
-        if (content.findViewWithTag<View>(MANAGEMENT_BUTTON_TAG) != null) return
+    private fun updateActionButtons(
+        activity: Activity,
+        content: ViewGroup,
+        operator: AuthenticatedOperator?,
+    ) {
+        val managementAllowed = operator?.permissions?.any {
+            it == RegisterPermission.VIEW_SALES ||
+                it == RegisterPermission.CASH_MOVEMENT ||
+                it == RegisterPermission.SETTLEMENT ||
+                it == RegisterPermission.REVERSAL
+        } == true
+        ensureActionButton(
+            activity = activity,
+            content = content,
+            tagValue = MANAGEMENT_BUTTON_TAG,
+            visible = managementAllowed,
+            text = "レジ管理",
+            topMargin = 68,
+            endMargin = 12,
+            filled = true,
+        ) { activity.startActivity(Intent(activity, OperationsActivity::class.java)) }
+
+        ensureActionButton(
+            activity = activity,
+            content = content,
+            tagValue = SETTINGS_BUTTON_TAG,
+            visible = operator?.allows(RegisterPermission.SETTINGS) == true,
+            text = "設定",
+            topMargin = 68,
+            endMargin = 154,
+            filled = false,
+        ) { activity.startActivity(Intent(activity, AdminSettingsActivity::class.java)) }
+    }
+
+    private fun ensureActionButton(
+        activity: Activity,
+        content: ViewGroup,
+        tagValue: String,
+        visible: Boolean,
+        text: String,
+        topMargin: Int,
+        endMargin: Int,
+        filled: Boolean,
+        action: () -> Unit,
+    ) {
+        val existing = content.findViewWithTag<View>(tagValue)
+        if (!visible) {
+            if (existing != null) content.removeView(existing)
+            return
+        }
+        if (existing != null) return
         val button = Button(activity).apply {
-            tag = MANAGEMENT_BUTTON_TAG
-            text = "メニュー"
+            tag = tagValue
+            this.text = text
             isAllCaps = false
             textSize = 16f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.rgb(23, 63, 107))
+            if (filled) {
+                setTextColor(Color.WHITE)
+                setBackgroundColor(Color.rgb(23, 63, 107))
+            } else {
+                setTextColor(Color.rgb(23, 63, 107))
+                setBackgroundColor(Color.WHITE)
+            }
             elevation = dp(activity, 8).toFloat()
-            setOnClickListener { activity.startActivity(Intent(activity, OperationsActivity::class.java)) }
+            setOnClickListener { action() }
         }
-        val params = FrameLayout.LayoutParams(
-            dp(activity, 132),
-            dp(activity, 48),
-            Gravity.TOP or Gravity.END,
-        ).apply {
-            topMargin = dp(activity, 68)
-            marginEnd = dp(activity, 12)
-        }
-        content.addView(button, params)
+        content.addView(
+            button,
+            FrameLayout.LayoutParams(dp(activity, if (filled) 132 else 116), dp(activity, 48), Gravity.TOP or Gravity.END).apply {
+                this.topMargin = dp(activity, topMargin)
+                marginEnd = dp(activity, endMargin)
+            },
+        )
     }
 
-    private fun addSettingsButton(activity: Activity, content: ViewGroup) {
-        if (content.findViewWithTag<View>(SETTINGS_BUTTON_TAG) != null) return
-        val button = Button(activity).apply {
-            tag = SETTINGS_BUTTON_TAG
-            text = "設定"
-            isAllCaps = false
-            textSize = 16f
-            setTextColor(Color.rgb(23, 63, 107))
-            setBackgroundColor(Color.WHITE)
-            elevation = dp(activity, 8).toFloat()
-            setOnClickListener { activity.startActivity(Intent(activity, AdminSettingsActivity::class.java)) }
+    private fun updateSalesPermissionGate(
+        activity: Activity,
+        content: ViewGroup,
+        operator: AuthenticatedOperator?,
+    ) {
+        val existing = content.findViewWithTag<View>(SALES_PERMISSION_GATE_TAG)
+        if (operator == null || operator.allows(RegisterPermission.SALES)) {
+            if (existing != null) content.removeView(existing)
+            return
         }
-        val params = FrameLayout.LayoutParams(
-            dp(activity, 116),
-            dp(activity, 48),
-            Gravity.TOP or Gravity.END,
-        ).apply {
-            topMargin = dp(activity, 68)
-            marginEnd = dp(activity, 154)
+        if (existing != null) return
+
+        val buttons = mutableListOf<Pair<String, () -> Unit>>()
+        if (operator.permissions.any {
+                it == RegisterPermission.VIEW_SALES || it == RegisterPermission.CASH_MOVEMENT ||
+                    it == RegisterPermission.SETTLEMENT || it == RegisterPermission.REVERSAL
+            }
+        ) {
+            buttons += "レジ管理を開く" to { activity.startActivity(Intent(activity, OperationsActivity::class.java)) }
         }
-        content.addView(button, params)
+        if (operator.allows(RegisterPermission.SETTINGS)) {
+            buttons += "各種設定を開く" to { activity.startActivity(Intent(activity, AdminSettingsActivity::class.java)) }
+        }
+        buttons += "担当者を切替" to {
+            OperatorSessionRegistry.logout(activity.applicationContext)
+            activity.recreate()
+        }
+        content.addView(
+            createGateOverlay(
+                activity = activity,
+                tagValue = SALES_PERMISSION_GATE_TAG,
+                title = "販売権限がありません",
+                message = "${operator.name}には販売操作の権限がありません。許可された管理機能を使用するか、担当者を切り替えてください。",
+                buttons = buttons,
+            ),
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
+        )
     }
 
-    private fun updateBusinessDayGate(activity: Activity, content: ViewGroup) {
+    private fun updateBusinessDayGate(
+        activity: Activity,
+        content: ViewGroup,
+        operator: AuthenticatedOperator?,
+    ) {
         val existing = content.findViewWithTag<View>(BUSINESS_GATE_TAG)
+        if (operator == null || !operator.allows(RegisterPermission.SALES)) {
+            if (existing != null) content.removeView(existing)
+            return
+        }
         val open = runCatching { AdvancedOperationsStore.isBusinessOpen(activity.applicationContext) }.getOrDefault(false)
         if (open) {
             if (existing != null) content.removeView(existing)
@@ -87,10 +174,77 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         }
         if (existing != null) return
 
+        val buttons = mutableListOf<Pair<String, () -> Unit>>()
+        if (operator.allows(RegisterPermission.SETTLEMENT)) {
+            buttons += "営業開始・終了画面へ" to { activity.startActivity(Intent(activity, OperationsActivity::class.java)) }
+        }
+        if (operator.allows(RegisterPermission.SETTINGS)) {
+            buttons += "各種設定" to { activity.startActivity(Intent(activity, AdminSettingsActivity::class.java)) }
+        }
+        buttons += "担当者を切替" to {
+            OperatorSessionRegistry.logout(activity.applicationContext)
+            activity.recreate()
+        }
+        content.addView(
+            createGateOverlay(
+                activity = activity,
+                tagValue = BUSINESS_GATE_TAG,
+                title = "営業開始が必要です",
+                message = "開始釣銭を登録して営業を開始してください。\nZ精算後は営業終了を完了するまで販売できません。",
+                buttons = buttons,
+            ),
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
+        )
+    }
+
+    private fun guardManagementActivity(activity: Activity) {
+        val operator = OperatorSessionRegistry.current(activity.applicationContext)
+        val allowed = operator?.permissions?.any {
+            it == RegisterPermission.VIEW_SALES || it == RegisterPermission.CASH_MOVEMENT ||
+                it == RegisterPermission.SETTLEMENT || it == RegisterPermission.REVERSAL
+        } == true
+        if (allowed) {
+            OperatorSessionRegistry.touch(activity.applicationContext)
+            return
+        }
+        installActivityGate(activity, "レジ管理権限がありません")
+    }
+
+    private fun guardSettingsActivity(activity: Activity) {
+        val operator = OperatorSessionRegistry.current(activity.applicationContext)
+        if (operator?.isManager == true && operator.allows(RegisterPermission.SETTINGS)) {
+            OperatorSessionRegistry.touch(activity.applicationContext)
+            return
+        }
+        installActivityGate(activity, "各種設定は責任者権限が必要です")
+    }
+
+    private fun installActivityGate(activity: Activity, message: String) {
+        val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
+        if (content.findViewWithTag<View>(ACTIVITY_PERMISSION_GATE_TAG) != null) return
+        content.addView(
+            createGateOverlay(
+                activity = activity,
+                tagValue = ACTIVITY_PERMISSION_GATE_TAG,
+                title = "アクセスできません",
+                message = message,
+                buttons = listOf("閉じる" to { activity.finish() }),
+            ),
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
+        )
+    }
+
+    private fun createGateOverlay(
+        activity: Activity,
+        tagValue: String,
+        title: String,
+        message: String,
+        buttons: List<Pair<String, () -> Unit>>,
+    ): FrameLayout {
         val overlay = FrameLayout(activity).apply {
-            tag = BUSINESS_GATE_TAG
-            setBackgroundColor(Color.argb(238, 244, 247, 250))
-            elevation = dp(activity, 24).toFloat()
+            tag = tagValue
+            setBackgroundColor(Color.argb(242, 244, 247, 250))
+            elevation = dp(activity, 28).toFloat()
         }
         val panel = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
@@ -100,48 +254,32 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
             elevation = dp(activity, 10).toFloat()
         }
         panel.addView(TextView(activity).apply {
-            text = "営業開始が必要です"
+            text = title
             textSize = 30f
             setTextColor(Color.rgb(23, 63, 107))
             gravity = Gravity.CENTER
-        }, LinearLayout.LayoutParams(dp(activity, 520), dp(activity, 58)))
+        }, LinearLayout.LayoutParams(dp(activity, 620), dp(activity, 58)))
         panel.addView(TextView(activity).apply {
-            text = "開始釣銭を登録して営業を開始してください。\nZ精算後は営業終了を完了するまで販売できません。"
+            text = message
             textSize = 17f
             setTextColor(Color.DKGRAY)
             gravity = Gravity.CENTER
-        }, LinearLayout.LayoutParams(dp(activity, 620), dp(activity, 88)))
-        panel.addView(Button(activity).apply {
-            text = "営業開始・終了画面へ"
-            isAllCaps = false
-            textSize = 18f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.rgb(25, 118, 185))
-            setOnClickListener { activity.startActivity(Intent(activity, OperationsActivity::class.java)) }
-        }, LinearLayout.LayoutParams(dp(activity, 320), dp(activity, 58)).apply {
-            gravity = Gravity.CENTER_HORIZONTAL
-            topMargin = dp(activity, 12)
-        })
-        panel.addView(Button(activity).apply {
-            text = "各種設定"
-            isAllCaps = false
-            textSize = 17f
-            setTextColor(Color.rgb(23, 63, 107))
-            setBackgroundColor(Color.WHITE)
-            setOnClickListener { activity.startActivity(Intent(activity, AdminSettingsActivity::class.java)) }
-        }, LinearLayout.LayoutParams(dp(activity, 320), dp(activity, 52)).apply {
-            gravity = Gravity.CENTER_HORIZONTAL
-            topMargin = dp(activity, 10)
-        })
-        overlay.addView(panel, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            Gravity.CENTER,
-        ))
-        content.addView(overlay, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT,
-        ))
+        }, LinearLayout.LayoutParams(dp(activity, 680), dp(activity, 96)))
+        buttons.forEachIndexed { index, (label, action) ->
+            panel.addView(Button(activity).apply {
+                text = label
+                isAllCaps = false
+                textSize = 17f
+                setTextColor(if (index == 0) Color.WHITE else Color.rgb(23, 63, 107))
+                setBackgroundColor(if (index == 0) Color.rgb(25, 118, 185) else Color.WHITE)
+                setOnClickListener { action() }
+            }, LinearLayout.LayoutParams(dp(activity, 340), dp(activity, 54)).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                topMargin = dp(activity, 10)
+            })
+        }
+        overlay.addView(panel, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        return overlay
     }
 
     override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit
@@ -158,5 +296,7 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         const val MANAGEMENT_BUTTON_TAG = "register-management-menu"
         const val SETTINGS_BUTTON_TAG = "register-settings-menu"
         const val BUSINESS_GATE_TAG = "register-business-day-gate"
+        const val SALES_PERMISSION_GATE_TAG = "register-sales-permission-gate"
+        const val ACTIVITY_PERMISSION_GATE_TAG = "register-activity-permission-gate"
     }
 }
