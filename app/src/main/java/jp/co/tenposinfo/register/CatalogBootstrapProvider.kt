@@ -53,9 +53,7 @@ private class CatalogLifecycleCallbacks : Application.ActivityLifecycleCallbacks
                 installRevisionEditorButton(activity)
                 installSyncButton(activity)
             }
-            is MenuRevisionEditorActivity,
-            is SyncSettingsActivity,
-            -> guardSettingsActivity(activity)
+            is MenuRevisionEditorActivity, is SyncSettingsActivity -> guardSettingsActivity(activity)
         }
     }
 
