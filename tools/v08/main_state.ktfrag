@@ -5,6 +5,13 @@
     var operatorName by remember { mutableStateOf(currentOperator?.name ?: "未選択") }
     var loginMessage by remember { mutableStateOf<String?>(null) }
     var accessMessage by remember { mutableStateOf<String?>(null) }
-    val products = remember {
+    var catalogEpoch by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(15_000L)
+            catalogEpoch++
+        }
+    }
+    val products = remember(catalogEpoch) {
         CatalogProductRuntime.visibleProducts(context.applicationContext, database.loadProducts())
     }
