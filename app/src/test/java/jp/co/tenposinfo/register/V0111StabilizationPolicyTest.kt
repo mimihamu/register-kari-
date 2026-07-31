@@ -1,5 +1,6 @@
 package jp.co.tenposinfo.register
 
+import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -15,6 +16,16 @@ class V0111StabilizationPolicyTest {
         val resolved = BusinessSessionAttributionPolicy.resolve(8_000L, sessions)
         assertEquals(30L, resolved?.id)
         assertEquals("2026-07-30", resolved?.businessDate)
+    }
+
+    @Test
+    fun businessScreenBeforeOpeningUsesZeroSessionFallback() {
+        val date = LocalDate.of(2026, 7, 31)
+        val fallback = BusinessSessionDisplayFallback.forDate(date, date)
+        assertEquals(0L, fallback?.id)
+        assertEquals("2026-07-31", fallback?.businessDate)
+        assertEquals(0L, fallback?.openingCash)
+        assertEquals(null, BusinessSessionDisplayFallback.forDate(date.minusDays(1), date))
     }
 
     @Test
