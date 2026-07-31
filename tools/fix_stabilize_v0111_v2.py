@@ -93,6 +93,34 @@ replace(
     "outbox transaction finish",
 )
 
+replace(
+    """    val taxCategory: TaxCategory,
+    val taxKey: String,
+    val taxLabel: String,
+    val taxRatePercent: Int,
+    val taxIncluded: Boolean,
+    val taxable: Boolean,
+    val reduced: Boolean,
+    val taxSymbol: String,
+    val originalQuantity: Int,""",
+    """    val taxCategory: TaxCategory,
+    val taxKey: String = taxCategory.name,
+    val taxLabel: String = taxCategory.displayName,
+    val taxRatePercent: Int = taxCategory.ratePercent,
+    val taxIncluded: Boolean = taxCategory.taxIncluded,
+    val taxable: Boolean = taxCategory.taxable,
+    val reduced: Boolean = taxCategory.symbol.contains(\"※\"),
+    val taxSymbol: String = taxCategory.symbol,
+    val originalQuantity: Int,""",
+    "return-line compatibility defaults",
+)
+
+replace(
+    """            '    val permissions: Set<RegisterPermission>,\\n    val revision: Long,\\n) {',""",
+    """            '    val permissions: Set<RegisterPermission>,\\n    val revision: Long = 0L,\\n) {',""",
+    "operator revision compatibility default",
+)
+
 path.write_text(text, encoding="utf-8")
 Path(__file__).with_name("fix_stabilize_v0111.py").unlink(missing_ok=True)
 Path(__file__).unlink()
