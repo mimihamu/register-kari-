@@ -477,12 +477,12 @@ private fun PrinterSettingsScreen(
     fun executeTest(kind: String, action: suspend (PrinterConfiguration) -> Result<Unit>) {
         val config = currentConfiguration()
         testing = true
-        message = "$kindを実行しています…"
+        message = "${kind}を実行しています…"
         scope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { action(config).getOrThrow() } }
             message = result.fold(
-                onSuccess = { "$kindを送信しました" },
-                onFailure = { "$kind失敗：${it.message ?: it.javaClass.simpleName}" },
+                onSuccess = { "${kind}を送信しました" },
+                onFailure = { "${kind}失敗：${it.message ?: it.javaClass.simpleName}" },
             )
             withContext(Dispatchers.IO) {
                 if (kind == "ドロアテスト") {
