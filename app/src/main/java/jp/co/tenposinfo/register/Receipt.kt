@@ -1,9 +1,7 @@
 package jp.co.tenposinfo.register
 
-import java.io.ByteArrayOutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
-import java.nio.charset.Charset
 import java.text.NumberFormat
 import java.time.Instant
 import java.time.ZoneId
@@ -205,17 +203,21 @@ object ReceiptRenderer {
 }
 
 object EscPosEncoder {
-    private val ms932: Charset = Charset.forName("MS932")
-
-    fun encode(data: ReceiptData, paper: ReceiptPaper): ByteArray {
-        val output = ByteArrayOutputStream()
-        output.write(byteArrayOf(0x1B, 0x40)) // ESC @ initialize
-        output.write(byteArrayOf(0x1B, 0x74, 0x01)) // code table: CP932 compatible setting
-        output.write(byteArrayOf(0x1B, 0x61, 0x00)) // left align
-        output.write(ReceiptRenderer.render(data, paper).toByteArray(ms932))
-        output.write(byteArrayOf(0x0A, 0x0A, 0x0A))
-        output.write(byteArrayOf(0x1D, 0x56, 0x42, 0x00)) // partial cut
-        return output.toByteArray()
+    fun encode(
+        data: ReceiptData,
+        paper: ReceiptPaper,
+        configuration: PrinterConfiguration = PrinterConfigurationRegistry.current() ?: PrinterConfiguration(),
+    ): ByteArray {
+        val openDrawer = configuration.drawerEnabled &&
+            configuration.drawerOpenOnCashSale &&
+            !data.reprint &&
+            data.payments.any { it.method == PaymentMethod.CASH }
+        return PrinterCommandEncoder.encodeText(
+            text = ReceiptRenderer.render(data, paper),
+            configuration = configuration,
+            openDrawer = openDrawer,
+            appendCut = true,
+        )
     }
 }
 
