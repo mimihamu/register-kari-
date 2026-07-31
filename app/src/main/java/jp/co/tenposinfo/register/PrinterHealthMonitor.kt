@@ -1,6 +1,9 @@
 package jp.co.tenposinfo.register
 
 import android.content.Context
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 enum class PrinterHealthLevel {
     CHECKING,
@@ -100,5 +103,25 @@ object PrinterHealthPolicy {
         PrinterHealthLevel.READY,
         PrinterHealthLevel.DISABLED,
         -> false
+    }
+}
+
+object PrinterHealthUiPolicy {
+    const val STALE_AFTER_MILLIS = 30_000L
+
+    fun shouldPoll(isSalesScreenVisible: Boolean, isActivityResumed: Boolean): Boolean =
+        isSalesScreenVisible && isActivityResumed
+
+    fun isStale(snapshot: PrinterHealthSnapshot, nowMillis: Long): Boolean =
+        snapshot.checkedAt <= 0L || nowMillis - snapshot.checkedAt >= STALE_AFTER_MILLIS
+
+    fun checkedAtLabel(snapshot: PrinterHealthSnapshot, nowMillis: Long): String {
+        if (snapshot.checkedAt <= 0L) return "最終確認：未確認"
+        val checkedTime = SimpleDateFormat("HH:mm:ss", Locale.JAPAN).format(Date(snapshot.checkedAt))
+        return if (isStale(snapshot, nowMillis)) {
+            "最終確認：$checkedTime（古い情報）"
+        } else {
+            "最終確認：$checkedTime"
+        }
     }
 }
