@@ -62,14 +62,18 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
     private val salesDatabase = RegisterDatabase(applicationContext)
     private val documentStore = AdvancedOperationsStore(applicationContext)
     private val settingsStore = AdminSettingsStore(applicationContext)
+    private val monitoringStore = PrinterMonitoringStore(applicationContext)
 
     override fun close() {
+        monitoringStore.close()
         settingsStore.close()
         documentStore.close()
         salesDatabase.close()
     }
 
     fun loadConfiguration(): PrinterConfiguration = settingsStore.loadPrinterConfiguration()
+
+    fun loadRuntimeSettings(): PrinterRuntimeSettings = monitoringStore.loadSettings()
 
     fun loadJobs(limitPerType: Int = 200): List<UnifiedPrintJob> {
         val saleJobs = salesDatabase.listPrintJobs(limitPerType).map { job ->
@@ -115,8 +119,15 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
         )
     }
 
-    fun queryPrinterStatus(configuration: PrinterConfiguration = loadConfiguration()): Result<PrinterRealtimeStatus> =
-        TcpPrinterStatusClient(configuration).query()
+    fun queryPrinterStatus(
+        configuration: PrinterConfiguration = loadConfiguration(),
+        checkedBy: String = "印刷キュー",
+    ): Result<PrinterRealtimeStatus> {
+        val result = TcpPrinterStatusClient(configuration).query()
+        result.onSuccess { monitoringStore.recordStatus(configuration, it, checkedBy) }
+            .onFailure { monitoringStore.recordFailure(configuration, it, checkedBy) }
+        return result
+    }
 
     fun retry(job: UnifiedPrintJob) {
         when (job.type) {
@@ -133,7 +144,7 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
             return Result.failure(IllegalStateException("有効なプリンター接続設定がありません"))
         }
         if (requireHealthyPrinter) {
-            val status = queryPrinterStatus(configuration).getOrElse { error ->
+            val status = queryPrinterStatus(configuration, checkedBy = "安全印刷").getOrElse { error ->
                 return Result.failure(
                     IllegalStateException(
                         "安全印刷前の状態確認に失敗しました：${error.message ?: error.javaClass.simpleName}",
