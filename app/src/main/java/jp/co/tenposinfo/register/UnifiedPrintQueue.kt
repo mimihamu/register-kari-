@@ -129,7 +129,9 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
 
     fun print(job: UnifiedPrintJob, requireHealthyPrinter: Boolean): Result<String> {
         val configuration = loadConfiguration()
-        require(configuration.usable) { "有効なプリンター接続設定がありません" }
+        if (!configuration.usable) {
+            return Result.failure(IllegalStateException("有効なプリンター接続設定がありません"))
+        }
         if (requireHealthyPrinter) {
             val status = queryPrinterStatus(configuration).getOrElse { error ->
                 return Result.failure(
