@@ -60,6 +60,16 @@
             android:exported="false"
             android:screenOrientation="landscape" />
 
+        <activity
+            android:name=".PrinterStatusActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".UnifiedPrintQueueActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
         <!--
           MainActivityは従来どおりOperationsActivityを明示起動する。
           activity-aliasで統合業務画面へ安全に差し替える。
