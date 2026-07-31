@@ -26,6 +26,25 @@ object BusinessSessionAttributionPolicy {
             .maxByOrNull { it.openedAt }
 }
 
+/**
+ * 営業開始前の管理画面表示専用フォールバック。
+ * 実在する営業セッションIDと衝突しない0を使用し、売上・入出金集計を0件として表示する。
+ */
+object BusinessSessionDisplayFallback {
+    fun forDate(date: LocalDate, today: LocalDate = LocalDate.now()): BusinessSessionWindow? =
+        if (date == today) {
+            BusinessSessionWindow(
+                id = 0L,
+                businessDate = date.toString(),
+                openedAt = 0L,
+                closedAt = null,
+                openingCash = 0L,
+            )
+        } else {
+            null
+        }
+}
+
 object SchemaMigration {
     fun hasColumn(db: SQLiteDatabase, table: String, column: String): Boolean =
         db.rawQuery("PRAGMA table_info($table)", null).use { cursor ->
@@ -99,18 +118,22 @@ object BusinessSessionSchema {
 
     fun sessionForDate(db: SQLiteDatabase, date: LocalDate): BusinessSessionWindow? {
         ensure(db)
-        if (!SchemaMigration.tableExists(db, "business_sessions")) return null
+        if (!SchemaMigration.tableExists(db, "business_sessions")) return BusinessSessionDisplayFallback.forDate(date)
         return db.rawQuery(
             "SELECT id, business_date, opened_at, closed_at, opening_cash FROM business_sessions WHERE business_date=? ORDER BY opened_at DESC LIMIT 1",
             arrayOf(date.toString()),
         ).use { cursor ->
-            if (!cursor.moveToFirst()) null else BusinessSessionWindow(
-                id = cursor.getLong(0),
-                businessDate = cursor.getString(1),
-                openedAt = cursor.getLong(2),
-                closedAt = if (cursor.isNull(3)) null else cursor.getLong(3),
-                openingCash = cursor.getLong(4),
-            )
+            if (!cursor.moveToFirst()) {
+                BusinessSessionDisplayFallback.forDate(date)
+            } else {
+                BusinessSessionWindow(
+                    id = cursor.getLong(0),
+                    businessDate = cursor.getString(1),
+                    openedAt = cursor.getLong(2),
+                    closedAt = if (cursor.isNull(3)) null else cursor.getLong(3),
+                    openingCash = cursor.getLong(4),
+                )
+            }
         }
     }
 
