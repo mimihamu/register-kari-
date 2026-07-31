@@ -21,6 +21,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
     null,
     DATABASE_VERSION,
 ) {
+    private val applicationContext = context.applicationContext
+
     override fun onCreate(db: SQLiteDatabase) {
         createProductsTable(db)
         createCartTable(db)
@@ -94,7 +96,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         ).use { cursor ->
             val result = mutableListOf<CartItem>()
             while (cursor.moveToNext()) result += cursor.toCartItem()
-            return result
+            return LineTaxSnapshotStore.apply(readableDatabase, LineTaxSnapshotStore.SCOPE_CART, 0L, result)
         }
     }
 
@@ -104,6 +106,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             items.forEachIndexed { index, item ->
                 insertOrThrow("cart_items", null, item.toContentValues().apply { put("line_no", index + 1) })
             }
+            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_CART, 0L, items)
         }
     }
 
@@ -126,6 +129,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     item.toContentValues().apply { put("ticket_id", ticketId) },
                 )
             }
+            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_HELD, ticketId, items)
             ticketId
         }
     }
@@ -170,12 +174,15 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         ).use { cursor ->
             val result = mutableListOf<CartItem>()
             while (cursor.moveToNext()) result += cursor.toCartItem()
-            return result
+            return LineTaxSnapshotStore.apply(readableDatabase, LineTaxSnapshotStore.SCOPE_HELD, ticketId, result)
         }
     }
 
     fun deleteHeldTicket(ticketId: Long) {
-        writableDatabase.delete("held_tickets", "id = ?", arrayOf(ticketId.toString()))
+        writableDatabase.runInTransaction {
+            delete("held_tickets", "id = ?", arrayOf(ticketId.toString()))
+            delete("line_tax_snapshots", "scope = ? AND owner_id = ?", arrayOf(LineTaxSnapshotStore.SCOPE_HELD, ticketId.toString()))
+        }
     }
 
     /**
@@ -188,8 +195,11 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         paperWidthMm: Int = 80,
     ): Long {
         require(items.isNotEmpty()) { "Cannot save an empty sale" }
+        TaxEngine.validateMixedTax(items, MixedTaxPolicy.BLOCK)
         val summary = TaxEngine.calculate(items)
         require(paymentState.remaining(summary.grossAmount) == 0L) { "Payment is incomplete" }
+        BusinessSessionSchema.ensure(writableDatabase)
+        val businessLink = BusinessSessionSchema.current(writableDatabase)
         val createdAt = System.currentTimeMillis()
         return writableDatabase.runInTransactionWithResult {
             val saleId = insertOrThrow(
@@ -203,6 +213,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     put("total_amount", summary.grossAmount)
                     put("deposit_amount", paymentState.allocations.sumOf { it.receivedAmount })
                     put("change_amount", paymentState.changeAmount)
+                    businessLink.sessionId?.let { put("business_session_id", it) }
+                    put("business_date", businessLink.businessDate)
                     put("created_at", createdAt)
                     put("print_count", 0)
                 },
@@ -237,6 +249,16 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 )
             }
             insertPrintJob(this, saleId, paperWidthMm, createdAt)
+            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_SALE, saleId, items)
+            JournalOutboxSchema.recordSale(
+                db = this,
+                saleId = saleId,
+                totalAmount = summary.grossAmount,
+                taxAmount = summary.taxAmount,
+                createdAt = createdAt,
+                businessDate = businessLink.businessDate,
+                folderName = DriveSyncSettingsStore.load(applicationContext).folderName,
+            )
             saleId
         }
     }
@@ -344,7 +366,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             }
             result
         }
-        return SaleDetailRecord(summary, items, payments, TaxEngine.calculate(items))
+        val snapshotItems = LineTaxSnapshotStore.apply(readableDatabase, LineTaxSnapshotStore.SCOPE_SALE, saleId, items)
+        return SaleDetailRecord(summary, snapshotItems, payments, TaxEngine.calculate(snapshotItems))
     }
 
     fun enqueueReprint(saleId: Long, paperWidthMm: Int): Long {

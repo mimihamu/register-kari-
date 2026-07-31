@@ -281,11 +281,10 @@ class MenuRevisionEditorStore(context: Context) : AutoCloseable {
         ButtonLayoutPolicy.validate(product.pageNo, product.slotNo)
         val color = product.buttonColor.uppercase()
         require(color in BUTTON_COLORS) { "ボタン色が不正です" }
-        val taxRuleExists = db.rawQuery(
-            "SELECT COUNT(*) FROM dynamic_tax_rules WHERE tax_key = ? AND enabled = 1",
-            arrayOf(product.taxKey),
-        ).use { cursor -> cursor.moveToFirst() && cursor.getInt(0) == 1 }
-        require(taxRuleExists) { "有効な税区分を選択してください" }
+        val selectedTaxRule = DynamicCatalogStore(applicationContext).use { store ->
+            store.listTaxRules().firstOrNull { it.key == product.taxKey && it.enabled }
+        } ?: error("有効な税区分を選択してください")
+        val selectedTax = TaxSnapshot.from(selectedTaxRule)
 
         db.transaction {
             val old = query(
@@ -330,7 +329,13 @@ class MenuRevisionEditorStore(context: Context) : AutoCloseable {
                     put("enabled", if (product.enabled) 1 else 0)
                     put("unit_price", product.unitPrice)
                     put("legacy_tax_category", legacyCategory.name)
-                    put("tax_key", product.taxKey)
+                    put("tax_key", selectedTax.key)
+                    put("tax_label", selectedTax.label)
+                    put("tax_rate_percent", selectedTax.ratePercent)
+                    put("tax_included", if (selectedTax.taxIncluded) 1 else 0)
+                    put("taxable", if (selectedTax.taxable) 1 else 0)
+                    put("reduced", if (selectedTax.reduced) 1 else 0)
+                    put("tax_symbol", selectedTax.symbol)
                     put("button_color", color)
                     put("page_no", product.pageNo)
                     put("slot_no", product.slotNo)

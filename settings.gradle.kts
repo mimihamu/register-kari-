@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "REGISTER-kari"
+rootProject.name = "つぐレジ"
 include(":app")
