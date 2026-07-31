@@ -3,44 +3,16 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val generatedV010Dir = layout.buildDirectory.dir("generated/source/v010/main")
-val generateV010Sources = tasks.register<Exec>("generateV010Sources") {
-    val script = rootProject.file("tools/generate_v010.py")
-    val sourceRoot = file("src/main/java")
-    val fragments = rootProject.fileTree("tools/v08")
-    inputs.file(script)
-    inputs.dir(sourceRoot)
-    inputs.files(fragments)
-    outputs.dir(generatedV010Dir)
-    commandLine(
-        "python3",
-        script.absolutePath,
-        projectDir.absolutePath,
-        generatedV010Dir.get().asFile.absolutePath,
-    )
-    doLast {
-        val generatedFile = generatedV010Dir.get().asFile
-            .resolve("jp/co/tenposinfo/register/DynamicCatalogRuntime.kt")
-        val source = generatedFile.readText()
-        generatedFile.writeText(
-            source.replace(
-                "error(\"${'$'}labelはyyyy-MM-dd形式です\")",
-                "error(\"${'$'}{label}はyyyy-MM-dd形式です\")",
-            ),
-        )
-    }
-}
-
 android {
     namespace = "jp.co.tenposinfo.register"
     compileSdk = 36
 
     defaultConfig {
         applicationId = "jp.co.tenposinfo.register"
-        minSdk = 31
+        minSdk = 26
         targetSdk = 36
-        versionCode = 11
-        versionName = "0.11.0-dev"
+        versionCode = 14
+        versionName = "0.11.1-dev.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -65,20 +37,12 @@ android {
         buildConfig = true
     }
 
-    sourceSets {
-        getByName("main") {
-            java.setSrcDirs(listOf(generatedV010Dir.get().asFile))
-        }
-    }
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
 }
 
-tasks.matching { it.name == "preBuild" }.configureEach {
-    dependsOn(generateV010Sources)
-}
 
 dependencies {
     implementation("androidx.core:core-ktx:1.17.0")

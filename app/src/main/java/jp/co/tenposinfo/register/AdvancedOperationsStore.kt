@@ -4,7 +4,6 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import java.time.LocalDate
-import java.time.ZoneId
 
 enum class BusinessSessionStatus(val displayName: String) {
     OPEN("営業中"),
@@ -48,6 +47,13 @@ data class ReturnLineRecord(
     val productName: String,
     val unitPrice: Long,
     val taxCategory: TaxCategory,
+    val taxKey: String = taxCategory.name,
+    val taxLabel: String = taxCategory.displayName,
+    val taxRatePercent: Int = taxCategory.ratePercent,
+    val taxIncluded: Boolean = taxCategory.taxIncluded,
+    val taxable: Boolean = taxCategory.taxable,
+    val reduced: Boolean = taxCategory.symbol.contains("※"),
+    val taxSymbol: String = taxCategory.symbol,
     val originalQuantity: Int,
     val originalDiscount: Long,
     val note: String,
@@ -64,19 +70,18 @@ data class ReturnLineRecord(
         } else {
             (originalDiscount * quantity / originalQuantity).coerceAtMost(remainingDiscount)
         }
-        return CartItem(
-            product = Product(
-                id = productId,
-                name = productName,
-                unitPrice = unitPrice,
-                taxCategory = taxCategory,
-                displayOrder = saleItemId.toInt(),
-            ),
-            quantity = quantity,
-            unitPrice = unitPrice,
-            discountAmount = allocatedDiscount,
-            note = note,
+        val product = TaxSnapshot(
+            key = taxKey,
+            label = taxLabel,
+            ratePercent = taxRatePercent,
+            taxIncluded = taxIncluded,
+            taxable = taxable,
+            reduced = reduced,
+            symbol = taxSymbol,
+        ).applyTo(
+            Product(productId, productName, unitPrice, taxCategory, saleItemId.toInt()),
         )
+        return CartItem(product, quantity, unitPrice, allocatedDiscount, note)
     }
 }
 
@@ -240,22 +245,29 @@ class AdvancedOperationsStore(context: Context) {
     }
 
     fun dailySummary(date: LocalDate = activeSession()?.let { LocalDate.parse(it.businessDate) } ?: LocalDate.now()): AdvancedDailySummary {
-        val (from, to) = dayBounds(date)
+        BusinessSessionSchema.ensure(db)
+        val session = BusinessSessionSchema.sessionForDate(db, date)
+            ?: activeSession()?.takeIf { it.businessDate == date.toString() }?.let {
+                BusinessSessionWindow(it.id, it.businessDate, it.openedAt, it.closedAt, it.openingCash)
+            }
+            ?: error("営業日 ${date} の営業セッションが見つかりません")
+        val sessionId = session.id
+        val dateText = session.businessDate
         val salesGross = longQuery(
-            "SELECT COALESCE(SUM(total_amount), 0) FROM sales WHERE created_at >= ? AND created_at < ?",
-            arrayOf(from.toString(), to.toString()),
+            "SELECT COALESCE(SUM(total_amount), 0) FROM sales WHERE business_session_id = ?",
+            arrayOf(sessionId.toString()),
         )
         val transactionCount = longQuery(
-            "SELECT COUNT(*) FROM sales WHERE created_at >= ? AND created_at < ?",
-            arrayOf(from.toString(), to.toString()),
+            "SELECT COUNT(*) FROM sales WHERE business_session_id = ?",
+            arrayOf(sessionId.toString()),
         ).toInt()
         val reversalGross = longQuery(
-            "SELECT COALESCE(SUM(gross_amount), 0) FROM reversal_transactions WHERE created_at >= ? AND created_at < ?",
-            arrayOf(from.toString(), to.toString()),
+            "SELECT COALESCE(SUM(gross_amount), 0) FROM reversal_transactions WHERE business_session_id = ?",
+            arrayOf(sessionId.toString()),
         )
         val reversalCount = longQuery(
-            "SELECT COUNT(*) FROM reversal_transactions WHERE created_at >= ? AND created_at < ?",
-            arrayOf(from.toString(), to.toString()),
+            "SELECT COUNT(*) FROM reversal_transactions WHERE business_session_id = ?",
+            arrayOf(sessionId.toString()),
         ).toInt()
 
         val paymentMap = linkedMapOf<String, Long>()
@@ -264,11 +276,11 @@ class AdvancedOperationsStore(context: Context) {
             SELECT p.payment_method, COALESCE(SUM(p.applied_amount), 0)
             FROM sale_payments p
             INNER JOIN sales s ON s.id = p.sale_id
-            WHERE s.created_at >= ? AND s.created_at < ?
+            WHERE s.business_session_id = ?
             GROUP BY p.payment_method
             ORDER BY p.payment_method
             """.trimIndent(),
-            arrayOf(from.toString(), to.toString()),
+            arrayOf(sessionId.toString()),
         ).use { cursor ->
             while (cursor.moveToNext()) paymentMap[cursor.getString(0)] = cursor.getLong(1)
         }
@@ -277,11 +289,11 @@ class AdvancedOperationsStore(context: Context) {
             SELECT p.payment_method, COALESCE(SUM(p.amount), 0)
             FROM reversal_payments p
             INNER JOIN reversal_transactions r ON r.id = p.reversal_id
-            WHERE r.created_at >= ? AND r.created_at < ?
+            WHERE r.business_session_id = ?
             GROUP BY p.payment_method
             ORDER BY p.payment_method
             """.trimIndent(),
-            arrayOf(from.toString(), to.toString()),
+            arrayOf(sessionId.toString()),
         ).use { cursor ->
             while (cursor.moveToNext()) {
                 val method = cursor.getString(0)
@@ -289,13 +301,9 @@ class AdvancedOperationsStore(context: Context) {
             }
         }
 
-        val cashIn = movementTotal(CashMovementType.IN, from, to)
-        val cashOut = movementTotal(CashMovementType.OUT, from, to)
-        val dateText = date.toString()
-        val openingCash = longQuery(
-            "SELECT COALESCE(opening_cash, 0) FROM business_sessions WHERE business_date = ? ORDER BY id DESC LIMIT 1",
-            arrayOf(dateText),
-        )
+        val cashIn = movementTotal(CashMovementType.IN, sessionId)
+        val cashOut = movementTotal(CashMovementType.OUT, sessionId)
+        val openingCash = session.openingCash
         val expectedCash = openingCash + (paymentMap[PaymentMethod.CASH.name] ?: 0L) + cashIn - cashOut
         val pendingPrints = longQuery(
             "SELECT COUNT(*) FROM print_jobs WHERE status <> ?",
@@ -306,8 +314,8 @@ class AdvancedOperationsStore(context: Context) {
         ).toInt()
         val heldTickets = longQuery("SELECT COUNT(*) FROM held_tickets").toInt()
         val settled = longQuery(
-            "SELECT COUNT(*) FROM settlement_reports WHERE business_date = ? AND report_type = ?",
-            arrayOf(dateText, SettlementReportType.Z_SETTLEMENT.name),
+            "SELECT COUNT(*) FROM settlement_reports WHERE business_session_id = ? AND report_type = ?",
+            arrayOf(sessionId.toString(), SettlementReportType.Z_SETTLEMENT.name),
         ) > 0
         return AdvancedDailySummary(
             businessDate = dateText,
@@ -343,6 +351,8 @@ class AdvancedOperationsStore(context: Context) {
                     put("amount", amount)
                     put("reason", reason.trim())
                     put("operator_name", operatorName.trim())
+                    put("business_session_id", session.id)
+                    put("business_date", session.businessDate)
                     put("created_at", now)
                 },
             )
@@ -398,6 +408,7 @@ class AdvancedOperationsStore(context: Context) {
                 "settlement_reports",
                 null,
                 ContentValues().apply {
+                    put("business_session_id", session.id)
                     put("business_date", summary.businessDate)
                     put("report_type", type.name)
                     put("sales_gross", summary.salesGross)
@@ -491,13 +502,25 @@ class AdvancedOperationsStore(context: Context) {
     fun loadReturnableLines(saleId: Long): List<ReturnLineRecord> = db.rawQuery(
         """
         SELECT si.id, si.product_id, si.product_name, si.unit_price, si.tax_category,
+               COALESCE(lts.tax_key, si.tax_category),
+               COALESCE(lts.tax_label, si.tax_category),
+               COALESCE(lts.rate_percent, CASE si.tax_category WHEN 'INCLUDED_10' THEN 10 WHEN 'EXCLUDED_10' THEN 10 WHEN 'INCLUDED_8' THEN 8 WHEN 'EXCLUDED_8' THEN 8 ELSE 0 END),
+               COALESCE(lts.tax_included, CASE WHEN si.tax_category IN ('INCLUDED_10','INCLUDED_8') THEN 1 ELSE 0 END),
+               COALESCE(lts.taxable, CASE WHEN si.tax_category = 'NON_TAXABLE' THEN 0 ELSE 1 END),
+               COALESCE(lts.reduced, CASE WHEN si.tax_category IN ('INCLUDED_8','EXCLUDED_8') THEN 1 ELSE 0 END),
+               COALESCE(lts.tax_symbol, CASE si.tax_category WHEN 'INCLUDED_10' THEN '内' WHEN 'EXCLUDED_10' THEN '外' WHEN 'INCLUDED_8' THEN '内※' WHEN 'EXCLUDED_8' THEN '外※' ELSE '非' END),
                si.quantity, si.discount_amount, si.note,
                COALESCE(SUM(ri.return_quantity), 0) AS returned_quantity,
                COALESCE(SUM(ri.discount_amount), 0) AS refunded_discount
         FROM sale_items si
+        LEFT JOIN line_tax_snapshots lts
+          ON lts.scope = 'SALE'
+         AND lts.owner_id = si.sale_id
+         AND lts.line_no = (SELECT COUNT(*) FROM sale_items si2 WHERE si2.sale_id = si.sale_id AND si2.id <= si.id)
         LEFT JOIN reversal_items ri ON ri.sale_item_id = si.id
         WHERE si.sale_id = ?
         GROUP BY si.id, si.product_id, si.product_name, si.unit_price, si.tax_category,
+                 lts.tax_key, lts.tax_label, lts.rate_percent, lts.tax_included, lts.taxable, lts.reduced, lts.tax_symbol,
                  si.quantity, si.discount_amount, si.note
         ORDER BY si.id ASC
         """.trimIndent(),
@@ -505,17 +528,25 @@ class AdvancedOperationsStore(context: Context) {
     ).use { cursor ->
         val result = mutableListOf<ReturnLineRecord>()
         while (cursor.moveToNext()) {
+            val legacy = TaxCategory.valueOf(cursor.getString(4))
             result += ReturnLineRecord(
                 saleItemId = cursor.getLong(0),
                 productId = cursor.getString(1),
                 productName = cursor.getString(2),
                 unitPrice = cursor.getLong(3),
-                taxCategory = TaxCategory.valueOf(cursor.getString(4)),
-                originalQuantity = cursor.getInt(5),
-                originalDiscount = cursor.getLong(6),
-                note = cursor.getString(7),
-                returnedQuantity = cursor.getInt(8),
-                refundedDiscount = cursor.getLong(9),
+                taxCategory = legacy,
+                taxKey = cursor.getString(5),
+                taxLabel = cursor.getString(6).takeUnless { it == legacy.name } ?: legacy.displayName,
+                taxRatePercent = cursor.getInt(7),
+                taxIncluded = cursor.getInt(8) != 0,
+                taxable = cursor.getInt(9) != 0,
+                reduced = cursor.getInt(10) != 0,
+                taxSymbol = cursor.getString(11),
+                originalQuantity = cursor.getInt(12),
+                originalDiscount = cursor.getLong(13),
+                note = cursor.getString(14),
+                returnedQuantity = cursor.getInt(15),
+                refundedDiscount = cursor.getLong(16),
             )
         }
         result
@@ -588,6 +619,8 @@ class AdvancedOperationsStore(context: Context) {
                     put("gross_amount", refundTotal)
                     put("reason", reason.trim())
                     put("operator_name", operatorName.trim())
+                    put("business_session_id", session.id)
+                    put("business_date", session.businessDate)
                     put("created_at", now)
                 },
             )
@@ -602,6 +635,13 @@ class AdvancedOperationsStore(context: Context) {
                         put("product_name", line.productName)
                         put("unit_price", line.unitPrice)
                         put("tax_category", line.taxCategory.name)
+                        put("tax_key", line.taxKey)
+                        put("tax_label", line.taxLabel)
+                        put("tax_rate_percent", line.taxRatePercent)
+                        put("tax_included", if (line.taxIncluded) 1 else 0)
+                        put("taxable", if (line.taxable) 1 else 0)
+                        put("reduced", if (line.reduced) 1 else 0)
+                        put("tax_symbol", line.taxSymbol)
                         put("original_quantity", line.originalQuantity)
                         put("return_quantity", item.quantity)
                         put("discount_amount", item.discountAmount)
@@ -768,16 +808,10 @@ class AdvancedOperationsStore(context: Context) {
         },
     )
 
-    private fun movementTotal(type: CashMovementType, from: Long, to: Long): Long = longQuery(
-        "SELECT COALESCE(SUM(amount), 0) FROM cash_movements WHERE movement_type = ? AND created_at >= ? AND created_at < ?",
-        arrayOf(type.name, from.toString(), to.toString()),
+    private fun movementTotal(type: CashMovementType, sessionId: Long): Long = longQuery(
+        "SELECT COALESCE(SUM(amount), 0) FROM cash_movements WHERE movement_type = ? AND business_session_id = ?",
+        arrayOf(type.name, sessionId.toString()),
     )
-
-    private fun dayBounds(date: LocalDate): Pair<Long, Long> {
-        val zone = ZoneId.systemDefault()
-        return date.atStartOfDay(zone).toInstant().toEpochMilli() to
-            date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-    }
 
     private fun longQuery(sql: String, args: Array<String> = emptyArray()): Long =
         db.rawQuery(sql, args).use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else 0L }
@@ -805,6 +839,8 @@ class AdvancedOperationsStore(context: Context) {
                 amount INTEGER NOT NULL,
                 reason TEXT NOT NULL,
                 operator_name TEXT NOT NULL,
+                business_session_id INTEGER,
+                business_date TEXT,
                 created_at INTEGER NOT NULL
             )
             """.trimIndent(),
@@ -818,6 +854,8 @@ class AdvancedOperationsStore(context: Context) {
                 gross_amount INTEGER NOT NULL,
                 reason TEXT NOT NULL,
                 operator_name TEXT NOT NULL,
+                business_session_id INTEGER,
+                business_date TEXT,
                 created_at INTEGER NOT NULL,
                 FOREIGN KEY(original_sale_id) REFERENCES sales(id)
             )
@@ -844,6 +882,13 @@ class AdvancedOperationsStore(context: Context) {
                 product_name TEXT NOT NULL,
                 unit_price INTEGER NOT NULL,
                 tax_category TEXT NOT NULL,
+                tax_key TEXT NOT NULL DEFAULT '',
+                tax_label TEXT NOT NULL DEFAULT '',
+                tax_rate_percent INTEGER NOT NULL DEFAULT 0,
+                tax_included INTEGER NOT NULL DEFAULT 0,
+                taxable INTEGER NOT NULL DEFAULT 0,
+                reduced INTEGER NOT NULL DEFAULT 0,
+                tax_symbol TEXT NOT NULL DEFAULT '',
                 original_quantity INTEGER NOT NULL,
                 return_quantity INTEGER NOT NULL,
                 discount_amount INTEGER NOT NULL,
@@ -857,6 +902,7 @@ class AdvancedOperationsStore(context: Context) {
             """
             CREATE TABLE IF NOT EXISTS settlement_reports (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                business_session_id INTEGER,
                 business_date TEXT NOT NULL,
                 report_type TEXT NOT NULL,
                 sales_gross INTEGER NOT NULL,
@@ -922,6 +968,8 @@ class AdvancedOperationsStore(context: Context) {
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_reversal_items_sale_item ON reversal_items(sale_item_id)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_document_jobs_status ON document_print_jobs(status, created_at)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_settlement_date ON settlement_reports(business_date, report_type)")
+        BusinessSessionSchema.ensure(db)
+        TaxSnapshotSchema.ensureReversalColumns(db)
     }
 
     companion object {

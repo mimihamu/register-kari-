@@ -127,7 +127,7 @@ object ReceiptRenderer {
         lines += separator(width, '-')
 
         data.items.forEach { item ->
-            val symbol = item.product.taxCategory.symbol
+            val symbol = item.product.taxSymbol
             lines += fit("${item.product.name} [$symbol]", width)
             val amount = item.baseAmount
             lines += amountLine("${item.quantity} × ${yen(item.unitPrice)}", yen(amount), width)

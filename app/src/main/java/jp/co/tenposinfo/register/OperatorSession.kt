@@ -14,6 +14,7 @@ data class AuthenticatedOperator(
     val name: String,
     val role: OperatorRole,
     val permissions: Set<RegisterPermission>,
+    val revision: Long = 0L,
 ) {
     fun allows(permission: RegisterPermission): Boolean = permission in permissions
     val isManager: Boolean get() = role == OperatorRole.MANAGER
@@ -35,7 +36,7 @@ class OperatorAuthenticationStore(context: Context) : AutoCloseable {
         require(pin.isNotBlank()) { "PINを入力してください" }
         val row = db.query(
             "register_operators",
-            arrayOf("id", "operator_code", "operator_name", "role", "pin_salt", "pin_hash"),
+            arrayOf("id", "operator_code", "operator_name", "role", "pin_salt", "pin_hash", "updated_at"),
             "id = ? AND enabled = 1",
             arrayOf(operatorId.toString()),
             null,
@@ -49,6 +50,7 @@ class OperatorAuthenticationStore(context: Context) : AutoCloseable {
                 role = OperatorRole.valueOf(cursor.getString(3)),
                 salt = cursor.getString(4),
                 hash = cursor.getString(5),
+                revision = cursor.getLong(6),
             )
         } ?: throw IllegalArgumentException("担当者が見つからないか停止されています")
 
@@ -63,7 +65,7 @@ class OperatorAuthenticationStore(context: Context) : AutoCloseable {
 
     fun loadEnabledOperator(operatorId: Long): AuthenticatedOperator? = db.query(
         "register_operators",
-        arrayOf("id", "operator_code", "operator_name", "role"),
+        arrayOf("id", "operator_code", "operator_name", "role", "updated_at"),
         "id = ? AND enabled = 1",
         arrayOf(operatorId.toString()),
         null,
@@ -76,6 +78,7 @@ class OperatorAuthenticationStore(context: Context) : AutoCloseable {
             name = cursor.getString(2),
             role = OperatorRole.valueOf(cursor.getString(3)),
             permissions = loadPermissions(cursor.getLong(0)),
+            revision = cursor.getLong(4),
         )
     }
 
@@ -122,6 +125,7 @@ class OperatorAuthenticationStore(context: Context) : AutoCloseable {
         val role: OperatorRole,
         val salt: String,
         val hash: String,
+        val revision: Long,
     ) {
         fun toAuthenticated(permissions: Set<RegisterPermission>) = AuthenticatedOperator(
             id = id,
@@ -129,6 +133,7 @@ class OperatorAuthenticationStore(context: Context) : AutoCloseable {
             name = name,
             role = role,
             permissions = permissions,
+            revision = revision,
         )
     }
 }
@@ -143,18 +148,29 @@ object OperatorSessionRegistry {
     private var cached: AuthenticatedOperator? = null
 
     fun current(context: Context): AuthenticatedOperator? {
-        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val appContext = context.applicationContext
+        val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val operatorId = prefs.getLong(KEY_OPERATOR_ID, -1L)
         val lastActivity = prefs.getLong(KEY_LAST_ACTIVITY, 0L)
-        if (operatorId <= 0L || System.currentTimeMillis() - lastActivity > SESSION_TIMEOUT_MILLIS) {
-            clear(context)
+        if (operatorId <= 0L || isExpired(lastActivity, System.currentTimeMillis())) {
+            clear(appContext)
             return null
         }
-        cached?.takeIf { it.id == operatorId }?.let { return it }
-        val restored = OperatorAuthenticationStore(context).use { it.loadEnabledOperator(operatorId) }
-        if (restored == null) clear(context) else cached = restored
-        return restored
+        val stored = OperatorAuthenticationStore(appContext).use { it.loadEnabledOperator(operatorId) }
+        if (stored == null || !OperatorSessionRevisionPolicy.mayContinue(true, stored.permissions)) {
+            clear(appContext)
+            return null
+        }
+        val current = cached
+        if (current == null || current.id != operatorId || current != stored) {
+            cached = stored
+            return stored
+        }
+        return current
     }
+
+    internal fun isExpired(lastActivity: Long, now: Long): Boolean =
+        lastActivity <= 0L || now - lastActivity > SESSION_TIMEOUT_MILLIS
 
     fun login(context: Context, operator: AuthenticatedOperator) {
         cached = operator
@@ -166,11 +182,10 @@ object OperatorSessionRegistry {
     }
 
     fun touch(context: Context) {
-        if (current(context) == null) return
-        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putLong(KEY_LAST_ACTIVITY, System.currentTimeMillis())
-            .apply()
+        val appContext = context.applicationContext
+        val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (prefs.getLong(KEY_OPERATOR_ID, -1L) <= 0L) return
+        prefs.edit().putLong(KEY_LAST_ACTIVITY, System.currentTimeMillis()).apply()
     }
 
     fun logout(context: Context) {
@@ -185,6 +200,8 @@ object OperatorSessionRegistry {
         AdminSettingsStore(context.applicationContext).use { it.verifyManagerPin(pin) }
 
     fun lastKnownName(): String? = cached?.name
+
+    fun invalidate(context: Context) = clear(context.applicationContext)
 
     private fun clear(context: Context) {
         cached = null

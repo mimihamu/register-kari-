@@ -1,4 +1,4 @@
-name: Build REGISTER APK
+name: Build つぐレジ APK
 
 on:
   push:
@@ -45,15 +45,18 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
 
-      - name: Prepare named APK
+      - name: Prepare named APK and SHA-256
         run: |
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/REGISTER_v0.11_debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.11.1_fix2_debug.apk
+          sha256sum artifacts/TSUGUREGI_v0.11.1_fix2_debug.apk | tee artifacts/TSUGUREGI_v0.11.1_fix2_debug.apk.sha256
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: REGISTER-v0.11-debug-apk
-          path: artifacts/REGISTER_v0.11_debug.apk
+          name: TSUGUREGI-v0.11.1-fix2-debug-apk
+          path: |
+            artifacts/TSUGUREGI_v0.11.1_fix2_debug.apk
+            artifacts/TSUGUREGI_v0.11.1_fix2_debug.apk.sha256
           if-no-files-found: error
           retention-days: 30

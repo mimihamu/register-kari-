@@ -90,6 +90,8 @@ private fun AdvancedOperationsApp(onClose: () -> Unit) {
     val context = LocalContext.current
     val store = remember { AdvancedOperationsStore(context.applicationContext) }
     val registerDatabase = remember { RegisterDatabase(context.applicationContext) }
+    val currentOperator = remember { OperatorSessionRegistry.current(context.applicationContext) }
+    val permissions = currentOperator?.permissions.orEmpty()
     var screen by remember { mutableStateOf(AdvancedScreen.MENU) }
     var revision by remember { mutableStateOf(0) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -110,12 +112,47 @@ private fun AdvancedOperationsApp(onClose: () -> Unit) {
                 session = session,
                 summary = summary,
                 message = message,
-                onBusiness = { message = null; screen = AdvancedScreen.BUSINESS },
-                onDaily = { message = null; screen = AdvancedScreen.DAILY },
-                onSettlement = { message = null; screen = AdvancedScreen.SETTLEMENT },
-                onCash = { message = null; screen = AdvancedScreen.CASH },
-                onReversal = { message = null; screen = AdvancedScreen.REVERSAL },
-                onPrintQueue = { message = null; screen = AdvancedScreen.PRINT_QUEUE },
+                onBusiness = {
+                    if (RegisterPermission.SETTLEMENT in permissions) {
+                        message = null
+                        screen = AdvancedScreen.BUSINESS
+                    } else message = "営業開始・終了の権限がありません"
+                },
+                onDaily = {
+                    if (RegisterPermission.VIEW_SALES in permissions) {
+                        message = null
+                        screen = AdvancedScreen.DAILY
+                    } else message = "売上確認の権限がありません"
+                },
+                onSettlement = {
+                    if (RegisterPermission.SETTLEMENT in permissions) {
+                        message = null
+                        screen = AdvancedScreen.SETTLEMENT
+                    } else message = "点検・精算の権限がありません"
+                },
+                onCash = {
+                    if (RegisterPermission.CASH_MOVEMENT in permissions) {
+                        message = null
+                        screen = AdvancedScreen.CASH
+                    } else message = "入出金の権限がありません"
+                },
+                onReversal = {
+                    if (RegisterPermission.REVERSAL in permissions) {
+                        message = null
+                        screen = AdvancedScreen.REVERSAL
+                    } else message = "返品・取消の権限がありません"
+                },
+                onPrintQueue = {
+                    if (permissions.any {
+                            it == RegisterPermission.VIEW_SALES ||
+                                it == RegisterPermission.SETTLEMENT ||
+                                it == RegisterPermission.REVERSAL
+                        }
+                    ) {
+                        message = null
+                        screen = AdvancedScreen.PRINT_QUEUE
+                    } else message = "印刷キュー確認の権限がありません"
+                },
                 onClose = onClose,
             )
 
@@ -135,7 +172,7 @@ private fun AdvancedOperationsApp(onClose: () -> Unit) {
                 },
                 onCloseDay = { actualCash, operator, pin ->
                     val result = runCatching {
-                        require(pin == "0000") { "責任者PINが違います（テストPIN：0000）" }
+                        require(OperatorSessionRegistry.verifyManagerPin(context.applicationContext, pin)) { "責任者PINが違います" }
                         store.endBusinessDay(actualCash, operator)
                     }
                     message = result.fold(
@@ -162,9 +199,9 @@ private fun AdvancedOperationsApp(onClose: () -> Unit) {
                 onExecute = { type, actualCash, operator, pin, paperWidth ->
                     val result = runCatching {
                         if (type == SettlementReportType.Z_SETTLEMENT) {
-                            require(pin == "0000") { "責任者PINが違います（テストPIN：0000）" }
+                            require(OperatorSessionRegistry.verifyManagerPin(context.applicationContext, pin)) { "責任者PINが違います" }
                         }
-                        store.recordSettlement(type, actualCash, operator, paperWidth)
+                        store.recordSettlement(type, actualCash, operator, paperWidth).also { AutomaticPrintScheduler.enqueueNow(context.applicationContext); DriveOutboxScheduler.enqueueNow(context.applicationContext) }
                     }
                     message = result.fold(
                         onSuccess = { "${type.displayName}を保存し、印刷キューへ登録しました（No.${it.reportId}）" },
@@ -201,8 +238,8 @@ private fun AdvancedOperationsApp(onClose: () -> Unit) {
                 message = message,
                 onExecute = { saleId, type, quantities, reason, operator, pin, paperWidth ->
                     val result = runCatching {
-                        require(pin == "0000") { "責任者PINが違います（テストPIN：0000）" }
-                        store.createReversal(saleId, type, quantities, reason, operator, paperWidth)
+                        require(OperatorSessionRegistry.verifyManagerPin(context.applicationContext, pin)) { "責任者PINが違います" }
+                        store.createReversal(saleId, type, quantities, reason, operator, paperWidth).also { AutomaticPrintScheduler.enqueueNow(context.applicationContext); DriveOutboxScheduler.enqueueNow(context.applicationContext) }
                     }
                     message = result.fold(
                         onSuccess = { "${type.displayName}を保存し、レシートを印刷キューへ登録しました（No.${it.reversalId}）" },
@@ -308,7 +345,7 @@ private fun BusinessDayScreen(
 ) {
     var openingCash by remember { mutableStateOf("") }
     var actualCash by remember { mutableStateOf("") }
-    var operator by remember { mutableStateOf("責任者") }
+    var operator by remember { mutableStateOf(OperatorSessionRegistry.lastKnownName() ?: "責任者") }
     var pin by remember { mutableStateOf("") }
     @Suppress("UNUSED_VARIABLE") val refresh = revision
 
@@ -346,7 +383,7 @@ private fun BusinessDayScreen(
                     OutlinedTextField(
                         value = pin,
                         onValueChange = { pin = it.filter(Char::isDigit).take(8) },
-                        label = { Text("責任者PIN（テスト：0000）") },
+                        label = { Text("責任者PIN") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
@@ -450,7 +487,7 @@ private fun AdvancedSettlementScreen(
 ) {
     var type by remember { mutableStateOf(SettlementReportType.X_INSPECTION) }
     var actualCash by remember { mutableStateOf("") }
-    var operator by remember { mutableStateOf("責任者") }
+    var operator by remember { mutableStateOf(OperatorSessionRegistry.lastKnownName() ?: "責任者") }
     var pin by remember { mutableStateOf("") }
     var paperWidth by remember { mutableStateOf(80) }
     var savedPreview by remember { mutableStateOf<String?>(null) }
@@ -500,7 +537,7 @@ private fun AdvancedSettlementScreen(
                     OutlinedTextField(
                         value = pin,
                         onValueChange = { pin = it.filter(Char::isDigit).take(8) },
-                        label = { Text("責任者PIN（テスト：0000）") },
+                        label = { Text("責任者PIN") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
@@ -560,7 +597,7 @@ private fun AdvancedCashScreen(
     var type by remember { mutableStateOf(CashMovementType.IN) }
     var amount by remember { mutableStateOf("") }
     var reason by remember { mutableStateOf("") }
-    var operator by remember { mutableStateOf("責任者") }
+    var operator by remember { mutableStateOf(OperatorSessionRegistry.lastKnownName() ?: "責任者") }
     @Suppress("UNUSED_VARIABLE") val refresh = revision
     Column(Modifier.fillMaxSize()) {
         AoHeader("SCR-530", "入出金")
@@ -627,7 +664,7 @@ private fun AdvancedReversalScreen(
     var quantities by remember { mutableStateOf<Map<Long, Int>>(emptyMap()) }
     var type by remember { mutableStateOf(ReversalType.RETURN) }
     var reason by remember { mutableStateOf("") }
-    var operator by remember { mutableStateOf("責任者") }
+    var operator by remember { mutableStateOf(OperatorSessionRegistry.lastKnownName() ?: "責任者") }
     var pin by remember { mutableStateOf("") }
     var paperWidth by remember { mutableStateOf(80) }
     var savedPreview by remember { mutableStateOf<String?>(null) }
@@ -685,7 +722,7 @@ private fun AdvancedReversalScreen(
                             val quantity = effectiveQuantities[line.saleItemId] ?: 0
                             Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("${line.productName} [${line.taxCategory.symbol}]", fontWeight = FontWeight.Bold)
+                                    Text("${line.productName} [${line.taxSymbol}]", fontWeight = FontWeight.Bold)
                                     Text("販売 ${line.originalQuantity} / 返品済 ${line.returnedQuantity} / 残 ${line.remainingQuantity}", color = Color.Gray)
                                 }
                                 OutlinedButton(
@@ -735,7 +772,7 @@ private fun AdvancedReversalScreen(
                 OutlinedTextField(
                     pin,
                     { pin = it.filter(Char::isDigit).take(8) },
-                    label = { Text("責任者PIN（テスト：0000）") },
+                    label = { Text("責任者PIN") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),

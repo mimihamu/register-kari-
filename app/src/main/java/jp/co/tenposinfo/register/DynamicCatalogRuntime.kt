@@ -67,6 +67,12 @@ data class MenuRevisionProduct(
     val unitPrice: Long,
     val legacyTaxCategory: TaxCategory,
     val taxKey: String,
+    val taxLabel: String,
+    val taxRatePercent: Int,
+    val taxIncluded: Boolean,
+    val taxable: Boolean,
+    val reduced: Boolean,
+    val taxSymbol: String,
     val buttonColor: String,
     val pageNo: Int,
     val slotNo: Int,
@@ -247,12 +253,13 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
         require(cleanName.length <= 80) { "改定名は80文字以内です" }
         val cleanDate = DynamicTaxValidation.validateDate(effectiveDate, "適用営業日")
         require(cleanDate.isNotBlank()) { "適用営業日を入力してください" }
-        require(!LocalDate.parse(cleanDate).isBefore(LocalDate.now())) { "過去の日付は予約できません" }
+        require(!LocalDate.parse(cleanDate).isBefore(BusinessDateResolver.current(applicationContext))) { "過去の日付は予約できません" }
 
         CatalogMasterStore(applicationContext).use { catalog ->
             val metadata = catalog.listProducts(includeDisabled = true).associateBy { it.productId }
             val effectiveProducts = baseDatabase.loadProducts().associateBy { it.id }
             val assignments = assignmentMap(db)
+            val taxRules = listTaxRules().associateBy { it.key }
             return db.transaction {
                 val revisionId = insertOrThrow(
                     "menu_revisions",
@@ -273,6 +280,8 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
                         taxCategory = meta.baseTaxCategory,
                         displayOrder = meta.displayOrder,
                     )
+                    val revisionTaxKey = assignments[meta.productId] ?: product.taxKey
+                    val revisionTax = taxRules[revisionTaxKey]?.let(TaxSnapshot::from) ?: TaxSnapshot.from(product)
                     insertOrThrow(
                         "menu_revision_products",
                         null,
@@ -283,7 +292,13 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
                             put("enabled", if (meta.enabled) 1 else 0)
                             put("unit_price", product.unitPrice)
                             put("legacy_tax_category", product.taxCategory.name)
-                            put("tax_key", assignments[meta.productId] ?: product.taxKey)
+                            put("tax_key", revisionTax.key)
+                            put("tax_label", revisionTax.label)
+                            put("tax_rate_percent", revisionTax.ratePercent)
+                            put("tax_included", if (revisionTax.taxIncluded) 1 else 0)
+                            put("taxable", if (revisionTax.taxable) 1 else 0)
+                            put("reduced", if (revisionTax.reduced) 1 else 0)
+                            put("tax_symbol", revisionTax.symbol)
                             put("button_color", meta.buttonColor)
                             put("page_no", meta.pageNo)
                             put("slot_no", meta.slotNo)
@@ -331,14 +346,14 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
                 "menu_revisions",
                 ContentValues().apply { put("status", "CANCELLED") },
                 "id = ? AND status = 'SCHEDULED' AND effective_date > ?",
-                arrayOf(revisionId.toString(), LocalDate.now().toString()),
+                arrayOf(revisionId.toString(), BusinessDateResolver.current(applicationContext).toString()),
             )
             require(changed == 1) { "適用済みまたは取消済みの改定は取り消せません" }
             audit(this, "MENU_REVISION_CANCELLED", revisionId.toString(), revisionId.toString(), actor)
         }
     }
 
-    fun activeRevision(date: LocalDate = LocalDate.now()): MenuRevisionRecord? {
+    fun activeRevision(date: LocalDate = BusinessDateResolver.current(applicationContext)): MenuRevisionRecord? {
         db.rawQuery(
             """
             SELECT r.id, r.name, r.effective_date, r.status, r.created_by, r.created_at,
@@ -366,7 +381,7 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
     fun runtimeProducts(
         products: List<Product>,
         metadata: Map<String, ProductMasterRecord>,
-        date: LocalDate = LocalDate.now(),
+        date: LocalDate = BusinessDateResolver.current(applicationContext),
     ): List<Product> {
         val rules = listTaxRules().associateBy { it.key }
         val revision = activeRevision(date)
@@ -391,7 +406,10 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
                         pageNo = snapshot.pageNo,
                         slotNo = snapshot.slotNo,
                     ).withLegacyTaxCategory(snapshot.legacyTaxCategory)
-                    rules[snapshot.taxKey]?.takeIf { it.isEffective(date) }?.applyTo(positioned) ?: positioned
+                    TaxSnapshot(
+                        snapshot.taxKey, snapshot.taxLabel, snapshot.taxRatePercent, snapshot.taxIncluded,
+                        snapshot.taxable, snapshot.reduced, snapshot.taxSymbol,
+                    ).applyTo(positioned)
                 }
                 .sortedWith(compareBy<Product> { it.pageNo }.thenBy { it.slotNo }.thenBy { it.id })
         }
@@ -417,7 +435,8 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
             "menu_revision_products",
             arrayOf(
                 "product_id", "product_name", "enabled", "unit_price", "legacy_tax_category",
-                "tax_key", "button_color", "page_no", "slot_no", "display_order",
+                "tax_key", "tax_label", "tax_rate_percent", "tax_included", "taxable", "reduced", "tax_symbol",
+                "button_color", "page_no", "slot_no", "display_order",
             ),
             "revision_id = ?",
             arrayOf(revisionId.toString()),
@@ -433,10 +452,16 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
                     unitPrice = cursor.getLong(3),
                     legacyTaxCategory = TaxCategory.valueOf(cursor.getString(4)),
                     taxKey = cursor.getString(5),
-                    buttonColor = cursor.getString(6),
-                    pageNo = cursor.getInt(7),
-                    slotNo = cursor.getInt(8),
-                    displayOrder = cursor.getInt(9),
+                    taxLabel = cursor.getString(6),
+                    taxRatePercent = cursor.getInt(7),
+                    taxIncluded = cursor.getInt(8) != 0,
+                    taxable = cursor.getInt(9) != 0,
+                    reduced = cursor.getInt(10) != 0,
+                    taxSymbol = cursor.getString(11),
+                    buttonColor = cursor.getString(12),
+                    pageNo = cursor.getInt(13),
+                    slotNo = cursor.getInt(14),
+                    displayOrder = cursor.getInt(15),
                 )
             }
         }
@@ -500,6 +525,12 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
                     unit_price INTEGER NOT NULL,
                     legacy_tax_category TEXT NOT NULL,
                     tax_key TEXT NOT NULL,
+                    tax_label TEXT NOT NULL DEFAULT '',
+                    tax_rate_percent INTEGER NOT NULL DEFAULT 0,
+                    tax_included INTEGER NOT NULL DEFAULT 0,
+                    taxable INTEGER NOT NULL DEFAULT 0,
+                    reduced INTEGER NOT NULL DEFAULT 0,
+                    tax_symbol TEXT NOT NULL DEFAULT '',
                     button_color TEXT NOT NULL,
                     page_no INTEGER NOT NULL,
                     slot_no INTEGER NOT NULL,
@@ -519,6 +550,48 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
                     actor TEXT NOT NULL,
                     created_at INTEGER NOT NULL
                 )
+                """.trimIndent(),
+            )
+            SchemaMigration.ensureColumn(db, "menu_revision_products", "tax_label", "TEXT NOT NULL DEFAULT ''")
+            SchemaMigration.ensureColumn(db, "menu_revision_products", "tax_rate_percent", "INTEGER NOT NULL DEFAULT 0")
+            SchemaMigration.ensureColumn(db, "menu_revision_products", "tax_included", "INTEGER NOT NULL DEFAULT 0")
+            SchemaMigration.ensureColumn(db, "menu_revision_products", "taxable", "INTEGER NOT NULL DEFAULT 0")
+            SchemaMigration.ensureColumn(db, "menu_revision_products", "reduced", "INTEGER NOT NULL DEFAULT 0")
+            SchemaMigration.ensureColumn(db, "menu_revision_products", "tax_symbol", "TEXT NOT NULL DEFAULT ''")
+            db.execSQL(
+                """
+                UPDATE menu_revision_products
+                SET tax_label = COALESCE(
+                        NULLIF((SELECT t.label FROM dynamic_tax_rules t WHERE t.tax_key = menu_revision_products.tax_key), ''),
+                        CASE legacy_tax_category
+                            WHEN 'INCLUDED_10' THEN '10%内税' WHEN 'EXCLUDED_10' THEN '10%外税'
+                            WHEN 'INCLUDED_8' THEN '8%内税' WHEN 'EXCLUDED_8' THEN '8%外税' ELSE '非課税' END
+                    ),
+                    tax_rate_percent = COALESCE(
+                        (SELECT t.rate_percent FROM dynamic_tax_rules t WHERE t.tax_key = menu_revision_products.tax_key),
+                        CASE legacy_tax_category
+                            WHEN 'INCLUDED_10' THEN 10 WHEN 'EXCLUDED_10' THEN 10
+                            WHEN 'INCLUDED_8' THEN 8 WHEN 'EXCLUDED_8' THEN 8 ELSE 0 END
+                    ),
+                    tax_included = COALESCE(
+                        (SELECT CASE WHEN t.price_mode = 'INCLUDED' THEN 1 ELSE 0 END FROM dynamic_tax_rules t WHERE t.tax_key = menu_revision_products.tax_key),
+                        CASE WHEN legacy_tax_category IN ('INCLUDED_10','INCLUDED_8') THEN 1 ELSE 0 END
+                    ),
+                    taxable = COALESCE(
+                        (SELECT CASE WHEN t.price_mode = 'NON_TAXABLE' THEN 0 ELSE 1 END FROM dynamic_tax_rules t WHERE t.tax_key = menu_revision_products.tax_key),
+                        CASE WHEN legacy_tax_category = 'NON_TAXABLE' THEN 0 ELSE 1 END
+                    ),
+                    reduced = COALESCE(
+                        (SELECT t.reduced FROM dynamic_tax_rules t WHERE t.tax_key = menu_revision_products.tax_key),
+                        CASE WHEN legacy_tax_category IN ('INCLUDED_8','EXCLUDED_8') THEN 1 ELSE 0 END
+                    ),
+                    tax_symbol = COALESCE(
+                        NULLIF((SELECT t.symbol FROM dynamic_tax_rules t WHERE t.tax_key = menu_revision_products.tax_key), ''),
+                        CASE legacy_tax_category
+                            WHEN 'INCLUDED_10' THEN '内' WHEN 'EXCLUDED_10' THEN '外'
+                            WHEN 'INCLUDED_8' THEN '内※' WHEN 'EXCLUDED_8' THEN '外※' ELSE '非' END
+                    )
+                WHERE tax_label = ''
                 """.trimIndent(),
             )
             LineTaxSnapshotStore.ensureSchema(db)

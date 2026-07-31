@@ -43,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -98,9 +99,39 @@ private enum class AppScreen {
 private fun RegisterApp() {
     val context = LocalContext.current
     val database = remember { RegisterDatabase(context.applicationContext) }
-    var screen by remember { mutableStateOf(AppScreen.DIAGNOSTIC) }
-    var operatorName by remember { mutableStateOf("未選択") }
-    val products = remember { database.loadProducts() }
+    val authStore = remember { OperatorAuthenticationStore(context.applicationContext) }
+    var currentOperator by remember { mutableStateOf(OperatorSessionRegistry.current(context.applicationContext)) }
+    var screen by remember { mutableStateOf(if (currentOperator == null) AppScreen.DIAGNOSTIC else AppScreen.SALES) }
+    var operatorName by remember { mutableStateOf(currentOperator?.name ?: "未選択") }
+    var loginMessage by remember { mutableStateOf<String?>(null) }
+    var accessMessage by remember { mutableStateOf<String?>(null) }
+    var catalogEpoch by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        DriveOutboxScheduler.ensurePeriodic(context.applicationContext)
+        while (true) {
+            kotlinx.coroutines.delay(5_000L)
+            val refreshed = OperatorSessionRegistry.current(context.applicationContext)
+            when {
+                currentOperator != null && refreshed == null -> {
+                    currentOperator = null
+                    operatorName = "未選択"
+                    loginMessage = "セッションが失効したか、担当者が停止・権限変更されました"
+                    screen = AppScreen.LOGIN
+                }
+                refreshed != null -> {
+                    currentOperator = refreshed
+                    operatorName = refreshed.name
+                }
+            }
+            catalogEpoch++
+        }
+    }
+    val products = remember(catalogEpoch) {
+        runCatching {
+            CatalogMasterStore(context.applicationContext).use { it.synchronizeEffectiveProducts() }
+        }
+        V11CatalogRuntime.visibleProducts(context.applicationContext, database.loadProducts())
+    }
     val cart = remember { mutableStateListOf<CartItem>().apply { addAll(database.loadCart()) } }
     var selectedIndex by remember { mutableStateOf<Int?>(null) }
     var paymentState by remember { mutableStateOf(PaymentState()) }
@@ -123,7 +154,17 @@ private fun RegisterApp() {
         database.saveCart(cart.toList())
     }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = Background) {
+    Surface(
+        modifier = Modifier.fillMaxSize().pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    awaitPointerEvent()
+                    OperatorSessionRegistry.touch(context.applicationContext)
+                }
+            }
+        },
+        color = Background,
+    ) {
         when (screen) {
             AppScreen.DIAGNOSTIC -> DiagnosticScreen(
                 restoredCount = cart.sumOf { it.quantity },
@@ -134,9 +175,21 @@ private fun RegisterApp() {
             )
 
             AppScreen.LOGIN -> LoginScreen(
-                onLogin = {
-                    operatorName = it
-                    screen = AppScreen.SALES
+                operators = authStore.listEnabledOperators(),
+                message = loginMessage,
+                onLogin = { operatorId, pin ->
+                    val result = authStore.authenticate(operatorId, pin)
+                    val authenticated = result.getOrNull()
+                    if (authenticated == null) {
+                        loginMessage = result.exceptionOrNull()?.message ?: "ログインに失敗しました"
+                    } else {
+                        OperatorSessionRegistry.login(context.applicationContext, authenticated)
+                        currentOperator = authenticated
+                        operatorName = authenticated.name
+                        loginMessage = null
+                        accessMessage = null
+                        (context as? android.app.Activity)?.recreate()
+                    }
                 },
             )
 
@@ -180,9 +233,19 @@ private fun RegisterApp() {
                 },
                 onCancelTransaction = { replaceCart(emptyList()) },
                 onDiscount = { screen = AppScreen.DISCOUNT },
-                onTickets = { screen = AppScreen.TICKETS },
+                onTickets = {
+                    if (currentOperator?.allows(RegisterPermission.HOLD_TICKET) == true) {
+                        accessMessage = null
+                        screen = AppScreen.TICKETS
+                    } else {
+                        accessMessage = "保留伝票の権限がありません"
+                    }
+                },
                 onHold = {
-                    if (cart.isNotEmpty()) {
+                    if (currentOperator?.allows(RegisterPermission.HOLD_TICKET) != true) {
+                        accessMessage = "保留伝票の権限がありません"
+                    } else if (cart.isNotEmpty()) {
+                        accessMessage = null
                         val sequence = database.listHeldTickets().size + 1
                         database.holdCart("伝票$sequence", operatorName, cart.toList())
                         replaceCart(emptyList())
@@ -192,8 +255,30 @@ private fun RegisterApp() {
                     paymentState = PaymentState()
                     screen = AppScreen.PAYMENT
                 },
-                onSalesHistory = { screen = AppScreen.SALES_HISTORY },
-                onPrintQueue = { screen = AppScreen.PRINT_QUEUE },
+                onSalesHistory = {
+                    if (currentOperator?.allows(RegisterPermission.VIEW_SALES) == true) {
+                        accessMessage = null
+                        screen = AppScreen.SALES_HISTORY
+                    } else {
+                        accessMessage = "売上確認の権限がありません"
+                    }
+                },
+                onPrintQueue = {
+                    if (currentOperator?.allows(RegisterPermission.VIEW_SALES) == true) {
+                        accessMessage = null
+                        screen = AppScreen.PRINT_QUEUE
+                    } else {
+                        accessMessage = "印刷キュー確認の権限がありません"
+                    }
+                },
+                accessMessage = accessMessage,
+                onLogout = {
+                    OperatorSessionRegistry.logout(context.applicationContext)
+                    currentOperator = null
+                    operatorName = "未選択"
+                    accessMessage = null
+                    (context as? android.app.Activity)?.recreate()
+                },
             )
 
             AppScreen.LINE_EDIT -> {
@@ -246,6 +331,8 @@ private fun RegisterApp() {
                 onBack = { screen = AppScreen.SALES },
                 onComplete = {
                     val saleId = database.saveSale(operatorName, cart.toList(), paymentState, receiptPaper.widthMm)
+                    AutomaticPrintScheduler.enqueueNow(context.applicationContext)
+                    DriveOutboxScheduler.enqueueNow(context.applicationContext)
                     lastSaleId = saleId
                     selectedSaleId = saleId
                     replaceCart(emptyList())
@@ -298,6 +385,7 @@ private fun RegisterApp() {
                         onPaperChange = { receiptPaper = it },
                         onEnqueue = {
                             database.enqueueReprint(detail.summary.id, receiptPaper.widthMm)
+                            AutomaticPrintScheduler.enqueueNow(context.applicationContext)
                             queueMessage = "再印字をキューへ登録しました"
                         },
                         message = queueMessage,
@@ -363,7 +451,7 @@ private fun DiagnosticScreen(restoredCount: Int, pendingPrints: Int, onComplete:
             Text("起動チェックを実行しました", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Navy)
             Spacer(Modifier.height(24.dp))
             CardPanel(Modifier.width(700.dp)) {
-                StatusRow("データベース", "正常（Schema v4）")
+                StatusRow("データベース", "正常（動的税・改定・Outbox対応）")
                 StatusRow("作業中取引", if (restoredCount > 0) "${restoredCount}点を復元" else "なし")
                 StatusRow("印刷キュー", if (pendingPrints > 0) "${pendingPrints}件待機" else "待機なし")
                 StatusRow("プリンタ", "未設定でも販売可能")
@@ -384,10 +472,13 @@ private fun StatusRow(label: String, value: String) {
 }
 
 @Composable
-private fun LoginScreen(onLogin: (String) -> Unit) {
-    var selected by remember { mutableStateOf("山田") }
+private fun LoginScreen(
+    operators: List<OperatorRecord>,
+    message: String?,
+    onLogin: (Long, String) -> Unit,
+) {
+    var selectedId by remember(operators) { mutableStateOf(operators.firstOrNull()?.id) }
     var pin by remember { mutableStateOf("") }
-    val operators = listOf("山田", "佐藤", "鈴木", "田中", "責任者", "管理者")
     Column(modifier = Modifier.fillMaxSize()) {
         Header("SCR-010", "担当者選択／ログイン")
         Row(
@@ -397,22 +488,31 @@ private fun LoginScreen(onLogin: (String) -> Unit) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("担当者を選択", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Navy)
                 Spacer(Modifier.height(18.dp))
+                if (operators.isEmpty()) {
+                    Text("有効な担当者が登録されていません", color = Danger, fontWeight = FontWeight.Bold)
+                }
                 for (rowStart in operators.indices step 3) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         for (index in rowStart until minOf(rowStart + 3, operators.size)) {
-                            val name = operators[index]
+                            val operator = operators[index]
                             OutlinedButton(
-                                onClick = { selected = name },
+                                onClick = { selectedId = operator.id; pin = "" },
                                 modifier = Modifier.weight(1f).height(82.dp),
                                 border = BorderStroke(
-                                    if (selected == name) 3.dp else 1.dp,
-                                    if (selected == name) Danger else Border,
+                                    if (selectedId == operator.id) 3.dp else 1.dp,
+                                    if (selectedId == operator.id) Danger else Border,
                                 ),
-                            ) { Text(name, fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Navy) }
+                            ) {
+                                Text(
+                                    "${operator.name}\n${operator.role.displayName}",
+                                    fontSize = 19.sp,
+                                    textAlign = TextAlign.Center,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Navy,
+                                )
+                            }
                         }
-                        for (unused in minOf(rowStart + 3, operators.size) until rowStart + 3) {
-                            Spacer(Modifier.weight(1f))
-                        }
+                        for (unused in minOf(rowStart + 3, operators.size) until rowStart + 3) Spacer(Modifier.weight(1f))
                     }
                     Spacer(Modifier.height(16.dp))
                 }
@@ -420,13 +520,17 @@ private fun LoginScreen(onLogin: (String) -> Unit) {
             CardPanel(Modifier.width(390.dp).fillMaxHeight()) {
                 Text("PIN入力", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Navy)
                 Spacer(Modifier.height(12.dp))
-                ValueBox(if (pin.isEmpty()) "選択のみでもログイン可" else "●".repeat(pin.length))
+                ValueBox(if (pin.isEmpty()) "PINを入力" else "●".repeat(pin.length))
+                if (message != null) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(message, color = Danger, fontWeight = FontWeight.Bold)
+                }
                 Spacer(Modifier.height(14.dp))
                 NumberPad(
                     onDigit = { if (pin.length < 8) pin += it },
                     onClear = { pin = "" },
                     bottomActionLabel = "ログイン",
-                    onBottomAction = { onLogin(selected) },
+                    onBottomAction = { selectedId?.let { onLogin(it, pin) } },
                 )
             }
         }
@@ -452,19 +556,29 @@ private fun SalesScreen(
     onPayment: () -> Unit,
     onSalesHistory: () -> Unit,
     onPrintQueue: () -> Unit,
+    accessMessage: String?,
+    onLogout: () -> Unit,
 ) {
     val summary = TaxEngine.calculate(cart)
     var numericInput by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize()) {
         Header("SCR-100", "販売画面")
         Row(
-            Modifier.fillMaxWidth().height(38.dp).background(Color.White).padding(horizontal = 18.dp),
+            Modifier.fillMaxWidth().height(48.dp).background(Color.White).padding(horizontal = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("店舗：サンプル居酒屋  |  担当：$operatorName", color = Navy, fontWeight = FontWeight.Medium)
             Spacer(Modifier.weight(1f))
-            Text("SQLite保存・オフライン販売", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+            if (accessMessage != null) {
+                Text(accessMessage, color = Danger, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.width(12.dp))
+            } else {
+                Text("SQLite保存・オフライン販売", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                Spacer(Modifier.width(12.dp))
+            }
+            OutlinedButton(onClick = onLogout, modifier = Modifier.height(40.dp)) { Text("担当者切替") }
         }
+
         Row(Modifier.weight(1f).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             CardPanel(Modifier.weight(0.36f).fillMaxHeight()) {
                 Text("注文一覧", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Navy)
@@ -483,7 +597,7 @@ private fun SalesScreen(
                             Column(Modifier.weight(1f)) {
                                 Text(item.product.name, fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    "${item.quantity} × ${yen(item.unitPrice)}  ${item.product.taxCategory.symbol}",
+                                    "${item.quantity} × ${yen(item.unitPrice)}  ${item.product.taxSymbol}",
                                     fontSize = 13.sp,
                                     color = Color.Gray,
                                 )
@@ -536,40 +650,65 @@ private fun SalesScreen(
             }
 
             CardPanel(Modifier.weight(0.40f).fillMaxHeight()) {
-                Text("商品", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Navy)
-                Spacer(Modifier.height(8.dp))
+                val salesContext = LocalContext.current
+                val pages = products.map { it.pageNo }.distinct().sorted().ifEmpty { listOf(1) }
+                var currentPage by remember(products) { mutableStateOf(pages.first()) }
+                androidx.compose.runtime.LaunchedEffect(pages) {
+                    if (currentPage !in pages) currentPage = pages.first()
+                }
+                val pageIndex = pages.indexOf(currentPage).coerceAtLeast(0)
+                val pageProducts = products.filter { it.pageNo == currentPage }.associateBy { it.slotNo }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("商品", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Navy)
+                        Text(V11CatalogRuntime.status(salesContext), fontSize = 12.sp, color = Color.Gray)
+                    }
+                    OutlinedButton(
+                        onClick = { currentPage = pages[(pageIndex - 1 + pages.size) % pages.size] },
+                        modifier = Modifier.width(54.dp).height(38.dp),
+                    ) { Text("＜") }
+                    Text(" ${currentPage}/${pages.maxOrNull() ?: 1} ", color = Navy, fontWeight = FontWeight.Bold)
+                    OutlinedButton(
+                        onClick = { currentPage = pages[(pageIndex + 1) % pages.size] },
+                        modifier = Modifier.width(54.dp).height(38.dp),
+                    ) { Text("＞") }
+                }
+                Spacer(Modifier.height(7.dp))
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                    for (rowStart in products.indices step 3) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            for (index in rowStart until minOf(rowStart + 3, products.size)) {
-                                val product = products[index]
-                                val buttonColor = when (index % 3) {
-                                    0 -> PaleGreen
-                                    1 -> PaleYellow
-                                    else -> PaleBlue
+                    for (row in 0 until 8) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            for (column in 0 until 3) {
+                                val slot = row * 3 + column + 1
+                                val product = pageProducts[slot]
+                                if (product == null) {
+                                    Spacer(Modifier.weight(1f).height(72.dp))
+                                } else {
+                                    Button(
+                                        onClick = { onAddProduct(product) },
+                                        modifier = Modifier.weight(1f).height(72.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = ProductButtonPalette.background(product.buttonColor),
+                                            contentColor = ProductButtonPalette.foreground(product.buttonColor),
+                                        ),
+                                        border = BorderStroke(1.dp, Border),
+                                    ) {
+                                        Text(
+                                            "${product.name}\n${yen(product.unitPrice)} ${product.taxSymbol}",
+                                            textAlign = TextAlign.Center,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            maxLines = 3,
+                                        )
+                                    }
                                 }
-                                Button(
-                                    onClick = { onAddProduct(product) },
-                                    modifier = Modifier.weight(1f).height(88.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = buttonColor, contentColor = Navy),
-                                    border = BorderStroke(1.dp, Border),
-                                ) {
-                                    Text(
-                                        "${product.name}\n${yen(product.unitPrice)} ${product.taxCategory.symbol}",
-                                        textAlign = TextAlign.Center,
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                }
-                            }
-                            for (unused in minOf(rowStart + 3, products.size) until rowStart + 3) {
-                                Spacer(Modifier.weight(1f))
                             }
                         }
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(7.dp))
                     }
                 }
             }
         }
+
         Row(
             Modifier.fillMaxWidth().height(76.dp).padding(horizontal = 12.dp, vertical = 7.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -656,7 +795,7 @@ private fun LineEditScreen(
             onConfirm = {
                 onSave(
                     item.copy(
-                        product = item.product.copy(taxCategory = category),
+                        product = item.product.withLegacyTaxCategory(category),
                         quantity = parsedQuantity,
                         unitPrice = parsedUnitPrice,
                         discountAmount = parsedDiscount,
@@ -801,7 +940,7 @@ private fun PaymentScreen(
                 Spacer(Modifier.height(10.dp))
                 LazyColumn(Modifier.weight(1f)) {
                     itemsIndexed(items) { _, item ->
-                        AmountRow("${item.product.name} × ${item.quantity} ${item.product.taxCategory.symbol}", yen(item.baseAmount))
+                        AmountRow("${item.product.name} × ${item.quantity} ${item.product.taxSymbol}", yen(item.baseAmount))
                     }
                 }
                 summary.buckets.forEach { bucket ->
@@ -814,7 +953,7 @@ private fun PaymentScreen(
                         modifier = Modifier.fillMaxWidth().clickable { acknowledgedMixedTax = !acknowledgedMixedTax },
                     ) {
                         Text(
-                            "${mixed.message}\n税率単位で税抜基準へ統一して計算します。タップして確認：${if (acknowledgedMixedTax) "確認済" else "未確認"}",
+                            "${mixed.message}\n同率の内税・外税混在は禁止です。商品税区分を修正してください。",
                             modifier = Modifier.padding(12.dp),
                             fontWeight = FontWeight.Bold,
                         )
@@ -855,7 +994,7 @@ private fun PaymentScreen(
             onBack = onBack,
             confirmLabel = "会計確定",
             onConfirm = onComplete,
-            confirmEnabled = remaining == 0L && (!mixed.hasMixedTax || acknowledgedMixedTax),
+            confirmEnabled = remaining == 0L && !mixed.hasMixedTax,
         )
     }
 }
@@ -952,7 +1091,7 @@ private fun SaleDetailScreen(
                 LazyColumn(Modifier.weight(1f)) {
                     itemsIndexed(detail.items) { _, item ->
                         Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                            AmountRow("${item.product.name} ${item.product.taxCategory.symbol} × ${item.quantity}", yen(item.baseAmount))
+                            AmountRow("${item.product.name} ${item.product.taxSymbol} × ${item.quantity}", yen(item.baseAmount))
                             if (item.discountAmount > 0) Text("値引 -${yen(item.discountAmount)}", color = Danger, fontSize = 12.sp)
                             if (item.note.isNotBlank()) Text("メモ ${item.note}", color = Color.Gray, fontSize = 12.sp)
                         }

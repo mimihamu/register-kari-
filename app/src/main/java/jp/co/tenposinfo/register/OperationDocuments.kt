@@ -57,7 +57,7 @@ object OperationDocumentRenderer {
         lines += fit("理由 ${data.reason}", width)
         lines += separator(width, '-')
         data.items.forEach { item ->
-            lines += fit("${item.product.name} [${item.product.taxCategory.symbol}]", width)
+            lines += fit("${item.product.name} [${item.product.taxSymbol}]", width)
             lines += amountLine("${item.quantity} × ${yen(item.unitPrice)}", "-${yen(item.baseAmount)}", width)
             if (item.discountAmount > 0) {
                 lines += amountLine("  元値引配賦", yen(item.discountAmount), width)
