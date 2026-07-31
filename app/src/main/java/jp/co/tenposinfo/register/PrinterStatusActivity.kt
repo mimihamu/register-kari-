@@ -71,27 +71,31 @@ class PrinterStatusActivity : ComponentActivity() {
     }
 }
 
-private data class PrinterStatusHistory(
-    val checkedAt: Long,
-    val level: PrinterStatusLevel?,
-    val message: String,
-    val rawHex: String = "",
-)
-
 @Composable
 private fun PrinterStatusApp(onClose: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val store = remember { AdminSettingsStore(context.applicationContext) }
-    var configuration by remember { mutableStateOf(store.loadPrinterConfiguration()) }
+    val settingsStore = remember { AdminSettingsStore(context.applicationContext) }
+    val monitoringStore = remember { PrinterMonitoringStore(context.applicationContext) }
+    val actor = remember { OperatorSessionRegistry.lastKnownName() ?: "プリンター診断" }
+    var configuration by remember { mutableStateOf(settingsStore.loadPrinterConfiguration()) }
+    var runtimeSettings by remember { mutableStateOf(monitoringStore.loadSettings()) }
     var status by remember { mutableStateOf<PrinterRealtimeStatus?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var operationMessage by remember { mutableStateOf<String?>(null) }
     var checking by remember { mutableStateOf(false) }
     var autoMonitor by remember { mutableStateOf(false) }
-    var history by remember { mutableStateOf(emptyList<PrinterStatusHistory>()) }
+    var history by remember { mutableStateOf(monitoringStore.listHistory(100)) }
     val scope = rememberCoroutineScope()
 
     DisposableEffect(Unit) {
-        onDispose { store.close() }
+        onDispose {
+            monitoringStore.close()
+            settingsStore.close()
+        }
+    }
+
+    suspend fun reloadHistory() {
+        history = withContext(Dispatchers.IO) { monitoringStore.listHistory(100) }
     }
 
     suspend fun performCheck() {
@@ -102,25 +106,17 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
         result.onSuccess { current ->
             status = current
             errorMessage = null
-            history = (listOf(
-                PrinterStatusHistory(
-                    checkedAt = current.checkedAt,
-                    level = current.level,
-                    message = current.summary,
-                    rawHex = current.rawHex,
-                ),
-            ) + history).take(20)
+            withContext(Dispatchers.IO) {
+                monitoringStore.recordStatus(target, current, actor)
+            }
         }.onFailure { error ->
             status = null
             errorMessage = error.message ?: error.javaClass.simpleName
-            history = (listOf(
-                PrinterStatusHistory(
-                    checkedAt = System.currentTimeMillis(),
-                    level = null,
-                    message = errorMessage.orEmpty(),
-                ),
-            ) + history).take(20)
+            withContext(Dispatchers.IO) {
+                monitoringStore.recordFailure(target, error, actor)
+            }
         }
+        reloadHistory()
         checking = false
     }
 
@@ -138,46 +134,68 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
                 Modifier.fillMaxWidth().height(64.dp).background(PsNavy).padding(horizontal = 20.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("つぐレジ 開発版", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.width(24.dp))
                 Text("プリンター状態診断", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.weight(1f))
-                Text("5秒間隔の手動診断ツール", color = Color.White, fontSize = 14.sp)
+                Text("状態履歴は端末内SQLiteへ保存", color = Color.White, fontSize = 14.sp)
             }
 
             Row(
                 Modifier.weight(1f).fillMaxWidth().padding(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                StatusPanel(Modifier.width(440.dp).fillMaxHeight()) {
-                    Text("接続設定", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = PsNavy)
-                    Spacer(Modifier.height(12.dp))
+                StatusPanel(Modifier.width(450.dp).fillMaxHeight()) {
+                    Text("接続・運用設定", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = PsNavy)
+                    Spacer(Modifier.height(10.dp))
                     StatusValue("プリンター", configuration.name)
                     StatusValue("機種", configuration.profile.displayName)
                     StatusValue("状態方式", configuration.profile.statusProtocol.displayName)
                     StatusValue("接続先", if (configuration.host.isBlank()) "未設定" else "${configuration.host}:${configuration.port}")
                     StatusValue("タイムアウト", "${configuration.timeoutMillis}ms")
-                    StatusValue("実印刷", if (configuration.enabled) "有効" else "無効")
-                    Spacer(Modifier.height(14.dp))
-                    Text(
-                        if (configuration.profile.statusProtocol == PrinterStatusProtocol.EPSON_DLE_EOT) {
-                            "EPSON DLE EOT n=1～4で、オンライン・カバー・エラー・ロール紙を問い合わせます。"
-                        } else {
-                            "ESC/POS互換モードでDLE EOTを試行します。機種が応答しない場合はタイムアウトになります。"
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = runtimeSettings.preflightEnabled,
+                            onCheckedChange = { runtimeSettings = runtimeSettings.copy(preflightEnabled = it) },
+                        )
+                        Text("自動印刷前に状態確認")
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = runtimeSettings.historyEnabled,
+                            onCheckedChange = { runtimeSettings = runtimeSettings.copy(historyEnabled = it) },
+                        )
+                        Text("状態確認履歴を保存")
+                    }
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    monitoringStore.saveSettings(
+                                        runtimeSettings.preflightEnabled,
+                                        runtimeSettings.historyEnabled,
+                                        actor,
+                                    )
+                                }
+                                runtimeSettings = monitoringStore.loadSettings()
+                                operationMessage = "運用設定を保存しました"
+                            }
                         },
-                        color = Color.DarkGray,
-                        lineHeight = 22.sp,
-                    )
-                    Spacer(Modifier.weight(1f))
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = PsBlue),
+                    ) { Text("運用設定を保存", fontWeight = FontWeight.Bold) }
+                    Spacer(Modifier.height(8.dp))
                     OutlinedButton(
                         onClick = {
-                            configuration = store.loadPrinterConfiguration()
+                            configuration = settingsStore.loadPrinterConfiguration()
+                            runtimeSettings = monitoringStore.loadSettings()
                             status = null
                             errorMessage = null
+                            operationMessage = "保存済み設定を再読込しました"
                         },
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
                     ) { Text("保存済み設定を再読込") }
-                    Spacer(Modifier.height(8.dp))
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(
                             checked = autoMonitor,
@@ -189,10 +207,14 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
                     Button(
                         onClick = { scope.launch { performCheck() } },
                         enabled = !checking && configuration.host.isNotBlank(),
-                        modifier = Modifier.fillMaxWidth().height(58.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = PsBlue),
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = PsGreen),
                     ) {
                         Text(if (checking) "確認中…" else "今すぐ状態確認", fontWeight = FontWeight.Bold)
+                    }
+                    if (operationMessage != null) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(operationMessage.orEmpty(), color = PsGreen, fontWeight = FontWeight.Bold)
                     }
                 }
 
@@ -208,11 +230,19 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
                     }
                 }
 
-                StatusPanel(Modifier.width(390.dp).fillMaxHeight()) {
+                StatusPanel(Modifier.width(420.dp).fillMaxHeight()) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("確認履歴", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = PsNavy)
+                        Text("保存履歴", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = PsNavy)
                         Spacer(Modifier.weight(1f))
-                        OutlinedButton(onClick = { history = emptyList() }) { Text("消去") }
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    withContext(Dispatchers.IO) { monitoringStore.clearHistory(actor) }
+                                    reloadHistory()
+                                    operationMessage = "状態履歴を消去しました"
+                                }
+                            },
+                        ) { Text("消去") }
                     }
                     Spacer(Modifier.height(8.dp))
                     if (history.isEmpty()) {
@@ -232,7 +262,12 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
                                             fontWeight = FontWeight.Bold,
                                         )
                                     }
-                                    Text(item.message, fontWeight = FontWeight.SemiBold)
+                                    Text(item.summary, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "${item.host}:${item.port} / ${item.checkedBy} / ${item.elapsedMillis}ms",
+                                        color = Color.Gray,
+                                        fontSize = 12.sp,
+                                    )
                                     if (item.rawHex.isNotBlank()) {
                                         Text(item.rawHex, fontFamily = FontFamily.Monospace, color = Color.Gray, fontSize = 12.sp)
                                     }
@@ -251,7 +286,7 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
                     Text("閉じる", fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.weight(1f))
-                Text("診断中は印刷データを送信しないでください", color = PsRed, fontWeight = FontWeight.Bold)
+                Text("自動監視中は他画面から印刷しないでください", color = PsRed, fontWeight = FontWeight.Bold)
             }
         }
     }
