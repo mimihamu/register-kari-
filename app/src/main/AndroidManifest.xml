@@ -7,7 +7,7 @@
     <application
         android:name=".RegisterApplication"
         android:allowBackup="false"
-        android:label="つぐレジ"
+        android:label="${appLabel}"
         android:supportsRtl="true"
         android:theme="@style/Theme.Register"
         android:usesCleartextTraffic="true">
