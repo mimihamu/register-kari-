@@ -24,6 +24,12 @@
             android:exported="false"
             android:initOrder="110" />
 
+        <provider
+            android:name=".DocumentPrintSafetyBootstrapProvider"
+            android:authorities="${applicationId}.document-print-safety-bootstrap"
+            android:exported="false"
+            android:initOrder="120" />
+
         <activity
             android:name=".MenuRevisionEditorActivity"
             android:exported="false"
