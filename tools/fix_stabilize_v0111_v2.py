@@ -121,6 +121,28 @@ replace(
     "operator revision compatibility default",
 )
 
+replace(
+    '''    workflow = ROOT / ".github/workflows/build-apk.yml"
+    def workflow_patch(text: str) -> str:
+        text = text.replace('name: Build REGISTER APK', 'name: Build つぐレジ APK')
+        text = text.replace('REGISTER_v0.11_debug.apk', 'TSUGUREGI_v0.11.1_debug.apk')
+        text = text.replace('REGISTER-v0.11-debug-apk', 'TSUGUREGI-v0.11.1-debug-apk')
+        return text
+    patch(workflow, workflow_patch)
+''',
+    '',
+    "defer permanent workflow update to connector",
+)
+
+replace(
+    '''    transient_workflow = ROOT / ".github/workflows/stabilize-v0111.yml"
+    if transient_workflow.exists():
+        transient_workflow.unlink()
+''',
+    '',
+    "keep transient workflow until connector cleanup",
+)
+
 path.write_text(text, encoding="utf-8")
 Path(__file__).with_name("fix_stabilize_v0111.py").unlink(missing_ok=True)
 Path(__file__).unlink()
