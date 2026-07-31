@@ -15,9 +15,15 @@ object AutomaticPrintPolicy {
         configurationUsable && attempted > 0 && failures > 0
 }
 
+object AutomaticPrinterPreflightPolicy {
+    fun mayContinue(enabled: Boolean, status: PrinterRealtimeStatus?): Boolean =
+        !enabled || (status != null && PrinterPreflightPolicy.mayPrint(status))
+}
+
 /**
  * 設定済みTCPプリンターへ、売上レシートと業務帳票の待機ジョブを順番に送信する。
- * プリンター未設定時は成功扱いで終了し、販売処理とキューを止めない。
+ * 印刷前状態確認が有効な場合はDLE EOT診断を実行し、OFFLINE／ERROR／通信失敗時は
+ * ジョブをPRINTINGへ変更せずにWorkManagerの再試行へ回す。
  */
 class AutomaticPrintWorker(
     appContext: Context,
@@ -31,6 +37,26 @@ class AutomaticPrintWorker(
             settingsStore.close()
         }
         if (!configuration.usable) return androidx.work.ListenableWorker.Result.success()
+
+        val preflightAllowed = PrinterMonitoringStore(applicationContext).use { monitoringStore ->
+            val runtime = monitoringStore.loadSettings()
+            if (!runtime.preflightEnabled) {
+                true
+            } else {
+                val result = TcpPrinterStatusClient(configuration).query()
+                result.fold(
+                    onSuccess = { status ->
+                        monitoringStore.recordStatus(configuration, status, "自動印刷")
+                        AutomaticPrinterPreflightPolicy.mayContinue(true, status)
+                    },
+                    onFailure = { error ->
+                        monitoringStore.recordFailure(configuration, error, "自動印刷")
+                        false
+                    },
+                )
+            }
+        }
+        if (!preflightAllowed) return androidx.work.ListenableWorker.Result.retry()
 
         val gateway = TcpEscPosPrinterGateway(
             host = configuration.host,
