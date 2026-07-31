@@ -11,8 +11,8 @@ android {
         applicationId = "jp.co.tenposinfo.register"
         minSdk = 31
         targetSdk = 36
-        versionCode = 12
-        versionName = "0.11.1-dev"
+        versionCode = 13
+        versionName = "0.11.1-dev.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
