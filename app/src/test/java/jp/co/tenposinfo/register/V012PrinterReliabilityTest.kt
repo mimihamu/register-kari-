@@ -2,6 +2,7 @@ package jp.co.tenposinfo.register
 
 import java.io.IOException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -50,6 +51,30 @@ class V012PrinterReliabilityTest {
             PrinterFailureDisposition.SAFE_TO_RETRY,
             PrinterRetrySafety.classify(IOException("connection refused")),
         )
+    }
+
+    @Test
+    fun operationDocumentUnknownDeliveryStopsAutomaticRetry() {
+        val error = PrinterTransportException(
+            PrinterDeliveryPhase.WRITE_STARTED,
+            IOException("connection reset"),
+        )
+        assertEquals(PrintJobStatus.FAILED, DocumentPrintFailurePolicy.statusAfterFailure(1, error))
+        assertTrue(DocumentPrintFailurePolicy.shouldStopAutomaticRetry(error))
+        assertTrue(DocumentPrintFailurePolicy.shouldStopAutomaticRetry(error.message))
+        assertTrue(error.message.orEmpty().startsWith(DocumentPrintFailurePolicy.UNKNOWN_DELIVERY_PREFIX))
+    }
+
+    @Test
+    fun operationDocumentConnectionFailureCanRetryUntilLimit() {
+        val error = PrinterTransportException(
+            PrinterDeliveryPhase.CONNECTING,
+            IOException("connection refused"),
+        )
+        assertEquals(PrintJobStatus.RETRY, DocumentPrintFailurePolicy.statusAfterFailure(1, error))
+        assertEquals(PrintJobStatus.FAILED, DocumentPrintFailurePolicy.statusAfterFailure(5, error))
+        assertFalse(DocumentPrintFailurePolicy.shouldStopAutomaticRetry(error))
+        assertFalse(DocumentPrintFailurePolicy.shouldStopAutomaticRetry(error.message))
     }
 
     @Test
