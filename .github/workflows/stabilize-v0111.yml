@@ -45,7 +45,9 @@ jobs:
           gradle-version: "9.5.0"
 
       - name: Integrate stabilization sources
-        run: python3 tools/stabilize_v0111.py
+        run: |
+          python3 tools/fix_stabilize_v0111.py
+          python3 tools/stabilize_v0111.py
 
       - name: Verify legacy source generation is removed
         run: |
