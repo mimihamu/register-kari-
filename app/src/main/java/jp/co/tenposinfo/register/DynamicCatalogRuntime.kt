@@ -561,18 +561,36 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
             db.execSQL(
                 """
                 UPDATE menu_revision_products
-                SET tax_label = CASE legacy_tax_category
-                        WHEN 'INCLUDED_10' THEN '10%内税' WHEN 'EXCLUDED_10' THEN '10%外税'
-                        WHEN 'INCLUDED_8' THEN '8%内税' WHEN 'EXCLUDED_8' THEN '8%外税' ELSE '非課税' END,
-                    tax_rate_percent = CASE legacy_tax_category
-                        WHEN 'INCLUDED_10' THEN 10 WHEN 'EXCLUDED_10' THEN 10
-                        WHEN 'INCLUDED_8' THEN 8 WHEN 'EXCLUDED_8' THEN 8 ELSE 0 END,
-                    tax_included = CASE WHEN legacy_tax_category IN ('INCLUDED_10','INCLUDED_8') THEN 1 ELSE 0 END,
-                    taxable = CASE WHEN legacy_tax_category = 'NON_TAXABLE' THEN 0 ELSE 1 END,
-                    reduced = CASE WHEN legacy_tax_category IN ('INCLUDED_8','EXCLUDED_8') THEN 1 ELSE 0 END,
-                    tax_symbol = CASE legacy_tax_category
-                        WHEN 'INCLUDED_10' THEN '内' WHEN 'EXCLUDED_10' THEN '外'
-                        WHEN 'INCLUDED_8' THEN '内※' WHEN 'EXCLUDED_8' THEN '外※' ELSE '非' END
+                SET tax_label = COALESCE(
+                        NULLIF((SELECT t.label FROM dynamic_tax_rules t WHERE t.tax_key = menu_revision_products.tax_key), ''),
+                        CASE legacy_tax_category
+                            WHEN 'INCLUDED_10' THEN '10%内税' WHEN 'EXCLUDED_10' THEN '10%外税'
+                            WHEN 'INCLUDED_8' THEN '8%内税' WHEN 'EXCLUDED_8' THEN '8%外税' ELSE '非課税' END
+                    ),
+                    tax_rate_percent = COALESCE(
+                        (SELECT t.rate_percent FROM dynamic_tax_rules t WHERE t.tax_key = menu_revision_products.tax_key),
+                        CASE legacy_tax_category
+                            WHEN 'INCLUDED_10' THEN 10 WHEN 'EXCLUDED_10' THEN 10
+                            WHEN 'INCLUDED_8' THEN 8 WHEN 'EXCLUDED_8' THEN 8 ELSE 0 END
+                    ),
+                    tax_included = COALESCE(
+                        (SELECT CASE WHEN t.price_mode = 'INCLUDED' THEN 1 ELSE 0 END FROM dynamic_tax_rules t WHERE t.tax_key = menu_revision_products.tax_key),
+                        CASE WHEN legacy_tax_category IN ('INCLUDED_10','INCLUDED_8') THEN 1 ELSE 0 END
+                    ),
+                    taxable = COALESCE(
+                        (SELECT CASE WHEN t.price_mode = 'NON_TAXABLE' THEN 0 ELSE 1 END FROM dynamic_tax_rules t WHERE t.tax_key = menu_revision_products.tax_key),
+                        CASE WHEN legacy_tax_category = 'NON_TAXABLE' THEN 0 ELSE 1 END
+                    ),
+                    reduced = COALESCE(
+                        (SELECT t.reduced FROM dynamic_tax_rules t WHERE t.tax_key = menu_revision_products.tax_key),
+                        CASE WHEN legacy_tax_category IN ('INCLUDED_8','EXCLUDED_8') THEN 1 ELSE 0 END
+                    ),
+                    tax_symbol = COALESCE(
+                        NULLIF((SELECT t.symbol FROM dynamic_tax_rules t WHERE t.tax_key = menu_revision_products.tax_key), ''),
+                        CASE legacy_tax_category
+                            WHEN 'INCLUDED_10' THEN '内' WHEN 'EXCLUDED_10' THEN '外'
+                            WHEN 'INCLUDED_8' THEN '内※' WHEN 'EXCLUDED_8' THEN '外※' ELSE '非' END
+                    )
                 WHERE tax_label = ''
                 """.trimIndent(),
             )

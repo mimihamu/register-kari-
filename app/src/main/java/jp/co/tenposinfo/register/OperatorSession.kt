@@ -162,7 +162,7 @@ object OperatorSessionRegistry {
             return null
         }
         val current = cached
-        if (current == null || current.id != operatorId || OperatorSessionRevisionPolicy.shouldReload(current.revision, stored.revision)) {
+        if (current == null || current.id != operatorId || current != stored) {
             cached = stored
             return stored
         }

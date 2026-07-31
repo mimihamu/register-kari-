@@ -145,6 +145,17 @@ object JournalOutboxSchema {
             )
             """.trimIndent(),
         )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS sync_runtime_settings (
+                setting_key TEXT PRIMARY KEY,
+                setting_value TEXT NOT NULL
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            "INSERT OR IGNORE INTO sync_runtime_settings(setting_key, setting_value) VALUES('folder_name', 'つぐレジ')",
+        )
         SchemaMigration.ensureColumn(db, "sync_outbox", "processing_started_at", "INTEGER")
         SchemaMigration.ensureColumn(db, "sync_outbox", "lease_until", "INTEGER")
         SchemaMigration.ensureColumn(db, "sync_outbox", "worker_token", "TEXT")
@@ -177,6 +188,20 @@ object JournalOutboxSchema {
         )
     }
 
+    fun updateFolderName(db: SQLiteDatabase, folderName: String) {
+        ensureCore(db)
+        val sanitized = OutboxObjectKey.sanitizeSegment(folderName)
+        db.insertWithOnConflict(
+            "sync_runtime_settings",
+            null,
+            ContentValues().apply {
+                put("setting_key", "folder_name")
+                put("setting_value", sanitized)
+            },
+            SQLiteDatabase.CONFLICT_REPLACE,
+        )
+    }
+
     fun ensureOperationAndMasterTriggers(db: SQLiteDatabase) {
         ensureCore(db)
         createTrigger(
@@ -195,7 +220,7 @@ object JournalOutboxSchema {
                     NEW.created_at
                 );
                 INSERT OR IGNORE INTO sync_outbox(event_id, destination, object_key, status, attempt_count, next_attempt_at, created_at, updated_at)
-                SELECT event_id, 'GOOGLE_DRIVE', 'REGISTER/' || business_date || '/reversal-' || aggregate_id || '.json', 'PENDING', 0, 0, created_at, created_at
+                SELECT event_id, 'GOOGLE_DRIVE', (SELECT setting_value FROM sync_runtime_settings WHERE setting_key = 'folder_name') || '/' || business_date || '/reversal-' || aggregate_id || '.json', 'PENDING', 0, 0, created_at, created_at
                 FROM sales_journal WHERE event_id = 'reversal-' || NEW.id || '-' || NEW.created_at;
             END
             """.trimIndent(),
@@ -216,7 +241,7 @@ object JournalOutboxSchema {
                     NEW.created_at
                 );
                 INSERT OR IGNORE INTO sync_outbox(event_id, destination, object_key, status, attempt_count, next_attempt_at, created_at, updated_at)
-                SELECT event_id, 'GOOGLE_DRIVE', 'REGISTER/' || business_date || '/settlement-' || aggregate_id || '.json', 'PENDING', 0, 0, created_at, created_at
+                SELECT event_id, 'GOOGLE_DRIVE', (SELECT setting_value FROM sync_runtime_settings WHERE setting_key = 'folder_name') || '/' || business_date || '/settlement-' || aggregate_id || '.json', 'PENDING', 0, 0, created_at, created_at
                 FROM sales_journal WHERE event_id = 'settlement-' || NEW.id || '-' || NEW.created_at;
             END
             """.trimIndent(),
@@ -237,7 +262,7 @@ object JournalOutboxSchema {
                     NEW.created_at
                 );
                 INSERT OR IGNORE INTO sync_outbox(event_id, destination, object_key, status, attempt_count, next_attempt_at, created_at, updated_at)
-                SELECT event_id, 'GOOGLE_DRIVE', 'REGISTER/' || business_date || '/cash-' || aggregate_id || '.json', 'PENDING', 0, 0, created_at, created_at
+                SELECT event_id, 'GOOGLE_DRIVE', (SELECT setting_value FROM sync_runtime_settings WHERE setting_key = 'folder_name') || '/' || business_date || '/cash-' || aggregate_id || '.json', 'PENDING', 0, 0, created_at, created_at
                 FROM sales_journal WHERE event_id = 'cash-' || NEW.id || '-' || NEW.created_at;
             END
             """.trimIndent(),
@@ -258,7 +283,7 @@ object JournalOutboxSchema {
                     NEW.opened_at
                 );
                 INSERT OR IGNORE INTO sync_outbox(event_id, destination, object_key, status, attempt_count, next_attempt_at, created_at, updated_at)
-                SELECT event_id, 'GOOGLE_DRIVE', 'REGISTER/' || business_date || '/business-open-' || aggregate_id || '.json', 'PENDING', 0, 0, created_at, created_at
+                SELECT event_id, 'GOOGLE_DRIVE', (SELECT setting_value FROM sync_runtime_settings WHERE setting_key = 'folder_name') || '/' || business_date || '/business-open-' || aggregate_id || '.json', 'PENDING', 0, 0, created_at, created_at
                 FROM sales_journal WHERE event_id = 'business-open-' || NEW.id || '-' || NEW.opened_at;
             END
             """.trimIndent(),
@@ -280,7 +305,7 @@ object JournalOutboxSchema {
                     COALESCE(NEW.closed_at, strftime('%s','now') * 1000)
                 );
                 INSERT OR IGNORE INTO sync_outbox(event_id, destination, object_key, status, attempt_count, next_attempt_at, created_at, updated_at)
-                SELECT event_id, 'GOOGLE_DRIVE', 'REGISTER/' || business_date || '/business-state-' || aggregate_id || '-' || NEW.status || '.json', 'PENDING', 0, 0, created_at, created_at
+                SELECT event_id, 'GOOGLE_DRIVE', (SELECT setting_value FROM sync_runtime_settings WHERE setting_key = 'folder_name') || '/' || business_date || '/business-state-' || aggregate_id || '-' || NEW.status || '.json', 'PENDING', 0, 0, created_at, created_at
                 FROM sales_journal WHERE event_id = 'business-state-' || NEW.id || '-' || COALESCE(NEW.closed_at, strftime('%s','now') * 1000) || '-' || NEW.status;
             END
             """.trimIndent(),
@@ -301,7 +326,7 @@ object JournalOutboxSchema {
                     NEW.created_at
                 );
                 INSERT OR IGNORE INTO sync_outbox(event_id, destination, object_key, status, attempt_count, next_attempt_at, created_at, updated_at)
-                SELECT event_id, 'GOOGLE_DRIVE', 'REGISTER/' || business_date || '/menu-revision-' || aggregate_id || '.json', 'PENDING', 0, 0, created_at, created_at
+                SELECT event_id, 'GOOGLE_DRIVE', (SELECT setting_value FROM sync_runtime_settings WHERE setting_key = 'folder_name') || '/' || business_date || '/menu-revision-' || aggregate_id || '.json', 'PENDING', 0, 0, created_at, created_at
                 FROM sales_journal WHERE event_id = 'menu-revision-' || NEW.id || '-' || NEW.created_at;
             END
             """.trimIndent(),
@@ -309,7 +334,10 @@ object JournalOutboxSchema {
     }
 
     private fun createTrigger(db: SQLiteDatabase, name: String, sql: String) {
-        runCatching { db.execSQL(sql) }.getOrElse { error("同期トリガー $name の作成に失敗しました: ${it.message}") }
+        runCatching {
+            db.execSQL("DROP TRIGGER IF EXISTS $name")
+            db.execSQL(sql)
+        }.getOrElse { error("同期トリガー $name の作成に失敗しました: ${it.message}") }
     }
 
     /**
@@ -318,6 +346,7 @@ object JournalOutboxSchema {
      */
     fun rewriteUnstagedObjectKeys(db: SQLiteDatabase, folderName: String): Int {
         ensureCore(db)
+        updateFolderName(db, folderName)
         val rows = db.rawQuery(
             """
             SELECT o.id, j.business_date, j.event_type, j.aggregate_id
@@ -657,13 +686,66 @@ object OutboxPayloadAssembler {
 
     private fun reversalPayload(db: SQLiteDatabase, record: JournalOutboxRecord): String {
         val id = record.aggregateId.toLong()
-        return db.rawQuery(
+        val header = db.rawQuery(
             "SELECT original_sale_id, reversal_type, gross_amount, reason, operator_name, created_at FROM reversal_transactions WHERE id = ?",
             arrayOf(id.toString()),
         ).use { cursor ->
             require(cursor.moveToFirst()) { "返品・取消が見つかりません" }
-            """{"schema":"register.reversal.v1","eventId":"${escape(record.eventId)}","businessDate":"${escape(record.businessDate)}","reversalId":$id,"originalSaleId":${cursor.getLong(0)},"type":"${escape(cursor.getString(1))}","grossAmount":${cursor.getLong(2)},"reason":"${escape(cursor.getString(3))}","operator":"${escape(cursor.getString(4))}","createdAt":${cursor.getLong(5)}}"""
+            listOf(
+                cursor.getLong(0).toString(), cursor.getString(1), cursor.getLong(2).toString(),
+                cursor.getString(3), cursor.getString(4), cursor.getLong(5).toString(),
+            )
         }
+        val payloadLines = db.rawQuery(
+            """
+            SELECT product_id, product_name, unit_price, tax_category, return_quantity, discount_amount,
+                   tax_key, tax_label, tax_rate_percent, tax_included, taxable, reduced, tax_symbol
+            FROM reversal_items
+            WHERE reversal_id = ?
+            ORDER BY id
+            """.trimIndent(),
+            arrayOf(id.toString()),
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    val legacy = TaxCategory.valueOf(cursor.getString(3))
+                    val hasSnapshot = cursor.getString(6).isNotBlank()
+                    add(
+                        PayloadTaxLine(
+                            productId = cursor.getString(0),
+                            name = cursor.getString(1),
+                            unitPrice = cursor.getLong(2),
+                            legacyCategory = legacy,
+                            quantity = cursor.getInt(4),
+                            discount = cursor.getLong(5),
+                            note = "",
+                            snapshot = if (hasSnapshot) {
+                                TaxSnapshot(
+                                    key = cursor.getString(6),
+                                    label = cursor.getString(7).ifBlank { legacy.displayName },
+                                    ratePercent = cursor.getInt(8),
+                                    taxIncluded = cursor.getInt(9) != 0,
+                                    taxable = cursor.getInt(10) != 0,
+                                    reduced = cursor.getInt(11) != 0,
+                                    symbol = cursor.getString(12).ifBlank { legacy.symbol },
+                                )
+                            } else {
+                                TaxSnapshot.from(legacy)
+                            },
+                        ),
+                    )
+                }
+            }
+        }
+        val items = payloadLines.joinToString(",") { line ->
+            val tax = line.snapshot
+            "{\"productId\":\"${escape(line.productId)}\",\"name\":\"${escape(line.name)}\",\"unitPrice\":${line.unitPrice},\"quantity\":${line.quantity},\"discount\":${line.discount},\"taxKey\":\"${escape(tax.key)}\",\"taxLabel\":\"${escape(tax.label)}\",\"taxRatePercent\":${tax.ratePercent},\"taxIncluded\":${tax.taxIncluded},\"taxable\":${tax.taxable},\"reduced\":${tax.reduced},\"taxSymbol\":\"${escape(tax.symbol)}\"}"
+        }
+        val taxTotals = PayloadTaxAggregation.calculate(payloadLines).buckets.joinToString(",") { bucket ->
+            val keys = bucket.sourceTaxKeys.joinToString(",") { "\"${escape(it)}\"" }
+            "{\"ratePercent\":${bucket.ratePercent},\"taxable\":${bucket.taxable},\"netAmount\":${bucket.netAmount},\"taxAmount\":${bucket.taxAmount},\"grossAmount\":${bucket.grossAmount},\"taxKeys\":[$keys]}"
+        }
+        return """{"schema":"register.reversal.v2","eventId":"${escape(record.eventId)}","businessDate":"${escape(record.businessDate)}","reversalId":$id,"originalSaleId":${header[0]},"type":"${escape(header[1])}","grossAmount":${header[2]},"reason":"${escape(header[3])}","operator":"${escape(header[4])}","createdAt":${header[5]},"items":[$items],"taxTotals":[$taxTotals]}"""
     }
 
     private fun settlementPayload(db: SQLiteDatabase, record: JournalOutboxRecord): String {
@@ -800,8 +882,10 @@ class JournalOutboxBootstrapProvider : ContentProvider() {
             AdvancedOperationsStore(appContext).also { it.close() }
             DynamicCatalogStore(appContext).also { it.close() }
             RegisterDatabase(appContext).use { database ->
-                JournalOutboxSchema.ensureCore(database.writableDatabase)
-                JournalOutboxSchema.ensureOperationAndMasterTriggers(database.writableDatabase)
+                val db = database.writableDatabase
+                JournalOutboxSchema.ensureCore(db)
+                JournalOutboxSchema.updateFolderName(db, DriveSyncSettingsStore.load(appContext).folderName)
+                JournalOutboxSchema.ensureOperationAndMasterTriggers(db)
             }
             DriveOutboxScheduler.ensurePeriodic(appContext)
         }
