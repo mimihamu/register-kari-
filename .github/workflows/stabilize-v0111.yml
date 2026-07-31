@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: stabilize-v0111
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   stabilize-test-build:
@@ -63,9 +63,9 @@ jobs:
 
       - name: Prepare APK and SHA-256
         run: |
-          mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.11.1_debug.apk
-          sha256sum artifacts/TSUGUREGI_v0.11.1_debug.apk | tee artifacts/TSUGUREGI_v0.11.1_debug.apk.sha256
+          mkdir -p "$RUNNER_TEMP/tsuguregi-artifacts"
+          cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/tsuguregi-artifacts/TSUGUREGI_v0.11.1_debug.apk"
+          sha256sum "$RUNNER_TEMP/tsuguregi-artifacts/TSUGUREGI_v0.11.1_debug.apk" | tee "$RUNNER_TEMP/tsuguregi-artifacts/TSUGUREGI_v0.11.1_debug.apk.sha256"
 
       - name: Commit integrated sources
         run: |
@@ -84,7 +84,7 @@ jobs:
         with:
           name: TSUGUREGI-v0.11.1-debug-apk
           path: |
-            artifacts/TSUGUREGI_v0.11.1_debug.apk
-            artifacts/TSUGUREGI_v0.11.1_debug.apk.sha256
+            ${{ runner.temp }}/tsuguregi-artifacts/TSUGUREGI_v0.11.1_debug.apk
+            ${{ runner.temp }}/tsuguregi-artifacts/TSUGUREGI_v0.11.1_debug.apk.sha256
           if-no-files-found: error
           retention-days: 30
