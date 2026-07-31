@@ -24,6 +24,40 @@ class V012PrinterMonitoringTest {
         assertFalse(AutomaticPrinterPreflightPolicy.mayContinue(true, null))
     }
 
+    @Test
+    fun pollingRunsOnlyWhileSalesScreenIsVisibleAndActivityIsResumed() {
+        assertTrue(PrinterHealthUiPolicy.shouldPoll(isSalesScreenVisible = true, isActivityResumed = true))
+        assertFalse(PrinterHealthUiPolicy.shouldPoll(isSalesScreenVisible = false, isActivityResumed = true))
+        assertFalse(PrinterHealthUiPolicy.shouldPoll(isSalesScreenVisible = true, isActivityResumed = false))
+        assertFalse(PrinterHealthUiPolicy.shouldPoll(isSalesScreenVisible = false, isActivityResumed = false))
+    }
+
+    @Test
+    fun checkedTimeIsMarkedStaleAfterThirtySeconds() {
+        val snapshot = healthSnapshot(checkedAt = 1_000L)
+
+        assertFalse(PrinterHealthUiPolicy.isStale(snapshot, nowMillis = 30_999L))
+        assertTrue(PrinterHealthUiPolicy.isStale(snapshot, nowMillis = 31_000L))
+        assertFalse(PrinterHealthUiPolicy.checkedAtLabel(snapshot, 30_999L).contains("古い情報"))
+        assertTrue(PrinterHealthUiPolicy.checkedAtLabel(snapshot, 31_000L).contains("古い情報"))
+    }
+
+    @Test
+    fun neverCheckedSnapshotIsShownAsUnconfirmedAndStale() {
+        val snapshot = PrinterHealthSnapshot.checking()
+
+        assertTrue(PrinterHealthUiPolicy.isStale(snapshot, nowMillis = 1L))
+        assertTrue(PrinterHealthUiPolicy.checkedAtLabel(snapshot, 1L).contains("未確認"))
+    }
+
+    private fun healthSnapshot(checkedAt: Long) = PrinterHealthSnapshot(
+        level = PrinterHealthLevel.READY,
+        title = "オンライン",
+        detail = "127.0.0.1:9100",
+        checkedAt = checkedAt,
+        printerName = "テストプリンター",
+    )
+
     private fun status(
         online: Boolean = true,
         paperNearEnd: Boolean = false,
