@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteDatabase
 data class PrinterRuntimeSettings(
     val preflightEnabled: Boolean = true,
     val historyEnabled: Boolean = true,
+    val historyRetentionDays: Int = 30,
     val updatedBy: String = "system",
     val updatedAt: Long = 0L,
 )
@@ -26,6 +27,18 @@ data class PrinterStatusHistoryRecord(
     val checkedAt: Long,
 )
 
+object PrinterHistoryRetentionPolicy {
+    const val DEFAULT_DAYS = 30
+    const val MIN_DAYS = 1
+    const val MAX_DAYS = 365
+    const val MAX_ROWS = 5_000
+    private const val DAY_MILLIS = 24L * 60L * 60L * 1_000L
+
+    fun normalize(days: Int): Int = days.coerceIn(MIN_DAYS, MAX_DAYS)
+
+    fun cutoff(now: Long, days: Int): Long = now - normalize(days) * DAY_MILLIS
+}
+
 /**
  * プリンター診断設定と確認履歴をレジ本体のSQLiteへ保存する。
  * 状態確認失敗も履歴として残し、監査ログから追跡できるようにする。
@@ -36,13 +49,14 @@ class PrinterMonitoringStore(context: Context) : AutoCloseable {
 
     init {
         ensureSchema()
+        pruneHistory(recordAudit = false)
     }
 
     override fun close() = database.close()
 
     fun loadSettings(): PrinterRuntimeSettings = db.query(
         "printer_runtime_settings",
-        arrayOf("preflight_enabled", "history_enabled", "updated_by", "updated_at"),
+        arrayOf("preflight_enabled", "history_enabled", "history_retention_days", "updated_by", "updated_at"),
         "id = 1",
         null,
         null,
@@ -52,12 +66,24 @@ class PrinterMonitoringStore(context: Context) : AutoCloseable {
         if (!cursor.moveToFirst()) PrinterRuntimeSettings() else PrinterRuntimeSettings(
             preflightEnabled = cursor.getInt(0) != 0,
             historyEnabled = cursor.getInt(1) != 0,
-            updatedBy = cursor.getString(2),
-            updatedAt = cursor.getLong(3),
+            historyRetentionDays = PrinterHistoryRetentionPolicy.normalize(cursor.getInt(2)),
+            updatedBy = cursor.getString(3),
+            updatedAt = cursor.getLong(4),
         )
     }
 
     fun saveSettings(preflightEnabled: Boolean, historyEnabled: Boolean, actor: String) {
+        val current = loadSettings()
+        saveSettings(preflightEnabled, historyEnabled, current.historyRetentionDays, actor)
+    }
+
+    fun saveSettings(
+        preflightEnabled: Boolean,
+        historyEnabled: Boolean,
+        historyRetentionDays: Int,
+        actor: String,
+    ) {
+        val retention = PrinterHistoryRetentionPolicy.normalize(historyRetentionDays)
         val now = System.currentTimeMillis()
         db.beginTransaction()
         try {
@@ -66,6 +92,7 @@ class PrinterMonitoringStore(context: Context) : AutoCloseable {
                 ContentValues().apply {
                     put("preflight_enabled", if (preflightEnabled) 1 else 0)
                     put("history_enabled", if (historyEnabled) 1 else 0)
+                    put("history_retention_days", retention)
                     put("updated_by", actor.ifBlank { "system" })
                     put("updated_at", now)
                 },
@@ -74,7 +101,7 @@ class PrinterMonitoringStore(context: Context) : AutoCloseable {
             )
             insertAudit(
                 eventType = "PRINTER_RUNTIME_SETTINGS_UPDATED",
-                detail = "印刷前状態確認=${if (preflightEnabled) "有効" else "無効"} / 状態履歴=${if (historyEnabled) "有効" else "無効"}",
+                detail = "印刷前状態確認=${if (preflightEnabled) "有効" else "無効"} / 状態履歴=${if (historyEnabled) "有効" else "無効"} / 保持${retention}日",
                 actor = actor,
                 createdAt = now,
             )
@@ -82,6 +109,12 @@ class PrinterMonitoringStore(context: Context) : AutoCloseable {
         } finally {
             db.endTransaction()
         }
+        pruneHistory(actor = actor)
+    }
+
+    fun saveHistoryRetentionDays(days: Int, actor: String) {
+        val current = loadSettings()
+        saveSettings(current.preflightEnabled, current.historyEnabled, days, actor)
     }
 
     fun recordStatus(
@@ -159,6 +192,42 @@ class PrinterMonitoringStore(context: Context) : AutoCloseable {
         return result
     }
 
+    fun historyCount(): Long = db.rawQuery(
+        "SELECT COUNT(*) FROM printer_status_history",
+        null,
+    ).use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else 0L }
+
+    fun pruneHistory(
+        now: Long = System.currentTimeMillis(),
+        actor: String = "system",
+        recordAudit: Boolean = true,
+    ): Int {
+        val settings = loadSettings()
+        val cutoff = PrinterHistoryRetentionPolicy.cutoff(now, settings.historyRetentionDays)
+        var deleted = db.delete(
+            "printer_status_history",
+            "checked_at < ?",
+            arrayOf(cutoff.toString()),
+        )
+        val overflow = (historyCount() - PrinterHistoryRetentionPolicy.MAX_ROWS).coerceAtLeast(0L)
+        if (overflow > 0) {
+            deleted += db.delete(
+                "printer_status_history",
+                "id IN (SELECT id FROM printer_status_history ORDER BY checked_at ASC, id ASC LIMIT ?)",
+                arrayOf(overflow.toString()),
+            )
+        }
+        if (deleted > 0 && recordAudit) {
+            insertAudit(
+                eventType = "PRINTER_STATUS_HISTORY_PRUNED",
+                detail = "保持${settings.historyRetentionDays}日／最大${PrinterHistoryRetentionPolicy.MAX_ROWS}件により${deleted}件を自動削除",
+                actor = actor,
+                createdAt = now,
+            )
+        }
+        return deleted
+    }
+
     fun clearHistory(actor: String) {
         val deleted = db.delete("printer_status_history", null, null)
         insertAudit(
@@ -208,6 +277,7 @@ class PrinterMonitoringStore(context: Context) : AutoCloseable {
         } finally {
             db.endTransaction()
         }
+        pruneHistory(now = checkedAt, actor = checkedBy)
     }
 
     private fun insertAudit(eventType: String, detail: String, actor: String, createdAt: Long) {
@@ -232,16 +302,23 @@ class PrinterMonitoringStore(context: Context) : AutoCloseable {
                 id INTEGER PRIMARY KEY CHECK(id = 1),
                 preflight_enabled INTEGER NOT NULL DEFAULT 1,
                 history_enabled INTEGER NOT NULL DEFAULT 1,
+                history_retention_days INTEGER NOT NULL DEFAULT 30,
                 updated_by TEXT NOT NULL DEFAULT 'system',
                 updated_at INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent(),
         )
+        SchemaMigration.ensureColumn(
+            db,
+            "printer_runtime_settings",
+            "history_retention_days",
+            "INTEGER NOT NULL DEFAULT 30",
+        )
         db.execSQL(
             """
             INSERT OR IGNORE INTO printer_runtime_settings(
-                id, preflight_enabled, history_enabled, updated_by, updated_at
-            ) VALUES(1, 1, 1, 'system', 0)
+                id, preflight_enabled, history_enabled, history_retention_days, updated_by, updated_at
+            ) VALUES(1, 1, 1, 30, 'system', 0)
             """.trimIndent(),
         )
         db.execSQL(
