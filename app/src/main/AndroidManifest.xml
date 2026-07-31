@@ -30,6 +30,12 @@
             android:exported="false"
             android:initOrder="120" />
 
+        <provider
+            android:name=".PrintQueueRecoveryBootstrapProvider"
+            android:authorities="${applicationId}.print-queue-recovery-bootstrap"
+            android:exported="false"
+            android:initOrder="130" />
+
         <activity
             android:name=".MenuRevisionEditorActivity"
             android:exported="false"
