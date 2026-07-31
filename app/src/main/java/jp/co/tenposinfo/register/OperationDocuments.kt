@@ -1,7 +1,5 @@
 package jp.co.tenposinfo.register
 
-import java.io.ByteArrayOutputStream
-import java.nio.charset.Charset
 import java.text.NumberFormat
 import java.time.Instant
 import java.time.ZoneId
@@ -169,16 +167,13 @@ object OperationDocumentRenderer {
 }
 
 object TextEscPosEncoder {
-    private val ms932 = Charset.forName("MS932")
-
-    fun encode(text: String): ByteArray {
-        val output = ByteArrayOutputStream()
-        output.write(byteArrayOf(0x1B, 0x40))
-        output.write(byteArrayOf(0x1B, 0x74, 0x01))
-        output.write(byteArrayOf(0x1B, 0x61, 0x00))
-        output.write(text.toByteArray(ms932))
-        output.write(byteArrayOf(0x0A, 0x0A, 0x0A))
-        output.write(byteArrayOf(0x1D, 0x56, 0x42, 0x00))
-        return output.toByteArray()
-    }
+    fun encode(
+        text: String,
+        configuration: PrinterConfiguration = PrinterConfigurationRegistry.current() ?: PrinterConfiguration(),
+    ): ByteArray = PrinterCommandEncoder.encodeText(
+        text = text,
+        configuration = configuration,
+        openDrawer = false,
+        appendCut = true,
+    )
 }
