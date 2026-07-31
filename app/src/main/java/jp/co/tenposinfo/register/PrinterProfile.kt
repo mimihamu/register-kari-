@@ -5,27 +5,36 @@ import java.nio.charset.Charset
 
 /**
  * TCP 9100で使用するESC/POS互換プロファイル。
- * 現段階では日本語CP932・標準カット・ドロアキックを共通基盤とし、
- * 機種固有差分をこのクラスへ集約する。
+ * 日本語コードページ、カット、ドロア、双方向ステータスの機種差分を集約する。
  */
+enum class PrinterStatusProtocol(val displayName: String) {
+    EPSON_DLE_EOT("EPSON DLE EOT"),
+    ESC_POS_DLE_EOT_COMPATIBLE("DLE EOT互換"),
+    NONE("非対応"),
+}
+
 enum class PrinterProfile(
     val displayName: String,
     val description: String,
     val charsetName: String = "MS932",
     val codeTable: Int = 1,
     val supportsDrawer: Boolean = true,
+    val statusProtocol: PrinterStatusProtocol = PrinterStatusProtocol.ESC_POS_DLE_EOT_COMPATIBLE,
 ) {
     EPSON_TM_JAPAN(
         displayName = "EPSON TM（日本語）",
         description = "TM-m30II／TM-T88系などのESC/POS対応機",
+        statusProtocol = PrinterStatusProtocol.EPSON_DLE_EOT,
     ),
     STAR_ESC_POS(
         displayName = "STAR ESC/POS",
         description = "mC-Print／TSP系のESC/POSエミュレーション",
+        statusProtocol = PrinterStatusProtocol.ESC_POS_DLE_EOT_COMPATIBLE,
     ),
     GENERIC_ESC_POS(
         displayName = "汎用ESC/POS",
         description = "TCP 9100対応の互換プリンター",
+        statusProtocol = PrinterStatusProtocol.ESC_POS_DLE_EOT_COMPATIBLE,
     ),
 }
 
