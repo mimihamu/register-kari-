@@ -9,10 +9,10 @@ android {
 
     defaultConfig {
         applicationId = "jp.co.tenposinfo.register"
-        minSdk = 31
+        minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.11.1-dev.1"
+        versionCode = 14
+        versionName = "0.11.1-dev.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
