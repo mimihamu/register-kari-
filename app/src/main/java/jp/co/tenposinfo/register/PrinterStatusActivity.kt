@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -26,6 +27,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -79,6 +82,7 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
     val actor = remember { OperatorSessionRegistry.lastKnownName() ?: "プリンター診断" }
     var configuration by remember { mutableStateOf(settingsStore.loadPrinterConfiguration()) }
     var runtimeSettings by remember { mutableStateOf(monitoringStore.loadSettings()) }
+    var retentionText by remember { mutableStateOf(runtimeSettings.historyRetentionDays.toString()) }
     var status by remember { mutableStateOf<PrinterRealtimeStatus?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var operationMessage by remember { mutableStateOf<String?>(null) }
@@ -146,75 +150,101 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 StatusPanel(Modifier.width(450.dp).fillMaxHeight()) {
-                    Text("接続・運用設定", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = PsNavy)
-                    Spacer(Modifier.height(10.dp))
-                    StatusValue("プリンター", configuration.name)
-                    StatusValue("機種", configuration.profile.displayName)
-                    StatusValue("状態方式", configuration.profile.statusProtocol.displayName)
-                    StatusValue("接続先", if (configuration.host.isBlank()) "未設定" else "${configuration.host}:${configuration.port}")
-                    StatusValue("タイムアウト", "${configuration.timeoutMillis}ms")
-                    Spacer(Modifier.height(8.dp))
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = runtimeSettings.preflightEnabled,
-                            onCheckedChange = { runtimeSettings = runtimeSettings.copy(preflightEnabled = it) },
+                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                        Text("接続・運用設定", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = PsNavy)
+                        Spacer(Modifier.height(10.dp))
+                        StatusValue("プリンター", configuration.name)
+                        StatusValue("機種", configuration.profile.displayName)
+                        StatusValue("状態方式", configuration.profile.statusProtocol.displayName)
+                        StatusValue("接続先", if (configuration.host.isBlank()) "未設定" else "${configuration.host}:${configuration.port}")
+                        StatusValue("タイムアウト", "${configuration.timeoutMillis}ms")
+                        StatusValue("履歴上限", "${PrinterHistoryRetentionPolicy.MAX_ROWS}件")
+                        Spacer(Modifier.height(8.dp))
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = runtimeSettings.preflightEnabled,
+                                onCheckedChange = { runtimeSettings = runtimeSettings.copy(preflightEnabled = it) },
+                            )
+                            Text("自動印刷前に状態確認")
+                        }
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = runtimeSettings.historyEnabled,
+                                onCheckedChange = { runtimeSettings = runtimeSettings.copy(historyEnabled = it) },
+                            )
+                            Text("状態確認履歴を保存")
+                        }
+                        OutlinedTextField(
+                            value = retentionText,
+                            onValueChange = { value ->
+                                if (value.length <= 3 && value.all(Char::isDigit)) retentionText = value
+                            },
+                            label = { Text("履歴保持日数（1～365日）") },
+                            supportingText = {
+                                Text("期限超過または5,000件超過分は古い順に自動削除")
+                            },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
                         )
-                        Text("自動印刷前に状態確認")
-                    }
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = runtimeSettings.historyEnabled,
-                            onCheckedChange = { runtimeSettings = runtimeSettings.copy(historyEnabled = it) },
-                        )
-                        Text("状態確認履歴を保存")
-                    }
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                withContext(Dispatchers.IO) {
-                                    monitoringStore.saveSettings(
-                                        runtimeSettings.preflightEnabled,
-                                        runtimeSettings.historyEnabled,
-                                        actor,
-                                    )
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    val retention = retentionText.toIntOrNull()
+                                        ?.coerceIn(
+                                            PrinterHistoryRetentionPolicy.MIN_DAYS,
+                                            PrinterHistoryRetentionPolicy.MAX_DAYS,
+                                        )
+                                        ?: runtimeSettings.historyRetentionDays
+                                    withContext(Dispatchers.IO) {
+                                        monitoringStore.saveSettings(
+                                            preflightEnabled = runtimeSettings.preflightEnabled,
+                                            historyEnabled = runtimeSettings.historyEnabled,
+                                            historyRetentionDays = retention,
+                                            actor = actor,
+                                        )
+                                    }
+                                    runtimeSettings = monitoringStore.loadSettings()
+                                    retentionText = runtimeSettings.historyRetentionDays.toString()
+                                    reloadHistory()
+                                    operationMessage = "運用設定を保存しました（履歴保持${runtimeSettings.historyRetentionDays}日）"
                                 }
+                            },
+                            modifier = Modifier.fillMaxWidth().height(50.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = PsBlue),
+                        ) { Text("運用設定を保存", fontWeight = FontWeight.Bold) }
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = {
+                                configuration = settingsStore.loadPrinterConfiguration()
                                 runtimeSettings = monitoringStore.loadSettings()
-                                operationMessage = "運用設定を保存しました"
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth().height(50.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = PsBlue),
-                    ) { Text("運用設定を保存", fontWeight = FontWeight.Bold) }
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedButton(
-                        onClick = {
-                            configuration = settingsStore.loadPrinterConfiguration()
-                            runtimeSettings = monitoringStore.loadSettings()
-                            status = null
-                            errorMessage = null
-                            operationMessage = "保存済み設定を再読込しました"
-                        },
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                    ) { Text("保存済み設定を再読込") }
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = autoMonitor,
-                            onCheckedChange = { autoMonitor = it },
-                            enabled = configuration.host.isNotBlank(),
-                        )
-                        Text("5秒ごとに自動確認")
-                    }
-                    Button(
-                        onClick = { scope.launch { performCheck() } },
-                        enabled = !checking && configuration.host.isNotBlank(),
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = PsGreen),
-                    ) {
-                        Text(if (checking) "確認中…" else "今すぐ状態確認", fontWeight = FontWeight.Bold)
-                    }
-                    if (operationMessage != null) {
-                        Spacer(Modifier.height(6.dp))
-                        Text(operationMessage.orEmpty(), color = PsGreen, fontWeight = FontWeight.Bold)
+                                retentionText = runtimeSettings.historyRetentionDays.toString()
+                                status = null
+                                errorMessage = null
+                                operationMessage = "保存済み設定を再読込しました"
+                            },
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                        ) { Text("保存済み設定を再読込") }
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = autoMonitor,
+                                onCheckedChange = { autoMonitor = it },
+                                enabled = configuration.host.isNotBlank(),
+                            )
+                            Text("5秒ごとに自動確認")
+                        }
+                        Button(
+                            onClick = { scope.launch { performCheck() } },
+                            enabled = !checking && configuration.host.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = PsGreen),
+                        ) {
+                            Text(if (checking) "確認中…" else "今すぐ状態確認", fontWeight = FontWeight.Bold)
+                        }
+                        if (operationMessage != null) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(operationMessage.orEmpty(), color = PsGreen, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
 
@@ -232,7 +262,14 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
 
                 StatusPanel(Modifier.width(420.dp).fillMaxHeight()) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("保存履歴", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = PsNavy)
+                        Column {
+                            Text("保存履歴", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = PsNavy)
+                            Text(
+                                "保持${runtimeSettings.historyRetentionDays}日 / 表示${history.size}件",
+                                color = Color.Gray,
+                                fontSize = 12.sp,
+                            )
+                        }
                         Spacer(Modifier.weight(1f))
                         OutlinedButton(
                             onClick = {
