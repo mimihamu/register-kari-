@@ -1,4 +1,4 @@
-2026-08-01T16:39:58.426115+00:00
+2026-08-01T16:40:50.708136+00:00
 remove RegisterApplication overlay call: matches=0
 remove Catalog overlay call: matches=0
 admin imports: matches=1
@@ -32,15 +32,15 @@ cd list state insertion: matches=1
 cd lazy list replacement: matches=0
 register version: matches=0
 cd version: matches=0
-workflow Verify v0.13 customer display dev.2 metadata: matches=1
-workflow grep -q 'versionCode = 38' app/build.gradle.k: matches=1
-workflow grep -q 'versionName = "0.13.0-dev.1"' app/bu: matches=1
-workflow grep -q 'versionCode = 2' customer-display/bu: matches=1
-workflow grep -q 'versionName = "0.13.0-dev.2"' custom: matches=1
-workflow TSUGUREGI_v0.13.0_dev1_debug.apk: matches=6
-workflow TSUGUREGI_CD_v0.13.0_dev2_smartphone_debug.ap: matches=6
-workflow REGISTER_VERSION_NAME=0.13.0-dev.1: matches=1
-workflow REGISTER_VERSION_CODE=38: matches=1
-workflow CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.2: matches=1
-workflow CUSTOMER_DISPLAY_VERSION_CODE=2: matches=1
-workflow TSUGUREGI-v0.13.0-cd-dev2-smartphone-debug-ap: matches=1
+workflow Verify v0.13 customer display dev.2 metadata: matches=0
+workflow grep -q 'versionCode = 38' app/build.gradle.k: matches=0
+workflow grep -q 'versionName = "0.13.0-dev.1"' app/bu: matches=0
+workflow grep -q 'versionCode = 2' customer-display/bu: matches=0
+workflow grep -q 'versionName = "0.13.0-dev.2"' custom: matches=0
+workflow TSUGUREGI_v0.13.0_dev1_debug.apk: matches=0
+workflow TSUGUREGI_CD_v0.13.0_dev2_smartphone_debug.ap: matches=0
+workflow REGISTER_VERSION_NAME=0.13.0-dev.1: matches=0
+workflow REGISTER_VERSION_CODE=38: matches=0
+workflow CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.2: matches=0
+workflow CUSTOMER_DISPLAY_VERSION_CODE=2: matches=0
+workflow TSUGUREGI-v0.13.0-cd-dev2-smartphone-debug-ap: matches=0

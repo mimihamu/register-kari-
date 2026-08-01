@@ -1,12 +1,12 @@
-2026-08-01T16:39:58.459675+00:00
-admin callback invocation: matches=1
-admin menu layout: matches=1
-admin tile compact text: matches=1
-sales invocation navigation: matches=1
-initial accounting state: matches=1
-payment state and back: matches=1
-complete immediate state: matches=1
-payment compact totals: matches=1
-payment compact keypad call: matches=1
-payment method button heights: matches=1
-cd latest item list: matches=1
+2026-08-01T16:40:50.734978+00:00
+admin callback invocation: matches=0
+admin menu layout: matches=0
+admin tile compact text: matches=0
+sales invocation navigation: matches=0
+initial accounting state: matches=0
+payment state and back: matches=0
+complete immediate state: matches=0
+payment compact totals: matches=0
+payment compact keypad call: matches=0
+payment method button heights: matches=0
+cd latest item list: matches=0

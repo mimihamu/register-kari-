@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowCompat
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -1487,6 +1488,14 @@ private fun ChoiceButton(
         modifier = modifier,
         border = BorderStroke(if (selected) 3.dp else 1.dp, if (selected) Danger else Border),
     ) { Text(label, color = Navy, fontWeight = FontWeight.Bold) }
+}
+
+@Composable
+private fun PaymentAmountRow(label: String, value: String, emphasized: Boolean = false) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), fontSize = if (emphasized) 18.sp else 14.sp, fontWeight = if (emphasized) FontWeight.Bold else FontWeight.Normal)
+        Text(value, fontSize = if (emphasized) 20.sp else 15.sp, fontWeight = FontWeight.Bold, color = if (emphasized) Navy else Color.Unspecified)
+    }
 }
 
 @Composable
