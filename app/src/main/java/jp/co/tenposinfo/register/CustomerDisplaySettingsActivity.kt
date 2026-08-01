@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -26,7 +27,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -34,7 +38,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
@@ -65,10 +68,62 @@ private fun CustomerDisplaySettingsScreen(
     var token by remember { mutableStateOf(initial.token) }
     var completeSecondsText by remember { mutableStateOf(initial.completeSeconds.toString()) }
     var message by remember { mutableStateOf<String?>(null) }
+    var pairingState by remember { mutableStateOf(CustomerDisplayPairingState()) }
+    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val advertiser = remember {
+        CustomerDisplayPairingAdvertiser(context) { state -> pairingState = state }
+    }
     val addresses = remember { CustomerDisplaySettingsStore.localIpv4Addresses() }
     val previewPort = portText.toIntOrNull()?.takeIf { it in 1024..65535 } ?: initial.port
     val previewUrl = addresses.firstOrNull()?.let { host ->
         "ws://$host:$previewPort$CUSTOMER_DISPLAY_PATH?token=$token"
+    }
+    val pairingSecondsRemaining = if (pairingState.status == CustomerDisplayPairingStatus.ACTIVE) {
+        ((pairingState.endsAtMillis - nowMillis + 999L) / 1_000L).coerceAtLeast(0L)
+    } else {
+        0L
+    }
+
+    DisposableEffect(advertiser) {
+        onDispose { advertiser.stop(null) }
+    }
+
+    LaunchedEffect(pairingState.status, pairingState.endsAtMillis) {
+        while (
+            pairingState.status == CustomerDisplayPairingStatus.ACTIVE &&
+            System.currentTimeMillis() < pairingState.endsAtMillis
+        ) {
+            nowMillis = System.currentTimeMillis()
+            kotlinx.coroutines.delay(1_000L)
+        }
+        nowMillis = System.currentTimeMillis()
+    }
+
+    fun buildConfig(requestedEnabled: Boolean): CustomerDisplayServerConfig? {
+        val port = portText.toIntOrNull()
+        val seconds = completeSecondsText.toIntOrNull()
+        return when {
+            port == null || port !in 1024..65535 -> {
+                message = "ポートは1024～65535で入力してください"
+                null
+            }
+            seconds == null || seconds !in 1..30 -> {
+                message = "完了表示秒数は1～30で入力してください"
+                null
+            }
+            token.length < 16 -> {
+                message = "接続トークンが不正です。再発行してください"
+                null
+            }
+            else -> CustomerDisplayServerConfig(
+                enabled = requestedEnabled,
+                port = port,
+                path = CUSTOMER_DISPLAY_PATH,
+                token = token,
+                storeName = storeName.trim().ifEmpty { CustomerDisplaySettingsStore.DEFAULT_STORE_NAME },
+                completeSeconds = seconds,
+            )
+        }
     }
 
     Column(
@@ -141,6 +196,7 @@ private fun CustomerDisplaySettingsScreen(
 
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedButton(onClick = {
+                        advertiser.stop(null)
                         token = store.regenerateToken()
                         message = "接続トークンを再発行しました。表示端末側も再設定してください。"
                     }) { Text("トークン再発行") }
@@ -156,11 +212,45 @@ private fun CustomerDisplaySettingsScreen(
         }
 
         Card(
+            colors = CardDefaults.cardColors(
+                containerColor = if (pairingState.status == CustomerDisplayPairingStatus.ACTIVE) Color(0xFFE8F5E9) else Color(0xFFEAF3FA),
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("かんたんペアリング", fontWeight = FontWeight.Bold)
+                Text("レジとつぐレジ CDを同じWi-Fiへ接続します。受付中の2分間だけ接続情報を公開します。")
+                when (pairingState.status) {
+                    CustomerDisplayPairingStatus.IDLE -> {
+                        Button(onClick = {
+                            buildConfig(true)?.let { config ->
+                                enabled = true
+                                store.save(config)
+                                CustomerDisplayRuntime.applySettings(context, config)
+                                advertiser.start(config)
+                                message = "顧客表示をONにしてペアリング受付を開始しました"
+                            }
+                        }) { Text("2分間ペアリング受付を開始") }
+                    }
+                    CustomerDisplayPairingStatus.STARTING -> {
+                        Text("ペアリング受付を準備しています…", color = Color(0xFF1565C0), fontWeight = FontWeight.Bold)
+                    }
+                    CustomerDisplayPairingStatus.ACTIVE -> {
+                        Text("受付中　残り ${pairingSecondsRemaining}秒", color = Color(0xFF1B5E20), fontWeight = FontWeight.Bold)
+                        Text("つぐレジ CDの接続設定で［同じWi-Fiのレジを探す］を押してください。")
+                        OutlinedButton(onClick = { advertiser.stop() }) { Text("受付を停止") }
+                    }
+                }
+                pairingState.message?.let { Text(it, color = Color(0xFF455A64)) }
+            }
+        }
+
+        Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFFEAF3FA)),
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("表示端末へ入力する接続情報", fontWeight = FontWeight.Bold)
+                Text("手動で接続する場合", fontWeight = FontWeight.Bold)
                 if (addresses.isEmpty()) {
                     Text("端末のIPv4アドレスを取得できません。Wi-Fi接続を確認してください。")
                 } else {
@@ -169,35 +259,20 @@ private fun CustomerDisplaySettingsScreen(
                     Text("パス：$CUSTOMER_DISPLAY_PATH")
                     Text("トークン：$token")
                 }
-                Text("初版は手動接続です。mDNS探索・QRペアリングは後続工程で追加します。")
+                Text("自動探索できないネットワークでは、上記をつぐレジ CDへ入力します。")
             }
         }
 
         message?.let {
-            Text(it, color = if (it.startsWith("保存")) Color(0xFF1B5E20) else Color(0xFF9A5B00), fontWeight = FontWeight.Bold)
+            Text(it, color = if (it.startsWith("保存") || it.contains("開始")) Color(0xFF1B5E20) else Color(0xFF9A5B00), fontWeight = FontWeight.Bold)
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(onClick = {
-                val port = portText.toIntOrNull()
-                val seconds = completeSecondsText.toIntOrNull()
-                when {
-                    port == null || port !in 1024..65535 -> message = "ポートは1024～65535で入力してください"
-                    seconds == null || seconds !in 1..30 -> message = "完了表示秒数は1～30で入力してください"
-                    token.length < 16 -> message = "接続トークンが不正です。再発行してください"
-                    else -> {
-                        val config = CustomerDisplayServerConfig(
-                            enabled = enabled,
-                            port = port,
-                            path = CUSTOMER_DISPLAY_PATH,
-                            token = token,
-                            storeName = storeName.trim().ifEmpty { CustomerDisplaySettingsStore.DEFAULT_STORE_NAME },
-                            completeSeconds = seconds,
-                        )
-                        store.save(config)
-                        CustomerDisplayRuntime.applySettings(context, config)
-                        message = if (enabled) "保存しました。顧客表示サーバーを起動しました。" else "保存しました。顧客表示サーバーを停止しました。"
-                    }
+                buildConfig(enabled)?.let { config ->
+                    store.save(config)
+                    CustomerDisplayRuntime.applySettings(context, config)
+                    message = if (enabled) "保存しました。顧客表示サーバーを起動しました。" else "保存しました。顧客表示サーバーを停止しました。"
                 }
             }) { Text("保存") }
             Spacer(Modifier.height(1.dp))
