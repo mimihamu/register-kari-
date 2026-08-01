@@ -41,45 +41,62 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify dev.23 metadata
+      - name: Verify v0.13 dev.1 metadata
         run: |
-          grep -q 'versionCode = 37' app/build.gradle.kts
-          grep -q 'versionName = "0.12.0-dev.23"' app/build.gradle.kts
+          grep -q 'versionCode = 38' app/build.gradle.kts
+          grep -q 'versionName = "0.13.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 1' customer-display/build.gradle.kts
+          grep -q 'versionName = "0.13.0-dev.1"' customer-display/build.gradle.kts
+          grep -q 'applicationId = "jp.co.tenposinfo.register.cd"' customer-display/build.gradle.kts
 
-      - name: Verify single launcher configuration
+      - name: Verify launcher configuration
         run: |
-          launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' app/src/main app/src/debug | wc -l)
-          test "$launcher_count" -eq 1
-          grep -q 'android:name=".MainActivity"' app/src/main/AndroidManifest.xml
+          register_launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' app/src/main app/src/debug | wc -l)
+          cd_launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' customer-display/src/main | wc -l)
+          test "$register_launcher_count" -eq 1
+          test "$cd_launcher_count" -eq 1
           test "$(grep -c 'android.intent.category.LAUNCHER' app/src/debug/AndroidManifest.xml || true)" -eq 0
+          grep -q 'android:name=".MainActivity"' app/src/main/AndroidManifest.xml
+          grep -q 'android:name=".MainActivity"' customer-display/src/main/AndroidManifest.xml
 
       - name: Run unit tests
-        run: gradle --no-daemon :app:testDebugUnitTest
+        run: gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest
 
-      - name: Build debug APK
-        run: gradle --no-daemon :app:assembleDebug
+      - name: Build debug APKs
+        run: gradle --no-daemon :app:assembleDebug :customer-display:assembleDebug
 
-      - name: Prepare named APK and SHA-256
+      - name: Prepare named APKs and SHA-256
         run: |
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.12.0_dev23_debug.apk
-          sha256sum artifacts/TSUGUREGI_v0.12.0_dev23_debug.apk | tee artifacts/TSUGUREGI_v0.12.0_dev23_debug.apk.sha256
-          stat --printf='APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.12.0_dev23_debug.apk | tee artifacts/build-summary.txt
-          echo "VERSION_NAME=0.12.0-dev.23" >> artifacts/build-summary.txt
-          echo "VERSION_CODE=37" >> artifacts/build-summary.txt
-          echo "LAUNCHER_COUNT=1" >> artifacts/build-summary.txt
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.13.0_dev1_debug.apk
+          cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.13.0_dev1_debug.apk
+          sha256sum artifacts/TSUGUREGI_v0.13.0_dev1_debug.apk | tee artifacts/TSUGUREGI_v0.13.0_dev1_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_CD_v0.13.0_dev1_debug.apk | tee artifacts/TSUGUREGI_CD_v0.13.0_dev1_debug.apk.sha256
+          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.13.0_dev1_debug.apk | tee artifacts/build-summary.txt
+          stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.13.0_dev1_debug.apk | tee -a artifacts/build-summary.txt
+          echo "REGISTER_VERSION_NAME=0.13.0-dev.1" >> artifacts/build-summary.txt
+          echo "REGISTER_VERSION_CODE=38" >> artifacts/build-summary.txt
+          echo "CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.1" >> artifacts/build-summary.txt
+          echo "CUSTOMER_DISPLAY_VERSION_CODE=1" >> artifacts/build-summary.txt
+          echo "REGISTER_PACKAGE=jp.co.tenposinfo.register.dev" >> artifacts/build-summary.txt
+          echo "CUSTOMER_DISPLAY_PACKAGE=jp.co.tenposinfo.register.cd.dev" >> artifacts/build-summary.txt
+          echo "REGISTER_LAUNCHER_COUNT=1" >> artifacts/build-summary.txt
+          echo "CUSTOMER_DISPLAY_LAUNCHER_COUNT=1" >> artifacts/build-summary.txt
           echo "SIGNING=development-not-production" >> artifacts/build-summary.txt
+          echo "REAL_CUSTOMER_DISPLAY_DEVICE_VERIFICATION=not-performed-by-ci" >> artifacts/build-summary.txt
           echo "REAL_PRINTER_VERIFICATION=not-performed-by-ci" >> artifacts/build-summary.txt
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
-      - name: Upload APK
+      - name: Upload APKs
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.12.0-dev23-debug-apk
+          name: TSUGUREGI-v0.13.0-dev1-register-and-cd-debug-apks
           path: |
-            artifacts/TSUGUREGI_v0.12.0_dev23_debug.apk
-            artifacts/TSUGUREGI_v0.12.0_dev23_debug.apk.sha256
+            artifacts/TSUGUREGI_v0.13.0_dev1_debug.apk
+            artifacts/TSUGUREGI_v0.13.0_dev1_debug.apk.sha256
+            artifacts/TSUGUREGI_CD_v0.13.0_dev1_debug.apk
+            artifacts/TSUGUREGI_CD_v0.13.0_dev1_debug.apk.sha256
             artifacts/build-summary.txt
           if-no-files-found: error
           retention-days: 30
