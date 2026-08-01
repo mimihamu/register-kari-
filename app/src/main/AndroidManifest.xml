@@ -44,18 +44,6 @@
             android:initOrder="135" />
 
         <provider
-            android:name=".PrinterToolsAdminOverlayProvider"
-            android:authorities="${applicationId}.printer-tools-admin-overlay"
-            android:exported="false"
-            android:initOrder="140" />
-
-        <provider
-            android:name=".CustomerDisplayAdminOverlayProvider"
-            android:authorities="${applicationId}.customer-display-admin-overlay"
-            android:exported="false"
-            android:initOrder="145" />
-
-        <provider
             android:name=".PrinterSoakTestRecoveryBootstrapProvider"
             android:authorities="${applicationId}.printer-soak-test-recovery-bootstrap"
             android:exported="false"
