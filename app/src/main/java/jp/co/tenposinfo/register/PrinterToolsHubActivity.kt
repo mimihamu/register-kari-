@@ -57,6 +57,7 @@ private val PhGreen = Color(0xFF2E7D32)
 private val PhOrange = Color(0xFFEF6C00)
 private val PhRed = Color(0xFFC62828)
 private val PhPurple = Color(0xFF6A4C93)
+private val PhTeal = Color(0xFF00796B)
 private val PhBackground = Color(0xFFF4F7FA)
 private val PhBorder = Color(0xFFD5DEE7)
 
@@ -67,6 +68,7 @@ class PrinterToolsHubActivity : ComponentActivity() {
             MaterialTheme {
                 PrinterToolsHubScreen(
                     onOpenDiagnostics = { startActivity(Intent(this, PrinterStatusActivity::class.java)) },
+                    onOpenProbe = { startActivity(Intent(this, PrinterStatusProbeActivity::class.java)) },
                     onOpenNotification = { startActivity(Intent(this, PrinterNotificationSettingsActivity::class.java)) },
                     onOpenSoakTest = { startActivity(Intent(this, PrinterSoakTestActivity::class.java)) },
                     onOpenHistory = { startActivity(Intent(this, PrinterSoakTestHistoryActivity::class.java)) },
@@ -81,6 +83,7 @@ class PrinterToolsHubActivity : ComponentActivity() {
 @Composable
 private fun PrinterToolsHubScreen(
     onOpenDiagnostics: () -> Unit,
+    onOpenProbe: () -> Unit,
     onOpenNotification: () -> Unit,
     onOpenSoakTest: () -> Unit,
     onOpenHistory: () -> Unit,
@@ -113,7 +116,7 @@ private fun PrinterToolsHubScreen(
                     PrinterHubPanel(Modifier.width(540.dp).height(430.dp)) {
                         Text("プリンター運用を開く", fontSize = 29.sp, fontWeight = FontWeight.Bold, color = PhNavy)
                         Spacer(Modifier.height(8.dp))
-                        Text("状態診断、通知、連続試験、試験履歴、印刷キューを管理します。", color = Color.DarkGray)
+                        Text("状態診断、RAWプローブ、通知、連続試験、履歴、印刷キューを管理します。", color = Color.DarkGray)
                         Spacer(Modifier.height(20.dp))
                         OutlinedTextField(
                             value = pin,
@@ -152,6 +155,7 @@ private fun PrinterToolsHubScreen(
             }
         } else {
             val printer = remember(revision) { settingsStore.loadPrinterConfiguration() }
+            val capability = remember(revision) { PrinterStatusCapabilityRegistry.forProfile(printer.profile) }
             val notification = remember(revision) { PrinterNotificationPermissionStatus.read(context) }
             val recent = remember(revision) { resultStore.listRecent(10) }
             Column(Modifier.fillMaxSize()) {
@@ -160,14 +164,15 @@ private fun PrinterToolsHubScreen(
                     Modifier.weight(1f).fillMaxWidth().padding(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    PrinterHubPanel(Modifier.width(380.dp).fillMaxHeight()) {
+                    PrinterHubPanel(Modifier.width(390.dp).fillMaxHeight()) {
                         Text("現在の設定", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = PhNavy)
                         Spacer(Modifier.height(12.dp))
                         PrinterHubValue("プリンター", printer.name)
                         PrinterHubValue("接続先", if (printer.host.isBlank()) "未設定" else "${printer.host}:${printer.port}")
                         PrinterHubValue("機種", printer.profile.displayName)
                         PrinterHubValue("用紙", "${printer.paperWidthMm}mm")
-                        PrinterHubValue("状態取得", printer.profile.statusProtocol.displayName)
+                        PrinterHubValue("状態方式", capability.implementationName)
+                        PrinterHubValue("検証区分", capability.verification.displayName)
                         PrinterHubValue(
                             "通知",
                             when (notification) {
@@ -179,7 +184,11 @@ private fun PrinterToolsHubScreen(
                         PrinterHubValue("試験履歴保持", "${maintenance.retentionDays()}日")
                         Spacer(Modifier.height(14.dp))
                         Text(
-                            "送信開始後の失敗は自動再送しません。強制終了で残った実行中試験は、次回起動時に安全停止として回収します。",
+                            if (capability.automaticQueryAllowed) {
+                                "状態自動監視と印刷前診断を使用できます。送信開始後の失敗は自動再送しません。"
+                            } else {
+                                "STAR／汎用の状態取得は未検証です。自動監視には使わず、RAWプローブと手動診断で実機応答を採取します。"
+                            },
                             color = Color.DarkGray,
                             lineHeight = 22.sp,
                         )
@@ -189,8 +198,9 @@ private fun PrinterToolsHubScreen(
                         }
                     }
 
-                    Column(Modifier.width(410.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                        PrinterHubAction("状態診断", "オンライン、カバー、用紙、カッター、RAW応答", PhGreen, onOpenDiagnostics, Modifier.weight(1f))
+                    Column(Modifier.width(420.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        PrinterHubAction("状態診断", "解釈済みのオンライン、カバー、用紙、エラー", PhGreen, onOpenDiagnostics, Modifier.weight(1f))
+                        PrinterHubAction("状態RAWプローブ", "無加工の送受信HEX・ASCIIを採取してCSV保存", PhTeal, onOpenProbe, Modifier.weight(1f))
                         PrinterHubAction("管理者通知", "Android通知の許可・端末通知設定", PhBlue, onOpenNotification, Modifier.weight(1f))
                         PrinterHubAction("連続印刷試験", "状態確認付きで1～500回。自動再送なし", PhOrange, onOpenSoakTest, Modifier.weight(1f))
                         PrinterHubAction("試験履歴・CSV", "詳細、保持期間、削除、過去CSV再出力", PhPurple, onOpenHistory, Modifier.weight(1f))
@@ -243,7 +253,7 @@ private fun PrinterToolsHubScreen(
                         modifier = Modifier.width(220.dp).fillMaxHeight(),
                     ) { Text("運用をロック", fontWeight = FontWeight.Bold) }
                     Spacer(Modifier.weight(1f))
-                    Text("実機結果はCIでは確認できません", color = PhRed, fontWeight = FontWeight.Bold)
+                    Text("RAW応答採取とCI成功だけでは実機互換性確認完了になりません", color = PhRed, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -291,9 +301,9 @@ private fun PrinterHubAction(
         shape = RoundedCornerShape(10.dp),
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(title, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(2.dp))
-            Text(description, textAlign = TextAlign.Center, fontSize = 11.sp, lineHeight = 15.sp)
+            Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(1.dp))
+            Text(description, textAlign = TextAlign.Center, fontSize = 10.sp, lineHeight = 14.sp)
         }
     }
 }
