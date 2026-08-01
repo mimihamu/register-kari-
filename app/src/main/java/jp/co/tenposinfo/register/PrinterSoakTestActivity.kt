@@ -266,12 +266,17 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
                 addLog(statusMessage)
                 return@launch
             }
-            if (configuration.profile.statusProtocol == PrinterStatusProtocol.NONE) {
+            val capabilityDecision = PrinterSoakTestCapabilityPolicy.evaluate(
+                profile = configuration.profile,
+                statusProtocol = configuration.profile.statusProtocol,
+            )
+            if (!capabilityDecision.allowed) {
                 running = false
                 testJob = null
-                statusMessage = "状態取得非対応のプリンターでは連続印刷試験を開始できません"
+                activeRunId = null
+                statusMessage = capabilityDecision.reason
                 statusColor = StRed
-                addLog(statusMessage)
+                addLog("開始拒否：${capabilityDecision.reason}")
                 return@launch
             }
 
@@ -288,7 +293,9 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
 
                 val checkedAt = System.currentTimeMillis()
                 val statusResult = withContext(Dispatchers.IO) {
-                    TcpPrinterStatusClient(configuration).query()
+                    TcpPrinterStatusClient(configuration).query(
+                        purpose = PrinterStatusCheckPurpose.SOAK_TEST,
+                    )
                 }
                 if (statusResult.isFailure) {
                     val error = statusResult.exceptionOrNull()

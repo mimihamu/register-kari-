@@ -71,6 +71,7 @@ class PrinterToolsHubActivity : ComponentActivity() {
                     onOpenDiagnostics = { startActivity(Intent(this, PrinterStatusActivity::class.java)) },
                     onOpenProbe = { startActivity(Intent(this, PrinterStatusLabActivity::class.java)) },
                     onOpenAnalysis = { startActivity(Intent(this, PrinterStatusAnalysisActivity::class.java)) },
+                    onOpenValidation = { startActivity(Intent(this, PrinterStatusValidationActivity::class.java)) },
                     onOpenNotification = { startActivity(Intent(this, PrinterNotificationSettingsActivity::class.java)) },
                     onOpenSoakTest = { startActivity(Intent(this, PrinterSoakTestActivity::class.java)) },
                     onOpenHistory = { startActivity(Intent(this, PrinterSoakTestHistoryActivity::class.java)) },
@@ -87,6 +88,7 @@ private fun PrinterToolsHubScreen(
     onOpenDiagnostics: () -> Unit,
     onOpenProbe: () -> Unit,
     onOpenAnalysis: () -> Unit,
+    onOpenValidation: () -> Unit,
     onOpenNotification: () -> Unit,
     onOpenSoakTest: () -> Unit,
     onOpenHistory: () -> Unit,
@@ -205,6 +207,7 @@ private fun PrinterToolsHubScreen(
                         PrinterHubAction("状態診断", "解釈済みのオンライン、カバー、用紙、エラー", PhGreen, onOpenDiagnostics, Modifier.weight(1f))
                         PrinterHubAction("状態ラボ", "条件付きRAW採取、履歴、最大4件比較、CSV", PhTeal, onOpenProbe, Modifier.weight(1f))
                         PrinterHubAction("応答分析", "型番別の採取進捗と正常時との差分ビット候補", PhIndigo, onOpenAnalysis, Modifier.weight(1f))
+                        PrinterHubAction("最終検証・承認", "再現性、外れ値、信頼度、候補審査。runtime未適用", PhPurple, onOpenValidation, Modifier.weight(1f))
                         PrinterHubAction("管理者通知", "Android通知の許可・端末通知設定", PhBlue, onOpenNotification, Modifier.weight(1f))
                         PrinterHubAction("連続印刷試験", "状態確認付きで1～500回。自動再送なし", PhOrange, onOpenSoakTest, Modifier.weight(1f))
                         PrinterHubAction("試験履歴・CSV", "詳細、保持期間、削除、過去CSV再出力", PhPurple, onOpenHistory, Modifier.weight(1f))

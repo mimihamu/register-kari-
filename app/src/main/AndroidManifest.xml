@@ -100,6 +100,12 @@
             android:screenOrientation="landscape" />
 
         <activity
+            android:name=".PrinterStatusValidationActivity"
+            android:exported="false"
+            android:label="つぐレジ プリンター検証"
+            android:screenOrientation="landscape" />
+
+        <activity
             android:name=".PrinterNotificationSettingsActivity"
             android:exported="false"
             android:screenOrientation="landscape" />

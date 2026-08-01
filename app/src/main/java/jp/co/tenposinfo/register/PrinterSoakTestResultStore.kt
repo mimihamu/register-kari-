@@ -199,17 +199,38 @@ class PrinterSoakTestResultStore(context: Context) : AutoCloseable {
         finishedAt: Long = System.currentTimeMillis(),
     ): PrinterSoakTestStoredResult {
         require(status != PrinterSoakTestRunStatus.RUNNING)
-        transaction {
+        val before = requireNotNull(loadRun(runId)) { "連続印刷試験結果が見つかりません" }
+        val resolution = PrinterSoakTestFinishPolicy.resolve(
+            currentStatus = before.status,
+            currentCompletedCount = before.completedCount,
+            currentSummary = before.summary,
+            requestedCompletedCount = completedCount,
+            requestedSummary = summary,
+        )
+        if (!resolution.shouldFinalize) {
+            val existingCsv = PrinterSoakTestCsv.render(before, listSteps(runId))
+            return PrinterSoakTestStoredResult(runId, before.csvPath, existingCsv)
+        }
+
+        val claimed = transaction {
             update(
                 "printer_soak_test_runs",
                 ContentValues().apply {
                     put("finished_at", finishedAt)
-                    put("completed_count", completedCount.coerceAtLeast(0))
+                    put("completed_count", resolution.completedCount)
                     put("status", status.name)
-                    put("summary", summary.take(1_000))
+                    put("summary", resolution.summary)
                 },
                 "id = ? AND status = ?",
                 arrayOf(runId.toString(), PrinterSoakTestRunStatus.RUNNING.name),
+            )
+        }
+        if (claimed <= 0) {
+            val existing = requireNotNull(loadRun(runId)) { "連続印刷試験結果が見つかりません" }
+            return PrinterSoakTestStoredResult(
+                runId = runId,
+                csvPath = existing.csvPath,
+                csvText = PrinterSoakTestCsv.render(existing, listSteps(runId)),
             )
         }
 
@@ -217,8 +238,8 @@ class PrinterSoakTestResultStore(context: Context) : AutoCloseable {
         val csvText = PrinterSoakTestCsv.render(run, listSteps(runId))
         val csvPath = runCatching {
             exportDirectory.mkdirs()
-            val file = File(exportDirectory, "TSUGUREGI_printer_soak_test_${runId}_${finishedAt}.csv")
-            file.writeText("\uFEFF$csvText", Charsets.UTF_8)
+            val file = File(exportDirectory, "TSUGUREGI_printer_soak_test_${runId}.csv")
+            file.writeText("﻿$csvText", Charsets.UTF_8)
             file.absolutePath
         }.getOrNull()
 
@@ -228,7 +249,7 @@ class PrinterSoakTestResultStore(context: Context) : AutoCloseable {
                 ContentValues().apply {
                     if (csvPath == null) putNull("csv_path") else put("csv_path", csvPath)
                 },
-                "id = ?",
+                "id = ? AND csv_path IS NULL",
                 arrayOf(runId.toString()),
             )
             insertAudit(
@@ -239,12 +260,14 @@ class PrinterSoakTestResultStore(context: Context) : AutoCloseable {
                     PrinterSoakTestRunStatus.RUNNING -> error("RUNNINGは終了状態ではありません")
                 },
                 referenceId = runId,
-                detail = "${completedCount}/${run.totalPlanned} / ${summary.take(500)} / CSV=${csvPath ?: "保存失敗"}",
+                detail = "${resolution.completedCount}/${run.totalPlanned} / " +
+                    "${resolution.summary.take(500)} / CSV=${csvPath ?: "保存失敗"}",
                 actor = actor,
                 createdAt = finishedAt,
             )
         }
-        return PrinterSoakTestStoredResult(runId, csvPath, csvText)
+        val stored = requireNotNull(loadRun(runId)) { "連続印刷試験結果が見つかりません" }
+        return PrinterSoakTestStoredResult(runId, stored.csvPath, csvText)
     }
 
     fun recordCsvExport(runId: Long, actor: String, destination: String) = transaction {

@@ -103,3 +103,43 @@ object PrinterStatusCapabilityRegistry {
         } + "（${capability.verification.displayName}）"
     }
 }
+
+
+data class PrinterSoakTestCapabilityDecision(
+    val allowed: Boolean,
+    val reason: String,
+)
+
+object PrinterSoakTestCapabilityPolicy {
+    fun evaluate(
+        profile: PrinterProfile,
+        statusProtocol: PrinterStatusProtocol,
+    ): PrinterSoakTestCapabilityDecision {
+        if (statusProtocol == PrinterStatusProtocol.NONE) {
+            return PrinterSoakTestCapabilityDecision(
+                allowed = false,
+                reason = "状態取得非対応のプリンターでは連続印刷試験を開始できません",
+            )
+        }
+        val capability = PrinterStatusCapabilityRegistry.forProfile(profile)
+        val allowed =
+            profile == PrinterProfile.EPSON_TM_JAPAN &&
+                statusProtocol == PrinterStatusProtocol.EPSON_DLE_EOT &&
+                capability.decision(PrinterStatusCheckPurpose.SOAK_TEST) ==
+                PrinterStatusCheckDecision.ALLOWED
+        return if (allowed) {
+            PrinterSoakTestCapabilityDecision(
+                allowed = true,
+                reason = "EPSON仕様確認済みの状態取得方式で連続印刷試験を開始できます",
+            )
+        } else {
+            PrinterSoakTestCapabilityDecision(
+                allowed = false,
+                reason = PrinterStatusCapabilityRegistry.denialMessage(
+                    profile,
+                    PrinterStatusCheckPurpose.SOAK_TEST,
+                ),
+            )
+        }
+    }
+}
