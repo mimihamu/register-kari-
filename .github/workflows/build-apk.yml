@@ -1,4 +1,4 @@
-name: Fix and build つぐレジ dev.22
+name: Fix tests and build つぐレジ dev.22
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  fix-test-build-dev22:
+  fix-tests-build-dev22:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -19,31 +19,25 @@ jobs:
           ref: develop/v0.12
           fetch-depth: 0
 
-      - name: Verify latest blob and fix nullable CSV references
+      - name: Verify latest test blob and qualify repeat
         run: |
-          test "$(git hash-object app/src/main/java/jp/co/tenposinfo/register/PrinterStatusValidationFinalization.kt)" = "a06e022bb736be5209b8d7471b5193c3a1c55a49"
+          test "$(git hash-object app/src/test/java/jp/co/tenposinfo/register/V012PrinterStatusValidationFinalizationTest.kt)" = "6b71ecb03aa08fa507c59f9d442b28552f71ed23"
           python - <<'PY'
           from pathlib import Path
-          p = Path("app/src/main/java/jp/co/tenposinfo/register/PrinterStatusValidationFinalization.kt")
+          p = Path("app/src/test/java/jp/co/tenposinfo/register/V012PrinterStatusValidationFinalizationTest.kt")
           text = p.read_text(encoding="utf-8")
-          replacements = {
-              "item.candidate.normalSampleCount.toString(),": "item.candidate?.normalSampleCount?.toString().orEmpty(),",
-              "item.candidate.conditionSampleCount.toString(),": "item.candidate?.conditionSampleCount?.toString().orEmpty(),",
-          }
-          for old, new in replacements.items():
-              if text.count(old) != 1:
-                  raise SystemExit(f"expected one occurrence: {old}")
-              text = text.replace(old, new, 1)
-          p.write_text(text, encoding="utf-8")
+          if text.count("repeat(") != 3:
+              raise SystemExit(f"expected 3 repeat calls, got {text.count('repeat(')}")
+          p.write_text(text.replace("repeat(", "kotlin.repeat("), encoding="utf-8")
           PY
 
-      - name: Commit compile fix
+      - name: Commit unit test compile fix
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/src/main/java/jp/co/tenposinfo/register/PrinterStatusValidationFinalization.kt
+          git add app/src/test/java/jp/co/tenposinfo/register/V012PrinterStatusValidationFinalizationTest.kt
           git diff --cached --check
-          git commit -m "fix: safely render nullable printer bit candidates"
+          git commit -m "fix: qualify repeat in printer validation tests"
           git push origin HEAD:develop/v0.12
 
       - name: Set up JDK 17
