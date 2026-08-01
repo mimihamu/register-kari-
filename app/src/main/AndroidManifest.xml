@@ -95,6 +95,11 @@
             android:screenOrientation="landscape" />
 
         <activity
+            android:name=".PrinterStatusAnalysisActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
             android:name=".PrinterNotificationSettingsActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
