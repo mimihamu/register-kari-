@@ -41,15 +41,23 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify v0.13 customer display dev.2 metadata
+      - name: Verify v0.13 dev.3 metadata and UI safeguards
         run: |
-          grep -q 'versionCode = 38' app/build.gradle.kts
-          grep -q 'versionName = "0.13.0-dev.1"' app/build.gradle.kts
-          grep -q 'versionCode = 2' customer-display/build.gradle.kts
-          grep -q 'versionName = "0.13.0-dev.2"' customer-display/build.gradle.kts
+          grep -q 'versionCode = 39' app/build.gradle.kts
+          grep -q 'versionName = "0.13.0-dev.2"' app/build.gradle.kts
+          grep -q 'versionCode = 3' customer-display/build.gradle.kts
+          grep -q 'versionName = "0.13.0-dev.3"' customer-display/build.gradle.kts
           grep -q 'applicationId = "jp.co.tenposinfo.register.cd"' customer-display/build.gradle.kts
           ! grep -q 'android:screenOrientation="landscape"' customer-display/src/main/AndroidManifest.xml
           grep -q 'android:resizeableActivity="true"' customer-display/src/main/AndroidManifest.xml
+          test "$(grep -R -l 'AdminOverlayProvider' app/src/main/AndroidManifest.xml app/src/main/java 2>/dev/null | wc -l)" -eq 0
+          ! grep -q 'updateActionButtons(activity, content, operator)' app/src/main/java/jp/co/tenposinfo/register/RegisterApplication.kt
+          ! grep -q 'installCatalogButton(activity)' app/src/main/java/jp/co/tenposinfo/register/CatalogBootstrapProvider.kt
+          grep -q 'onCustomerDisplay = {' app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt
+          grep -q 'CustomerDisplaySnapshotFactory.accounting' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'compact = true' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'CustomerDisplayScrollPolicy.targetIndex' customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt
+          grep -q 'state = listState' customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt
 
       - name: Verify launcher configuration
         run: |
@@ -70,19 +78,22 @@ jobs:
       - name: Prepare named APKs and SHA-256
         run: |
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.13.0_dev1_debug.apk
-          cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.13.0_dev2_smartphone_debug.apk
-          sha256sum artifacts/TSUGUREGI_v0.13.0_dev1_debug.apk | tee artifacts/TSUGUREGI_v0.13.0_dev1_debug.apk.sha256
-          sha256sum artifacts/TSUGUREGI_CD_v0.13.0_dev2_smartphone_debug.apk | tee artifacts/TSUGUREGI_CD_v0.13.0_dev2_smartphone_debug.apk.sha256
-          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.13.0_dev1_debug.apk | tee artifacts/build-summary.txt
-          stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.13.0_dev2_smartphone_debug.apk | tee -a artifacts/build-summary.txt
-          echo "REGISTER_VERSION_NAME=0.13.0-dev.1" >> artifacts/build-summary.txt
-          echo "REGISTER_VERSION_CODE=38" >> artifacts/build-summary.txt
-          echo "CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.2" >> artifacts/build-summary.txt
-          echo "CUSTOMER_DISPLAY_VERSION_CODE=2" >> artifacts/build-summary.txt
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.13.0_dev2_debug.apk
+          cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.13.0_dev3_latest_item_debug.apk
+          sha256sum artifacts/TSUGUREGI_v0.13.0_dev2_debug.apk | tee artifacts/TSUGUREGI_v0.13.0_dev2_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_CD_v0.13.0_dev3_latest_item_debug.apk | tee artifacts/TSUGUREGI_CD_v0.13.0_dev3_latest_item_debug.apk.sha256
+          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.13.0_dev2_debug.apk | tee artifacts/build-summary.txt
+          stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.13.0_dev3_latest_item_debug.apk | tee -a artifacts/build-summary.txt
+          echo "REGISTER_VERSION_NAME=0.13.0-dev.2" >> artifacts/build-summary.txt
+          echo "REGISTER_VERSION_CODE=39" >> artifacts/build-summary.txt
+          echo "CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.3" >> artifacts/build-summary.txt
+          echo "CUSTOMER_DISPLAY_VERSION_CODE=3" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_PHONE_PORTRAIT=responsive-stacked" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_PHONE_LANDSCAPE=responsive-side-by-side" >> artifacts/build-summary.txt
-          echo "CUSTOMER_DISPLAY_ORIENTATION_LOCK=removed" >> artifacts/build-summary.txt
+          echo "CUSTOMER_DISPLAY_LATEST_ITEM=automatic-scroll" >> artifacts/build-summary.txt
+          echo "CUSTOMER_DISPLAY_ACCOUNTING=real-time" >> artifacts/build-summary.txt
+          echo "REGISTER_FLOATING_ADMIN_BUTTONS=removed" >> artifacts/build-summary.txt
+          echo "REGISTER_PAYMENT_CONTROLS=compact-all-visible" >> artifacts/build-summary.txt
           echo "REGISTER_PACKAGE=jp.co.tenposinfo.register.dev" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_PACKAGE=jp.co.tenposinfo.register.cd.dev" >> artifacts/build-summary.txt
           echo "REGISTER_LAUNCHER_COUNT=1" >> artifacts/build-summary.txt
@@ -96,12 +107,12 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.13.0-cd-dev2-smartphone-debug-apks
+          name: TSUGUREGI-v0.13.0-dev3-ui-cd-debug-apks
           path: |
-            artifacts/TSUGUREGI_v0.13.0_dev1_debug.apk
-            artifacts/TSUGUREGI_v0.13.0_dev1_debug.apk.sha256
-            artifacts/TSUGUREGI_CD_v0.13.0_dev2_smartphone_debug.apk
-            artifacts/TSUGUREGI_CD_v0.13.0_dev2_smartphone_debug.apk.sha256
+            artifacts/TSUGUREGI_v0.13.0_dev2_debug.apk
+            artifacts/TSUGUREGI_v0.13.0_dev2_debug.apk.sha256
+            artifacts/TSUGUREGI_CD_v0.13.0_dev3_latest_item_debug.apk
+            artifacts/TSUGUREGI_CD_v0.13.0_dev3_latest_item_debug.apk.sha256
             artifacts/build-summary.txt
           if-no-files-found: error
           retention-days: 30
