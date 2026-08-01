@@ -56,6 +56,7 @@ private val PhBlue = Color(0xFF1976B9)
 private val PhGreen = Color(0xFF2E7D32)
 private val PhOrange = Color(0xFFEF6C00)
 private val PhRed = Color(0xFFC62828)
+private val PhPurple = Color(0xFF6A4C93)
 private val PhBackground = Color(0xFFF4F7FA)
 private val PhBorder = Color(0xFFD5DEE7)
 
@@ -68,6 +69,7 @@ class PrinterToolsHubActivity : ComponentActivity() {
                     onOpenDiagnostics = { startActivity(Intent(this, PrinterStatusActivity::class.java)) },
                     onOpenNotification = { startActivity(Intent(this, PrinterNotificationSettingsActivity::class.java)) },
                     onOpenSoakTest = { startActivity(Intent(this, PrinterSoakTestActivity::class.java)) },
+                    onOpenHistory = { startActivity(Intent(this, PrinterSoakTestHistoryActivity::class.java)) },
                     onOpenQueue = { startActivity(Intent(this, UnifiedPrintQueueActivity::class.java)) },
                     onClose = { finish() },
                 )
@@ -81,12 +83,14 @@ private fun PrinterToolsHubScreen(
     onOpenDiagnostics: () -> Unit,
     onOpenNotification: () -> Unit,
     onOpenSoakTest: () -> Unit,
+    onOpenHistory: () -> Unit,
     onOpenQueue: () -> Unit,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
     val settingsStore = remember { AdminSettingsStore(context.applicationContext) }
     val resultStore = remember { PrinterSoakTestResultStore(context.applicationContext) }
+    val maintenance = remember { PrinterSoakTestMaintenance(context.applicationContext) }
     var unlocked by remember { mutableStateOf(false) }
     var actor by remember { mutableStateOf("責任者") }
     var pin by remember { mutableStateOf("") }
@@ -95,6 +99,7 @@ private fun PrinterToolsHubScreen(
 
     DisposableEffect(Unit) {
         onDispose {
+            maintenance.close()
             resultStore.close()
             settingsStore.close()
         }
@@ -108,7 +113,7 @@ private fun PrinterToolsHubScreen(
                     PrinterHubPanel(Modifier.width(540.dp).height(430.dp)) {
                         Text("プリンター運用を開く", fontSize = 29.sp, fontWeight = FontWeight.Bold, color = PhNavy)
                         Spacer(Modifier.height(8.dp))
-                        Text("状態診断、通知設定、連続印刷試験は責任者専用です。", color = Color.DarkGray)
+                        Text("状態診断、通知、連続試験、試験履歴、印刷キューを管理します。", color = Color.DarkGray)
                         Spacer(Modifier.height(20.dp))
                         OutlinedTextField(
                             value = pin,
@@ -125,9 +130,7 @@ private fun PrinterToolsHubScreen(
                         }
                         Spacer(Modifier.weight(1f))
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            OutlinedButton(onClick = onClose, modifier = Modifier.weight(1f).height(56.dp)) {
-                                Text("閉じる")
-                            }
+                            OutlinedButton(onClick = onClose, modifier = Modifier.weight(1f).height(56.dp)) { Text("閉じる") }
                             Button(
                                 onClick = {
                                     val manager = settingsStore.managerNameForPin(pin)
@@ -157,7 +160,7 @@ private fun PrinterToolsHubScreen(
                     Modifier.weight(1f).fillMaxWidth().padding(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    PrinterHubPanel(Modifier.width(400.dp).fillMaxHeight()) {
+                    PrinterHubPanel(Modifier.width(380.dp).fillMaxHeight()) {
                         Text("現在の設定", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = PhNavy)
                         Spacer(Modifier.height(12.dp))
                         PrinterHubValue("プリンター", printer.name)
@@ -173,82 +176,58 @@ private fun PrinterToolsHubScreen(
                                 PrinterNotificationPermissionState.SYSTEM_DISABLED -> "Android設定で無効"
                             },
                         )
+                        PrinterHubValue("試験履歴保持", "${maintenance.retentionDays()}日")
                         Spacer(Modifier.height(14.dp))
                         Text(
-                            "状態取得失敗と印刷失敗は別に扱います。送信開始後の失敗は自動再送せず、紙確認が必要です。",
+                            "送信開始後の失敗は自動再送しません。強制終了で残った実行中試験は、次回起動時に安全停止として回収します。",
                             color = Color.DarkGray,
                             lineHeight = 22.sp,
                         )
                         Spacer(Modifier.weight(1f))
-                        OutlinedButton(
-                            onClick = { revision++ },
-                            modifier = Modifier.fillMaxWidth().height(48.dp),
-                        ) { Text("状態を更新") }
+                        OutlinedButton(onClick = { revision++ }, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                            Text("状態を更新")
+                        }
                     }
 
-                    Column(Modifier.width(430.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        PrinterHubAction(
-                            title = "状態診断",
-                            description = "オンライン、カバー、用紙、カッター、RAW応答を確認",
-                            color = PhGreen,
-                            onClick = onOpenDiagnostics,
-                            modifier = Modifier.weight(1f),
-                        )
-                        PrinterHubAction(
-                            title = "管理者通知",
-                            description = "Android通知の許可・端末通知設定を確認",
-                            color = PhBlue,
-                            onClick = onOpenNotification,
-                            modifier = Modifier.weight(1f),
-                        )
-                        PrinterHubAction(
-                            title = "連続印刷試験",
-                            description = "状態確認付きで1～500回。結果をSQLite・CSVへ保存",
-                            color = PhOrange,
-                            onClick = onOpenSoakTest,
-                            modifier = Modifier.weight(1f),
-                        )
-                        PrinterHubAction(
-                            title = "統合印刷キュー",
-                            description = "FAILEDを含む全帳票の状態と紙確認後の再印刷",
-                            color = PhRed,
-                            onClick = onOpenQueue,
-                            modifier = Modifier.weight(1f),
-                        )
+                    Column(Modifier.width(410.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                        PrinterHubAction("状態診断", "オンライン、カバー、用紙、カッター、RAW応答", PhGreen, onOpenDiagnostics, Modifier.weight(1f))
+                        PrinterHubAction("管理者通知", "Android通知の許可・端末通知設定", PhBlue, onOpenNotification, Modifier.weight(1f))
+                        PrinterHubAction("連続印刷試験", "状態確認付きで1～500回。自動再送なし", PhOrange, onOpenSoakTest, Modifier.weight(1f))
+                        PrinterHubAction("試験履歴・CSV", "詳細、保持期間、削除、過去CSV再出力", PhPurple, onOpenHistory, Modifier.weight(1f))
+                        PrinterHubAction("統合印刷キュー", "FAILEDを含む全帳票と紙確認後の再印刷", PhRed, onOpenQueue, Modifier.weight(1f))
                     }
 
                     PrinterHubPanel(Modifier.weight(1f).fillMaxHeight()) {
-                        Text("連続印刷試験履歴", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = PhNavy)
+                        Text("直近の連続印刷試験", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = PhNavy)
                         Spacer(Modifier.height(8.dp))
                         if (recent.isEmpty()) {
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 Text("保存された試験結果はありません", color = Color.Gray)
                             }
                         } else {
-                            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                                 recent.forEach { run ->
                                     Card(
                                         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
-                                        colors = CardDefaults.cardColors(containerColor = statusColor(run.status).copy(alpha = 0.07f)),
-                                        border = BorderStroke(1.dp, statusColor(run.status)),
+                                        colors = CardDefaults.cardColors(containerColor = hubStatusColor(run.status).copy(alpha = 0.07f)),
+                                        border = BorderStroke(1.dp, hubStatusColor(run.status)),
                                         shape = RoundedCornerShape(8.dp),
                                     ) {
                                         Column(Modifier.fillMaxWidth().padding(10.dp)) {
                                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                                 Text("ID ${run.id}", fontWeight = FontWeight.Bold, color = PhNavy)
                                                 Spacer(Modifier.weight(1f))
-                                                Text(run.status.displayName, color = statusColor(run.status), fontWeight = FontWeight.Bold)
+                                                Text(run.status.displayName, color = hubStatusColor(run.status), fontWeight = FontWeight.Bold)
                                             }
                                             Text("${run.completedCount}/${run.totalPlanned}回  ${formatHubTime(run.startedAt)}")
                                             Text(run.summary, color = Color.DarkGray, fontSize = 13.sp, maxLines = 2)
-                                            Text(
-                                                if (run.csvPath == null) "端末内CSVなし" else "端末内CSV保存済み",
-                                                color = Color.Gray,
-                                                fontSize = 12.sp,
-                                            )
                                         }
                                     }
                                 }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedButton(onClick = onOpenHistory, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                                Text("履歴の詳細を開く", fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -258,9 +237,7 @@ private fun PrinterToolsHubScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    OutlinedButton(onClick = onClose, modifier = Modifier.width(220.dp).fillMaxHeight()) {
-                        Text("閉じる", fontWeight = FontWeight.Bold)
-                    }
+                    OutlinedButton(onClick = onClose, modifier = Modifier.width(220.dp).fillMaxHeight()) { Text("閉じる", fontWeight = FontWeight.Bold) }
                     OutlinedButton(
                         onClick = { unlocked = false; actor = "責任者" },
                         modifier = Modifier.width(220.dp).fillMaxHeight(),
@@ -314,9 +291,9 @@ private fun PrinterHubAction(
         shape = RoundedCornerShape(10.dp),
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(title, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(4.dp))
-            Text(description, textAlign = TextAlign.Center, fontSize = 12.sp, lineHeight = 17.sp)
+            Text(title, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(2.dp))
+            Text(description, textAlign = TextAlign.Center, fontSize = 11.sp, lineHeight = 15.sp)
         }
     }
 }
@@ -329,7 +306,7 @@ private fun PrinterHubValue(label: String, value: String) {
     }
 }
 
-private fun statusColor(status: PrinterSoakTestRunStatus): Color = when (status) {
+private fun hubStatusColor(status: PrinterSoakTestRunStatus): Color = when (status) {
     PrinterSoakTestRunStatus.RUNNING -> PhBlue
     PrinterSoakTestRunStatus.COMPLETED -> PhGreen
     PrinterSoakTestRunStatus.STOPPED -> PhOrange
