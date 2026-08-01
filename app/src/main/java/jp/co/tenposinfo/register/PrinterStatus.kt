@@ -63,7 +63,7 @@ object PrinterRealtimeStatusProtocol {
     private const val DLE = 0x10
     private const val EOT = 0x04
 
-    /** DLE EOT n=1～4を最大4コマンドの一括送信として問い合わせる。 */
+    /** EPSON DLE EOT n=1～4を最大4コマンドの一括送信として問い合わせる。 */
     fun requestBytes(): ByteArray = byteArrayOf(
         DLE.toByte(), EOT.toByte(), 0x01,
         DLE.toByte(), EOT.toByte(), 0x02,
@@ -108,11 +108,24 @@ class PrinterStatusQueryException(message: String, cause: Throwable? = null) : R
 class TcpPrinterStatusClient(
     private val configuration: PrinterConfiguration,
 ) {
-    fun query(): Result<PrinterRealtimeStatus> = runCatching {
+    fun query(
+        purpose: PrinterStatusCheckPurpose = PrinterStatusCheckPurpose.MANUAL_DIAGNOSTIC,
+        experimentalConfirmed: Boolean = false,
+    ): Result<PrinterRealtimeStatus> = runCatching {
         require(configuration.host.isNotBlank()) { "IPアドレスまたはホスト名が未設定です" }
         require(configuration.port in 1..65535) { "プリンターポートが不正です" }
         require(configuration.profile.statusProtocol != PrinterStatusProtocol.NONE) {
             "選択中のプリンタープロファイルは状態取得に対応していません"
+        }
+
+        val capability = PrinterStatusCapabilityRegistry.forProfile(configuration.profile)
+        when (capability.decision(purpose, experimentalConfirmed)) {
+            PrinterStatusCheckDecision.ALLOWED -> Unit
+            PrinterStatusCheckDecision.REQUIRES_EXPLICIT_CONFIRMATION,
+            PrinterStatusCheckDecision.DENIED,
+            -> throw PrinterStatusQueryException(
+                PrinterStatusCapabilityRegistry.denialMessage(configuration.profile, purpose),
+            )
         }
 
         val response = ByteArray(4)
@@ -140,9 +153,11 @@ class TcpPrinterStatusClient(
             }
         } catch (error: SocketTimeoutException) {
             throw PrinterStatusQueryException(
-                "プリンターから状態応答がありません。DLE EOT非対応、オフライン、通信設定を確認してください",
+                "プリンターから状態応答がありません。状態方式、オフライン、通信設定を確認してください",
                 error,
             )
+        } catch (error: PrinterStatusQueryException) {
+            throw error
         } catch (error: Throwable) {
             throw PrinterStatusQueryException(
                 "プリンター状態を取得できませんでした：${error.message ?: error.javaClass.simpleName}",
