@@ -37,10 +37,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -317,26 +313,6 @@ private fun OrderItemsCard(
     compact: Boolean,
     modifier: Modifier,
 ) {
-    val listState = rememberLazyListState()
-    val targetIndex = CustomerDisplayScrollPolicy.targetIndex(snapshot.orderItems)
-    LaunchedEffect(snapshot.sequence, targetIndex, snapshot.orderItems.size) {
-        if (targetIndex >= 0) listState.animateScrollToItem(targetIndex)
-    }
-    val listState = rememberLazyListState()
-    val targetIndex = CustomerDisplayScrollPolicy.targetIndex(snapshot.orderItems)
-    LaunchedEffect(snapshot.sequence, targetIndex, snapshot.orderItems.size) {
-        if (targetIndex >= 0) listState.animateScrollToItem(targetIndex)
-    }
-    val listState = rememberLazyListState()
-    val targetIndex = CustomerDisplayScrollPolicy.targetIndex(snapshot.orderItems)
-    LaunchedEffect(snapshot.sequence, targetIndex, snapshot.orderItems.size) {
-        if (targetIndex >= 0) listState.animateScrollToItem(targetIndex)
-    }
-    val listState = rememberLazyListState()
-    val targetIndex = CustomerDisplayScrollPolicy.targetIndex(snapshot.orderItems)
-    LaunchedEffect(snapshot.sequence, targetIndex, snapshot.orderItems.size) {
-        if (targetIndex >= 0) listState.animateScrollToItem(targetIndex)
-    }
     val listState = rememberLazyListState()
     val targetIndex = CustomerDisplayScrollPolicy.targetIndex(snapshot.orderItems)
     LaunchedEffect(snapshot.sequence, targetIndex, snapshot.orderItems.size) {
