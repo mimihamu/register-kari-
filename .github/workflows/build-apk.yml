@@ -41,13 +41,15 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify v0.13 dev.1 metadata
+      - name: Verify v0.13 customer display dev.2 metadata
         run: |
           grep -q 'versionCode = 38' app/build.gradle.kts
           grep -q 'versionName = "0.13.0-dev.1"' app/build.gradle.kts
-          grep -q 'versionCode = 1' customer-display/build.gradle.kts
-          grep -q 'versionName = "0.13.0-dev.1"' customer-display/build.gradle.kts
+          grep -q 'versionCode = 2' customer-display/build.gradle.kts
+          grep -q 'versionName = "0.13.0-dev.2"' customer-display/build.gradle.kts
           grep -q 'applicationId = "jp.co.tenposinfo.register.cd"' customer-display/build.gradle.kts
+          ! grep -q 'android:screenOrientation="landscape"' customer-display/src/main/AndroidManifest.xml
+          grep -q 'android:resizeableActivity="true"' customer-display/src/main/AndroidManifest.xml
 
       - name: Verify launcher configuration
         run: |
@@ -69,15 +71,18 @@ jobs:
         run: |
           mkdir -p artifacts
           cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.13.0_dev1_debug.apk
-          cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.13.0_dev1_debug.apk
+          cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.13.0_dev2_smartphone_debug.apk
           sha256sum artifacts/TSUGUREGI_v0.13.0_dev1_debug.apk | tee artifacts/TSUGUREGI_v0.13.0_dev1_debug.apk.sha256
-          sha256sum artifacts/TSUGUREGI_CD_v0.13.0_dev1_debug.apk | tee artifacts/TSUGUREGI_CD_v0.13.0_dev1_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_CD_v0.13.0_dev2_smartphone_debug.apk | tee artifacts/TSUGUREGI_CD_v0.13.0_dev2_smartphone_debug.apk.sha256
           stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.13.0_dev1_debug.apk | tee artifacts/build-summary.txt
-          stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.13.0_dev1_debug.apk | tee -a artifacts/build-summary.txt
+          stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.13.0_dev2_smartphone_debug.apk | tee -a artifacts/build-summary.txt
           echo "REGISTER_VERSION_NAME=0.13.0-dev.1" >> artifacts/build-summary.txt
           echo "REGISTER_VERSION_CODE=38" >> artifacts/build-summary.txt
-          echo "CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.1" >> artifacts/build-summary.txt
-          echo "CUSTOMER_DISPLAY_VERSION_CODE=1" >> artifacts/build-summary.txt
+          echo "CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.2" >> artifacts/build-summary.txt
+          echo "CUSTOMER_DISPLAY_VERSION_CODE=2" >> artifacts/build-summary.txt
+          echo "CUSTOMER_DISPLAY_PHONE_PORTRAIT=responsive-stacked" >> artifacts/build-summary.txt
+          echo "CUSTOMER_DISPLAY_PHONE_LANDSCAPE=responsive-side-by-side" >> artifacts/build-summary.txt
+          echo "CUSTOMER_DISPLAY_ORIENTATION_LOCK=removed" >> artifacts/build-summary.txt
           echo "REGISTER_PACKAGE=jp.co.tenposinfo.register.dev" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_PACKAGE=jp.co.tenposinfo.register.cd.dev" >> artifacts/build-summary.txt
           echo "REGISTER_LAUNCHER_COUNT=1" >> artifacts/build-summary.txt
@@ -91,12 +96,12 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.13.0-dev1-register-and-cd-debug-apks
+          name: TSUGUREGI-v0.13.0-cd-dev2-smartphone-debug-apks
           path: |
             artifacts/TSUGUREGI_v0.13.0_dev1_debug.apk
             artifacts/TSUGUREGI_v0.13.0_dev1_debug.apk.sha256
-            artifacts/TSUGUREGI_CD_v0.13.0_dev1_debug.apk
-            artifacts/TSUGUREGI_CD_v0.13.0_dev1_debug.apk.sha256
+            artifacts/TSUGUREGI_CD_v0.13.0_dev2_smartphone_debug.apk
+            artifacts/TSUGUREGI_CD_v0.13.0_dev2_smartphone_debug.apk.sha256
             artifacts/build-summary.txt
           if-no-files-found: error
           retention-days: 30
