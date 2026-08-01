@@ -37,6 +37,12 @@
             android:exported="false"
             android:initOrder="130" />
 
+        <provider
+            android:name=".PrinterToolsAdminOverlayProvider"
+            android:authorities="${applicationId}.printer-tools-admin-overlay"
+            android:exported="false"
+            android:initOrder="140" />
+
         <activity
             android:name=".MenuRevisionEditorActivity"
             android:exported="false"
@@ -79,6 +85,11 @@
 
         <activity
             android:name=".PrinterSoakTestActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".PrinterToolsHubActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
 
