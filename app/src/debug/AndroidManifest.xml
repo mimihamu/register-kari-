@@ -36,6 +36,17 @@
             </intent-filter>
         </activity>
         <activity
+            android:name=".PrinterToolsHubActivity"
+            android:exported="true"
+            android:label="つぐレジ プリンター運用"
+            android:screenOrientation="landscape"
+            tools:replace="android:exported">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
             android:name=".UnifiedPrintQueueActivity"
             android:exported="true"
             android:label="つぐレジ 印刷キュー"
