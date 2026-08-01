@@ -65,6 +65,9 @@ class PrinterNotificationSettingsActivity : ComponentActivity() {
                     onOpenDiagnostics = {
                         startActivity(Intent(this, PrinterStatusActivity::class.java))
                     },
+                    onOpenSoakTest = {
+                        startActivity(Intent(this, PrinterSoakTestActivity::class.java))
+                    },
                     onClose = { finish() },
                 )
             }
@@ -75,6 +78,7 @@ class PrinterNotificationSettingsActivity : ComponentActivity() {
 @Composable
 private fun PrinterNotificationSettingsScreen(
     onOpenDiagnostics: () -> Unit,
+    onOpenSoakTest: () -> Unit,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -140,13 +144,13 @@ private fun PrinterNotificationSettingsScreen(
             ) {
                 Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.width(24.dp))
-                Text("プリンター通知設定", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+                Text("プリンター通知・試験", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.weight(1f))
-                Text("継続異常の管理者通知", color = Color.White, fontSize = 14.sp)
+                Text("管理者通知と実機検証", color = Color.White, fontSize = 14.sp)
             }
 
             Column(
-                Modifier.weight(1f).fillMaxWidth().padding(28.dp),
+                Modifier.weight(1f).fillMaxWidth().padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
@@ -157,18 +161,18 @@ private fun PrinterNotificationSettingsScreen(
                     shape = RoundedCornerShape(12.dp),
                 ) {
                     Column(
-                        Modifier.fillMaxWidth().padding(28.dp),
+                        Modifier.fillMaxWidth().padding(26.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(title, color = stateColor, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(14.dp))
                         Text(
                             description,
                             fontSize = 18.sp,
                             lineHeight = 28.sp,
                             textAlign = TextAlign.Center,
                         )
-                        Spacer(Modifier.height(22.dp))
+                        Spacer(Modifier.height(20.dp))
                         when (permissionState) {
                             PrinterNotificationPermissionState.ENABLED -> {
                                 Button(
@@ -198,7 +202,7 @@ private fun PrinterNotificationSettingsScreen(
                                 ) { Text("Androidの通知設定を開く", fontWeight = FontWeight.Bold) }
                             }
                         }
-                        Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(14.dp))
                         Text(
                             "通知権限はプリンター状態の管理者通知だけに使用します。売上保存、印刷キュー、FAILEDの再送制御には影響しません。",
                             color = Color.DarkGray,
@@ -206,11 +210,17 @@ private fun PrinterNotificationSettingsScreen(
                         )
                     }
                 }
-                Spacer(Modifier.height(18.dp))
-                OutlinedButton(
-                    onClick = onOpenDiagnostics,
-                    modifier = Modifier.width(360.dp).height(52.dp),
-                ) { Text("プリンター診断を開く", fontWeight = FontWeight.Bold) }
+                Spacer(Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    OutlinedButton(
+                        onClick = onOpenDiagnostics,
+                        modifier = Modifier.width(320.dp).height(52.dp),
+                    ) { Text("プリンター診断を開く", fontWeight = FontWeight.Bold) }
+                    OutlinedButton(
+                        onClick = onOpenSoakTest,
+                        modifier = Modifier.width(320.dp).height(52.dp),
+                    ) { Text("連続印刷試験を開く", fontWeight = FontWeight.Bold) }
+                }
             }
 
             Row(
@@ -221,7 +231,7 @@ private fun PrinterNotificationSettingsScreen(
                     Text("閉じる", fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.weight(1f))
-                Text("通知が無効でも販売画面の異常警告は表示されます", color = PnRed, fontWeight = FontWeight.Bold)
+                Text("連続印刷試験は実機確認用です。開始前にロール紙と排紙口を確認してください", color = PnRed, fontWeight = FontWeight.Bold)
             }
         }
     }
