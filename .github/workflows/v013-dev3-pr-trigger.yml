@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   apply:
-    if: ${{ !contains(github.event.pull_request.head.sha, '0000000000000000000000000000000000000000') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,13 +21,15 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import textwrap
 
           workflow = Path('.github/workflows/v013-dev3-apply-robust.yml').read_text(encoding='utf-8')
           start_marker = "          python3 - <<'PY'\n"
           end_marker = "\n          PY\n"
           source = workflow.split(start_marker, 1)[1].split(end_marker, 1)[0]
-          source = textwrap.dedent(source)
+          source = "\n".join(
+              line[10:] if line.startswith("          ") else line
+              for line in source.splitlines()
+          )
           exec(compile(source, 'v013-dev3-embedded.py', 'exec'))
           PY
 
