@@ -80,6 +80,11 @@ internal data class CustomerDisplayDiscoveryState(
     val message: String? = null,
 )
 
+internal object CustomerDisplayNsdServiceType {
+    fun matches(value: String?): Boolean =
+        value?.trim()?.trimEnd('.') == CUSTOMER_DISPLAY_PAIRING_SERVICE_TYPE.trimEnd('.')
+}
+
 @Suppress("DEPRECATION")
 internal class CustomerDisplayNsdDiscovery(
     context: Context,
@@ -113,12 +118,12 @@ internal class CustomerDisplayNsdDiscovery(
 
         val listener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String) {
-                onStateChanged(CustomerDisplayDiscoveryState(CustomerDisplayDiscoveryStatus.SEARCHING, "同じWi-Fiのつぐレジを検索中です"))
+                emit(CustomerDisplayDiscoveryState(CustomerDisplayDiscoveryStatus.SEARCHING, "同じWi-Fiのつぐレジを検索中です"))
             }
 
             override fun onServiceFound(service: NsdServiceInfo) {
                 handler.post {
-                    if (!running || service.serviceType != CUSTOMER_DISPLAY_PAIRING_SERVICE_TYPE) return@post
+                    if (!running || !CustomerDisplayNsdServiceType.matches(service.serviceType)) return@post
                     val identity = "${service.serviceName}|${service.serviceType}"
                     if (queuedIdentities.add(identity)) {
                         pendingServices.addLast(service)
@@ -130,7 +135,7 @@ internal class CustomerDisplayNsdDiscovery(
             override fun onServiceLost(service: NsdServiceInfo) = Unit
 
             override fun onDiscoveryStopped(serviceType: String) {
-                running = false
+                handler.post { running = false }
             }
 
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
@@ -138,11 +143,11 @@ internal class CustomerDisplayNsdDiscovery(
             }
 
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
-                running = false
+                handler.post { running = false }
             }
         }
         discoveryListener = listener
-        onStateChanged(CustomerDisplayDiscoveryState(CustomerDisplayDiscoveryStatus.SEARCHING, "同じWi-Fiのつぐレジを検索しています"))
+        emit(CustomerDisplayDiscoveryState(CustomerDisplayDiscoveryStatus.SEARCHING, "同じWi-Fiのつぐレジを検索しています"))
         runCatching {
             nsdManager.discoverServices(
                 CUSTOMER_DISPLAY_PAIRING_SERVICE_TYPE,
@@ -171,7 +176,7 @@ internal class CustomerDisplayNsdDiscovery(
         }
         multicastLock = null
         if (message != null) {
-            onStateChanged(CustomerDisplayDiscoveryState(CustomerDisplayDiscoveryStatus.FINISHED, message))
+            emit(CustomerDisplayDiscoveryState(CustomerDisplayDiscoveryStatus.FINISHED, message))
         }
     }
 
@@ -205,6 +210,14 @@ internal class CustomerDisplayNsdDiscovery(
         }.onFailure {
             resolving = false
             resolveNext()
+        }
+    }
+
+    private fun emit(state: CustomerDisplayDiscoveryState) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            onStateChanged(state)
+        } else {
+            handler.post { onStateChanged(state) }
         }
     }
 }
