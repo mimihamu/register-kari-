@@ -1,7 +1,0 @@
-2026-08-01T16:44:05.580857+00:00
-app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt: import android.content.Intent: before=5, after=1
-app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt: import androidx.core.view.WindowCompat: before=5, after=1
-app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt: import androidx.core.view.WindowCompat: before=5, after=1
-customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt: import androidx.compose.runtime.LaunchedEffect: before=5, after=1
-PaymentAmountRow helpers: before=5, after=1
-latest-item scroll blocks: before=5, after=1
