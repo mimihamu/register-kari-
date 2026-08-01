@@ -6,7 +6,6 @@ import android.net.nsd.NsdServiceInfo
 import android.os.Handler
 import android.os.Looper
 import java.nio.charset.StandardCharsets
-import java.util.Locale
 
 internal const val CUSTOMER_DISPLAY_PAIRING_SERVICE_TYPE = "_tsuguregi-cd._tcp."
 internal const val CUSTOMER_DISPLAY_PAIRING_WINDOW_MS = 120_000L
@@ -55,12 +54,14 @@ internal class CustomerDisplayPairingAdvertiser(
     private val handler = Handler(Looper.getMainLooper())
     private var listener: NsdManager.RegistrationListener? = null
     private var registered = false
+    private var requested = false
     private val stopRunnable = Runnable { stop("ペアリング受付を終了しました") }
 
     fun start(config: CustomerDisplayServerConfig) {
         stop(null)
+        requested = true
         val endsAt = System.currentTimeMillis() + CUSTOMER_DISPLAY_PAIRING_WINDOW_MS
-        onStateChanged(
+        emit(
             CustomerDisplayPairingState(
                 status = CustomerDisplayPairingStatus.STARTING,
                 endsAtMillis = endsAt,
@@ -79,10 +80,14 @@ internal class CustomerDisplayPairingAdvertiser(
 
         val registrationListener = object : NsdManager.RegistrationListener {
             override fun onServiceRegistered(service: NsdServiceInfo) {
+                if (!requested || listener !== this) {
+                    runCatching { nsdManager.unregisterService(this) }
+                    return
+                }
                 registered = true
                 handler.removeCallbacks(stopRunnable)
                 handler.postDelayed(stopRunnable, CUSTOMER_DISPLAY_PAIRING_WINDOW_MS)
-                onStateChanged(
+                emit(
                     CustomerDisplayPairingState(
                         status = CustomerDisplayPairingStatus.ACTIVE,
                         serviceName = service.serviceName,
@@ -93,9 +98,11 @@ internal class CustomerDisplayPairingAdvertiser(
             }
 
             override fun onRegistrationFailed(service: NsdServiceInfo, errorCode: Int) {
+                if (listener !== this) return
                 registered = false
+                requested = false
                 listener = null
-                onStateChanged(
+                emit(
                     CustomerDisplayPairingState(
                         status = CustomerDisplayPairingStatus.IDLE,
                         message = "ペアリング受付を開始できませんでした（$errorCode）",
@@ -115,9 +122,10 @@ internal class CustomerDisplayPairingAdvertiser(
         runCatching {
             nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, registrationListener)
         }.onFailure { error ->
-            listener = null
+            if (listener === registrationListener) listener = null
+            requested = false
             registered = false
-            onStateChanged(
+            emit(
                 CustomerDisplayPairingState(
                     status = CustomerDisplayPairingStatus.IDLE,
                     message = error.message ?: "ペアリング受付を開始できませんでした",
@@ -127,6 +135,7 @@ internal class CustomerDisplayPairingAdvertiser(
     }
 
     fun stop(message: String? = "ペアリング受付を停止しました") {
+        requested = false
         handler.removeCallbacks(stopRunnable)
         val current = listener
         listener = null
@@ -134,11 +143,19 @@ internal class CustomerDisplayPairingAdvertiser(
             runCatching { nsdManager.unregisterService(current) }
         }
         registered = false
-        onStateChanged(
+        emit(
             CustomerDisplayPairingState(
                 status = CustomerDisplayPairingStatus.IDLE,
                 message = message,
             ),
         )
+    }
+
+    private fun emit(state: CustomerDisplayPairingState) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            onStateChanged(state)
+        } else {
+            handler.post { onStateChanged(state) }
+        }
     }
 }
