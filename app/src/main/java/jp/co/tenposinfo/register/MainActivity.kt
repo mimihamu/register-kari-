@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowCompat
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -297,6 +298,13 @@ private fun RegisterApp() {
                 },
                 onPayment = {
                     paymentState = PaymentState()
+                    CustomerDisplayRuntime.publish(
+                        CustomerDisplaySnapshotFactory.accounting(
+                            cart.toList(),
+                            paymentState,
+                            CustomerDisplaySettingsStore(context.applicationContext).load().storeName,
+                        ),
+                    )
                     screen = AppScreen.PAYMENT
                 },
                 onSalesHistory = {
@@ -318,6 +326,15 @@ private fun RegisterApp() {
                 onPrinterStatus = {
                     context.startActivity(Intent(context, PrinterStatusActivity::class.java))
                 },
+                canOpenSettings = currentOperator?.isManager == true && currentOperator?.allows(RegisterPermission.SETTINGS) == true,
+                canOpenManagement = currentOperator?.permissions?.any {
+                    it == RegisterPermission.VIEW_SALES ||
+                        it == RegisterPermission.CASH_MOVEMENT ||
+                        it == RegisterPermission.SETTLEMENT ||
+                        it == RegisterPermission.REVERSAL
+                } == true,
+                onOpenSettings = { context.startActivity(Intent(context, AdminSettingsActivity::class.java)) },
+                onOpenManagement = { context.startActivity(Intent(context, OperationsActivity::class.java)) },
                 accessMessage = accessMessage,
                 onLogout = {
                     OperatorSessionRegistry.logout(context.applicationContext)
@@ -374,10 +391,35 @@ private fun RegisterApp() {
             AppScreen.PAYMENT -> PaymentScreen(
                 items = cart,
                 state = paymentState,
-                onStateChange = { paymentState = it },
-                onBack = { screen = AppScreen.SALES },
+                onStateChange = {
+                    paymentState = it
+                    CustomerDisplayRuntime.publish(
+                        CustomerDisplaySnapshotFactory.accounting(
+                            cart.toList(),
+                            it,
+                            CustomerDisplaySettingsStore(context.applicationContext).load().storeName,
+                        ),
+                    )
+                },
+                onBack = {
+                    CustomerDisplayRuntime.publish(
+                        CustomerDisplaySnapshotFactory.sales(
+                            cart.toList(),
+                            CustomerDisplaySettingsStore(context.applicationContext).load().storeName,
+                        ),
+                    )
+                    screen = AppScreen.SALES
+                },
                 onComplete = {
                     val saleId = database.saveSale(operatorName, cart.toList(), paymentState, receiptPaper.widthMm)
+                    database.loadSaleDetail(saleId)?.let { detail ->
+                        CustomerDisplayRuntime.publish(
+                            CustomerDisplaySnapshotFactory.complete(
+                                detail,
+                                CustomerDisplaySettingsStore(context.applicationContext).load().storeName,
+                            ),
+                        )
+                    }
                     AutomaticPrintScheduler.enqueueNow(context.applicationContext)
                     DriveOutboxScheduler.enqueueNow(context.applicationContext)
                     lastSaleId = saleId
@@ -1022,12 +1064,12 @@ private fun PaymentScreen(
                 }
             }
             CardPanel(Modifier.width(430.dp).fillMaxHeight()) {
-                AmountRow("合計", yen(summary.grossAmount), emphasized = true)
-                AmountRow("支払済", yen(state.paidAmount))
-                AmountRow("残額", yen(remaining), emphasized = true)
-                AmountRow("お釣り", yen(state.changeAmount))
-                Spacer(Modifier.height(10.dp))
-                LazyColumn(Modifier.height(120.dp)) {
+                PaymentAmountRow("合計", yen(summary.grossAmount), emphasized = true)
+                PaymentAmountRow("支払済", yen(state.paidAmount))
+                PaymentAmountRow("残額", yen(remaining), emphasized = true)
+                PaymentAmountRow("お釣り", yen(state.changeAmount))
+                Spacer(Modifier.height(4.dp))
+                LazyColumn(Modifier.height(40.dp)) {
                     itemsIndexed(state.allocations) { index, payment ->
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text("${payment.method.displayName} ${yen(payment.appliedAmount)}", Modifier.weight(1f))
@@ -1042,12 +1084,13 @@ private fun PaymentScreen(
                     onClear = { input = "" },
                     bottomActionLabel = "現金",
                     onBottomAction = { add(PaymentMethod.CASH) },
+                    compact = true,
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(4.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { add(PaymentMethod.CARD) }, enabled = remaining > 0, modifier = Modifier.weight(1f)) { Text("カード") }
-                    OutlinedButton(onClick = { add(PaymentMethod.GIFT_CERTIFICATE) }, enabled = remaining > 0, modifier = Modifier.weight(1f)) { Text("商品券") }
-                    OutlinedButton(onClick = { add(PaymentMethod.ACCOUNT_RECEIVABLE) }, enabled = remaining > 0, modifier = Modifier.weight(1f)) { Text("掛売") }
+                    OutlinedButton(onClick = { add(PaymentMethod.CARD) }, enabled = remaining > 0, modifier = Modifier.weight(1f).height(40.dp)) { Text("カード") }
+                    OutlinedButton(onClick = { add(PaymentMethod.GIFT_CERTIFICATE) }, enabled = remaining > 0, modifier = Modifier.weight(1f).height(40.dp)) { Text("商品券") }
+                    OutlinedButton(onClick = { add(PaymentMethod.ACCOUNT_RECEIVABLE) }, enabled = remaining > 0, modifier = Modifier.weight(1f).height(40.dp)) { Text("掛売") }
                 }
             }
         }
@@ -1444,6 +1487,14 @@ private fun ChoiceButton(
         modifier = modifier,
         border = BorderStroke(if (selected) 3.dp else 1.dp, if (selected) Danger else Border),
     ) { Text(label, color = Navy, fontWeight = FontWeight.Bold) }
+}
+
+@Composable
+private fun PaymentAmountRow(label: String, value: String, emphasized: Boolean = false) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), fontSize = if (emphasized) 18.sp else 14.sp, fontWeight = if (emphasized) FontWeight.Bold else FontWeight.Normal)
+        Text(value, fontSize = if (emphasized) 20.sp else 15.sp, fontWeight = FontWeight.Bold, color = if (emphasized) Navy else Color.Unspecified)
+    }
 }
 
 @Composable

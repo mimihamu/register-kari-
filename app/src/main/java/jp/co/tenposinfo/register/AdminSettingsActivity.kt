@@ -2,7 +2,9 @@ package jp.co.tenposinfo.register
 
 import android.content.Intent
 import android.content.Intent
+import android.content.Intent
 import android.os.Bundle
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowCompat
 import androidx.activity.ComponentActivity
@@ -134,6 +136,9 @@ private fun AdminSettingsApp(onClose: () -> Unit) {
                     actorName = actorName,
                     onOperators = { screen = AdminScreen.OPERATORS },
                     onPrinter = { screen = AdminScreen.PRINTER },
+                    onCatalog = { context.startActivity(Intent(context, CatalogSettingsActivity::class.java)) },
+                    onCustomerDisplay = { context.startActivity(Intent(context, CustomerDisplaySettingsActivity::class.java)) },
+                    onPrinterTools = { context.startActivity(Intent(context, PrinterToolsHubActivity::class.java)) },
                     onSecurity = { screen = AdminScreen.SECURITY },
                     onAudit = { screen = AdminScreen.AUDIT },
                     onLock = { unlocked = false },
@@ -254,14 +259,20 @@ private fun AdminMenuScreen(
                     lineHeight = 23.sp,
                 )
             }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     AsMenuTile("担当者・権限", "担当者登録、停止、並び順、権限", AsPaleBlue, Modifier.weight(1f), onOperators)
-                    AsMenuTile("プリンター設定", "機種、IP、58/80mm、カット、ドロア", AsPaleGreen, Modifier.weight(1f), onPrinter)
+                    AsMenuTile("商品設定", "商品、部門、税区分、価格改定", Color(0xFFE8F0FC), Modifier.weight(1f), onCatalog)
+                    AsMenuTile("プリンター設定", "機種、IP、用紙、カット、ドロア", AsPaleGreen, Modifier.weight(1f), onPrinter)
                 }
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    AsMenuTile("責任者PIN", "PBKDF2ハッシュでPINを更新", AsPaleYellow, Modifier.weight(1f), onSecurity)
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AsMenuTile("顧客表示", "つぐレジ CDの接続と表示設定", Color(0xFFEDEBFA), Modifier.weight(1f), onCustomerDisplay)
+                    AsMenuTile("プリンター運用", "診断、印刷キュー、検証、試験履歴", Color(0xFFE5F3FA), Modifier.weight(1f), onPrinterTools)
                     AsMenuTile("監査ログ", "設定、返品、精算、入出金を確認", Color(0xFFF0EAF8), Modifier.weight(1f), onAudit)
+                }
+                Row(Modifier.weight(0.72f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AsMenuTile("責任者PIN", "責任者PINを安全に更新", AsPaleYellow, Modifier.weight(1f), onSecurity)
+                    Spacer(Modifier.weight(2f))
                 }
             }
         }
@@ -822,9 +833,9 @@ private fun AsMenuTile(title: String, description: String, background: Color, mo
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(title, fontSize = 25.sp, fontWeight = FontWeight.Bold, color = AsNavy)
-            Spacer(Modifier.height(10.dp))
-            Text(description, textAlign = TextAlign.Center, color = Color.DarkGray, lineHeight = 22.sp)
+            Text(title, fontSize = 21.sp, fontWeight = FontWeight.Bold, color = AsNavy)
+            Spacer(Modifier.height(6.dp))
+            Text(description, textAlign = TextAlign.Center, color = Color.DarkGray, lineHeight = 18.sp, fontSize = 13.sp)
         }
     }
 }

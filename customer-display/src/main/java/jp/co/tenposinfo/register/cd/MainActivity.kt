@@ -38,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -324,6 +325,11 @@ private fun OrderItemsCard(
     LaunchedEffect(snapshot.sequence, targetIndex, snapshot.orderItems.size) {
         if (targetIndex >= 0) listState.animateScrollToItem(targetIndex)
     }
+    val listState = rememberLazyListState()
+    val targetIndex = CustomerDisplayScrollPolicy.targetIndex(snapshot.orderItems)
+    LaunchedEffect(snapshot.sequence, targetIndex, snapshot.orderItems.size) {
+        if (targetIndex >= 0) listState.animateScrollToItem(targetIndex)
+    }
     Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = Panel)) {
         Column(modifier = Modifier.fillMaxSize().padding(if (compact) 10.dp else 18.dp)) {
             Row(modifier = Modifier.fillMaxWidth()) {
@@ -333,10 +339,14 @@ private fun OrderItemsCard(
             }
             HorizontalDivider(color = Border, modifier = Modifier.padding(vertical = if (compact) 5.dp else 8.dp))
             LazyColumn(
+                state = listState,
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 8.dp),
             ) {
-                items(snapshot.orderItems, key = { "${it.productId}-${it.name}" }) { item ->
+                itemsIndexed(
+                    items = snapshot.orderItems,
+                    key = { index, item -> "${item.productId}-${item.unitPrice}-$index" },
+                ) { _, item ->
                     CustomerDisplayItemRow(item, compact)
                 }
             }
