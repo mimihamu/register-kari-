@@ -1,4 +1,4 @@
-name: Apply v0.13 dev3 on PR
+name: Clean v0.13 dev3 source
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  apply:
+  cleanup:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,31 +17,19 @@ jobs:
           ref: develop/v0.13
           fetch-depth: 0
 
-      - name: Execute source applicators
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
+      - name: Remove duplicate generated source
+        run: python3 tools/v013_dev3_cleanup.py
 
-          workflow = Path('.github/workflows/v013-dev3-apply-robust.yml').read_text(encoding='utf-8')
-          start_marker = "          python3 - <<'PY'\n"
-          end_marker = "\n          PY\n"
-          source = workflow.split(start_marker, 1)[1].split(end_marker, 1)[0]
-          source = "\n".join(
-              line[10:] if line.startswith("          ") else line
-              for line in source.splitlines()
-          )
-          exec(compile(source, 'v013-dev3-embedded.py', 'exec'))
-          PY
-          python3 tools/v013_dev3_fixup.py
-
-      - name: Commit applied source
+      - name: Commit cleaned source
         run: |
-          git checkout -- .github/workflows/build-apk.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app customer-display docs/V013_DEV3_APPLY_DIAGNOSTIC.txt docs/V013_DEV3_FIXUP_DIAGNOSTIC.txt
+          git add app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt \
+                  customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt \
+                  docs/V013_DEV3_CLEANUP_DIAGNOSTIC.txt
           if git diff --cached --quiet; then
             exit 0
           fi
-          git commit -m "feat(v0.13): complete register UI and CD latest-item fixes [v013-dev3-applied]"
+          git commit -m "fix(v0.13): remove duplicate generated UI source [v013-dev3-clean]"
           git push origin HEAD:develop/v0.13
