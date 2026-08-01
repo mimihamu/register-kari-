@@ -31,12 +31,14 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -70,6 +72,27 @@ private val Danger = Color(0xFFC62828)
 private val Warning = Color(0xFFFFE0B2)
 private val Background = Color(0xFFF4F7FA)
 private val Border = Color(0xFFD5DEE7)
+
+internal object RegisterLayoutPolicy {
+    const val DIAGNOSTIC_CARD_HEIGHT_DP = 280
+    const val COMPACT_VALUE_HEIGHT_DP = 40
+    const val COMPACT_KEY_HEIGHT_DP = 36
+    const val COMPACT_KEY_GAP_DP = 2
+    const val COMPACT_FUNCTION_HEIGHT_DP = 34
+
+    fun salesUtilityRequiredHeightDp(panelPaddingDp: Int = 32): Int =
+        40 + 4 +
+            (COMPACT_KEY_HEIGHT_DP * 4 + COMPACT_KEY_GAP_DP * 3) + 4 +
+            COMPACT_FUNCTION_HEIGHT_DP + 4 +
+            COMPACT_FUNCTION_HEIGHT_DP +
+            panelPaddingDp
+
+    fun paymentControlsRequiredHeightDp(panelPaddingDp: Int = 32): Int =
+        48 + 4 + 36 + COMPACT_VALUE_HEIGHT_DP + 4 +
+            (COMPACT_KEY_HEIGHT_DP * 4 + COMPACT_KEY_GAP_DP * 3) + 4 +
+            COMPACT_FUNCTION_HEIGHT_DP +
+            panelPaddingDp
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -529,21 +552,21 @@ private fun DiagnosticScreen(restoredCount: Int, pendingPrints: Int, onComplete:
     Column(modifier = Modifier.fillMaxSize()) {
         Header("SCR-001", "起動・自己診断")
         Column(
-            modifier = Modifier.fillMaxSize().padding(32.dp),
+            modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 24.dp, vertical = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
             Text("起動チェックを実行しました", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Navy)
-            Spacer(Modifier.height(24.dp))
-            CardPanel(Modifier.width(700.dp)) {
+            Spacer(Modifier.height(14.dp))
+            CardPanel(Modifier.width(700.dp).height(RegisterLayoutPolicy.DIAGNOSTIC_CARD_HEIGHT_DP.dp)) {
                 StatusRow("データベース", "正常（税率・商品改定・同期保護対応）")
                 StatusRow("作業中取引", if (restoredCount > 0) "${restoredCount}点を復元" else "なし")
                 StatusRow("印刷キュー", if (pendingPrints > 0) "${pendingPrints}件待機" else "待機なし")
                 StatusRow("プリンタ", "未設定でも販売可能")
                 StatusRow("Google Drive", "未接続でも販売可能")
             }
-            Spacer(Modifier.height(26.dp))
-            BlueButton("診断完了・担当者選択へ", onComplete, Modifier.width(340.dp).height(58.dp))
+            Spacer(Modifier.height(14.dp))
+            BlueButton("診断完了・担当者選択へ", onComplete, Modifier.width(340.dp).height(54.dp))
         }
     }
 }
@@ -715,10 +738,19 @@ private fun SalesScreen(
             }
 
             CardPanel(Modifier.weight(0.24f).fillMaxHeight()) {
-                Text("置数・機能", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Navy)
-                Spacer(Modifier.height(8.dp))
-                ValueBox(if (numericInput.isBlank()) "0" else numericInput)
-                Spacer(Modifier.height(8.dp))
+                Row(
+                    Modifier.fillMaxWidth().height(40.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("置数・機能", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Navy)
+                    Spacer(Modifier.width(8.dp))
+                    ValueBox(
+                        if (numericInput.isBlank()) "0" else numericInput,
+                        compact = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
                 NumberPad(
                     onDigit = { if (numericInput.length < 5) numericInput += it },
                     onClear = { numericInput = "" },
@@ -727,26 +759,35 @@ private fun SalesScreen(
                         numericInput.toIntOrNull()?.let(onChangeQuantity)
                         numericInput = ""
                     },
+                    compact = true,
                 )
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onRemove, modifier = Modifier.weight(1f)) { Text("訂正") }
-                    OutlinedButton(
-                        onClick = { selectedIndex?.let(onEdit) },
-                        enabled = selectedIndex != null,
-                        modifier = Modifier.weight(1f),
-                    ) { Text("行編集") }
+                Spacer(Modifier.height(4.dp))
+                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(
+                            onClick = onRemove,
+                            modifier = Modifier.weight(1f).height(RegisterLayoutPolicy.COMPACT_FUNCTION_HEIGHT_DP.dp),
+                        ) { Text("訂正", fontSize = 12.sp) }
+                        OutlinedButton(
+                            onClick = { selectedIndex?.let(onEdit) },
+                            enabled = selectedIndex != null,
+                            modifier = Modifier.weight(1f).height(RegisterLayoutPolicy.COMPACT_FUNCTION_HEIGHT_DP.dp),
+                        ) { Text("行編集", fontSize = 12.sp) }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(
+                            onClick = onDiscount,
+                            enabled = cart.isNotEmpty(),
+                            modifier = Modifier.weight(1f).height(RegisterLayoutPolicy.COMPACT_FUNCTION_HEIGHT_DP.dp),
+                        ) { Text("値引・割引", fontSize = 12.sp) }
+                        Button(
+                            onClick = onCancelTransaction,
+                            modifier = Modifier.weight(1f).height(RegisterLayoutPolicy.COMPACT_FUNCTION_HEIGHT_DP.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFBE9E7), contentColor = Danger),
+                        ) { Text("取引中止", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                    }
                 }
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick = onDiscount, enabled = cart.isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
-                    Text("値引・割引")
-                }
-                Spacer(Modifier.weight(1f))
-                Button(
-                    onClick = onCancelTransaction,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFBE9E7), contentColor = Danger),
-                ) { Text("取引中止", fontWeight = FontWeight.Bold) }
             }
 
             CardPanel(Modifier.weight(0.40f).fillMaxHeight()) {
@@ -1062,12 +1103,18 @@ private fun PaymentScreen(
                 }
             }
             CardPanel(Modifier.width(430.dp).fillMaxHeight()) {
-                PaymentAmountRow("合計", yen(summary.grossAmount), emphasized = true)
-                PaymentAmountRow("支払済", yen(state.paidAmount))
-                PaymentAmountRow("残額", yen(remaining), emphasized = true)
-                PaymentAmountRow("お釣り", yen(state.changeAmount))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        PaymentAmountRow("合計", yen(summary.grossAmount), emphasized = true)
+                        PaymentAmountRow("支払済", yen(state.paidAmount))
+                    }
+                    Column(Modifier.weight(1f)) {
+                        PaymentAmountRow("残額", yen(remaining), emphasized = true)
+                        PaymentAmountRow("お釣り", yen(state.changeAmount))
+                    }
+                }
                 Spacer(Modifier.height(4.dp))
-                LazyColumn(Modifier.height(40.dp)) {
+                LazyColumn(Modifier.height(36.dp)) {
                     itemsIndexed(state.allocations) { index, payment ->
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text("${payment.method.displayName} ${yen(payment.appliedAmount)}", Modifier.weight(1f))
@@ -1085,10 +1132,24 @@ private fun PaymentScreen(
                     compact = true,
                 )
                 Spacer(Modifier.height(4.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { add(PaymentMethod.CARD) }, enabled = remaining > 0, modifier = Modifier.weight(1f).height(40.dp)) { Text("カード") }
-                    OutlinedButton(onClick = { add(PaymentMethod.GIFT_CERTIFICATE) }, enabled = remaining > 0, modifier = Modifier.weight(1f).height(40.dp)) { Text("商品券") }
-                    OutlinedButton(onClick = { add(PaymentMethod.ACCOUNT_RECEIVABLE) }, enabled = remaining > 0, modifier = Modifier.weight(1f).height(40.dp)) { Text("掛売") }
+                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { add(PaymentMethod.CARD) },
+                            enabled = remaining > 0,
+                            modifier = Modifier.weight(1f).height(RegisterLayoutPolicy.COMPACT_FUNCTION_HEIGHT_DP.dp),
+                        ) { Text("カード", fontSize = 12.sp) }
+                        OutlinedButton(
+                            onClick = { add(PaymentMethod.GIFT_CERTIFICATE) },
+                            enabled = remaining > 0,
+                            modifier = Modifier.weight(1f).height(RegisterLayoutPolicy.COMPACT_FUNCTION_HEIGHT_DP.dp),
+                        ) { Text("商品券", fontSize = 12.sp) }
+                        OutlinedButton(
+                            onClick = { add(PaymentMethod.ACCOUNT_RECEIVABLE) },
+                            enabled = remaining > 0,
+                            modifier = Modifier.weight(1f).height(RegisterLayoutPolicy.COMPACT_FUNCTION_HEIGHT_DP.dp),
+                        ) { Text("掛売", fontSize = 12.sp) }
+                    }
                 }
             }
         }
@@ -1112,13 +1173,13 @@ private fun CompleteScreen(
     Column(Modifier.fillMaxSize()) {
         Header("SCR-320", "会計完了")
         Column(
-            Modifier.fillMaxSize().padding(30.dp),
+            Modifier.weight(1f).fillMaxWidth().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
             Text("会計が完了しました", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Navy)
             Spacer(Modifier.height(20.dp))
-            CardPanel(Modifier.width(620.dp)) {
+            CardPanel(Modifier.width(620.dp).height(200.dp)) {
                 AmountRow("売上番号", detail?.summary?.id?.toString() ?: "-")
                 AmountRow("合計", yen(detail?.summary?.totalAmount ?: 0), emphasized = true)
                 AmountRow("お釣り", yen(detail?.summary?.changeAmount ?: 0), emphasized = true)
@@ -1416,8 +1477,9 @@ private fun NumberPad(
     onBottomAction: () -> Unit,
     compact: Boolean = false,
 ) {
-    val buttonHeight = if (compact) 40.dp else 44.dp
-    val rowGap = if (compact) 3.dp else 6.dp
+    val buttonHeight = if (compact) RegisterLayoutPolicy.COMPACT_KEY_HEIGHT_DP.dp else 44.dp
+    val rowGap = if (compact) RegisterLayoutPolicy.COMPACT_KEY_GAP_DP.dp else 6.dp
+    val content: @Composable () -> Unit = {
     for (rowStart in 1..9 step 3) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (digit in rowStart until rowStart + 3) {
@@ -1433,12 +1495,22 @@ private fun NumberPad(
         OutlinedButton(onClick = { onDigit("0") }, modifier = Modifier.weight(1f).height(buttonHeight)) { Text("0") }
         BlueButton(bottomActionLabel, onBottomAction, Modifier.weight(1.4f).height(buttonHeight))
     }
+    }
+    if (compact) {
+        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) { content() }
+    } else {
+        content()
+    }
 }
 
 @Composable
-private fun ValueBox(value: String, compact: Boolean = false) {
+private fun ValueBox(value: String, compact: Boolean = false, modifier: Modifier = Modifier) {
     Box(
-        Modifier.fillMaxWidth().height(if (compact) 46.dp else 54.dp).background(PaleBlue, RoundedCornerShape(8.dp)).padding(horizontal = 14.dp),
+        modifier
+            .fillMaxWidth()
+            .height(if (compact) RegisterLayoutPolicy.COMPACT_VALUE_HEIGHT_DP.dp else 54.dp)
+            .background(PaleBlue, RoundedCornerShape(8.dp))
+            .padding(horizontal = 14.dp),
         contentAlignment = Alignment.CenterEnd,
     ) {
         Text(value, fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Navy)
