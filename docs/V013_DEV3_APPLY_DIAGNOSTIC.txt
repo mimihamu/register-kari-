@@ -1,0 +1,46 @@
+2026-08-01T16:37:03.510326+00:00
+remove RegisterApplication overlay call: matches=1
+remove Catalog overlay call: matches=1
+admin imports: matches=1
+admin system bars: matches=1
+admin callbacks invocation: matches=0
+admin callbacks declaration: matches=1
+admin menu layout: matches=0
+admin compact tile text: matches=0
+main WindowCompat import: matches=1
+main system bars: matches=1
+sales screen navigation args: matches=0
+sales screen function args: matches=1
+sales toolbar buttons: matches=1
+operator duplicate label: matches=1
+initial accounting publication: matches=0
+payment state and back publication: matches=0
+complete immediate publication: matches=0
+payment compact amount rows: matches=0
+payment compact value box: matches=1
+payment compact number pad call: matches=0
+payment method heights: matches=0
+number pad signature: matches=1
+number pad digit height: matches=1
+number pad gaps and footer heights: matches=1
+value box compact: matches=1
+payment amount helper insertion: matches=1
+diagnostic user wording: matches=1
+cd lazy imports: matches=1
+cd launched effect import: matches=1
+cd list state insertion: matches=1
+cd lazy list replacement: matches=0
+register version: matches=1
+cd version: matches=1
+workflow Verify v0.13 customer display dev.2 metadata: matches=1
+workflow grep -q 'versionCode = 38' app/build.gradle.k: matches=1
+workflow grep -q 'versionName = "0.13.0-dev.1"' app/bu: matches=1
+workflow grep -q 'versionCode = 2' customer-display/bu: matches=1
+workflow grep -q 'versionName = "0.13.0-dev.2"' custom: matches=1
+workflow TSUGUREGI_v0.13.0_dev1_debug.apk: matches=6
+workflow TSUGUREGI_CD_v0.13.0_dev2_smartphone_debug.ap: matches=6
+workflow REGISTER_VERSION_NAME=0.13.0-dev.1: matches=1
+workflow REGISTER_VERSION_CODE=38: matches=1
+workflow CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.2: matches=1
+workflow CUSTOMER_DISPLAY_VERSION_CODE=2: matches=1
+workflow TSUGUREGI-v0.13.0-cd-dev2-smartphone-debug-ap: matches=1

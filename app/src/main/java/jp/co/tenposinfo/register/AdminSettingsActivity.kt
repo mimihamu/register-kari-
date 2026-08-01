@@ -1,6 +1,8 @@
 package jp.co.tenposinfo.register
 
+import android.content.Intent
 import android.os.Bundle
+import androidx.core.view.WindowCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
@@ -72,6 +74,12 @@ private val AsPaleYellow = Color(0xFFFFF4D9)
 class AdminSettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = android.graphics.Color.rgb(23, 63, 107)
+        window.navigationBarColor = android.graphics.Color.WHITE
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+  isAppearanceLightStatusBars = false
+  isAppearanceLightNavigationBars = true
+        }
         setContent {
             MaterialTheme {
                 AdminSettingsApp(onClose = { finish() })
@@ -216,6 +224,9 @@ private fun AdminMenuScreen(
     actorName: String,
     onOperators: () -> Unit,
     onPrinter: () -> Unit,
+    onCatalog: () -> Unit,
+    onCustomerDisplay: () -> Unit,
+    onPrinterTools: () -> Unit,
     onSecurity: () -> Unit,
     onAudit: () -> Unit,
     onLock: () -> Unit,

@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.view.WindowCompat
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -73,6 +74,12 @@ private val Border = Color(0xFFD5DEE7)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = android.graphics.Color.rgb(23, 63, 107)
+        window.navigationBarColor = android.graphics.Color.WHITE
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+  isAppearanceLightStatusBars = false
+  isAppearanceLightNavigationBars = true
+        }
         setContent {
             MaterialTheme {
                 RegisterApp()
@@ -488,7 +495,7 @@ private fun DiagnosticScreen(restoredCount: Int, pendingPrints: Int, onComplete:
             Text("起動チェックを実行しました", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Navy)
             Spacer(Modifier.height(24.dp))
             CardPanel(Modifier.width(700.dp)) {
-                StatusRow("データベース", "正常（動的税・改定・Outbox対応）")
+                StatusRow("データベース", "正常（税率・商品改定・同期保護対応）")
                 StatusRow("作業中取引", if (restoredCount > 0) "${restoredCount}点を復元" else "なし")
                 StatusRow("印刷キュー", if (pendingPrints > 0) "${pendingPrints}件待機" else "待機なし")
                 StatusRow("プリンタ", "未設定でも販売可能")
@@ -541,7 +548,7 @@ private fun LoginScreen(
                                 ),
                             ) {
                                 Text(
-                                    "${operator.name}\n${operator.role.displayName}",
+                                    if (operator.name == operator.role.displayName) operator.name else "${operator.name}\n${operator.role.displayName}",
                                     fontSize = 19.sp,
                                     textAlign = TextAlign.Center,
                                     fontWeight = FontWeight.Bold,
@@ -595,6 +602,10 @@ private fun SalesScreen(
     onSalesHistory: () -> Unit,
     onPrintQueue: () -> Unit,
     onPrinterStatus: () -> Unit,
+    canOpenSettings: Boolean,
+    canOpenManagement: Boolean,
+    onOpenSettings: () -> Unit,
+    onOpenManagement: () -> Unit,
     accessMessage: String?,
     onLogout: () -> Unit,
 ) {
@@ -616,7 +627,15 @@ private fun SalesScreen(
                 Text("SQLite保存・オフライン販売", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
                 Spacer(Modifier.width(12.dp))
             }
-            OutlinedButton(onClick = onLogout, modifier = Modifier.height(40.dp)) { Text("担当者切替") }
+            if (canOpenManagement) {
+      OutlinedButton(onClick = onOpenManagement, modifier = Modifier.height(40.dp)) { Text("レジ管理") }
+      Spacer(Modifier.width(8.dp))
+  }
+  if (canOpenSettings) {
+      OutlinedButton(onClick = onOpenSettings, modifier = Modifier.height(40.dp)) { Text("設定") }
+      Spacer(Modifier.width(8.dp))
+  }
+  OutlinedButton(onClick = onLogout, modifier = Modifier.height(40.dp)) { Text("担当者切替") }
         }
 
         Row(Modifier.weight(1f).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1015,8 +1034,8 @@ private fun PaymentScreen(
                         }
                     }
                 }
-                ValueBox(if (input.isBlank()) "残額全額" else input)
-                Spacer(Modifier.height(8.dp))
+                ValueBox(if (input.isBlank()) "残額全額" else input, compact = true)
+                Spacer(Modifier.height(4.dp))
                 NumberPad(
                     onDigit = { if (input.length < 10) input += it },
                     onClear = { input = "" },
@@ -1353,28 +1372,31 @@ private fun NumberPad(
     onClear: () -> Unit,
     bottomActionLabel: String,
     onBottomAction: () -> Unit,
+    compact: Boolean = false,
 ) {
+    val buttonHeight = if (compact) 40.dp else 44.dp
+    val rowGap = if (compact) 3.dp else 6.dp
     for (rowStart in 1..9 step 3) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (digit in rowStart until rowStart + 3) {
-                OutlinedButton(onClick = { onDigit(digit.toString()) }, modifier = Modifier.weight(1f).height(44.dp)) {
+                OutlinedButton(onClick = { onDigit(digit.toString()) }, modifier = Modifier.weight(1f).height(buttonHeight)) {
                     Text(digit.toString())
                 }
             }
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(rowGap))
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f).height(44.dp)) { Text("C", color = Danger) }
-        OutlinedButton(onClick = { onDigit("0") }, modifier = Modifier.weight(1f).height(44.dp)) { Text("0") }
-        BlueButton(bottomActionLabel, onBottomAction, Modifier.weight(1.4f).height(44.dp))
+        OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f).height(buttonHeight)) { Text("C", color = Danger) }
+        OutlinedButton(onClick = { onDigit("0") }, modifier = Modifier.weight(1f).height(buttonHeight)) { Text("0") }
+        BlueButton(bottomActionLabel, onBottomAction, Modifier.weight(1.4f).height(buttonHeight))
     }
 }
 
 @Composable
-private fun ValueBox(value: String) {
+private fun ValueBox(value: String, compact: Boolean = false) {
     Box(
-        Modifier.fillMaxWidth().height(54.dp).background(PaleBlue, RoundedCornerShape(8.dp)).padding(horizontal = 14.dp),
+        Modifier.fillMaxWidth().height(if (compact) 46.dp else 54.dp).background(PaleBlue, RoundedCornerShape(8.dp)).padding(horizontal = 14.dp),
         contentAlignment = Alignment.CenterEnd,
     ) {
         Text(value, fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Navy)
@@ -1421,6 +1443,14 @@ private fun ChoiceButton(
         modifier = modifier,
         border = BorderStroke(if (selected) 3.dp else 1.dp, if (selected) Danger else Border),
     ) { Text(label, color = Navy, fontWeight = FontWeight.Bold) }
+}
+
+@Composable
+private fun PaymentAmountRow(label: String, value: String, emphasized: Boolean = false) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), fontSize = if (emphasized) 18.sp else 14.sp, fontWeight = if (emphasized) FontWeight.Bold else FontWeight.Normal)
+        Text(value, fontSize = if (emphasized) 20.sp else 15.sp, fontWeight = FontWeight.Bold, color = if (emphasized) Navy else Color.Unspecified)
+    }
 }
 
 @Composable

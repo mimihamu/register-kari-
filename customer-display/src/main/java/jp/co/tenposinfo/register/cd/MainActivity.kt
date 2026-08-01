@@ -22,7 +22,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -35,6 +36,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -311,6 +313,11 @@ private fun OrderItemsCard(
     compact: Boolean,
     modifier: Modifier,
 ) {
+    val listState = rememberLazyListState()
+    val targetIndex = CustomerDisplayScrollPolicy.targetIndex(snapshot.orderItems)
+    LaunchedEffect(snapshot.sequence, targetIndex, snapshot.orderItems.size) {
+        if (targetIndex >= 0) listState.animateScrollToItem(targetIndex)
+    }
     Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = Panel)) {
         Column(modifier = Modifier.fillMaxSize().padding(if (compact) 10.dp else 18.dp)) {
             Row(modifier = Modifier.fillMaxWidth()) {
