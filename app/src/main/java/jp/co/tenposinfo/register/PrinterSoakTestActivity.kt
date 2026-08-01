@@ -110,6 +110,27 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
         while (logs.size > 100) logs.removeAt(logs.lastIndex)
     }
 
+    suspend fun persistFinishedRun(
+        runId: Long,
+        runStatus: PrinterSoakTestRunStatus,
+        message: String,
+    ) {
+        val stored = withContext(Dispatchers.IO) {
+            resultStore.finish(
+                runId = runId,
+                status = runStatus,
+                completedCount = completed,
+                summary = message,
+                actor = actor,
+            )
+        }
+        lastResult = stored
+        if (activeRunId == runId) activeRunId = null
+        recentRuns = withContext(Dispatchers.IO) { resultStore.listRecent(5) }
+        addLog("試験結果を保存しました ID=${stored.runId}")
+        if (stored.csvPath != null) addLog("端末内CSV ${stored.csvPath}")
+    }
+
     suspend fun finalizeRun(
         runStatus: PrinterSoakTestRunStatus,
         message: String,
@@ -123,20 +144,7 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
         addLog(message)
         if (runId == null || finalizedRunId == runId) return
         finalizedRunId = runId
-        val stored = withContext(Dispatchers.IO) {
-            resultStore.finish(
-                runId = runId,
-                status = runStatus,
-                completedCount = completed,
-                summary = message,
-                actor = actor,
-            )
-        }
-        lastResult = stored
-        activeRunId = null
-        recentRuns = withContext(Dispatchers.IO) { resultStore.listRecent(5) }
-        addLog("試験結果を保存しました ID=${stored.runId}")
-        if (stored.csvPath != null) addLog("端末内CSV ${stored.csvPath}")
+        persistFinishedRun(runId, runStatus, message)
     }
 
     fun requestStop(message: String) {
@@ -148,8 +156,11 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
         statusMessage = message
         statusColor = StOrange
         addLog(message)
+        val runId = activeRunId
+        if (runId == null || finalizedRunId == runId) return
+        finalizedRunId = runId
         scope.launch {
-            finalizeRun(PrinterSoakTestRunStatus.STOPPED, message, StOrange)
+            persistFinishedRun(runId, PrinterSoakTestRunStatus.STOPPED, message)
         }
     }
 
@@ -198,6 +209,7 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
             testJob?.cancel()
             val runId = activeRunId
             if (runId != null && finalizedRunId != runId) {
+                finalizedRunId = runId
                 runCatching {
                     resultStore.finish(
                         runId = runId,
