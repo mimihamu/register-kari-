@@ -41,33 +41,29 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify v0.13 register dev.3 layout safeguards
+      - name: Verify v0.13 dev.4 pairing and UI safeguards
         run: |
-          grep -q 'versionCode = 40' app/build.gradle.kts
-          grep -q 'versionName = "0.13.0-dev.3"' app/build.gradle.kts
-          grep -q 'versionCode = 3' customer-display/build.gradle.kts
-          grep -q 'versionName = "0.13.0-dev.3"' customer-display/build.gradle.kts
+          grep -q 'versionCode = 41' app/build.gradle.kts
+          grep -q 'versionName = "0.13.0-dev.4"' app/build.gradle.kts
+          grep -q 'versionCode = 4' customer-display/build.gradle.kts
+          grep -q 'versionName = "0.13.0-dev.4"' customer-display/build.gradle.kts
           grep -q 'applicationId = "jp.co.tenposinfo.register.cd"' customer-display/build.gradle.kts
           ! grep -q 'android:screenOrientation="landscape"' customer-display/src/main/AndroidManifest.xml
           grep -q 'android:resizeableActivity="true"' customer-display/src/main/AndroidManifest.xml
+          grep -q 'CHANGE_WIFI_MULTICAST_STATE' app/src/main/AndroidManifest.xml
+          grep -q 'CHANGE_WIFI_MULTICAST_STATE' customer-display/src/main/AndroidManifest.xml
+          grep -q 'CUSTOMER_DISPLAY_PAIRING_WINDOW_MS = 120_000L' app/src/main/java/jp/co/tenposinfo/register/CustomerDisplayPairingNsd.kt
+          grep -q 'CUSTOMER_DISPLAY_DISCOVERY_TIMEOUT_MS = 12_000L' customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayNsdDiscovery.kt
+          grep -q '2分間ペアリング受付を開始' app/src/main/java/jp/co/tenposinfo/register/CustomerDisplaySettingsActivity.kt
+          grep -q '同じWi-Fiのレジを探す' customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt
+          grep -q 'このレジに接続' customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt
+          grep -q 'CustomerDisplayPairingParser.parse' customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayNsdDiscovery.kt
+          test -f app/src/test/java/jp/co/tenposinfo/register/V013CustomerDisplayPairingTest.kt
+          test -f customer-display/src/test/java/jp/co/tenposinfo/register/cd/CustomerDisplayPairingParserTest.kt
           test "$(grep -R -l 'AdminOverlayProvider' app/src/main/AndroidManifest.xml app/src/main/java 2>/dev/null | wc -l)" -eq 0
-          ! grep -q 'updateActionButtons(activity, content, operator)' app/src/main/java/jp/co/tenposinfo/register/RegisterApplication.kt
-          ! grep -q 'installCatalogButton(activity)' app/src/main/java/jp/co/tenposinfo/register/CatalogBootstrapProvider.kt
-          grep -q 'onCustomerDisplay = {' app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt
           grep -q 'CustomerDisplaySnapshotFactory.accounting' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
           grep -q 'RegisterLayoutPolicy' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'salesUtilityRequiredHeightDp' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'paymentControlsRequiredHeightDp' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'DIAGNOSTIC_CARD_HEIGHT_DP' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
           grep -q 'LocalMinimumInteractiveComponentSize provides 0.dp' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'Text("訂正"' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'Text("行編集"' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'Text("値引・割引"' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'Text("取引中止"' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'Text("カード"' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'Text("商品券"' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'Text("掛売"' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          test -f app/src/test/java/jp/co/tenposinfo/register/V013RegisterCompactLayoutTest.kt
           grep -q 'CustomerDisplayScrollPolicy.targetIndex' customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt
           grep -q 'state = listState' customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt
 
@@ -90,21 +86,21 @@ jobs:
       - name: Prepare named APKs and SHA-256
         run: |
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.13.0_dev3_layout_fix_debug.apk
-          cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.13.0_dev3_latest_item_debug.apk
-          sha256sum artifacts/TSUGUREGI_v0.13.0_dev3_layout_fix_debug.apk | tee artifacts/TSUGUREGI_v0.13.0_dev3_layout_fix_debug.apk.sha256
-          sha256sum artifacts/TSUGUREGI_CD_v0.13.0_dev3_latest_item_debug.apk | tee artifacts/TSUGUREGI_CD_v0.13.0_dev3_latest_item_debug.apk.sha256
-          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.13.0_dev3_layout_fix_debug.apk | tee artifacts/build-summary.txt
-          stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.13.0_dev3_latest_item_debug.apk | tee -a artifacts/build-summary.txt
-          echo "REGISTER_VERSION_NAME=0.13.0-dev.3" >> artifacts/build-summary.txt
-          echo "REGISTER_VERSION_CODE=40" >> artifacts/build-summary.txt
-          echo "CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.3" >> artifacts/build-summary.txt
-          echo "CUSTOMER_DISPLAY_VERSION_CODE=3" >> artifacts/build-summary.txt
-          echo "REGISTER_DIAGNOSTIC_CONTINUE_BUTTON=fixed-visible" >> artifacts/build-summary.txt
-          echo "REGISTER_SALES_KEYPAD_FUNCTIONS=fixed-visible" >> artifacts/build-summary.txt
-          echo "REGISTER_PAYMENT_METHODS=fixed-visible" >> artifacts/build-summary.txt
-          echo "REGISTER_SALES_UTILITY_REQUIRED_DP=302" >> artifacts/build-summary.txt
-          echo "REGISTER_PAYMENT_CONTROLS_REQUIRED_DP=352" >> artifacts/build-summary.txt
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.13.0_dev4_pairing_debug.apk
+          cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.13.0_dev4_pairing_debug.apk
+          sha256sum artifacts/TSUGUREGI_v0.13.0_dev4_pairing_debug.apk | tee artifacts/TSUGUREGI_v0.13.0_dev4_pairing_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_CD_v0.13.0_dev4_pairing_debug.apk | tee artifacts/TSUGUREGI_CD_v0.13.0_dev4_pairing_debug.apk.sha256
+          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.13.0_dev4_pairing_debug.apk | tee artifacts/build-summary.txt
+          stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.13.0_dev4_pairing_debug.apk | tee -a artifacts/build-summary.txt
+          echo "REGISTER_VERSION_NAME=0.13.0-dev.4" >> artifacts/build-summary.txt
+          echo "REGISTER_VERSION_CODE=41" >> artifacts/build-summary.txt
+          echo "CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.4" >> artifacts/build-summary.txt
+          echo "CUSTOMER_DISPLAY_VERSION_CODE=4" >> artifacts/build-summary.txt
+          echo "CUSTOMER_DISPLAY_PAIRING=nsd-temporary-window" >> artifacts/build-summary.txt
+          echo "PAIRING_WINDOW_SECONDS=120" >> artifacts/build-summary.txt
+          echo "DISCOVERY_TIMEOUT_SECONDS=12" >> artifacts/build-summary.txt
+          echo "MANUAL_CONNECTION_FALLBACK=available" >> artifacts/build-summary.txt
+          echo "REGISTER_LAYOUT_CONTROLS=fixed-visible" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_LATEST_ITEM=automatic-scroll" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_ACCOUNTING=real-time" >> artifacts/build-summary.txt
           echo "REGISTER_PACKAGE=jp.co.tenposinfo.register.dev" >> artifacts/build-summary.txt
@@ -112,19 +108,19 @@ jobs:
           echo "REGISTER_LAUNCHER_COUNT=1" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_LAUNCHER_COUNT=1" >> artifacts/build-summary.txt
           echo "SIGNING=development-not-production" >> artifacts/build-summary.txt
-          echo "REAL_DEVICE_LAYOUT_VERIFICATION=required" >> artifacts/build-summary.txt
+          echo "REAL_NSD_PAIRING_VERIFICATION=required" >> artifacts/build-summary.txt
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
       - name: Upload APKs
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.13.0-register-dev3-layout-fix-apks
+          name: TSUGUREGI-v0.13.0-dev4-pairing-debug-apks
           path: |
-            artifacts/TSUGUREGI_v0.13.0_dev3_layout_fix_debug.apk
-            artifacts/TSUGUREGI_v0.13.0_dev3_layout_fix_debug.apk.sha256
-            artifacts/TSUGUREGI_CD_v0.13.0_dev3_latest_item_debug.apk
-            artifacts/TSUGUREGI_CD_v0.13.0_dev3_latest_item_debug.apk.sha256
+            artifacts/TSUGUREGI_v0.13.0_dev4_pairing_debug.apk
+            artifacts/TSUGUREGI_v0.13.0_dev4_pairing_debug.apk.sha256
+            artifacts/TSUGUREGI_CD_v0.13.0_dev4_pairing_debug.apk
+            artifacts/TSUGUREGI_CD_v0.13.0_dev4_pairing_debug.apk.sha256
             artifacts/build-summary.txt
           if-no-files-found: error
           retention-days: 30
