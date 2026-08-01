@@ -57,6 +57,7 @@ private val PhGreen = Color(0xFF2E7D32)
 private val PhOrange = Color(0xFFEF6C00)
 private val PhRed = Color(0xFFC62828)
 private val PhPurple = Color(0xFF6A4C93)
+private val PhIndigo = Color(0xFF3949AB)
 private val PhTeal = Color(0xFF00796B)
 private val PhBackground = Color(0xFFF4F7FA)
 private val PhBorder = Color(0xFFD5DEE7)
@@ -69,6 +70,7 @@ class PrinterToolsHubActivity : ComponentActivity() {
                 PrinterToolsHubScreen(
                     onOpenDiagnostics = { startActivity(Intent(this, PrinterStatusActivity::class.java)) },
                     onOpenProbe = { startActivity(Intent(this, PrinterStatusLabActivity::class.java)) },
+                    onOpenAnalysis = { startActivity(Intent(this, PrinterStatusAnalysisActivity::class.java)) },
                     onOpenNotification = { startActivity(Intent(this, PrinterNotificationSettingsActivity::class.java)) },
                     onOpenSoakTest = { startActivity(Intent(this, PrinterSoakTestActivity::class.java)) },
                     onOpenHistory = { startActivity(Intent(this, PrinterSoakTestHistoryActivity::class.java)) },
@@ -84,6 +86,7 @@ class PrinterToolsHubActivity : ComponentActivity() {
 private fun PrinterToolsHubScreen(
     onOpenDiagnostics: () -> Unit,
     onOpenProbe: () -> Unit,
+    onOpenAnalysis: () -> Unit,
     onOpenNotification: () -> Unit,
     onOpenSoakTest: () -> Unit,
     onOpenHistory: () -> Unit,
@@ -116,7 +119,7 @@ private fun PrinterToolsHubScreen(
                     PrinterHubPanel(Modifier.width(540.dp).height(430.dp)) {
                         Text("プリンター運用を開く", fontSize = 29.sp, fontWeight = FontWeight.Bold, color = PhNavy)
                         Spacer(Modifier.height(8.dp))
-                        Text("状態診断、状態ラボ、通知、連続試験、履歴、印刷キューを管理します。", color = Color.DarkGray)
+                        Text("状態診断、条件別RAW採取、応答分析、通知、連続試験、履歴、印刷キューを管理します。", color = Color.DarkGray)
                         Spacer(Modifier.height(20.dp))
                         OutlinedTextField(
                             value = pin,
@@ -198,9 +201,10 @@ private fun PrinterToolsHubScreen(
                         }
                     }
 
-                    Column(Modifier.width(420.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Column(Modifier.width(420.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         PrinterHubAction("状態診断", "解釈済みのオンライン、カバー、用紙、エラー", PhGreen, onOpenDiagnostics, Modifier.weight(1f))
-                        PrinterHubAction("状態ラボ", "RAW採取、SQLite履歴、最大4件比較、CSV出力", PhTeal, onOpenProbe, Modifier.weight(1f))
+                        PrinterHubAction("状態ラボ", "条件付きRAW採取、履歴、最大4件比較、CSV", PhTeal, onOpenProbe, Modifier.weight(1f))
+                        PrinterHubAction("応答分析", "型番別の採取進捗と正常時との差分ビット候補", PhIndigo, onOpenAnalysis, Modifier.weight(1f))
                         PrinterHubAction("管理者通知", "Android通知の許可・端末通知設定", PhBlue, onOpenNotification, Modifier.weight(1f))
                         PrinterHubAction("連続印刷試験", "状態確認付きで1～500回。自動再送なし", PhOrange, onOpenSoakTest, Modifier.weight(1f))
                         PrinterHubAction("試験履歴・CSV", "詳細、保持期間、削除、過去CSV再出力", PhPurple, onOpenHistory, Modifier.weight(1f))
@@ -253,7 +257,7 @@ private fun PrinterToolsHubScreen(
                         modifier = Modifier.width(220.dp).fillMaxHeight(),
                     ) { Text("運用をロック", fontWeight = FontWeight.Bold) }
                     Spacer(Modifier.weight(1f))
-                    Text("RAW応答採取とCI成功だけでは実機互換性確認完了になりません", color = PhRed, fontWeight = FontWeight.Bold)
+                    Text("変化ビット候補とCI成功だけでは実機互換性確認完了になりません", color = PhRed, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -301,9 +305,8 @@ private fun PrinterHubAction(
         shape = RoundedCornerShape(10.dp),
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(1.dp))
-            Text(description, textAlign = TextAlign.Center, fontSize = 10.sp, lineHeight = 14.sp)
+            Text(title, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(description, textAlign = TextAlign.Center, fontSize = 9.sp, lineHeight = 12.sp)
         }
     }
 }
