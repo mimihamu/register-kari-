@@ -44,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -584,11 +585,29 @@ private fun CustomerDisplayConnectionSettingsScreen(
     onSave: (CustomerDisplayConnectionSettings) -> Unit,
     onCancel: () -> Unit,
 ) {
+    val context = LocalContext.current
     var host by remember(initial) { mutableStateOf(initial.host) }
     var portText by remember(initial) { mutableStateOf(initial.port.toString()) }
     var token by remember(initial) { mutableStateOf(initial.token) }
     var autoConnect by remember(initial) { mutableStateOf(initial.autoConnect) }
     var message by remember { mutableStateOf<String?>(null) }
+    var discoveryState by remember { mutableStateOf(CustomerDisplayDiscoveryState()) }
+    var discoveredRegisters by remember { mutableStateOf<List<DiscoveredRegister>>(emptyList()) }
+    val discovery = remember(context) {
+        CustomerDisplayNsdDiscovery(
+            context = context,
+            onStateChanged = { state -> discoveryState = state },
+            onFound = { candidate ->
+                discoveredRegisters = (discoveredRegisters + candidate)
+                    .distinctBy { it.identity }
+                    .sortedBy { it.storeName }
+            },
+        )
+    }
+
+    DisposableEffect(discovery) {
+        onDispose { discovery.stop(null) }
+    }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val layoutMode = CustomerDisplayLayoutPolicy.select(maxWidth.value, maxHeight.value)
@@ -612,15 +631,83 @@ private fun CustomerDisplayConnectionSettingsScreen(
                         )
                         if (initial.isConfigured) OutlinedButton(onClick = onCancel) { Text("戻る") }
                     }
-                    Text("レジの［設定］→［顧客表示］に表示される内容を入力します。", color = Color(0xFF455A64), fontSize = 13.sp)
+                    Text("同じWi-Fiのつぐレジを探すか、接続情報を手入力します。", color = Color(0xFF455A64), fontSize = 13.sp)
                 }
             } else {
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("つぐレジ CD 接続設定", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Color(0xFF173F6B))
-                        Text("レジの［設定］→［顧客表示］に表示される内容を入力します。", color = Color(0xFF455A64))
+                        Text("同じWi-Fiのつぐレジを探すか、接続情報を手入力します。", color = Color(0xFF455A64))
                     }
                     if (initial.isConfigured) OutlinedButton(onClick = onCancel) { Text("戻る") }
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFEAF3FA)),
+            ) {
+                Column(
+                    modifier = Modifier.padding(if (layoutMode.compact) 14.dp else 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text("かんたん接続", fontWeight = FontWeight.Bold, color = Color(0xFF173F6B), fontSize = if (layoutMode.compact) 19.sp else 22.sp)
+                    Text("レジ側の［顧客表示］で［2分間ペアリング受付を開始］を押してから検索します。")
+                    Button(
+                        onClick = {
+                            discoveredRegisters = emptyList()
+                            message = null
+                            discovery.start()
+                        },
+                        modifier = if (layoutMode.compact) Modifier.fillMaxWidth() else Modifier,
+                    ) {
+                        Text(if (discoveryState.status == CustomerDisplayDiscoveryStatus.SEARCHING) "検索し直す" else "同じWi-Fiのレジを探す")
+                    }
+                    discoveryState.message?.let {
+                        Text(
+                            it,
+                            color = if (discoveryState.status == CustomerDisplayDiscoveryStatus.SEARCHING) Color(0xFF1565C0) else Color(0xFF455A64),
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                    if (discoveredRegisters.isEmpty() && discoveryState.status == CustomerDisplayDiscoveryStatus.FINISHED) {
+                        Text("見つからない場合は、レジ側が受付中か、両端末が同じWi-Fiか確認してください。", color = Color(0xFFC62828))
+                    }
+                    discoveredRegisters.forEach { candidate ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                        ) {
+                            if (layoutMode.compact) {
+                                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(candidate.storeName, fontWeight = FontWeight.Bold, color = Color(0xFF173F6B))
+                                    Text("${candidate.host}:${candidate.port}", color = Color(0xFF607D8B), fontSize = 12.sp)
+                                    Button(
+                                        onClick = {
+                                            discovery.stop(null)
+                                            onSave(candidate.toConnectionSettings())
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) { Text("このレジに接続") }
+                                }
+                            } else {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(candidate.storeName, fontWeight = FontWeight.Bold, color = Color(0xFF173F6B))
+                                        Text("${candidate.host}:${candidate.port}", color = Color(0xFF607D8B))
+                                    }
+                                    Button(onClick = {
+                                        discovery.stop(null)
+                                        onSave(candidate.toConnectionSettings())
+                                    }) { Text("このレジに接続") }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -629,6 +716,7 @@ private fun CustomerDisplayConnectionSettingsScreen(
                     modifier = Modifier.padding(if (layoutMode.compact) 14.dp else 22.dp),
                     verticalArrangement = Arrangement.spacedBy(if (layoutMode.compact) 10.dp else 14.dp),
                 ) {
+                    Text("手動接続", fontWeight = FontWeight.Bold, color = Color(0xFF173F6B))
                     OutlinedTextField(
                         value = host,
                         onValueChange = { host = it.trim().take(255) },
@@ -680,7 +768,7 @@ private fun CustomerDisplayConnectionSettingsScreen(
                 },
                 modifier = if (layoutMode.compact) Modifier.fillMaxWidth() else Modifier,
             ) {
-                Text("保存して接続")
+                Text("手動設定を保存して接続")
             }
         }
     }
