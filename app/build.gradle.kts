@@ -1,7 +1,15 @@
+import java.util.Base64
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+val developmentKeystoreSource = rootProject.file("ci/tsuguregi-development.jks.b64")
+val developmentKeystore = layout.buildDirectory.file("signing/tsuguregi-development.jks").get().asFile
+require(developmentKeystoreSource.isFile) { "開発版署名鍵が見つかりません" }
+developmentKeystore.parentFile.mkdirs()
+developmentKeystore.writeBytes(Base64.getMimeDecoder().decode(developmentKeystoreSource.readText()))
 
 android {
     namespace = "jp.co.tenposinfo.register"
@@ -11,13 +19,28 @@ android {
         applicationId = "jp.co.tenposinfo.register"
         minSdk = 26
         targetSdk = 36
-        versionCode = 14
-        versionName = "0.11.1-dev.2"
+        versionCode = 37
+        versionName = "0.12.0-dev.23"
+        manifestPlaceholders["appLabel"] = "つぐレジ"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("development") {
+            storeFile = developmentKeystore
+            storePassword = "tsuguregi-dev"
+            keyAlias = "tsuguregi-dev"
+            keyPassword = "tsuguregi-dev"
+        }
+    }
+
     buildTypes {
+        debug {
+            applicationIdSuffix = ".dev"
+            manifestPlaceholders["appLabel"] = "つぐレジ 開発版"
+            signingConfig = signingConfigs.getByName("development")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -37,12 +60,10 @@ android {
         buildConfig = true
     }
 
-
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
 }
-
 
 dependencies {
     implementation("androidx.core:core-ktx:1.17.0")

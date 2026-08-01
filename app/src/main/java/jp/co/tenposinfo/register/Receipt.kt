@@ -1,9 +1,7 @@
 package jp.co.tenposinfo.register
 
-import java.io.ByteArrayOutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
-import java.nio.charset.Charset
 import java.text.NumberFormat
 import java.time.Instant
 import java.time.ZoneId
@@ -205,17 +203,21 @@ object ReceiptRenderer {
 }
 
 object EscPosEncoder {
-    private val ms932: Charset = Charset.forName("MS932")
-
-    fun encode(data: ReceiptData, paper: ReceiptPaper): ByteArray {
-        val output = ByteArrayOutputStream()
-        output.write(byteArrayOf(0x1B, 0x40)) // ESC @ initialize
-        output.write(byteArrayOf(0x1B, 0x74, 0x01)) // code table: CP932 compatible setting
-        output.write(byteArrayOf(0x1B, 0x61, 0x00)) // left align
-        output.write(ReceiptRenderer.render(data, paper).toByteArray(ms932))
-        output.write(byteArrayOf(0x0A, 0x0A, 0x0A))
-        output.write(byteArrayOf(0x1D, 0x56, 0x42, 0x00)) // partial cut
-        return output.toByteArray()
+    fun encode(
+        data: ReceiptData,
+        paper: ReceiptPaper,
+        configuration: PrinterConfiguration = PrinterConfigurationRegistry.current() ?: PrinterConfiguration(),
+    ): ByteArray {
+        val openDrawer = configuration.drawerEnabled &&
+            configuration.drawerOpenOnCashSale &&
+            !data.reprint &&
+            data.payments.any { it.method == PaymentMethod.CASH }
+        return PrinterCommandEncoder.encodeText(
+            text = ReceiptRenderer.render(data, paper),
+            configuration = configuration,
+            openDrawer = openDrawer,
+            appendCut = true,
+        )
     }
 }
 
@@ -223,19 +225,80 @@ interface PrinterGateway {
     fun send(payload: ByteArray): Result<Unit>
 }
 
+/**
+ * TCP 9100送信で例外が発生した時点。
+ * WRITE_STARTED以降はプリンターが一部または全部を受信した可能性があるため、
+ * 自動再試行すると二重印刷になる危険がある。
+ */
+enum class PrinterDeliveryPhase {
+    CONNECTING,
+    CONNECTED,
+    WRITE_STARTED,
+    FLUSHED,
+}
+
+enum class PrinterFailureDisposition {
+    SAFE_TO_RETRY,
+    MANUAL_CONFIRMATION_REQUIRED,
+}
+
+class PrinterTransportException(
+    val phase: PrinterDeliveryPhase,
+    cause: Throwable,
+) : RuntimeException(
+    when (PrinterRetrySafety.classify(phase)) {
+        PrinterFailureDisposition.SAFE_TO_RETRY ->
+            "プリンターへ送信できませんでした（${phase.name}）: ${cause.message ?: cause.javaClass.simpleName}"
+
+        PrinterFailureDisposition.MANUAL_CONFIRMATION_REQUIRED ->
+            "送信結果が不明です。重複印刷防止のため自動再試行しません（${phase.name}）: ${cause.message ?: cause.javaClass.simpleName}"
+    },
+    cause,
+)
+
+object PrinterRetrySafety {
+    fun classify(phase: PrinterDeliveryPhase): PrinterFailureDisposition = when (phase) {
+        PrinterDeliveryPhase.CONNECTING,
+        PrinterDeliveryPhase.CONNECTED,
+        -> PrinterFailureDisposition.SAFE_TO_RETRY
+
+        PrinterDeliveryPhase.WRITE_STARTED,
+        PrinterDeliveryPhase.FLUSHED,
+        -> PrinterFailureDisposition.MANUAL_CONFIRMATION_REQUIRED
+    }
+
+    fun classify(error: Throwable): PrinterFailureDisposition {
+        var current: Throwable? = error
+        while (current != null) {
+            if (current is PrinterTransportException) return classify(current.phase)
+            current = current.cause
+        }
+        return PrinterFailureDisposition.SAFE_TO_RETRY
+    }
+}
+
 class TcpEscPosPrinterGateway(
     private val host: String,
     private val port: Int = 9100,
     private val timeoutMillis: Int = 5_000,
 ) : PrinterGateway {
-    override fun send(payload: ByteArray): Result<Unit> = runCatching {
-        Socket().use { socket ->
-            socket.connect(InetSocketAddress(host, port), timeoutMillis)
-            socket.soTimeout = timeoutMillis
-            socket.getOutputStream().use { stream ->
-                stream.write(payload)
-                stream.flush()
+    override fun send(payload: ByteArray): Result<Unit> {
+        var phase = PrinterDeliveryPhase.CONNECTING
+        return runCatching {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(host, port), timeoutMillis)
+                socket.soTimeout = timeoutMillis
+                phase = PrinterDeliveryPhase.CONNECTED
+                socket.getOutputStream().use { stream ->
+                    phase = PrinterDeliveryPhase.WRITE_STARTED
+                    stream.write(payload)
+                    stream.flush()
+                    phase = PrinterDeliveryPhase.FLUSHED
+                }
             }
+        }.recoverCatching { error ->
+            if (error is PrinterTransportException) throw error
+            throw PrinterTransportException(phase, error)
         }
     }
 }
@@ -284,8 +347,14 @@ class PrintQueueProcessor(
         val result = gateway.send(EscPosEncoder.encode(receipt, ReceiptPaper.fromWidth(job.paperWidthMm)))
         result.onSuccess {
             database.markPrintCompleted(job.id)
-        }.onFailure {
-            database.markPrintFailed(job.id, it.message ?: it.javaClass.simpleName, permanent = false)
+        }.onFailure { error ->
+            val manualConfirmation = PrinterRetrySafety.classify(error) ==
+                PrinterFailureDisposition.MANUAL_CONFIRMATION_REQUIRED
+            database.markPrintFailed(
+                job.id,
+                error.message ?: error.javaClass.simpleName,
+                permanent = manualConfirmation,
+            )
         }
         return result.isSuccess
     }

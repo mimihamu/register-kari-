@@ -230,11 +230,13 @@ private fun AdminMenuScreen(
                 AsValueRow("有効担当者", "${operatorCount}名")
                 AsValueRow("プリンター", if (printer.usable) "接続設定済み" else "未設定")
                 AsValueRow("接続先", if (printer.host.isBlank()) "－" else "${printer.host}:${printer.port}")
+                AsValueRow("機種", printer.profile.displayName)
                 AsValueRow("用紙幅", "${printer.paperWidthMm}mm")
+                AsValueRow("ドロア", if (printer.drawerEnabled) "DK${printer.drawerPort + 1} 有効" else "無効")
                 AsValueRow("監査ログ", "${auditCount}件")
                 Spacer(Modifier.weight(1f))
                 Text(
-                    "担当者・権限、責任者PIN、実プリンター、監査ログを端末内SQLiteで管理します。",
+                    "担当者・権限、責任者PIN、プリンター機種、ドロア、監査ログを端末内SQLiteで管理します。",
                     color = Color.DarkGray,
                     lineHeight = 23.sp,
                 )
@@ -242,7 +244,7 @@ private fun AdminMenuScreen(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     AsMenuTile("担当者・権限", "担当者登録、停止、並び順、権限", AsPaleBlue, Modifier.weight(1f), onOperators)
-                    AsMenuTile("プリンター設定", "IP、TCP 9100、58/80mm、実機テスト", AsPaleGreen, Modifier.weight(1f), onPrinter)
+                    AsMenuTile("プリンター設定", "機種、IP、58/80mm、カット、ドロア", AsPaleGreen, Modifier.weight(1f), onPrinter)
                 }
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     AsMenuTile("責任者PIN", "PBKDF2ハッシュでPINを更新", AsPaleYellow, Modifier.weight(1f), onSecurity)
@@ -444,6 +446,13 @@ private fun PrinterSettingsScreen(
     var paperWidth by remember { mutableStateOf(initial.paperWidthMm) }
     var timeout by remember { mutableStateOf(initial.timeoutMillis.toString()) }
     var enabled by remember { mutableStateOf(initial.enabled) }
+    var profile by remember { mutableStateOf(initial.profile) }
+    var cutMode by remember { mutableStateOf(initial.cutMode) }
+    var drawerEnabled by remember { mutableStateOf(initial.drawerEnabled) }
+    var drawerOpenOnCash by remember { mutableStateOf(initial.drawerOpenOnCashSale) }
+    var drawerPort by remember { mutableStateOf(initial.drawerPort) }
+    var drawerOnMillis by remember { mutableStateOf(initial.drawerOnMillis.toString()) }
+    var drawerOffMillis by remember { mutableStateOf(initial.drawerOffMillis.toString()) }
     var message by remember { mutableStateOf<String?>(null) }
     var testing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -456,47 +465,128 @@ private fun PrinterSettingsScreen(
         paperWidthMm = paperWidth,
         timeoutMillis = timeout.toIntOrNull() ?: 0,
         enabled = enabled,
+        profile = profile,
+        cutMode = cutMode,
+        drawerEnabled = drawerEnabled,
+        drawerOpenOnCashSale = drawerOpenOnCash,
+        drawerPort = drawerPort,
+        drawerOnMillis = drawerOnMillis.toIntOrNull() ?: 0,
+        drawerOffMillis = drawerOffMillis.toIntOrNull() ?: 0,
     )
 
+    fun executeTest(kind: String, action: suspend (PrinterConfiguration) -> Result<Unit>) {
+        val config = currentConfiguration()
+        testing = true
+        message = "${kind}を実行しています…"
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { action(config).getOrThrow() } }
+            message = result.fold(
+                onSuccess = { "${kind}を送信しました" },
+                onFailure = { "${kind}失敗：${it.message ?: it.javaClass.simpleName}" },
+            )
+            withContext(Dispatchers.IO) {
+                if (kind == "ドロアテスト") {
+                    runCatching { store.recordDrawerTest(config, result.isSuccess, message.orEmpty(), actorName) }
+                } else {
+                    runCatching { store.recordPrinterTest(config, result.isSuccess, message.orEmpty(), actorName) }
+                }
+            }
+            testing = false
+        }
+    }
+
     Column(Modifier.fillMaxSize()) {
-        AsHeader("SCR-762", "プリンター設定", "TCP/IP ESC/POS")
-        Row(Modifier.weight(1f).padding(20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-            AsPanel(Modifier.width(520.dp).fillMaxHeight()) {
-                Text("接続設定", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AsNavy)
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(name, { name = it.take(40) }, label = { Text("プリンター名") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        AsHeader("SCR-762", "プリンター・ドロア設定", profile.displayName)
+        Row(Modifier.weight(1f).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            AsPanel(Modifier.width(650.dp).fillMaxHeight()) {
+                Text("接続・機種設定", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AsNavy)
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(host, { host = it.take(255) }, label = { Text("IPアドレス／ホスト名") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        port,
-                        { port = it.filter(Char::isDigit).take(5) },
-                        label = { Text("ポート") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                    )
-                    OutlinedTextField(
-                        timeout,
-                        { timeout = it.filter(Char::isDigit).take(5) },
-                        label = { Text("タイムアウトms") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                    )
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                    OutlinedTextField(name, { name = it.take(40) }, label = { Text("プリンター名") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(host, { host = it.take(255) }, label = { Text("IPアドレス／ホスト名") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(6.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            port,
+                            { port = it.filter(Char::isDigit).take(5) },
+                            label = { Text("ポート") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            timeout,
+                            { timeout = it.filter(Char::isDigit).take(5) },
+                            label = { Text("タイムアウトms") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("プリンタープロファイル", fontWeight = FontWeight.Bold, color = AsNavy)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        PrinterProfile.entries.forEach { candidate ->
+                            AsChoiceButton(
+                                candidate.displayName.replace("（日本語）", ""),
+                                profile == candidate,
+                                Modifier.weight(1f),
+                            ) { profile = candidate }
+                        }
+                    }
+                    Text(profile.description, color = Color.Gray, fontSize = 13.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text("用紙幅・カット", fontWeight = FontWeight.Bold, color = AsNavy)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        AsChoiceButton("58mm", paperWidth == 58, Modifier.weight(1f)) { paperWidth = 58 }
+                        AsChoiceButton("80mm", paperWidth == 80, Modifier.weight(1f)) { paperWidth = 80 }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        PrinterCutMode.entries.forEach { candidate ->
+                            AsChoiceButton(candidate.displayName, cutMode == candidate, Modifier.weight(1f)) { cutMode = candidate }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("キャッシュドロア", fontWeight = FontWeight.Bold, color = AsNavy)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = drawerEnabled, onCheckedChange = { drawerEnabled = it })
+                        Text("プリンター接続ドロアを使用")
+                        Spacer(Modifier.width(18.dp))
+                        Checkbox(
+                            checked = drawerOpenOnCash,
+                            onCheckedChange = { drawerOpenOnCash = it },
+                            enabled = drawerEnabled,
+                        )
+                        Text("現金会計時に自動オープン")
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        AsChoiceButton("DK1", drawerPort == 0, Modifier.weight(1f)) { drawerPort = 0 }
+                        AsChoiceButton("DK2", drawerPort == 1, Modifier.weight(1f)) { drawerPort = 1 }
+                        OutlinedTextField(
+                            drawerOnMillis,
+                            { drawerOnMillis = it.filter(Char::isDigit).take(3) },
+                            label = { Text("ON ms") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            drawerOffMillis,
+                            { drawerOffMillis = it.filter(Char::isDigit).take(3) },
+                            label = { Text("OFF ms") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = enabled, onCheckedChange = { enabled = it })
+                        Text("このプリンターを実印刷に使用")
+                    }
                 }
                 Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    AsChoiceButton("58mm", paperWidth == 58, Modifier.weight(1f)) { paperWidth = 58 }
-                    AsChoiceButton("80mm", paperWidth == 80, Modifier.weight(1f)) { paperWidth = 80 }
-                }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = enabled, onCheckedChange = { enabled = it })
-                    Text("このプリンターを実印刷に使用")
-                }
-                Spacer(Modifier.weight(1f))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = {
                             val config = currentConfiguration()
@@ -509,53 +599,48 @@ private fun PrinterSettingsScreen(
                                 onFailure = { it.message ?: "保存に失敗しました" },
                             )
                         },
-                        modifier = Modifier.weight(1f).height(56.dp),
+                        modifier = Modifier.weight(1f).height(54.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = AsBlue),
                     ) { Text("保存", fontWeight = FontWeight.Bold) }
                     Button(
-                        onClick = {
-                            val config = currentConfiguration()
-                            testing = true
-                            message = "接続してテスト印刷しています…"
-                            scope.launch {
-                                val result = withContext(Dispatchers.IO) { runCatching { store.testPrinter(config).getOrThrow() } }
-                                message = result.fold(
-                                    onSuccess = { "テスト印刷データを送信しました" },
-                                    onFailure = { "テスト印刷失敗：${it.message ?: it.javaClass.simpleName}" },
-                                )
-                                withContext(Dispatchers.IO) {
-                                    runCatching { store.recordPrinterTest(config, result.isSuccess, message.orEmpty(), actorName) }
-                                }
-                                testing = false
-                            }
-                        },
+                        onClick = { executeTest("テスト印刷") { store.testPrinter(it) } },
                         enabled = !testing,
-                        modifier = Modifier.weight(1f).height(56.dp),
+                        modifier = Modifier.weight(1f).height(54.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = AsGreen),
-                    ) { Text(if (testing) "送信中" else "実機テスト印刷", fontWeight = FontWeight.Bold) }
+                    ) { Text("テスト印刷", fontWeight = FontWeight.Bold) }
+                    Button(
+                        onClick = { executeTest("ドロアテスト") { store.testDrawer(it) } },
+                        enabled = !testing && drawerEnabled,
+                        modifier = Modifier.weight(1f).height(54.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AsGreen),
+                    ) { Text("ドロアを開く", fontWeight = FontWeight.Bold) }
                 }
                 if (message != null) {
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
                     Text(message.orEmpty(), color = resultColor(message.orEmpty()), fontWeight = FontWeight.Bold)
                 }
             }
 
             AsPanel(Modifier.weight(1f).fillMaxHeight()) {
-                Text("印刷経路", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AsNavy)
+                Text("適用内容", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AsNavy)
                 Spacer(Modifier.height(14.dp))
+                AsValueRow("機種", profile.displayName)
+                AsValueRow("接続", "${host.ifBlank { "未設定" }}:${port.ifBlank { "9100" }}")
+                AsValueRow("用紙", "${paperWidth}mm")
+                AsValueRow("カット", cutMode.displayName)
+                AsValueRow("ドロア", if (drawerEnabled) "DK${drawerPort + 1}" else "無効")
+                AsValueRow("自動オープン", if (drawerEnabled && drawerOpenOnCash) "現金会計時" else "なし")
+                Spacer(Modifier.height(12.dp))
                 AsFlowStep("1", "会計・精算・返品をSQLiteへ確定")
-                AsFlowStep("2", "同一トランザクションで印刷キューを登録")
-                AsFlowStep("3", "構造化データからESC/POSを生成")
-                AsFlowStep("4", "${host.ifBlank { "IP未設定" }}:${port.ifBlank { "9100" }}へTCP送信")
-                AsFlowStep("5", "失敗時はRETRY／FAILEDとして売上と分離")
-                Spacer(Modifier.height(16.dp))
-                Text("対応", fontWeight = FontWeight.Bold, color = AsNavy)
-                Text("・ESC/POS TCP 9100\n・CP932日本語\n・58mm／80mm\n・部分カット\n・接続タイムアウト", lineHeight = 24.sp)
-                Spacer(Modifier.height(16.dp))
+                AsFlowStep("2", "印刷キューへ登録")
+                AsFlowStep("3", "選択プロファイルでESC/POS生成")
+                AsFlowStep("4", "TCP 9100へ送信")
+                AsFlowStep("5", "送信結果不明時は自動再印刷を停止")
+                Spacer(Modifier.height(12.dp))
                 Text(
-                    "プリンターを有効にすると、既存の売上レシート・返品票・点検精算票のテスト印刷経路も保存済み接続先へ送信します。",
+                    "現金会計の初回レシートだけにドロアキックを付加します。再発行、返品票、X点検票、Z精算票では自動でドロアを開きません。",
                     color = Color.DarkGray,
-                    lineHeight = 23.sp,
+                    lineHeight = 22.sp,
                 )
             }
         }
@@ -691,7 +776,7 @@ private fun AsHeader(screenId: String, title: String, status: String) {
         Modifier.fillMaxWidth().height(62.dp).background(AsNavy).padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("REGISTER", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+        Text("つぐレジ", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(24.dp))
         Text("$screenId  $title", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.weight(1f))
@@ -737,7 +822,7 @@ private fun AsChoiceButton(label: String, selected: Boolean, modifier: Modifier,
         onClick = onClick,
         modifier = modifier.height(48.dp),
         border = BorderStroke(if (selected) 3.dp else 1.dp, if (selected) AsDanger else AsBorder),
-    ) { Text(label, fontWeight = FontWeight.Bold, color = AsNavy) }
+    ) { Text(label, fontWeight = FontWeight.Bold, color = AsNavy, textAlign = TextAlign.Center) }
 }
 
 @Composable

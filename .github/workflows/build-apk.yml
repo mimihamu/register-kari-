@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -39,6 +41,18 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
+      - name: Verify dev.23 metadata
+        run: |
+          grep -q 'versionCode = 37' app/build.gradle.kts
+          grep -q 'versionName = "0.12.0-dev.23"' app/build.gradle.kts
+
+      - name: Verify single launcher configuration
+        run: |
+          launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' app/src/main app/src/debug | wc -l)
+          test "$launcher_count" -eq 1
+          grep -q 'android:name=".MainActivity"' app/src/main/AndroidManifest.xml
+          test "$(grep -c 'android.intent.category.LAUNCHER' app/src/debug/AndroidManifest.xml || true)" -eq 0
+
       - name: Run unit tests
         run: gradle --no-daemon :app:testDebugUnitTest
 
@@ -48,15 +62,27 @@ jobs:
       - name: Prepare named APK and SHA-256
         run: |
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.11.1_fix2_debug.apk
-          sha256sum artifacts/TSUGUREGI_v0.11.1_fix2_debug.apk | tee artifacts/TSUGUREGI_v0.11.1_fix2_debug.apk.sha256
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.12.0_dev23_debug.apk
+          sha256sum artifacts/TSUGUREGI_v0.12.0_dev23_debug.apk | tee artifacts/TSUGUREGI_v0.12.0_dev23_debug.apk.sha256
+          stat --printf='APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.12.0_dev23_debug.apk | tee artifacts/build-summary.txt
+          echo "VERSION_NAME=0.12.0-dev.23" >> artifacts/build-summary.txt
+          echo "VERSION_CODE=37" >> artifacts/build-summary.txt
+          echo "LAUNCHER_COUNT=1" >> artifacts/build-summary.txt
+          echo "SIGNING=development-not-production" >> artifacts/build-summary.txt
+          echo "REAL_PRINTER_VERIFICATION=not-performed-by-ci" >> artifacts/build-summary.txt
+          git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
       - name: Upload APK
+        id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.11.1-fix2-debug-apk
+          name: TSUGUREGI-v0.12.0-dev23-debug-apk
           path: |
-            artifacts/TSUGUREGI_v0.11.1_fix2_debug.apk
-            artifacts/TSUGUREGI_v0.11.1_fix2_debug.apk.sha256
+            artifacts/TSUGUREGI_v0.12.0_dev23_debug.apk
+            artifacts/TSUGUREGI_v0.12.0_dev23_debug.apk.sha256
+            artifacts/build-summary.txt
           if-no-files-found: error
           retention-days: 30
+
+      - name: Report artifact ID
+        run: echo "ARTIFACT_ID=${{ steps.upload.outputs.artifact-id }}"

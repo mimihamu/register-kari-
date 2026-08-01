@@ -3,7 +3,6 @@ package jp.co.tenposinfo.register
 import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
-import java.nio.charset.Charset
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.Instant
@@ -46,6 +45,13 @@ data class PrinterConfiguration(
     val paperWidthMm: Int = 80,
     val timeoutMillis: Int = 5_000,
     val enabled: Boolean = false,
+    val profile: PrinterProfile = PrinterProfile.EPSON_TM_JAPAN,
+    val cutMode: PrinterCutMode = PrinterCutMode.PARTIAL,
+    val drawerEnabled: Boolean = false,
+    val drawerOpenOnCashSale: Boolean = true,
+    val drawerPort: Int = 0,
+    val drawerOnMillis: Int = 100,
+    val drawerOffMillis: Int = 500,
 ) {
     val usable: Boolean get() = enabled && host.isNotBlank() && port in 1..65535
 }
@@ -325,7 +331,11 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
 
     fun loadPrinterConfiguration(): PrinterConfiguration = db.query(
         "printer_settings",
-        arrayOf("printer_name", "host", "port", "paper_width_mm", "timeout_millis", "enabled"),
+        arrayOf(
+            "printer_name", "host", "port", "paper_width_mm", "timeout_millis", "enabled",
+            "profile_key", "cut_mode", "drawer_enabled", "drawer_open_on_cash",
+            "drawer_port", "drawer_on_millis", "drawer_off_millis",
+        ),
         "id = 1",
         null,
         null,
@@ -339,6 +349,13 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             paperWidthMm = cursor.getInt(3),
             timeoutMillis = cursor.getInt(4),
             enabled = cursor.getInt(5) != 0,
+            profile = enumValueOrDefault(cursor.getString(6), PrinterProfile.EPSON_TM_JAPAN),
+            cutMode = enumValueOrDefault(cursor.getString(7), PrinterCutMode.PARTIAL),
+            drawerEnabled = cursor.getInt(8) != 0,
+            drawerOpenOnCashSale = cursor.getInt(9) != 0,
+            drawerPort = cursor.getInt(10),
+            drawerOnMillis = cursor.getInt(11),
+            drawerOffMillis = cursor.getInt(12),
         )
     }
 
@@ -347,7 +364,11 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
         require(configuration.port in 1..65535) { "ポート番号は1～65535で入力してください" }
         require(configuration.paperWidthMm == 58 || configuration.paperWidthMm == 80) { "用紙幅は58mmまたは80mmです" }
         require(configuration.timeoutMillis in 1_000..30_000) { "タイムアウトは1000～30000msで入力してください" }
+        require(configuration.drawerPort == 0 || configuration.drawerPort == 1) { "ドロアポートはDK1またはDK2です" }
+        require(configuration.drawerOnMillis in 20..500) { "ドロアON時間は20～500msです" }
+        require(configuration.drawerOffMillis in 20..500) { "ドロアOFF時間は20～500msです" }
         if (configuration.enabled) require(configuration.host.isNotBlank()) { "有効にする場合はIPアドレスまたはホスト名が必要です" }
+        if (configuration.drawerEnabled) require(configuration.profile.supportsDrawer) { "選択中のプロファイルはドロア制御に対応していません" }
         val now = System.currentTimeMillis()
         db.inTransaction {
             update(
@@ -359,6 +380,13 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
                     put("paper_width_mm", configuration.paperWidthMm)
                     put("timeout_millis", configuration.timeoutMillis)
                     put("enabled", if (configuration.enabled) 1 else 0)
+                    put("profile_key", configuration.profile.name)
+                    put("cut_mode", configuration.cutMode.name)
+                    put("drawer_enabled", if (configuration.drawerEnabled) 1 else 0)
+                    put("drawer_open_on_cash", if (configuration.drawerOpenOnCashSale) 1 else 0)
+                    put("drawer_port", configuration.drawerPort)
+                    put("drawer_on_millis", configuration.drawerOnMillis)
+                    put("drawer_off_millis", configuration.drawerOffMillis)
                     put("updated_at", now)
                 },
                 "id = 1",
@@ -367,7 +395,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             insertAudit(
                 "PRINTER_SETTINGS_UPDATED",
                 1,
-                "${configuration.name} ${configuration.host}:${configuration.port} ${configuration.paperWidthMm}mm ${if (configuration.enabled) "有効" else "無効"}",
+                "${configuration.name} ${configuration.host}:${configuration.port} ${configuration.paperWidthMm}mm / ${configuration.profile.displayName} / ${configuration.cutMode.displayName} / ドロア${if (configuration.drawerEnabled) "有効" else "無効"}",
                 actor,
                 now,
             )
@@ -378,23 +406,27 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
         require(configuration.host.isNotBlank()) { "IPアドレスまたはホスト名を入力してください" }
         val now = Instant.now().toString()
         val text = buildString {
-            append("REGISTER（仮） プリンターテスト\n")
+            append("つぐレジ プリンターテスト\n")
             append("${configuration.name}\n")
             append("${configuration.host}:${configuration.port}\n")
-            append("用紙 ${configuration.paperWidthMm}mm\n")
+            append("${configuration.profile.displayName}\n")
+            append("用紙 ${configuration.paperWidthMm}mm / ${configuration.cutMode.displayName}\n")
             append("$now\n")
             append("--------------------------------\n")
-            append("日本語印字テスト 1234567890\n\n\n")
+            append("日本語印字テスト 1234567890\n")
         }
-        val cp932 = Charset.forName("MS932")
-        val payload = byteArrayOf(0x1B, 0x40, 0x1B, 0x74, 0x01) +
-            text.toByteArray(cp932) +
-            byteArrayOf(0x1D, 0x56, 0x42, 0x00)
-        return TcpEscPosPrinterGateway(
-            host = configuration.host.trim(),
-            port = configuration.port,
-            timeoutMillis = configuration.timeoutMillis,
-        ).send(payload)
+        val payload = PrinterCommandEncoder.encodeText(
+            text = text,
+            configuration = configuration,
+            openDrawer = false,
+            appendCut = true,
+        )
+        return printerGateway(configuration).send(payload)
+    }
+
+    fun testDrawer(configuration: PrinterConfiguration): Result<Unit> {
+        require(configuration.host.isNotBlank()) { "IPアドレスまたはホスト名を入力してください" }
+        return printerGateway(configuration).send(PrinterCommandEncoder.drawerOnly(configuration))
     }
 
     fun recordPrinterTest(configuration: PrinterConfiguration, success: Boolean, message: String, actor: String) {
@@ -403,6 +435,18 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
                 eventType = if (success) "PRINTER_TEST_SUCCEEDED" else "PRINTER_TEST_FAILED",
                 referenceId = 1,
                 detail = "${configuration.host}:${configuration.port} / ${message.take(300)}",
+                operatorName = actor,
+                createdAt = System.currentTimeMillis(),
+            )
+        }
+    }
+
+    fun recordDrawerTest(configuration: PrinterConfiguration, success: Boolean, message: String, actor: String) {
+        db.inTransaction {
+            insertAudit(
+                eventType = if (success) "DRAWER_TEST_SUCCEEDED" else "DRAWER_TEST_FAILED",
+                referenceId = 1,
+                detail = "${configuration.host}:${configuration.port} / DK${configuration.drawerPort + 1} / ${message.take(300)}",
                 operatorName = actor,
                 createdAt = System.currentTimeMillis(),
             )
@@ -441,6 +485,12 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
     fun auditCount(): Long = db.rawQuery("SELECT COUNT(*) FROM operation_audit", null).use { cursor ->
         if (cursor.moveToFirst()) cursor.getLong(0) else 0L
     }
+
+    private fun printerGateway(configuration: PrinterConfiguration) = TcpEscPosPrinterGateway(
+        host = configuration.host.trim(),
+        port = configuration.port,
+        timeoutMillis = configuration.timeoutMillis,
+    )
 
     private fun loadPermissions(operatorId: Long): Set<RegisterPermission> {
         val permissions = linkedSetOf<RegisterPermission>()
@@ -535,10 +585,24 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
                 paper_width_mm INTEGER NOT NULL,
                 timeout_millis INTEGER NOT NULL,
                 enabled INTEGER NOT NULL,
+                profile_key TEXT NOT NULL DEFAULT 'EPSON_TM_JAPAN',
+                cut_mode TEXT NOT NULL DEFAULT 'PARTIAL',
+                drawer_enabled INTEGER NOT NULL DEFAULT 0,
+                drawer_open_on_cash INTEGER NOT NULL DEFAULT 1,
+                drawer_port INTEGER NOT NULL DEFAULT 0,
+                drawer_on_millis INTEGER NOT NULL DEFAULT 100,
+                drawer_off_millis INTEGER NOT NULL DEFAULT 500,
                 updated_at INTEGER NOT NULL
             )
             """.trimIndent(),
         )
+        ensurePrinterColumn("profile_key", "TEXT NOT NULL DEFAULT 'EPSON_TM_JAPAN'")
+        ensurePrinterColumn("cut_mode", "TEXT NOT NULL DEFAULT 'PARTIAL'")
+        ensurePrinterColumn("drawer_enabled", "INTEGER NOT NULL DEFAULT 0")
+        ensurePrinterColumn("drawer_open_on_cash", "INTEGER NOT NULL DEFAULT 1")
+        ensurePrinterColumn("drawer_port", "INTEGER NOT NULL DEFAULT 0")
+        ensurePrinterColumn("drawer_on_millis", "INTEGER NOT NULL DEFAULT 100")
+        ensurePrinterColumn("drawer_off_millis", "INTEGER NOT NULL DEFAULT 500")
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS operation_audit (
@@ -553,6 +617,21 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_register_operator_order ON register_operators(display_order)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_operation_audit_created ON operation_audit(created_at)")
+    }
+
+    private fun ensurePrinterColumn(name: String, declaration: String) {
+        val exists = db.rawQuery("PRAGMA table_info(printer_settings)", null).use { cursor ->
+            val nameIndex = cursor.getColumnIndex("name")
+            var found = false
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameIndex) == name) {
+                    found = true
+                    break
+                }
+            }
+            found
+        }
+        if (!exists) db.execSQL("ALTER TABLE printer_settings ADD COLUMN $name $declaration")
     }
 
     private fun seedDefaults() {
@@ -614,12 +693,20 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
         db.execSQL(
             """
             INSERT OR IGNORE INTO printer_settings(
-                id, printer_name, host, port, paper_width_mm, timeout_millis, enabled, updated_at
-            ) VALUES(1, 'レシートプリンター', '', 9100, 80, 5000, 0, 0)
+                id, printer_name, host, port, paper_width_mm, timeout_millis, enabled,
+                profile_key, cut_mode, drawer_enabled, drawer_open_on_cash,
+                drawer_port, drawer_on_millis, drawer_off_millis, updated_at
+            ) VALUES(
+                1, 'レシートプリンター', '', 9100, 80, 5000, 0,
+                'EPSON_TM_JAPAN', 'PARTIAL', 0, 1, 0, 100, 500, 0
+            )
             """.trimIndent(),
         )
     }
 }
+
+private inline fun <reified T : Enum<T>> enumValueOrDefault(value: String?, fallback: T): T =
+    runCatching { enumValueOf<T>(value.orEmpty()) }.getOrDefault(fallback)
 
 private inline fun <T> SQLiteDatabase.inTransaction(block: SQLiteDatabase.() -> T): T {
     beginTransaction()

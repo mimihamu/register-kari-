@@ -1,5 +1,6 @@
 package jp.co.tenposinfo.register
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -98,6 +99,7 @@ private enum class AppScreen {
 @Composable
 private fun RegisterApp() {
     val context = LocalContext.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val database = remember { RegisterDatabase(context.applicationContext) }
     val authStore = remember { OperatorAuthenticationStore(context.applicationContext) }
     var currentOperator by remember { mutableStateOf(OperatorSessionRegistry.current(context.applicationContext)) }
@@ -105,7 +107,25 @@ private fun RegisterApp() {
     var operatorName by remember { mutableStateOf(currentOperator?.name ?: "未選択") }
     var loginMessage by remember { mutableStateOf<String?>(null) }
     var accessMessage by remember { mutableStateOf<String?>(null) }
+    var printerHealth by remember { mutableStateOf(PrinterHealthSnapshot.checking()) }
     var catalogEpoch by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var activityResumed by remember(lifecycleOwner) {
+        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED))
+    }
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> activityResumed = true
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE,
+                androidx.lifecycle.Lifecycle.Event.ON_STOP,
+                androidx.lifecycle.Lifecycle.Event.ON_DESTROY,
+                -> activityResumed = false
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     androidx.compose.runtime.LaunchedEffect(Unit) {
         DriveOutboxScheduler.ensurePeriodic(context.applicationContext)
         while (true) {
@@ -124,6 +144,17 @@ private fun RegisterApp() {
                 }
             }
             catalogEpoch++
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(screen, activityResumed) {
+        if (!PrinterHealthUiPolicy.shouldPoll(screen == AppScreen.SALES, activityResumed)) {
+            return@LaunchedEffect
+        }
+        while (true) {
+            printerHealth = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                PrinterHealthMonitor.check(context.applicationContext)
+            }
+            kotlinx.coroutines.delay(10_000L)
         }
     }
     val products = remember(catalogEpoch) {
@@ -152,6 +183,10 @@ private fun RegisterApp() {
         cart[index] = item
         selectedIndex = index
         database.saveCart(cart.toList())
+    }
+
+    fun openUnifiedPrintQueue() {
+        context.startActivity(Intent(context, UnifiedPrintQueueActivity::class.java))
     }
 
     Surface(
@@ -198,6 +233,7 @@ private fun RegisterApp() {
                 products = products,
                 cart = cart,
                 selectedIndex = selectedIndex,
+                printerHealth = printerHealth,
                 onSelect = { selectedIndex = it },
                 onEdit = {
                     selectedIndex = it
@@ -266,10 +302,13 @@ private fun RegisterApp() {
                 onPrintQueue = {
                     if (currentOperator?.allows(RegisterPermission.VIEW_SALES) == true) {
                         accessMessage = null
-                        screen = AppScreen.PRINT_QUEUE
+                        openUnifiedPrintQueue()
                     } else {
                         accessMessage = "印刷キュー確認の権限がありません"
                     }
+                },
+                onPrinterStatus = {
+                    context.startActivity(Intent(context, PrinterStatusActivity::class.java))
                 },
                 accessMessage = accessMessage,
                 onLogout = {
@@ -347,7 +386,7 @@ private fun RegisterApp() {
                     screen = AppScreen.RECEIPT_PREVIEW
                 },
                 onHistory = { screen = AppScreen.SALES_HISTORY },
-                onQueue = { screen = AppScreen.PRINT_QUEUE },
+                onQueue = { openUnifiedPrintQueue() },
                 onNext = { screen = AppScreen.SALES },
             )
 
@@ -357,7 +396,7 @@ private fun RegisterApp() {
                     selectedSaleId = it.id
                     screen = AppScreen.SALE_DETAIL
                 },
-                onQueue = { screen = AppScreen.PRINT_QUEUE },
+                onQueue = { openUnifiedPrintQueue() },
                 onBack = { screen = AppScreen.SALES },
             )
 
@@ -389,7 +428,7 @@ private fun RegisterApp() {
                             queueMessage = "再印字をキューへ登録しました"
                         },
                         message = queueMessage,
-                        onQueue = { screen = AppScreen.PRINT_QUEUE },
+                        onQueue = { openUnifiedPrintQueue() },
                         onBack = { screen = AppScreen.SALE_DETAIL },
                     )
                 }
@@ -399,11 +438,9 @@ private fun RegisterApp() {
                 jobs = database.listPrintJobs(),
                 message = queueMessage,
                 onProcessOne = {
-                    val gateway = MemoryPrinterGateway()
-                    val success = PrintQueueProcessor(database, gateway).processNext()
-                    queueMessage = if (success) "テストプリンタへ送信しました" else "送信対象がないか、送信に失敗しました"
+                    queueMessage = "旧テスト送信は廃止しました。統合印刷キューを開きます"
+                    openUnifiedPrintQueue()
                     screen = AppScreen.SALES
-                    screen = AppScreen.PRINT_QUEUE
                 },
                 onRetry = {
                     database.retryPrintJob(it.id)
@@ -427,7 +464,7 @@ private fun Header(screenId: String, title: String) {
             .padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("REGISTER", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+        Text("つぐレジ", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(24.dp))
         Text("$screenId  $title", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.weight(1f))
@@ -544,6 +581,7 @@ private fun SalesScreen(
     products: List<Product>,
     cart: List<CartItem>,
     selectedIndex: Int?,
+    printerHealth: PrinterHealthSnapshot,
     onSelect: (Int) -> Unit,
     onEdit: (Int) -> Unit,
     onAddProduct: (Product) -> Unit,
@@ -556,6 +594,7 @@ private fun SalesScreen(
     onPayment: () -> Unit,
     onSalesHistory: () -> Unit,
     onPrintQueue: () -> Unit,
+    onPrinterStatus: () -> Unit,
     accessMessage: String?,
     onLogout: () -> Unit,
 ) {
@@ -563,6 +602,7 @@ private fun SalesScreen(
     var numericInput by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize()) {
         Header("SCR-100", "販売画面")
+        PrinterHealthBanner(printerHealth, onPrinterStatus)
         Row(
             Modifier.fillMaxWidth().height(48.dp).background(Color.White).padding(horizontal = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -716,7 +756,8 @@ private fun SalesScreen(
             OutlinedButton(onClick = onTickets, modifier = Modifier.width(130.dp).fillMaxHeight()) { Text("伝票一覧") }
             OutlinedButton(onClick = onHold, enabled = cart.isNotEmpty(), modifier = Modifier.width(100.dp).fillMaxHeight()) { Text("保留") }
             OutlinedButton(onClick = onSalesHistory, modifier = Modifier.width(120.dp).fillMaxHeight()) { Text("売上一覧") }
-            OutlinedButton(onClick = onPrintQueue, modifier = Modifier.width(120.dp).fillMaxHeight()) { Text("印刷待ち") }
+            OutlinedButton(onClick = onPrinterStatus, modifier = Modifier.width(115.dp).fillMaxHeight()) { Text("プリンター") }
+            OutlinedButton(onClick = onPrintQueue, modifier = Modifier.width(120.dp).fillMaxHeight()) { Text("印刷管理") }
             BlueButton("小計／会計  ${yen(summary.grossAmount)}", onPayment, Modifier.weight(1f).fillMaxHeight(), cart.isNotEmpty())
         }
     }
@@ -1025,7 +1066,7 @@ private fun CompleteScreen(
             Spacer(Modifier.height(20.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(onClick = onReceipt, enabled = detail != null) { Text("レシート確認") }
-                OutlinedButton(onClick = onQueue) { Text("印刷キュー") }
+                OutlinedButton(onClick = onQueue) { Text("統合印刷キュー") }
                 OutlinedButton(onClick = onHistory) { Text("売上一覧") }
                 BlueButton("次の取引", onNext, Modifier.width(180.dp).height(54.dp))
             }
@@ -1048,7 +1089,7 @@ private fun SalesHistoryScreen(
         ) {
             Text("確定売上 ${sales.size}件", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Navy)
             Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = onQueue) { Text("印刷キュー") }
+            OutlinedButton(onClick = onQueue) { Text("統合印刷キュー") }
         }
         CardPanel(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp)) {
             if (sales.isEmpty()) {
@@ -1161,7 +1202,7 @@ private fun ReceiptPreviewScreen(
             CardPanel(Modifier.width(310.dp).fillMaxHeight()) {
                 Text("印刷操作", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Navy)
                 Spacer(Modifier.height(14.dp))
-                Text("ESC/POSデータは同じレシート構造から生成されます。印刷失敗時も売上は確定済みのまま、キューから再試行します。")
+                Text("ESC/POSデータは同じレシート構造から生成されます。印刷失敗時も売上は確定済みのまま、統合印刷キューから安全に確認します。")
                 Spacer(Modifier.height(14.dp))
                 if (!message.isNullOrBlank()) {
                     Text(message, color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
@@ -1169,9 +1210,9 @@ private fun ReceiptPreviewScreen(
                 }
                 BlueButton("再印字をキュー登録", onEnqueue, Modifier.fillMaxWidth().height(52.dp))
                 Spacer(Modifier.height(10.dp))
-                OutlinedButton(onClick = onQueue, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("印刷キューを開く") }
+                OutlinedButton(onClick = onQueue, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("統合印刷キューを開く") }
                 Spacer(Modifier.weight(1f))
-                Text("TCP 9100 Gateway実装済み\n現在の画面テストはMemory Printerを使用", color = Color.Gray, fontSize = 13.sp)
+                Text("FAILEDは自動再送しません。紙確認後に統合印刷キューから操作します。", color = Danger, fontSize = 13.sp)
             }
         }
         BottomActions(onBack, "詳細へ戻る", onBack)
@@ -1187,7 +1228,7 @@ private fun PrintQueueScreen(
     onBack: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
-        Header("SCR-700", "印刷キュー・障害復旧")
+        Header("SCR-700", "旧印刷キュー・統合済み")
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1196,7 +1237,7 @@ private fun PrintQueueScreen(
             Spacer(Modifier.weight(1f))
             if (!message.isNullOrBlank()) Text(message, color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
             Spacer(Modifier.width(14.dp))
-            BlueButton("1件テスト送信", onProcessOne, Modifier.width(170.dp).height(46.dp))
+            BlueButton("統合印刷キューを開く", onProcessOne, Modifier.width(210.dp).height(46.dp))
         }
         CardPanel(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp)) {
             if (jobs.isEmpty()) {
@@ -1220,6 +1261,69 @@ private fun PrintQueueScreen(
             }
         }
         BottomActions(onBack, "販売へ戻る", onBack)
+    }
+}
+
+@Composable
+private fun PrinterHealthBanner(snapshot: PrinterHealthSnapshot, onOpen: () -> Unit) {
+    var nowMillis by remember(snapshot.checkedAt) { androidx.compose.runtime.mutableLongStateOf(System.currentTimeMillis()) }
+    androidx.compose.runtime.LaunchedEffect(snapshot.checkedAt) {
+        while (true) {
+            nowMillis = System.currentTimeMillis()
+            kotlinx.coroutines.delay(1_000L)
+        }
+    }
+    val background = when (snapshot.level) {
+        PrinterHealthLevel.CHECKING -> PaleBlue
+        PrinterHealthLevel.READY -> PaleGreen
+        PrinterHealthLevel.WARNING -> PaleYellow
+        PrinterHealthLevel.ERROR,
+        PrinterHealthLevel.UNCONFIGURED,
+        -> Color(0xFFFFEBEE)
+        PrinterHealthLevel.DISABLED -> Color(0xFFF1F3F5)
+    }
+    val foreground = when (snapshot.level) {
+        PrinterHealthLevel.CHECKING -> Blue
+        PrinterHealthLevel.READY -> Color(0xFF2E7D32)
+        PrinterHealthLevel.WARNING -> Color(0xFFEF6C00)
+        PrinterHealthLevel.ERROR,
+        PrinterHealthLevel.UNCONFIGURED,
+        -> Danger
+        PrinterHealthLevel.DISABLED -> Color.DarkGray
+    }
+    val prefix = when (snapshot.level) {
+        PrinterHealthLevel.CHECKING -> "確認中"
+        PrinterHealthLevel.READY -> "正常"
+        PrinterHealthLevel.WARNING -> "注意"
+        PrinterHealthLevel.ERROR -> "異常"
+        PrinterHealthLevel.DISABLED -> "未使用"
+        PrinterHealthLevel.UNCONFIGURED -> "未設定"
+    }
+    val stale = PrinterHealthUiPolicy.isStale(snapshot, nowMillis)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(if (PrinterHealthPolicy.requiresAttention(snapshot)) 50.dp else 42.dp)
+            .background(background)
+            .clickable(onClick = onOpen)
+            .padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("プリンター $prefix", color = foreground, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.width(14.dp))
+        Text(snapshot.title, color = foreground, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.width(14.dp))
+        Text(snapshot.detail, modifier = Modifier.weight(1f), color = Color.DarkGray, fontSize = 12.sp, maxLines = 1)
+        Spacer(Modifier.width(14.dp))
+        Text(
+            PrinterHealthUiPolicy.checkedAtLabel(snapshot, nowMillis),
+            color = if (stale) foreground else Color.DarkGray,
+            fontSize = 12.sp,
+            fontWeight = if (stale) FontWeight.Bold else FontWeight.Normal,
+            maxLines = 1,
+        )
+        Spacer(Modifier.width(14.dp))
+        Text("診断を開く ＞", color = foreground, fontWeight = FontWeight.Bold)
     }
 }
 

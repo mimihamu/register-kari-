@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      開発版もホーム画面のランチャーはMainActivityだけに統一する。
+      プリンター診断・検証・試験画面は、つぐレジ内の責任者メニューから開く。
+    -->
+</manifest>
