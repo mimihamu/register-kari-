@@ -16,8 +16,8 @@ class V013CustomerDisplayAccountingTest {
     fun accountingSnapshotShowsPaidRemainingAndMethods() {
         val items = listOf(CartItem(product = product, quantity = 2))
         val state = PaymentEngine.addPayment(
-            current = PaymentState(),
-            totalAmount = 600,
+            state = PaymentState(),
+            total = 600,
             method = PaymentMethod.CASH,
             inputAmount = 500,
         )
@@ -37,8 +37,8 @@ class V013CustomerDisplayAccountingTest {
     fun accountingSnapshotShowsChangeAfterOverpayment() {
         val items = listOf(CartItem(product = product, quantity = 1))
         val state = PaymentEngine.addPayment(
-            current = PaymentState(),
-            totalAmount = 300,
+            state = PaymentState(),
+            total = 300,
             method = PaymentMethod.CASH,
             inputAmount = 500,
         )
