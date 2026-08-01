@@ -1,18 +1,17 @@
-name: Apply つぐレジ dev.22 integration
+name: Finalize つぐレジ dev.22
 
 on:
-  push:
-    branches:
-      - develop/v0.12
+  pull_request:
+    types: [reopened]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  apply-dev22:
+  finalize-and-build-dev22:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - name: Checkout develop/v0.12
         uses: actions/checkout@v4
@@ -32,3 +31,60 @@ jobs:
           git diff --cached --check
           git commit -m "feat: finalize v0.12 printer software implementation dev.22"
           git push origin HEAD:develop/v0.12
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle 9.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Verify dev.22 metadata
+        run: |
+          grep -q 'versionCode = 36' app/build.gradle.kts
+          grep -q 'versionName = "0.12.0-dev.22"' app/build.gradle.kts
+
+      - name: Run unit tests
+        run: gradle --no-daemon :app:testDebugUnitTest
+
+      - name: Build debug APK
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Prepare named APK and SHA-256
+        run: |
+          mkdir -p artifacts
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.12.0_dev22_debug.apk
+          sha256sum artifacts/TSUGUREGI_v0.12.0_dev22_debug.apk | tee artifacts/TSUGUREGI_v0.12.0_dev22_debug.apk.sha256
+          stat --printf='APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.12.0_dev22_debug.apk | tee artifacts/build-summary.txt
+          echo "VERSION_NAME=0.12.0-dev.22" >> artifacts/build-summary.txt
+          echo "VERSION_CODE=36" >> artifacts/build-summary.txt
+          echo "SIGNING=development-not-production" >> artifacts/build-summary.txt
+          echo "REAL_PRINTER_VERIFICATION=not-performed-by-ci" >> artifacts/build-summary.txt
+          git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
+
+      - name: Upload APK
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSUGUREGI-v0.12.0-dev22-debug-apk
+          path: |
+            artifacts/TSUGUREGI_v0.12.0_dev22_debug.apk
+            artifacts/TSUGUREGI_v0.12.0_dev22_debug.apk.sha256
+            artifacts/build-summary.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Report artifact ID
+        run: echo "ARTIFACT_ID=${{ steps.upload.outputs.artifact-id }}"
