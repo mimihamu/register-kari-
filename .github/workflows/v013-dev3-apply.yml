@@ -1,0 +1,459 @@
+name: Apply v0.13 dev3 updates
+
+on:
+  push:
+    branches:
+      - develop/v0.13
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ !contains(github.event.head_commit.message, '[v013-dev3-applied]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v0.13
+          fetch-depth: 0
+
+      - name: Apply source updates
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one match, found {count}: {old[:80]!r}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          # RegisterApplication: management buttons are rendered only inside the sales screen.
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/RegisterApplication.kt',
+              '        updateActionButtons(activity, content, operator)\n',
+              '',
+          )
+
+          # Catalog bootstrap keeps synchronization but no longer overlays a button on every MainActivity screen.
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/CatalogBootstrapProvider.kt',
+              '                synchronizeAndRefresh(activity)\n                installCatalogButton(activity)\n',
+              '                synchronizeAndRefresh(activity)\n',
+          )
+
+          # Admin settings: status bar and authenticated, in-layout navigation tiles.
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt',
+              'import android.os.Bundle\n',
+              'import android.content.Intent\nimport android.os.Bundle\nimport androidx.core.view.WindowCompat\n',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt',
+              '        super.onCreate(savedInstanceState)\n        setContent {',
+              '''        super.onCreate(savedInstanceState)
+        window.statusBarColor = android.graphics.Color.rgb(23, 63, 107)
+        window.navigationBarColor = android.graphics.Color.WHITE
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = true
+        }
+        setContent {''',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt',
+              '''                    onOperators = { screen = AdminScreen.OPERATORS },
+                    onPrinter = { screen = AdminScreen.PRINTER },
+                    onSecurity = { screen = AdminScreen.SECURITY },
+                    onAudit = { screen = AdminScreen.AUDIT },
+                    onLock = { unlocked = false },''',
+              '''                    onOperators = { screen = AdminScreen.OPERATORS },
+                    onPrinter = { screen = AdminScreen.PRINTER },
+                    onCatalog = { context.startActivity(Intent(context, CatalogSettingsActivity::class.java)) },
+                    onCustomerDisplay = { context.startActivity(Intent(context, CustomerDisplaySettingsActivity::class.java)) },
+                    onPrinterTools = { context.startActivity(Intent(context, PrinterToolsHubActivity::class.java)) },
+                    onSecurity = { screen = AdminScreen.SECURITY },
+                    onAudit = { screen = AdminScreen.AUDIT },
+                    onLock = { unlocked = false },''',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt',
+              '''    onOperators: () -> Unit,
+    onPrinter: () -> Unit,
+    onSecurity: () -> Unit,
+    onAudit: () -> Unit,''',
+              '''    onOperators: () -> Unit,
+    onPrinter: () -> Unit,
+    onCatalog: () -> Unit,
+    onCustomerDisplay: () -> Unit,
+    onPrinterTools: () -> Unit,
+    onSecurity: () -> Unit,
+    onAudit: () -> Unit,''',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt',
+              '''            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    AsMenuTile("担当者・権限", "担当者登録、停止、並び順、権限", AsPaleBlue, Modifier.weight(1f), onOperators)
+                    AsMenuTile("プリンター設定", "機種、IP、58/80mm、カット、ドロア", AsPaleGreen, Modifier.weight(1f), onPrinter)
+                }
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    AsMenuTile("責任者PIN", "PBKDF2ハッシュでPINを更新", AsPaleYellow, Modifier.weight(1f), onSecurity)
+                    AsMenuTile("監査ログ", "設定、返品、精算、入出金を確認", Color(0xFFF0EAF8), Modifier.weight(1f), onAudit)
+                }
+            }''',
+              '''            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AsMenuTile("担当者・権限", "担当者登録、停止、並び順、権限", AsPaleBlue, Modifier.weight(1f), onOperators)
+                    AsMenuTile("商品設定", "商品、部門、税区分、価格改定", Color(0xFFE8F0FC), Modifier.weight(1f), onCatalog)
+                    AsMenuTile("プリンター設定", "機種、IP、用紙、カット、ドロア", AsPaleGreen, Modifier.weight(1f), onPrinter)
+                }
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AsMenuTile("顧客表示", "つぐレジ CDの接続と表示設定", Color(0xFFEDEBFA), Modifier.weight(1f), onCustomerDisplay)
+                    AsMenuTile("プリンター運用", "診断、印刷キュー、検証、試験履歴", Color(0xFFE5F3FA), Modifier.weight(1f), onPrinterTools)
+                    AsMenuTile("監査ログ", "設定、返品、精算、入出金を確認", Color(0xFFF0EAF8), Modifier.weight(1f), onAudit)
+                }
+                Row(Modifier.weight(0.72f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AsMenuTile("責任者PIN", "責任者PINを安全に更新", AsPaleYellow, Modifier.weight(1f), onSecurity)
+                    Spacer(Modifier.weight(2f))
+                }
+            }''',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt',
+              '            Text(title, fontSize = 25.sp, fontWeight = FontWeight.Bold, color = AsNavy)\n            Spacer(Modifier.height(10.dp))\n            Text(description, textAlign = TextAlign.Center, color = Color.DarkGray, lineHeight = 22.sp)\n',
+              '            Text(title, fontSize = 21.sp, fontWeight = FontWeight.Bold, color = AsNavy)\n            Spacer(Modifier.height(6.dp))\n            Text(description, textAlign = TextAlign.Center, color = Color.DarkGray, lineHeight = 18.sp, fontSize = 13.sp)\n',
+          )
+
+          # Main register screen: fixed system bars, in-layout management buttons and payment/CD synchronization.
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt',
+              'import androidx.activity.compose.setContent\n',
+              'import androidx.activity.compose.setContent\nimport androidx.core.view.WindowCompat\n',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt',
+              '        super.onCreate(savedInstanceState)\n        setContent {',
+              '''        super.onCreate(savedInstanceState)
+        window.statusBarColor = android.graphics.Color.rgb(23, 63, 107)
+        window.navigationBarColor = android.graphics.Color.WHITE
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = true
+        }
+        setContent {''',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt',
+              '''                onPrinterStatus = {
+                    context.startActivity(Intent(context, PrinterStatusActivity::class.java))
+                },
+                accessMessage = accessMessage,
+                onLogout = {''',
+              '''                onPrinterStatus = {
+                    context.startActivity(Intent(context, PrinterStatusActivity::class.java))
+                },
+                canOpenSettings = currentOperator?.isManager == true && currentOperator?.allows(RegisterPermission.SETTINGS) == true,
+                canOpenManagement = currentOperator?.permissions?.any {
+                    it == RegisterPermission.VIEW_SALES ||
+                        it == RegisterPermission.CASH_MOVEMENT ||
+                        it == RegisterPermission.SETTLEMENT ||
+                        it == RegisterPermission.REVERSAL
+                } == true,
+                onOpenSettings = { context.startActivity(Intent(context, AdminSettingsActivity::class.java)) },
+                onOpenManagement = { context.startActivity(Intent(context, OperationsActivity::class.java)) },
+                accessMessage = accessMessage,
+                onLogout = {''',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt',
+              '''                onPayment = {
+                    paymentState = PaymentState()
+                    screen = AppScreen.PAYMENT
+                },''',
+              '''                onPayment = {
+                    paymentState = PaymentState()
+                    CustomerDisplayRuntime.publish(
+                        CustomerDisplaySnapshotFactory.accounting(
+                            cart.toList(),
+                            paymentState,
+                            CustomerDisplaySettingsStore(context.applicationContext).load().storeName,
+                        ),
+                    )
+                    screen = AppScreen.PAYMENT
+                },''',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt',
+              '''            AppScreen.PAYMENT -> PaymentScreen(
+                items = cart,
+                state = paymentState,
+                onStateChange = { paymentState = it },
+                onBack = { screen = AppScreen.SALES },
+                onComplete = {
+                    val saleId = database.saveSale(operatorName, cart.toList(), paymentState, receiptPaper.widthMm)''',
+              '''            AppScreen.PAYMENT -> PaymentScreen(
+                items = cart,
+                state = paymentState,
+                onStateChange = {
+                    paymentState = it
+                    CustomerDisplayRuntime.publish(
+                        CustomerDisplaySnapshotFactory.accounting(
+                            cart.toList(),
+                            it,
+                            CustomerDisplaySettingsStore(context.applicationContext).load().storeName,
+                        ),
+                    )
+                },
+                onBack = {
+                    CustomerDisplayRuntime.publish(
+                        CustomerDisplaySnapshotFactory.sales(
+                            cart.toList(),
+                            CustomerDisplaySettingsStore(context.applicationContext).load().storeName,
+                        ),
+                    )
+                    screen = AppScreen.SALES
+                },
+                onComplete = {
+                    val saleId = database.saveSale(operatorName, cart.toList(), paymentState, receiptPaper.widthMm)
+                    database.loadSaleDetail(saleId)?.let { detail ->
+                        CustomerDisplayRuntime.publish(
+                            CustomerDisplaySnapshotFactory.complete(
+                                detail,
+                                CustomerDisplaySettingsStore(context.applicationContext).load().storeName,
+                            ),
+                        )
+                    }''',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt',
+              '''    onPrintQueue: () -> Unit,
+    onPrinterStatus: () -> Unit,
+    accessMessage: String?,
+    onLogout: () -> Unit,''',
+              '''    onPrintQueue: () -> Unit,
+    onPrinterStatus: () -> Unit,
+    canOpenSettings: Boolean,
+    canOpenManagement: Boolean,
+    onOpenSettings: () -> Unit,
+    onOpenManagement: () -> Unit,
+    accessMessage: String?,
+    onLogout: () -> Unit,''',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt',
+              '''            OutlinedButton(onClick = onLogout, modifier = Modifier.height(40.dp)) { Text("担当者切替") }
+        }
+''',
+              '''            if (canOpenManagement) {
+                OutlinedButton(onClick = onOpenManagement, modifier = Modifier.height(40.dp)) { Text("レジ管理") }
+                Spacer(Modifier.width(8.dp))
+            }
+            if (canOpenSettings) {
+                OutlinedButton(onClick = onOpenSettings, modifier = Modifier.height(40.dp)) { Text("設定") }
+                Spacer(Modifier.width(8.dp))
+            }
+            OutlinedButton(onClick = onLogout, modifier = Modifier.height(40.dp)) { Text("担当者切替") }
+        }
+''',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt',
+              '                                    "${operator.name}\\n${operator.role.displayName}",\n',
+              '                                    if (operator.name == operator.role.displayName) operator.name else "${operator.name}\\n${operator.role.displayName}",\n',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt',
+              '''                AmountRow("合計", yen(summary.grossAmount), emphasized = true)
+                AmountRow("支払済", yen(state.paidAmount))
+                AmountRow("残額", yen(remaining), emphasized = true)
+                AmountRow("お釣り", yen(state.changeAmount))
+                Spacer(Modifier.height(10.dp))
+                LazyColumn(Modifier.height(120.dp)) {''',
+              '''                PaymentAmountRow("合計", yen(summary.grossAmount), emphasized = true)
+                PaymentAmountRow("支払済", yen(state.paidAmount))
+                PaymentAmountRow("残額", yen(remaining), emphasized = true)
+                PaymentAmountRow("お釣り", yen(state.changeAmount))
+                Spacer(Modifier.height(4.dp))
+                LazyColumn(Modifier.height(40.dp)) {''',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt',
+              '                ValueBox(if (input.isBlank()) "残額全額" else input)\n                Spacer(Modifier.height(8.dp))\n                NumberPad(\n',
+              '                ValueBox(if (input.isBlank()) "残額全額" else input, compact = true)\n                Spacer(Modifier.height(4.dp))\n                NumberPad(\n',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt',
+              '''                    bottomActionLabel = "現金",
+                    onBottomAction = { add(PaymentMethod.CASH) },
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { add(PaymentMethod.CARD) }, enabled = remaining > 0, modifier = Modifier.weight(1f)) { Text("カード") }
+                    OutlinedButton(onClick = { add(PaymentMethod.GIFT_CERTIFICATE) }, enabled = remaining > 0, modifier = Modifier.weight(1f)) { Text("商品券") }
+                    OutlinedButton(onClick = { add(PaymentMethod.ACCOUNT_RECEIVABLE) }, enabled = remaining > 0, modifier = Modifier.weight(1f)) { Text("掛売") }
+                }''',
+              '''                    bottomActionLabel = "現金",
+                    onBottomAction = { add(PaymentMethod.CASH) },
+                    compact = true,
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { add(PaymentMethod.CARD) }, enabled = remaining > 0, modifier = Modifier.weight(1f).height(40.dp)) { Text("カード") }
+                    OutlinedButton(onClick = { add(PaymentMethod.GIFT_CERTIFICATE) }, enabled = remaining > 0, modifier = Modifier.weight(1f).height(40.dp)) { Text("商品券") }
+                    OutlinedButton(onClick = { add(PaymentMethod.ACCOUNT_RECEIVABLE) }, enabled = remaining > 0, modifier = Modifier.weight(1f).height(40.dp)) { Text("掛売") }
+                }''',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt',
+              '''private fun NumberPad(
+    onDigit: (String) -> Unit,
+    onClear: () -> Unit,
+    bottomActionLabel: String,
+    onBottomAction: () -> Unit,
+) {
+    for (rowStart in 1..9 step 3) {''',
+              '''private fun NumberPad(
+    onDigit: (String) -> Unit,
+    onClear: () -> Unit,
+    bottomActionLabel: String,
+    onBottomAction: () -> Unit,
+    compact: Boolean = false,
+) {
+    val buttonHeight = if (compact) 40.dp else 44.dp
+    val rowGap = if (compact) 3.dp else 6.dp
+    for (rowStart in 1..9 step 3) {''',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt',
+              '                OutlinedButton(onClick = { onDigit(digit.toString()) }, modifier = Modifier.weight(1f).height(44.dp)) {\n',
+              '                OutlinedButton(onClick = { onDigit(digit.toString()) }, modifier = Modifier.weight(1f).height(buttonHeight)) {\n',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt',
+              '        Spacer(Modifier.height(6.dp))\n    }\n    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {\n        OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f).height(44.dp)) { Text("C", color = Danger) }\n        OutlinedButton(onClick = { onDigit("0") }, modifier = Modifier.weight(1f).height(44.dp)) { Text("0") }\n        BlueButton(bottomActionLabel, onBottomAction, Modifier.weight(1.4f).height(44.dp))\n',
+              '        Spacer(Modifier.height(rowGap))\n    }\n    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {\n        OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f).height(buttonHeight)) { Text("C", color = Danger) }\n        OutlinedButton(onClick = { onDigit("0") }, modifier = Modifier.weight(1f).height(buttonHeight)) { Text("0") }\n        BlueButton(bottomActionLabel, onBottomAction, Modifier.weight(1.4f).height(buttonHeight))\n',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt',
+              '''private fun ValueBox(value: String) {
+    Box(
+        Modifier.fillMaxWidth().height(54.dp).background(PaleBlue, RoundedCornerShape(8.dp)).padding(horizontal = 14.dp),''',
+              '''private fun ValueBox(value: String, compact: Boolean = false) {
+    Box(
+        Modifier.fillMaxWidth().height(if (compact) 46.dp else 54.dp).background(PaleBlue, RoundedCornerShape(8.dp)).padding(horizontal = 14.dp),''',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt',
+              '''@Composable
+private fun AmountRow(label: String, value: String, emphasized: Boolean = false) {''',
+              '''@Composable
+private fun PaymentAmountRow(label: String, value: String, emphasized: Boolean = false) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), fontSize = if (emphasized) 18.sp else 14.sp, fontWeight = if (emphasized) FontWeight.Bold else FontWeight.Normal)
+        Text(value, fontSize = if (emphasized) 20.sp else 15.sp, fontWeight = FontWeight.Bold, color = if (emphasized) Navy else Color.Unspecified)
+    }
+}
+
+@Composable
+private fun AmountRow(label: String, value: String, emphasized: Boolean = false) {''',
+          )
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt',
+              '                StatusRow("データベース", "正常（動的税・改定・Outbox対応）")\n',
+              '                StatusRow("データベース", "正常（税率・商品改定・同期保護対応）")\n',
+          )
+
+          # CD: automatically bring the latest changed item into view.
+          replace_once(
+              'customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt',
+              'import androidx.compose.foundation.lazy.LazyColumn\nimport androidx.compose.foundation.lazy.items\n',
+              'import androidx.compose.foundation.lazy.LazyColumn\nimport androidx.compose.foundation.lazy.itemsIndexed\nimport androidx.compose.foundation.lazy.rememberLazyListState\n',
+          )
+          replace_once(
+              'customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt',
+              'import androidx.compose.runtime.DisposableEffect\n',
+              'import androidx.compose.runtime.DisposableEffect\nimport androidx.compose.runtime.LaunchedEffect\n',
+          )
+          replace_once(
+              'customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt',
+              '''    Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = Panel)) {
+        Column(modifier = Modifier.fillMaxSize().padding(if (compact) 10.dp else 18.dp)) {''',
+              '''    val listState = rememberLazyListState()
+    val targetIndex = CustomerDisplayScrollPolicy.targetIndex(snapshot.orderItems)
+    LaunchedEffect(snapshot.sequence, targetIndex, snapshot.orderItems.size) {
+        if (targetIndex >= 0) listState.animateScrollToItem(targetIndex)
+    }
+    Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = Panel)) {
+        Column(modifier = Modifier.fillMaxSize().padding(if (compact) 10.dp else 18.dp)) {''',
+          )
+          replace_once(
+              'customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt',
+              '''            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 8.dp),
+            ) {
+                items(snapshot.orderItems, key = { "${it.productId}-${it.name}" }) { item ->
+                    CustomerDisplayItemRow(item, compact)
+                }
+            }''',
+              '''            LazyColumn(
+                state = listState,
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 8.dp),
+            ) {
+                itemsIndexed(
+                    items = snapshot.orderItems,
+                    key = { index, item -> "${item.productId}-${item.unitPrice}-$index" },
+                ) { _, item ->
+                    CustomerDisplayItemRow(item, compact)
+                }
+            }''',
+          )
+
+          # Version metadata.
+          replace_once('app/build.gradle.kts', 'versionCode = 38\n        versionName = "0.13.0-dev.1"', 'versionCode = 39\n        versionName = "0.13.0-dev.2"')
+          replace_once('customer-display/build.gradle.kts', 'versionCode = 2\n        versionName = "0.13.0-dev.2"', 'versionCode = 3\n        versionName = "0.13.0-dev.3"')
+
+          # Build workflow metadata and artifact names.
+          wf = Path('.github/workflows/build-apk.yml')
+          text = wf.read_text(encoding='utf-8')
+          text = text.replace('Verify v0.13 customer display dev.2 metadata', 'Verify v0.13 dev.3 metadata')
+          text = text.replace("grep -q 'versionCode = 38' app/build.gradle.kts", "grep -q 'versionCode = 39' app/build.gradle.kts")
+          text = text.replace("grep -q 'versionName = \"0.13.0-dev.1\"' app/build.gradle.kts", "grep -q 'versionName = \"0.13.0-dev.2\"' app/build.gradle.kts")
+          text = text.replace("grep -q 'versionCode = 2' customer-display/build.gradle.kts", "grep -q 'versionCode = 3' customer-display/build.gradle.kts")
+          text = text.replace("grep -q 'versionName = \"0.13.0-dev.2\"' customer-display/build.gradle.kts", "grep -q 'versionName = \"0.13.0-dev.3\"' customer-display/build.gradle.kts")
+          text = text.replace('TSUGUREGI_v0.13.0_dev1_debug.apk', 'TSUGUREGI_v0.13.0_dev2_debug.apk')
+          text = text.replace('TSUGUREGI_CD_v0.13.0_dev2_smartphone_debug.apk', 'TSUGUREGI_CD_v0.13.0_dev3_latest_item_debug.apk')
+          text = text.replace('REGISTER_VERSION_NAME=0.13.0-dev.1', 'REGISTER_VERSION_NAME=0.13.0-dev.2')
+          text = text.replace('REGISTER_VERSION_CODE=38', 'REGISTER_VERSION_CODE=39')
+          text = text.replace('CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.2', 'CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.3')
+          text = text.replace('CUSTOMER_DISPLAY_VERSION_CODE=2', 'CUSTOMER_DISPLAY_VERSION_CODE=3')
+          text = text.replace('TSUGUREGI-v0.13.0-cd-dev2-smartphone-debug-apks', 'TSUGUREGI-v0.13.0-dev3-ui-cd-debug-apks')
+          marker = "          grep -q 'android:resizeableActivity=\"true\"' customer-display/src/main/AndroidManifest.xml\n"
+          if marker in text:
+              text = text.replace(marker, marker + "          test \"$(grep -R -l 'AdminOverlayProvider' app/src/main/AndroidManifest.xml app/src/main/java 2>/dev/null | wc -l)\" -eq 0\n          grep -q 'CustomerDisplayScrollPolicy' customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt\n          grep -q 'CustomerDisplaySnapshotFactory.accounting' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt\n", 1)
+          wf.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Verify transformed source
+        run: |
+          grep -q 'versionCode = 39' app/build.gradle.kts
+          grep -q 'versionName = "0.13.0-dev.2"' app/build.gradle.kts
+          grep -q 'versionCode = 3' customer-display/build.gradle.kts
+          grep -q 'versionName = "0.13.0-dev.3"' customer-display/build.gradle.kts
+          ! grep -R 'installCatalogButton(activity)' app/src/main/java/jp/co/tenposinfo/register/CatalogBootstrapProvider.kt
+          ! grep -R 'updateActionButtons(activity' app/src/main/java/jp/co/tenposinfo/register/RegisterApplication.kt
+          grep -q 'CustomerDisplayScrollPolicy.targetIndex' customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt
+          grep -q 'CustomerDisplaySnapshotFactory.accounting' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+
+      - name: Commit updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app customer-display .github/workflows/build-apk.yml
+          git commit -m "feat(v0.13): fix register UI and keep latest CD item visible [v013-dev3-applied]"
+          git push origin HEAD:develop/v0.13
