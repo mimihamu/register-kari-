@@ -95,16 +95,40 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
     var preset by remember { mutableStateOf(PrinterStatusProbePolicy.presetFor(configuration.profile)) }
     var experimentalConfirmed by remember { mutableStateOf(false) }
     var running by remember { mutableStateOf(false) }
-    var operationMessage by remember { mutableStateOf("状態コマンドを送らないTCP接続確認から開始できます") }
+    var operationMessage by remember { mutableStateOf("試験条件を付けてRAW応答を採取します") }
     var operationColor by remember { mutableStateOf(PlNavy) }
     var currentRecord by remember { mutableStateOf<PrinterStatusProbeHistoryRecord?>(null) }
     var history by remember { mutableStateOf(historyStore.listRecent(200)) }
     var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var profileFilter by remember { mutableStateOf<PrinterProfile?>(null) }
     var outcomeFilter by remember { mutableStateOf(PrinterStatusProbeOutcomeFilter.ALL) }
+    var conditionFilter by remember { mutableStateOf<PrinterStatusTestCondition?>(null) }
+    var searchText by remember { mutableStateOf("") }
     var retentionText by remember { mutableStateOf(historyStore.retentionDays().toString()) }
     var deleteConfirm by remember { mutableStateOf(false) }
     var pendingCsv by remember { mutableStateOf<String?>(null) }
+
+    var testCondition by remember { mutableStateOf(PrinterStatusTestCondition.NORMAL) }
+    var printerModelText by remember { mutableStateOf("") }
+    var emulationModeText by remember { mutableStateOf("") }
+    var memoText by remember { mutableStateOf("") }
+
+    fun currentAnnotation(): PrinterStatusProbeAnnotation = PrinterStatusProbeAnnotationPolicy.normalize(
+        PrinterStatusProbeAnnotation(
+            condition = testCondition,
+            printerModel = printerModelText,
+            emulationMode = emulationModeText,
+            memo = memoText,
+        ),
+    )
+
+    fun loadAnnotation(record: PrinterStatusProbeHistoryRecord) {
+        testCondition = record.condition
+        printerModelText = record.printerModel
+        emulationModeText = record.emulationMode
+        memoText = record.memo
+        currentRecord = record
+    }
 
     val availablePresets = remember(configuration.profile) {
         listOf(
@@ -112,14 +136,16 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
             PrinterStatusProbePolicy.presetFor(configuration.profile),
         ).distinct()
     }
-    val runAllowed = PrinterStatusProbePolicy.canRun(preset, experimentalConfirmed)
+    val annotationError = PrinterStatusProbeAnnotationPolicy.validationError(currentAnnotation())
+    val runAllowed = PrinterStatusProbePolicy.canRun(preset, experimentalConfirmed) && annotationError == null
     val filteredHistory = history.filter { record ->
         (profileFilter == null || record.profile == profileFilter) &&
             when (outcomeFilter) {
                 PrinterStatusProbeOutcomeFilter.ALL -> true
                 PrinterStatusProbeOutcomeFilter.SUCCESS -> record.success
                 PrinterStatusProbeOutcomeFilter.FAILURE -> !record.success
-            }
+            } &&
+            PrinterStatusProbeAnnotationPolicy.matches(record, conditionFilter, searchText)
     }
     val selectedRecords = selectedIds.mapNotNull { id -> history.firstOrNull { it.id == id } }
         .sortedBy { it.startedAt }
@@ -150,7 +176,7 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                 }
             }
             operationMessage = result.fold(
-                onSuccess = { "RAWプローブ結果をCSV保存しました" },
+                onSuccess = { "条件付きRAWプローブ結果をCSV保存しました" },
                 onFailure = { "CSV保存に失敗しました：${it.message ?: it.javaClass.simpleName}" },
             )
             operationColor = if (result.isSuccess) PlGreen else PlRed
@@ -161,13 +187,21 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
     fun reloadHistory() {
         history = historyStore.listRecent(200)
         selectedIds = selectedIds.intersect(history.map { it.id }.toSet())
+        currentRecord = currentRecord?.id?.let(historyStore::load)
     }
 
     fun startProbe() {
-        if (running || !runAllowed) return
+        if (running || !runAllowed) {
+            if (annotationError != null) {
+                operationMessage = annotationError
+                operationColor = PlRed
+            }
+            return
+        }
         running = true
         currentRecord = null
-        operationMessage = "${preset.displayName}を実行中です"
+        val annotation = currentAnnotation()
+        operationMessage = "${annotation.condition.displayName} / ${preset.displayName}を実行中です"
         operationColor = PlBlue
         val target = configuration
         val selectedPreset = preset
@@ -178,21 +212,49 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
             }
             val stored = withContext(Dispatchers.IO) {
                 probeResult.fold(
-                    onSuccess = { historyStore.recordSuccess(target, it, actor) },
-                    onFailure = { historyStore.recordFailure(target, selectedPreset, it, actor, startedAt) },
+                    onSuccess = { historyStore.recordSuccess(target, it, actor, annotation) },
+                    onFailure = {
+                        historyStore.recordFailure(
+                            configuration = target,
+                            preset = selectedPreset,
+                            error = it,
+                            actor = actor,
+                            startedAt = startedAt,
+                            annotation = annotation,
+                        )
+                    },
                 )
             }
             currentRecord = stored
             reloadHistory()
             if (probeResult.isSuccess) {
-                operationMessage = "完了：受信${stored.responseSize}バイト / 履歴ID ${stored.id}"
+                operationMessage = "${stored.condition.displayName} 完了：受信${stored.responseSize}バイト / 履歴ID ${stored.id}"
                 operationColor = PlGreen
             } else {
-                operationMessage = "プローブ失敗を履歴へ保存しました：${stored.errorMessage.orEmpty()}"
+                operationMessage = "${stored.condition.displayName}の失敗を履歴へ保存しました：${stored.errorMessage.orEmpty()}"
                 operationColor = PlRed
             }
             running = false
         }
+    }
+
+    fun saveAnnotation(record: PrinterStatusProbeHistoryRecord) {
+        val error = annotationError
+        if (error != null) {
+            operationMessage = error
+            operationColor = PlRed
+            return
+        }
+        val updated = historyStore.updateAnnotation(record.id, currentAnnotation(), actor)
+        if (updated == null) {
+            operationMessage = "履歴ID ${record.id}の条件・メモを保存できませんでした"
+            operationColor = PlRed
+            return
+        }
+        currentRecord = updated
+        reloadHistory()
+        operationMessage = "履歴ID ${record.id}の条件・型番・モード・メモを保存しました"
+        operationColor = PlGreen
     }
 
     fun requestExport(records: List<PrinterStatusProbeHistoryRecord>) {
@@ -212,101 +274,152 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                 Spacer(Modifier.width(24.dp))
                 Text("プリンター状態ラボ", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.weight(1f))
-                Text("RAW採取・履歴・最大4件比較", color = Color.White, fontSize = 14.sp)
+                Text("条件別RAW採取・履歴・最大4件比較", color = Color.White, fontSize = 14.sp)
             }
 
             Row(
                 Modifier.weight(1f).fillMaxWidth().padding(14.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                LabPanel(Modifier.width(400.dp).fillMaxHeight()) {
-                    Text("1. プローブ実行", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = PlNavy)
-                    Spacer(Modifier.height(8.dp))
-                    LabValue("プリンター", configuration.name)
-                    LabValue("機種", configuration.profile.displayName)
-                    LabValue("接続先", if (configuration.host.isBlank()) "未設定" else "${configuration.host}:${configuration.port}")
-                    LabValue(
-                        "検証区分",
-                        PrinterStatusCapabilityRegistry.forProfile(configuration.profile).verification.displayName,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    availablePresets.forEach { candidate ->
+                LabPanel(Modifier.width(430.dp).fillMaxHeight()) {
+                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                        Text("1. 条件を付けてプローブ", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = PlNavy)
+                        Spacer(Modifier.height(6.dp))
+                        LabValue("プリンター", configuration.name)
+                        LabValue("機種プロファイル", configuration.profile.displayName)
+                        LabValue("接続先", if (configuration.host.isBlank()) "未設定" else "${configuration.host}:${configuration.port}")
+                        LabValue(
+                            "検証区分",
+                            PrinterStatusCapabilityRegistry.forProfile(configuration.profile).verification.displayName,
+                        )
+                        Spacer(Modifier.height(5.dp))
+                        Text("試験条件（必須）", fontWeight = FontWeight.Bold, color = PlNavy)
+                        PrinterStatusTestCondition.entries
+                            .filter { it != PrinterStatusTestCondition.UNSPECIFIED }
+                            .chunked(3)
+                            .forEach { rowConditions ->
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    rowConditions.forEach { condition ->
+                                        LabFilterButton(
+                                            label = condition.shortLabel,
+                                            selected = testCondition == condition,
+                                            modifier = Modifier.weight(1f),
+                                        ) {
+                                            testCondition = condition
+                                        }
+                                    }
+                                    repeat(3 - rowConditions.size) { Spacer(Modifier.weight(1f)) }
+                                }
+                            }
+                        OutlinedTextField(
+                            value = printerModelText,
+                            onValueChange = { printerModelText = it.take(PrinterStatusProbeAnnotationPolicy.MAX_MODEL_LENGTH) },
+                            label = { Text("実機型番（例：TM-m30II、mC-Print3）") },
+                            singleLine = true,
+                            enabled = !running,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = emulationModeText,
+                            onValueChange = { emulationModeText = it.take(PrinterStatusProbeAnnotationPolicy.MAX_EMULATION_LENGTH) },
+                            label = { Text("エミュレーション／設定モード") },
+                            singleLine = true,
+                            enabled = !running,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = memoText,
+                            onValueChange = { memoText = it.take(PrinterStatusProbeAnnotationPolicy.MAX_MEMO_LENGTH) },
+                            label = { Text("試験メモ") },
+                            minLines = 2,
+                            maxLines = 3,
+                            enabled = !running,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(5.dp))
+                        Text("プローブ種別", fontWeight = FontWeight.Bold, color = PlNavy)
+                        availablePresets.forEach { candidate ->
+                            OutlinedButton(
+                                onClick = {
+                                    preset = candidate
+                                    experimentalConfirmed = false
+                                    currentRecord = null
+                                },
+                                enabled = !running,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                border = BorderStroke(
+                                    if (preset == candidate) 3.dp else 1.dp,
+                                    if (preset == candidate) PlRed else PlBorder,
+                                ),
+                            ) {
+                                Text(candidate.displayName, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (preset.experimental) PlOrange.copy(alpha = 0.09f) else PlGreen.copy(alpha = 0.07f),
+                            ),
+                            border = BorderStroke(1.dp, if (preset.experimental) PlOrange else PlGreen),
+                            shape = RoundedCornerShape(8.dp),
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(9.dp)) {
+                                Text(
+                                    if (preset.experimental) "互換試行・未検証" else "印刷・カット・ドロア送信なし",
+                                    color = if (preset.experimental) PlOrange else PlGreen,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Text(preset.description, color = Color.DarkGray, fontSize = 12.sp, lineHeight = 17.sp)
+                            }
+                        }
+                        if (preset.experimental) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = experimentalConfirmed,
+                                    onCheckedChange = { experimentalConfirmed = it },
+                                    enabled = !running,
+                                )
+                                Text("未検証コマンドの送信を確認", fontSize = 13.sp)
+                            }
+                        }
+                        if (annotationError != null) {
+                            Text(annotationError, color = PlRed, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = operationColor.copy(alpha = 0.07f)),
+                            border = BorderStroke(1.dp, operationColor),
+                            shape = RoundedCornerShape(8.dp),
+                        ) {
+                            Text(
+                                operationMessage,
+                                modifier = Modifier.fillMaxWidth().padding(9.dp),
+                                color = operationColor,
+                                fontWeight = FontWeight.Bold,
+                                lineHeight = 18.sp,
+                                fontSize = 13.sp,
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
                         OutlinedButton(
                             onClick = {
-                                preset = candidate
+                                configuration = settingsStore.loadPrinterConfiguration()
+                                preset = PrinterStatusProbePolicy.presetFor(configuration.profile)
                                 experimentalConfirmed = false
                                 currentRecord = null
+                                operationMessage = "保存済みプリンター設定を再読込しました"
+                                operationColor = PlNavy
                             },
                             enabled = !running,
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                            border = BorderStroke(
-                                if (preset == candidate) 3.dp else 1.dp,
-                                if (preset == candidate) PlRed else PlBorder,
-                            ),
-                        ) {
-                            Text(candidate.displayName, fontWeight = FontWeight.Bold)
-                        }
+                            modifier = Modifier.fillMaxWidth().height(44.dp),
+                        ) { Text("設定を再読込") }
+                        Spacer(Modifier.height(6.dp))
+                        Button(
+                            onClick = ::startProbe,
+                            enabled = !running && configuration.host.isNotBlank() && runAllowed,
+                            modifier = Modifier.fillMaxWidth().height(54.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = PlBlue),
+                        ) { Text(if (running) "実行中…" else "条件付きプローブを実行", fontWeight = FontWeight.Bold) }
                     }
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (preset.experimental) PlOrange.copy(alpha = 0.09f) else PlGreen.copy(alpha = 0.07f),
-                        ),
-                        border = BorderStroke(1.dp, if (preset.experimental) PlOrange else PlGreen),
-                        shape = RoundedCornerShape(8.dp),
-                    ) {
-                        Column(Modifier.fillMaxWidth().padding(10.dp)) {
-                            Text(
-                                if (preset.experimental) "互換試行・未検証" else "印刷・カット・ドロア送信なし",
-                                color = if (preset.experimental) PlOrange else PlGreen,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Text(preset.description, color = Color.DarkGray, fontSize = 13.sp, lineHeight = 18.sp)
-                        }
-                    }
-                    if (preset.experimental) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = experimentalConfirmed,
-                                onCheckedChange = { experimentalConfirmed = it },
-                                enabled = !running,
-                            )
-                            Text("未検証コマンドの送信を確認", fontSize = 13.sp)
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = operationColor.copy(alpha = 0.07f)),
-                        border = BorderStroke(1.dp, operationColor),
-                        shape = RoundedCornerShape(8.dp),
-                    ) {
-                        Text(
-                            operationMessage,
-                            modifier = Modifier.fillMaxWidth().padding(10.dp),
-                            color = operationColor,
-                            fontWeight = FontWeight.Bold,
-                            lineHeight = 19.sp,
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
-                    OutlinedButton(
-                        onClick = {
-                            configuration = settingsStore.loadPrinterConfiguration()
-                            preset = PrinterStatusProbePolicy.presetFor(configuration.profile)
-                            experimentalConfirmed = false
-                            currentRecord = null
-                            operationMessage = "保存済みプリンター設定を再読込しました"
-                            operationColor = PlNavy
-                        },
-                        enabled = !running,
-                        modifier = Modifier.fillMaxWidth().height(46.dp),
-                    ) { Text("設定を再読込") }
-                    Spacer(Modifier.height(7.dp))
-                    Button(
-                        onClick = ::startProbe,
-                        enabled = !running && configuration.host.isNotBlank() && runAllowed,
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = PlBlue),
-                    ) { Text(if (running) "実行中…" else "プローブを実行", fontWeight = FontWeight.Bold) }
                 }
 
                 LabPanel(Modifier.weight(1f).fillMaxHeight()) {
@@ -328,8 +441,8 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                             ) {
                                 Column(Modifier.fillMaxWidth().padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text(
-                                        if (displayRecord.success) "受信 ${displayRecord.responseSize}バイト" else "プローブ失敗",
-                                        fontSize = 25.sp,
+                                        "${displayRecord.condition.displayName} / ${if (displayRecord.success) "受信 ${displayRecord.responseSize}バイト" else "プローブ失敗"}",
+                                        fontSize = 23.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = if (displayRecord.success) PlGreen else PlRed,
                                     )
@@ -337,7 +450,11 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                                 }
                             }
                             Spacer(Modifier.height(8.dp))
-                            LabValue("機種", displayRecord.profile.displayName)
+                            LabValue("試験条件", displayRecord.condition.displayName)
+                            LabValue("実機型番", displayRecord.printerModel.ifBlank { "未入力" })
+                            LabValue("エミュレーション", displayRecord.emulationMode.ifBlank { "未入力" })
+                            if (displayRecord.memo.isNotBlank()) LabCode("試験メモ", displayRecord.memo)
+                            LabValue("機種プロファイル", displayRecord.profile.displayName)
                             LabValue("プリセット", displayRecord.preset.displayName)
                             LabValue("接続先", "${displayRecord.host}:${displayRecord.port}")
                             LabValue("応答時間", "${displayRecord.elapsedMillis}ms")
@@ -358,12 +475,13 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                             if (selectedRecords.size >= 2) {
                                 Spacer(Modifier.height(14.dp))
                                 Text(
-                                    "比較（基準 ID ${selectedRecords.first().id}）",
+                                    "比較（基準 ID ${selectedRecords.first().id} / ${selectedRecords.first().condition.displayName}）",
                                     fontSize = 18.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = PlPurple,
                                 )
                                 comparisons.forEach { comparison ->
+                                    val comparedRecord = selectedRecords.firstOrNull { it.id == comparison.comparedId }
                                     Card(
                                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                                         colors = CardDefaults.cardColors(
@@ -373,7 +491,7 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                                     ) {
                                         Column(Modifier.fillMaxWidth().padding(9.dp)) {
                                             Text(
-                                                "ID ${comparison.comparedId}：${if (comparison.sameResponse) "同一応答" else "差分${comparison.differentByteCount}バイト"}",
+                                                "ID ${comparison.comparedId} ${comparedRecord?.condition?.displayName.orEmpty()}：${if (comparison.sameResponse) "同一応答" else "差分${comparison.differentByteCount}バイト"}",
                                                 fontWeight = FontWeight.Bold,
                                             )
                                             Text(
@@ -387,32 +505,45 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                             }
                         }
                         Spacer(Modifier.height(8.dp))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedButton(
+                                onClick = { loadAnnotation(displayRecord) },
+                                modifier = Modifier.weight(1f).height(46.dp),
+                            ) { Text("条件を編集欄へ", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                            Button(
+                                onClick = { saveAnnotation(displayRecord) },
+                                enabled = !running && annotationError == null,
+                                modifier = Modifier.weight(1f).height(46.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = PlGreen),
+                            ) { Text("条件・メモ保存", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Button(
                                 onClick = { requestExport(listOf(displayRecord)) },
                                 modifier = Modifier.weight(1f).height(46.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = PlBlue),
-                            ) { Text("この結果をCSV", fontWeight = FontWeight.Bold) }
+                            ) { Text("この結果をCSV", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
                             Button(
                                 onClick = { requestExport(selectedRecords) },
                                 enabled = selectedRecords.size in 2..4,
                                 modifier = Modifier.weight(1f).height(46.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = PlPurple),
-                            ) { Text("選択比較をCSV", fontWeight = FontWeight.Bold) }
+                            ) { Text("選択比較をCSV", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
                         }
                     }
                 }
 
-                LabPanel(Modifier.width(500.dp).fillMaxHeight()) {
+                LabPanel(Modifier.width(520.dp).fillMaxHeight()) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column {
-                            Text("3. 履歴", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = PlNavy)
+                            Text("3. 条件別履歴", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = PlNavy)
                             Text("表示${filteredHistory.size}件 / 選択${selectedIds.size}件（最大4）", color = Color.Gray, fontSize = 12.sp)
                         }
                         Spacer(Modifier.weight(1f))
                         OutlinedButton(onClick = { reloadHistory() }) { Text("更新") }
                     }
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(5.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         LabFilterButton("全機種", profileFilter == null) { profileFilter = null }
                         PrinterProfile.entries.forEach { profile ->
@@ -431,7 +562,36 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                             LabFilterButton(filter.displayName, outcomeFilter == filter) { outcomeFilter = filter }
                         }
                     }
-                    Spacer(Modifier.height(5.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        LabFilterButton("全条件", conditionFilter == null) { conditionFilter = null }
+                        listOf(
+                            PrinterStatusTestCondition.NORMAL,
+                            PrinterStatusTestCondition.COVER_OPEN,
+                            PrinterStatusTestCondition.PAPER_NEAR_END,
+                            PrinterStatusTestCondition.PAPER_OUT,
+                        ).forEach { condition ->
+                            LabFilterButton(condition.shortLabel, conditionFilter == condition) { conditionFilter = condition }
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        listOf(
+                            PrinterStatusTestCondition.CUTTER_ERROR,
+                            PrinterStatusTestCondition.POWER_OFF,
+                            PrinterStatusTestCondition.LAN_DISCONNECTED,
+                            PrinterStatusTestCondition.OTHER,
+                            PrinterStatusTestCondition.UNSPECIFIED,
+                        ).forEach { condition ->
+                            LabFilterButton(condition.shortLabel, conditionFilter == condition) { conditionFilter = condition }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = searchText,
+                        onValueChange = { searchText = it.take(100) },
+                        label = { Text("型番・モード・メモ・IP・HEX検索") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(4.dp))
                     Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
                         if (filteredHistory.isEmpty()) {
                             Text("該当する履歴はありません", color = Color.Gray)
@@ -464,12 +624,13 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                                             } else {
                                                 selectedIds
                                             }
+                                            if (!selected) loadAnnotation(record)
                                             deleteConfirm = false
                                         },
                                     )
                                     Column(Modifier.weight(1f)) {
                                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                            Text("ID ${record.id}", fontWeight = FontWeight.Bold, color = PlNavy)
+                                            Text("ID ${record.id} [${record.condition.shortLabel}]", fontWeight = FontWeight.Bold, color = PlNavy)
                                             Spacer(Modifier.weight(1f))
                                             Text(
                                                 if (record.success) "成功" else "失敗",
@@ -477,7 +638,18 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                                                 fontWeight = FontWeight.Bold,
                                             )
                                         }
-                                        Text("${record.profile.displayName} / ${formatLabTime(record.startedAt)}", fontSize = 12.sp)
+                                        Text(
+                                            "${record.profile.displayName} / ${record.printerModel.ifBlank { "型番未入力" }} / ${formatLabTime(record.startedAt)}",
+                                            fontSize = 12.sp,
+                                        )
+                                        if (record.emulationMode.isNotBlank() || record.memo.isNotBlank()) {
+                                            Text(
+                                                listOf(record.emulationMode, record.memo).filter(String::isNotBlank).joinToString(" / "),
+                                                color = Color.DarkGray,
+                                                fontSize = 11.sp,
+                                                maxLines = 1,
+                                            )
+                                        }
                                         Text(
                                             if (record.success) {
                                                 "受信${record.responseSize}B ${record.responseHex.ifBlank { "応答なし" }}"
@@ -494,7 +666,7 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                             }
                         }
                     }
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(5.dp))
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         OutlinedTextField(
                             value = retentionText,
@@ -504,9 +676,9 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                             label = { Text("保持日数") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true,
-                            modifier = Modifier.width(130.dp),
+                            modifier = Modifier.width(125.dp),
                         )
-                        Spacer(Modifier.width(6.dp))
+                        Spacer(Modifier.width(5.dp))
                         OutlinedButton(
                             onClick = {
                                 val days = retentionText.toIntOrNull() ?: PrinterStatusProbeRetentionPolicy.DEFAULT_DAYS
@@ -517,8 +689,8 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                                 operationColor = PlGreen
                             },
                             modifier = Modifier.weight(1f).height(54.dp),
-                        ) { Text("保持設定を保存") }
-                        Spacer(Modifier.width(6.dp))
+                        ) { Text("保持設定") }
+                        Spacer(Modifier.width(5.dp))
                         Button(
                             onClick = {
                                 if (!deleteConfirm) {
@@ -535,7 +707,7 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                                 }
                             },
                             enabled = selectedIds.isNotEmpty(),
-                            modifier = Modifier.width(120.dp).height(54.dp),
+                            modifier = Modifier.width(112.dp).height(54.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = PlRed),
                         ) { Text(if (deleteConfirm) "削除確定" else "選択削除", fontWeight = FontWeight.Bold) }
                     }
@@ -551,7 +723,7 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                 }
                 Spacer(Modifier.weight(1f))
                 Text(
-                    "STAR／汎用のRAW応答採取は互換性確認完了を意味しません",
+                    "条件ラベルは試験時の人による記録です。STAR／汎用の互換性確認完了を意味しません",
                     color = PlRed,
                     fontWeight = FontWeight.Bold,
                 )
@@ -561,14 +733,19 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
 }
 
 @Composable
-private fun LabFilterButton(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun LabFilterButton(
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
     OutlinedButton(
         onClick = onClick,
-        modifier = Modifier.height(36.dp),
+        modifier = modifier.height(36.dp),
         border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) PlRed else PlBorder),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 9.dp, vertical = 2.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
     ) {
-        Text(label, fontSize = 11.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+        Text(label, fontSize = 10.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
     }
 }
 
