@@ -43,6 +43,12 @@
             android:exported="false"
             android:initOrder="140" />
 
+        <provider
+            android:name=".PrinterSoakTestRecoveryBootstrapProvider"
+            android:authorities="${applicationId}.printer-soak-test-recovery-bootstrap"
+            android:exported="false"
+            android:initOrder="150" />
+
         <activity
             android:name=".MenuRevisionEditorActivity"
             android:exported="false"
@@ -85,6 +91,11 @@
 
         <activity
             android:name=".PrinterSoakTestActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".PrinterSoakTestHistoryActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
 
