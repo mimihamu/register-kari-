@@ -24,6 +24,12 @@ data class PrinterStatusProbeHistoryRecord(
     val errorMessage: String?,
     val actor: String,
     val createdAt: Long,
+    val condition: PrinterStatusTestCondition = PrinterStatusTestCondition.UNSPECIFIED,
+    val printerModel: String = "",
+    val emulationMode: String = "",
+    val memo: String = "",
+    val annotatedAt: Long = 0L,
+    val annotatedBy: String = "",
 )
 
 object PrinterStatusProbeRetentionPolicy {
@@ -86,8 +92,10 @@ class PrinterStatusProbeStore(context: Context) : AutoCloseable {
         configuration: PrinterConfiguration,
         result: PrinterStatusProbeResult,
         actor: String,
+        annotation: PrinterStatusProbeAnnotation = PrinterStatusProbeAnnotation(),
     ): PrinterStatusProbeHistoryRecord {
         val parsed = result.parsedEpsonStatus
+        val normalizedAnnotation = PrinterStatusProbeAnnotationPolicy.normalize(annotation)
         val now = System.currentTimeMillis()
         val id = db.insertOrThrow(
             "printer_status_probe_history",
@@ -117,11 +125,12 @@ class PrinterStatusProbeStore(context: Context) : AutoCloseable {
                 putNull("error_message")
                 put("actor", actor.ifBlank { "system" })
                 put("created_at", now)
+                putAnnotation(normalizedAnnotation, actor, now)
             },
         )
         insertAudit(
             eventType = "PRINTER_STATUS_PROBE_SUCCEEDED",
-            detail = "${configuration.profile.displayName} / ${result.preset.displayName} / ${result.host}:${result.port} / 受信${result.responseBytes.size}バイト / ${result.responseHex.take(300)}",
+            detail = "${configuration.profile.displayName} / ${result.preset.displayName} / ${normalizedAnnotation.condition.displayName} / ${result.host}:${result.port} / 受信${result.responseBytes.size}バイト / ${result.responseHex.take(300)}",
             actor = actor,
             createdAt = now,
         )
@@ -135,7 +144,9 @@ class PrinterStatusProbeStore(context: Context) : AutoCloseable {
         error: Throwable,
         actor: String,
         startedAt: Long = System.currentTimeMillis(),
+        annotation: PrinterStatusProbeAnnotation = PrinterStatusProbeAnnotation(),
     ): PrinterStatusProbeHistoryRecord {
+        val normalizedAnnotation = PrinterStatusProbeAnnotationPolicy.normalize(annotation)
         val now = System.currentTimeMillis()
         val message = error.message ?: error.javaClass.simpleName
         val id = db.insertOrThrow(
@@ -160,16 +171,41 @@ class PrinterStatusProbeStore(context: Context) : AutoCloseable {
                 put("error_message", message.take(1_000))
                 put("actor", actor.ifBlank { "system" })
                 put("created_at", now)
+                putAnnotation(normalizedAnnotation, actor, now)
             },
         )
         insertAudit(
             eventType = "PRINTER_STATUS_PROBE_FAILED",
-            detail = "${configuration.profile.displayName} / ${preset.displayName} / ${configuration.host}:${configuration.port} / ${message.take(500)}",
+            detail = "${configuration.profile.displayName} / ${preset.displayName} / ${normalizedAnnotation.condition.displayName} / ${configuration.host}:${configuration.port} / ${message.take(500)}",
             actor = actor,
             createdAt = now,
         )
         prune(now = now, actor = actor)
         return requireNotNull(load(id))
+    }
+
+    fun updateAnnotation(
+        id: Long,
+        annotation: PrinterStatusProbeAnnotation,
+        actor: String,
+    ): PrinterStatusProbeHistoryRecord? {
+        if (id <= 0) return null
+        val normalized = PrinterStatusProbeAnnotationPolicy.normalize(annotation)
+        val now = System.currentTimeMillis()
+        val updated = db.update(
+            "printer_status_probe_history",
+            ContentValues().apply { putAnnotation(normalized, actor, now) },
+            "id = ?",
+            arrayOf(id.toString()),
+        )
+        if (updated <= 0) return null
+        insertAudit(
+            eventType = "PRINTER_STATUS_PROBE_ANNOTATION_UPDATED",
+            detail = "RAWプローブ履歴ID=$id / ${PrinterStatusProbeAnnotationPolicy.summary(normalized)}",
+            actor = actor,
+            createdAt = now,
+        )
+        return load(id)
     }
 
     fun load(id: Long): PrinterStatusProbeHistoryRecord? = db.query(
@@ -290,17 +326,46 @@ class PrinterStatusProbeStore(context: Context) : AutoCloseable {
                 protocol_valid INTEGER,
                 error_message TEXT,
                 actor TEXT NOT NULL,
-                created_at INTEGER NOT NULL
+                created_at INTEGER NOT NULL,
+                condition_key TEXT NOT NULL DEFAULT 'UNSPECIFIED',
+                printer_model TEXT NOT NULL DEFAULT '',
+                emulation_mode TEXT NOT NULL DEFAULT '',
+                memo TEXT NOT NULL DEFAULT '',
+                annotated_at INTEGER NOT NULL DEFAULT 0,
+                annotated_by TEXT NOT NULL DEFAULT ''
             )
             """.trimIndent(),
         )
+        ensureColumn("printer_status_probe_history", "condition_key", "TEXT NOT NULL DEFAULT 'UNSPECIFIED'")
+        ensureColumn("printer_status_probe_history", "printer_model", "TEXT NOT NULL DEFAULT ''")
+        ensureColumn("printer_status_probe_history", "emulation_mode", "TEXT NOT NULL DEFAULT ''")
+        ensureColumn("printer_status_probe_history", "memo", "TEXT NOT NULL DEFAULT ''")
+        ensureColumn("printer_status_probe_history", "annotated_at", "INTEGER NOT NULL DEFAULT 0")
+        ensureColumn("printer_status_probe_history", "annotated_by", "TEXT NOT NULL DEFAULT ''")
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS idx_printer_status_probe_started ON printer_status_probe_history(started_at DESC)",
         )
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS idx_printer_status_probe_profile ON printer_status_probe_history(profile_key, started_at DESC)",
         )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_printer_status_probe_condition ON printer_status_probe_history(condition_key, started_at DESC)",
+        )
     }
+
+    private fun ensureColumn(table: String, column: String, definition: String) {
+        if (columnExists(table, column)) return
+        db.execSQL("ALTER TABLE $table ADD COLUMN $column $definition")
+    }
+
+    private fun columnExists(table: String, column: String): Boolean =
+        db.rawQuery("PRAGMA table_info($table)", null).use { cursor ->
+            val nameIndex = cursor.getColumnIndex("name")
+            while (cursor.moveToNext()) {
+                if (nameIndex >= 0 && cursor.getString(nameIndex) == column) return@use true
+            }
+            false
+        }
 
     private fun android.database.Cursor.toProbeRecord(): PrinterStatusProbeHistoryRecord =
         PrinterStatusProbeHistoryRecord(
@@ -326,7 +391,27 @@ class PrinterStatusProbeStore(context: Context) : AutoCloseable {
             errorMessage = if (isNull(16)) null else getString(16),
             actor = getString(17),
             createdAt = getLong(18),
+            condition = runCatching { PrinterStatusTestCondition.valueOf(getString(19)) }
+                .getOrDefault(PrinterStatusTestCondition.UNSPECIFIED),
+            printerModel = getString(20),
+            emulationMode = getString(21),
+            memo = getString(22),
+            annotatedAt = getLong(23),
+            annotatedBy = getString(24),
         )
+
+    private fun ContentValues.putAnnotation(
+        annotation: PrinterStatusProbeAnnotation,
+        actor: String,
+        annotatedAt: Long,
+    ) {
+        put("condition_key", annotation.condition.name)
+        put("printer_model", annotation.printerModel)
+        put("emulation_mode", annotation.emulationMode)
+        put("memo", annotation.memo)
+        put("annotated_at", annotatedAt)
+        put("annotated_by", actor.ifBlank { "system" })
+    }
 
     private fun insertAudit(eventType: String, detail: String, actor: String, createdAt: Long) {
         if (!SchemaMigration.tableExists(db, "operation_audit")) return
@@ -349,6 +434,7 @@ class PrinterStatusProbeStore(context: Context) : AutoCloseable {
             "host", "port", "elapsed_millis", "request_hex", "response_hex",
             "response_ascii", "response_size", "success", "parsed_level",
             "parsed_summary", "protocol_valid", "error_message", "actor", "created_at",
+            "condition_key", "printer_model", "emulation_mode", "memo", "annotated_at", "annotated_by",
         )
     }
 }
