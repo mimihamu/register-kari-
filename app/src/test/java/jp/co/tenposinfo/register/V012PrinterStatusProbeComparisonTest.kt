@@ -44,22 +44,39 @@ class V012PrinterStatusProbeComparisonTest {
     }
 
     @Test
-    fun multiCsvContainsRawDataAndComparisonSection() {
+    fun multiCsvContainsRawDataConditionModelMemoAndComparisonSection() {
         val csv = PrinterStatusProbeMultiCsv.render(
             listOf(
-                record(id = 10, responseHex = "12 12 12 12"),
-                record(id = 11, responseHex = "12 12 16 12"),
+                record(
+                    id = 10,
+                    responseHex = "12 12 12 12",
+                    condition = PrinterStatusTestCondition.NORMAL,
+                ),
+                record(
+                    id = 11,
+                    responseHex = "12 12 16 12",
+                    condition = PrinterStatusTestCondition.COVER_OPEN,
+                ),
             ),
         )
 
         assertTrue(csv.startsWith("\uFEFF"))
+        assertTrue(csv.contains("試験条件"))
+        assertTrue(csv.contains("プリンター実機型番"))
+        assertTrue(csv.contains("STAR mC-Print3"))
+        assertTrue(csv.contains("Star ESC/POS"))
+        assertTrue(csv.contains("カバーを開けて採取"))
         assertTrue(csv.contains("受信HEX"))
         assertTrue(csv.contains("12 12 16 12"))
         assertTrue(csv.contains("比較基準ID"))
-        assertTrue(csv.contains("10,11,差分あり"))
+        assertTrue(csv.contains("10,正常,11,カバー開,差分あり"))
     }
 
-    private fun record(id: Long, responseHex: String) = PrinterStatusProbeHistoryRecord(
+    private fun record(
+        id: Long,
+        responseHex: String,
+        condition: PrinterStatusTestCondition = PrinterStatusTestCondition.NORMAL,
+    ) = PrinterStatusProbeHistoryRecord(
         id = id,
         startedAt = 1_000L + id,
         profile = PrinterProfile.STAR_ESC_POS,
@@ -79,5 +96,11 @@ class V012PrinterStatusProbeComparisonTest {
         errorMessage = null,
         actor = "test",
         createdAt = 2_000L + id,
+        condition = condition,
+        printerModel = "STAR mC-Print3",
+        emulationMode = "Star ESC/POS",
+        memo = if (condition == PrinterStatusTestCondition.COVER_OPEN) "カバーを開けて採取" else "正常状態",
+        annotatedAt = 3_000L + id,
+        annotatedBy = "tester",
     )
 }
