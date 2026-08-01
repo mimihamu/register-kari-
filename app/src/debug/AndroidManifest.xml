@@ -14,6 +14,17 @@
             </intent-filter>
         </activity>
         <activity
+            android:name=".PrinterStatusProbeActivity"
+            android:exported="true"
+            android:label="つぐレジ 状態RAWプローブ"
+            android:screenOrientation="landscape"
+            tools:replace="android:exported">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
             android:name=".PrinterNotificationSettingsActivity"
             android:exported="true"
             android:label="つぐレジ 通知設定"
