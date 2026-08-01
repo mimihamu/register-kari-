@@ -6,13 +6,18 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
 
 internal object CustomerDisplayClientHandshake {
@@ -25,20 +30,183 @@ internal object CustomerDisplayClientHandshake {
     }
 }
 
+internal object CustomerDisplayConnectionPolicy {
+    const val SCREEN_TRANSITION_GRACE_MS = 4_000L
+    const val CONNECT_TIMEOUT_MS = 5_000
+    const val HEARTBEAT_INTERVAL_MS = 15_000
+    const val MAX_MISSED_HEARTBEATS = 1
+    private val retryDelaysMs = longArrayOf(500L, 1_000L, 2_000L, 5_000L, 10_000L)
+
+    fun retryDelayMillis(failedAttempts: Int, hadEstablishedConnection: Boolean): Long {
+        if (hadEstablishedConnection) return retryDelaysMs.first()
+        return retryDelaysMs[minOf(failedAttempts.coerceAtLeast(0), retryDelaysMs.lastIndex)]
+    }
+
+    fun nextFailedAttemptCount(failedAttempts: Int, hadEstablishedConnection: Boolean): Int =
+        if (hadEstablishedConnection) 0 else (failedAttempts + 1).coerceAtMost(retryDelaysMs.lastIndex)
+}
+
 class CustomerDisplayWebSocketClient(
     private val settings: CustomerDisplayConnectionSettings,
     private val onConnected: () -> Unit,
     private val onSnapshot: (CustomerDisplaySnapshot) -> Unit,
     private val onDisconnected: (String) -> Unit,
 ) {
+    private val started = AtomicBoolean(false)
+    @Volatile
+    private var registration: CustomerDisplayConnectionRegistration? = null
+
+    fun start() {
+        if (!started.compareAndSet(false, true)) return
+        registration = CustomerDisplayConnectionHub.acquire(
+            settings = settings,
+            listener = CustomerDisplayConnectionListener(
+                onConnected = onConnected,
+                onSnapshot = onSnapshot,
+                onDisconnected = onDisconnected,
+            ),
+        )
+    }
+
+    fun stop() {
+        if (!started.getAndSet(false)) return
+        registration?.close()
+        registration = null
+    }
+}
+
+private data class CustomerDisplayConnectionListener(
+    val onConnected: () -> Unit,
+    val onSnapshot: (CustomerDisplaySnapshot) -> Unit,
+    val onDisconnected: (String) -> Unit,
+)
+
+private class CustomerDisplayConnectionRegistration(
+    private val release: () -> Unit,
+) : AutoCloseable {
+    private val closed = AtomicBoolean(false)
+
+    override fun close() {
+        if (closed.compareAndSet(false, true)) release()
+    }
+}
+
+private object CustomerDisplayConnectionHub {
+    private val lock = Any()
+    private val scheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
+        Thread(runnable, "tsuguregi-cd-connection-retention").apply { isDaemon = true }
+    }
+    private var session: SharedCustomerDisplaySession? = null
+
+    fun acquire(
+        settings: CustomerDisplayConnectionSettings,
+        listener: CustomerDisplayConnectionListener,
+    ): CustomerDisplayConnectionRegistration {
+        val selected = synchronized(lock) {
+            val current = session
+            if (current != null && current.settings == settings) {
+                current
+            } else {
+                current?.stopNow()
+                SharedCustomerDisplaySession(
+                    settings = settings,
+                    scheduler = scheduler,
+                    onStopped = ::removeIfCurrent,
+                ).also { session = it }
+            }
+        }
+        val listenerId = selected.addListener(listener)
+        return CustomerDisplayConnectionRegistration {
+            selected.removeListener(listenerId)
+        }
+    }
+
+    private fun removeIfCurrent(stopped: SharedCustomerDisplaySession) {
+        synchronized(lock) {
+            if (session === stopped) session = null
+        }
+    }
+}
+
+private class SharedCustomerDisplaySession(
+    val settings: CustomerDisplayConnectionSettings,
+    private val scheduler: java.util.concurrent.ScheduledExecutorService,
+    private val onStopped: (SharedCustomerDisplaySession) -> Unit,
+) {
+    private val listenerLock = Any()
     private val running = AtomicBoolean(false)
     private val random = SecureRandom()
+    private val listenerSequence = AtomicLong(0L)
+    private val listeners = linkedMapOf<Long, CustomerDisplayConnectionListener>()
+
     @Volatile
     private var socket: Socket? = null
     @Volatile
     private var worker: Thread? = null
+    @Volatile
+    private var connected = false
+    @Volatile
+    private var latestSnapshot: CustomerDisplaySnapshot? = null
+    @Volatile
+    private var latestDisconnectReason: String? = null
+    private var delayedStop: ScheduledFuture<*>? = null
 
-    fun start() {
+    fun addListener(listener: CustomerDisplayConnectionListener): Long {
+        val id = listenerSequence.incrementAndGet()
+        val replayConnected: Boolean
+        val replaySnapshot: CustomerDisplaySnapshot?
+        val replayReason: String?
+        synchronized(listenerLock) {
+            delayedStop?.cancel(false)
+            delayedStop = null
+            listeners[id] = listener
+            replayConnected = connected
+            replaySnapshot = latestSnapshot
+            replayReason = latestDisconnectReason
+        }
+        startWorker()
+        when {
+            replayConnected -> safeCall(listener.onConnected)
+            replayReason != null -> safeCall { listener.onDisconnected(replayReason) }
+        }
+        if (replaySnapshot != null) safeCall { listener.onSnapshot(replaySnapshot) }
+        return id
+    }
+
+    fun removeListener(id: Long) {
+        synchronized(listenerLock) {
+            listeners.remove(id)
+            if (listeners.isNotEmpty() || delayedStop != null) return
+            delayedStop = scheduler.schedule(
+                {
+                    val shouldStop = synchronized(listenerLock) {
+                        delayedStop = null
+                        listeners.isEmpty()
+                    }
+                    if (shouldStop) stopNow()
+                },
+                CustomerDisplayConnectionPolicy.SCREEN_TRANSITION_GRACE_MS,
+                TimeUnit.MILLISECONDS,
+            )
+        }
+    }
+
+    fun stopNow() {
+        synchronized(listenerLock) {
+            delayedStop?.cancel(false)
+            delayedStop = null
+        }
+        if (running.getAndSet(false)) {
+            runCatching { socket?.close() }
+            socket = null
+            worker?.interrupt()
+            worker = null
+        }
+        connected = false
+        onStopped(this)
+    }
+
+    private fun startWorker() {
         if (!running.compareAndSet(false, true)) return
         worker = thread(
             start = true,
@@ -49,25 +217,28 @@ class CustomerDisplayWebSocketClient(
         }
     }
 
-    fun stop() {
-        if (!running.getAndSet(false)) return
-        runCatching { socket?.close() }
-        socket = null
-        worker?.interrupt()
-        worker = null
-    }
-
     private fun reconnectLoop() {
-        var attempt = 0
+        var failedAttempts = 0
         while (running.get()) {
+            var hadEstablishedConnection = false
             val reason = runCatching {
-                connectAndRead()
+                connectAndRead {
+                    hadEstablishedConnection = true
+                    notifyConnected()
+                }
                 "接続が終了しました"
             }.exceptionOrNull()?.message ?: "接続が終了しました"
             if (!running.get()) return
-            onDisconnected(reason)
-            val delayMillis = RETRY_DELAYS_MS[minOf(attempt, RETRY_DELAYS_MS.lastIndex)]
-            attempt++
+
+            notifyDisconnected(reason)
+            val delayMillis = CustomerDisplayConnectionPolicy.retryDelayMillis(
+                failedAttempts = failedAttempts,
+                hadEstablishedConnection = hadEstablishedConnection,
+            )
+            failedAttempts = CustomerDisplayConnectionPolicy.nextFailedAttemptCount(
+                failedAttempts = failedAttempts,
+                hadEstablishedConnection = hadEstablishedConnection,
+            )
             try {
                 Thread.sleep(delayMillis)
             } catch (_: InterruptedException) {
@@ -76,14 +247,18 @@ class CustomerDisplayWebSocketClient(
         }
     }
 
-    private fun connectAndRead() {
+    private fun connectAndRead(onHandshakeComplete: () -> Unit) {
         require(settings.isConfigured) { "接続先IPとトークンを設定してください" }
         val client = Socket()
         socket = client
         try {
             client.tcpNoDelay = true
             client.keepAlive = true
-            client.connect(InetSocketAddress(settings.host, settings.port), CONNECT_TIMEOUT_MS)
+            client.soTimeout = CustomerDisplayConnectionPolicy.CONNECT_TIMEOUT_MS
+            client.connect(
+                InetSocketAddress(settings.host, settings.port),
+                CustomerDisplayConnectionPolicy.CONNECT_TIMEOUT_MS,
+            )
             val input = client.getInputStream()
             val output = client.getOutputStream()
             val keyBytes = ByteArray(16).also(random::nextBytes)
@@ -106,7 +281,9 @@ class CustomerDisplayWebSocketClient(
             val accept = response.headers["sec-websocket-accept"]
             require(statusLine.contains(" 101 ")) { "接続が拒否されました（$statusLine）" }
             require(accept == CustomerDisplayClientHandshake.accept(key)) { "WebSocket応答を検証できません" }
-            onConnected()
+
+            client.soTimeout = CustomerDisplayConnectionPolicy.HEARTBEAT_INTERVAL_MS
+            onHandshakeComplete()
             readFrames(input, output)
         } finally {
             runCatching { client.close() }
@@ -115,11 +292,23 @@ class CustomerDisplayWebSocketClient(
     }
 
     private fun readFrames(input: InputStream, output: OutputStream) {
+        var missedHeartbeats = 0
         while (running.get()) {
-            val first = input.read()
+            val first = try {
+                input.read()
+            } catch (_: SocketTimeoutException) {
+                if (missedHeartbeats >= CustomerDisplayConnectionPolicy.MAX_MISSED_HEARTBEATS) {
+                    throw EOFException("レジから一定時間応答がありません")
+                }
+                writeMaskedFrame(output, 0x9, HEARTBEAT_PAYLOAD)
+                missedHeartbeats++
+                continue
+            }
             if (first < 0) throw EOFException("レジとの接続が切れました")
             val second = input.read()
             if (second < 0) throw EOFException("レジとの接続が切れました")
+            missedHeartbeats = 0
+
             val finalFrame = first and 0x80 != 0
             val opcode = first and 0x0F
             val masked = second and 0x80 != 0
@@ -134,13 +323,15 @@ class CustomerDisplayWebSocketClient(
             val mask = if (masked) ByteArray(4).also { readFully(input, it) } else null
             val payload = ByteArray(length.toInt()).also { readFully(input, it) }
             if (mask != null) {
-                payload.indices.forEach { index -> payload[index] = (payload[index].toInt() xor mask[index % 4].toInt()).toByte() }
+                payload.indices.forEach { index ->
+                    payload[index] = (payload[index].toInt() xor mask[index % 4].toInt()).toByte()
+                }
             }
             when (opcode) {
                 0x1 -> {
                     require(finalFrame) { "分割WebSocketフレームには未対応です" }
                     val json = payload.toString(StandardCharsets.UTF_8)
-                    onSnapshot(CustomerDisplaySnapshot.parse(json))
+                    notifySnapshot(CustomerDisplaySnapshot.parse(json))
                 }
                 0x8 -> {
                     writeMaskedFrame(output, 0x8, payload.copyOf(minOf(payload.size, 125)))
@@ -152,6 +343,28 @@ class CustomerDisplayWebSocketClient(
             }
         }
     }
+
+    private fun notifyConnected() {
+        connected = true
+        latestDisconnectReason = null
+        listenerSnapshot().forEach { listener -> safeCall(listener.onConnected) }
+    }
+
+    private fun notifySnapshot(snapshot: CustomerDisplaySnapshot) {
+        latestSnapshot = snapshot
+        connected = true
+        latestDisconnectReason = null
+        listenerSnapshot().forEach { listener -> safeCall { listener.onSnapshot(snapshot) } }
+    }
+
+    private fun notifyDisconnected(reason: String) {
+        connected = false
+        latestDisconnectReason = reason
+        listenerSnapshot().forEach { listener -> safeCall { listener.onDisconnected(reason) } }
+    }
+
+    private fun listenerSnapshot(): List<CustomerDisplayConnectionListener> =
+        synchronized(listenerLock) { listeners.values.toList() }
 
     private data class HttpResponse(val lines: List<String>, val headers: Map<String, String>)
 
@@ -178,7 +391,11 @@ class CustomerDisplayWebSocketClient(
             .filter { it.isNotEmpty() }
         val headers = lines.drop(1).mapNotNull { line ->
             val index = line.indexOf(':')
-            if (index <= 0) null else line.substring(0, index).trim().lowercase(Locale.ROOT) to line.substring(index + 1).trim()
+            if (index <= 0) {
+                null
+            } else {
+                line.substring(0, index).trim().lowercase(Locale.ROOT) to line.substring(index + 1).trim()
+            }
         }.toMap()
         return HttpResponse(lines, headers)
     }
@@ -200,7 +417,9 @@ class CustomerDisplayWebSocketClient(
             }
         }
         output.write(mask)
-        payload.indices.forEach { index -> output.write(payload[index].toInt() xor mask[index % 4].toInt()) }
+        payload.indices.forEach { index ->
+            output.write(payload[index].toInt() xor mask[index % 4].toInt())
+        }
         output.flush()
     }
 
@@ -217,10 +436,13 @@ class CustomerDisplayWebSocketClient(
         }
     }
 
+    private fun safeCall(block: () -> Unit) {
+        runCatching(block)
+    }
+
     companion object {
-        private const val CONNECT_TIMEOUT_MS = 5_000
         private const val MAX_HTTP_HEADER_BYTES = 16 * 1024
         private const val MAX_FRAME_BYTES = 1_048_576L
-        private val RETRY_DELAYS_MS = longArrayOf(1_000L, 2_000L, 5_000L, 10_000L, 30_000L)
+        private val HEARTBEAT_PAYLOAD = "tsuguregi".toByteArray(StandardCharsets.UTF_8)
     }
 }
