@@ -5,8 +5,8 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * 実機RAW履歴から「候補としてレビューできる状態か」を判定する。
- * 本判定はランタイムの状態解析へ自動反映しない。
+ * 保存済みの実機RAW履歴だけから、責任者レビューへ進める証跡かを判定する。
+ * この結果は候補であり、PrinterStatus解析・販売監視・自動印刷前確認へ自動適用しない。
  */
 enum class PrinterEvidenceConfidence(
     val displayName: String,
@@ -31,9 +31,15 @@ data class PrinterStatusResponseCluster(
     val dominantCount: Int,
     val outlierCount: Int,
     val agreementRate: Double,
+    val responseLengths: List<Int> = emptyList(),
+    val sourceRecordIds: List<Long> = emptyList(),
+    val outlierRecordIds: List<Long> = emptyList(),
 ) {
     val agreementPercent: Int
         get() = (agreementRate * 100.0).toInt().coerceIn(0, 100)
+
+    val responseLengthMismatch: Boolean
+        get() = responseLengths.size > 1
 }
 
 data class PrinterStatusConditionEvidence(
@@ -47,6 +53,7 @@ data class PrinterStatusConditionEvidence(
     val confidence: PrinterEvidenceConfidence,
     val ready: Boolean,
     val reason: String,
+    val sourceRecordIds: List<Long> = emptyList(),
 )
 
 data class PrinterStatusValidationReport(
@@ -68,12 +75,26 @@ data class PrinterStatusValidationReport(
 
     val totalOutlierCount: Int
         get() = evidence.sumOf { it.cluster?.outlierCount ?: 0 }
+
+    val responseLengthMismatchCount: Int
+        get() = evidence.count { it.cluster?.responseLengthMismatch == true || it.candidate?.sizeMismatch == true }
+
+    val manufacturerVerificationNote: String
+        get() = when (key.profile) {
+            PrinterProfile.EPSON_TM_JAPAN ->
+                "EPSON DLE EOTの解析方式はメーカー仕様確認済みです。ただし対象実機での動作確認は別途必要です"
+            PrinterProfile.STAR_ESC_POS ->
+                "STARの状態応答方式はメーカー仕様確認済みとは扱いません。保存済みRAWから算出した候補です"
+            PrinterProfile.GENERIC_ESC_POS ->
+                "汎用ESC/POSの状態応答方式はメーカー仕様確認済みとは扱いません。保存済みRAWから算出した候補です"
+        }
 }
 
 object PrinterStatusValidationPolicy {
     const val MIN_RESPONSE_SAMPLES = 3
     const val HIGH_CONFIDENCE_SAMPLES = 5
     const val MIN_FAILURE_SAMPLES = 2
+    const val HIGH_FAILURE_SAMPLES = 5
     const val MIN_AGREEMENT_RATE = 0.80
 
     val RESPONSE_CONDITIONS = listOf(
@@ -118,18 +139,26 @@ object PrinterStatusValidationPolicy {
         val blockers = buildList {
             if (analysis.key.printerModel.isBlank()) add("実機型番が未入力です")
             if (analysis.key.emulationMode.isBlank()) add("エミュレーション／設定モードが未入力です")
+            if (analysis.records.isEmpty()) add("元RAW履歴がありません")
+            if (analysis.records.any { it.id <= 0L }) add("元RAW履歴IDに未保存レコードが含まれます")
             evidence.filterNot { it.ready }.forEach { item ->
                 add("${item.condition.displayName}：${item.reason}")
             }
         }.distinct()
-        val confidenceTargets = evidence.filter { it.expectation == PrinterEvidenceExpectation.RESPONSE_PATTERN }
-        val overall = confidenceTargets.minByOrNull { it.confidence.rank }?.confidence
-            ?: PrinterEvidenceConfidence.NOT_READY
+
+        val overall = if (blockers.isNotEmpty()) {
+            PrinterEvidenceConfidence.NOT_READY
+        } else {
+            evidence.minByOrNull { it.confidence.rank }?.confidence
+                ?: PrinterEvidenceConfidence.NOT_READY
+        }
+
         return PrinterStatusValidationReport(
             analysis = analysis,
             evidence = evidence,
             overallConfidence = overall,
-            evidenceReadyForReview = blockers.isEmpty(),
+            evidenceReadyForReview = blockers.isEmpty() &&
+                overall.rank >= PrinterEvidenceConfidence.MEDIUM.rank,
             blockers = blockers,
         )
     }
@@ -141,25 +170,41 @@ object PrinterStatusValidationPolicy {
         records: List<PrinterStatusProbeHistoryRecord>,
         condition: PrinterStatusTestCondition,
     ): PrinterStatusResponseCluster {
-        val normalized = records.asSequence()
+        val samples = records.asSequence()
             .filter { it.condition == condition && it.success }
-            .map { normalizeHex(it.responseHex) }
-            .filter(String::isNotBlank)
+            .mapNotNull { record ->
+                val normalized = normalizeHex(record.responseHex)
+                if (normalized.isBlank()) null else record to normalized
+            }
             .toList()
-        val counts = normalized.groupingBy { it }.eachCount()
+        val counts = samples.map { it.second }.groupingBy { it }.eachCount()
         val dominant = counts.entries
             .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
             .firstOrNull()
+        val dominantHex = dominant?.key.orEmpty()
         val dominantCount = dominant?.value ?: 0
-        val sampleCount = normalized.size
+        val sampleCount = samples.size
+        val outlierIds = samples
+            .filter { it.second != dominantHex }
+            .map { it.first.id }
+            .filter { it > 0L }
+            .distinct()
+            .sorted()
+        val lengths = samples
+            .map { PrinterStatusProbeComparisonPolicy.parseHex(it.second).size }
+            .distinct()
+            .sorted()
         return PrinterStatusResponseCluster(
             condition = condition,
             validSampleCount = sampleCount,
             distinctResponseCount = counts.size,
-            dominantResponseHex = dominant?.key.orEmpty(),
+            dominantResponseHex = dominantHex,
             dominantCount = dominantCount,
             outlierCount = (sampleCount - dominantCount).coerceAtLeast(0),
             agreementRate = if (sampleCount == 0) 0.0 else dominantCount.toDouble() / sampleCount.toDouble(),
+            responseLengths = lengths,
+            sourceRecordIds = samples.map { it.first.id }.filter { it > 0L }.distinct().sorted(),
+            outlierRecordIds = outlierIds,
         )
     }
 
@@ -180,30 +225,29 @@ object PrinterStatusValidationPolicy {
 
         val confidence = when {
             cluster.validSampleCount == 0 -> PrinterEvidenceConfidence.NOT_READY
+            cluster.validSampleCount < MIN_RESPONSE_SAMPLES -> PrinterEvidenceConfidence.LOW
+            cluster.responseLengthMismatch -> PrinterEvidenceConfidence.LOW
+            cluster.agreementRate < MIN_AGREEMENT_RATE -> PrinterEvidenceConfidence.LOW
             condition == PrinterStatusTestCondition.NORMAL &&
                 cluster.validSampleCount >= HIGH_CONFIDENCE_SAMPLES &&
                 cluster.agreementRate == 1.0 -> PrinterEvidenceConfidence.HIGH
-            condition == PrinterStatusTestCondition.NORMAL &&
-                cluster.validSampleCount >= MIN_RESPONSE_SAMPLES &&
-                cluster.agreementRate >= MIN_AGREEMENT_RATE -> PrinterEvidenceConfidence.MEDIUM
-            condition == PrinterStatusTestCondition.NORMAL -> PrinterEvidenceConfidence.LOW
-            candidate == null || candidate.sizeMismatch || candidate.stableChanges.isEmpty() -> PrinterEvidenceConfidence.LOW
+            condition == PrinterStatusTestCondition.NORMAL -> PrinterEvidenceConfidence.MEDIUM
+            candidate == null || candidate.sizeMismatch || candidate.stableChanges.isEmpty() ->
+                PrinterEvidenceConfidence.LOW
             normalCluster.validSampleCount >= HIGH_CONFIDENCE_SAMPLES &&
                 cluster.validSampleCount >= HIGH_CONFIDENCE_SAMPLES &&
                 normalCluster.agreementRate == 1.0 &&
                 cluster.agreementRate == 1.0 &&
                 candidate.unstableBitCount == 0 -> PrinterEvidenceConfidence.HIGH
-            normalCluster.validSampleCount >= MIN_RESPONSE_SAMPLES &&
-                cluster.validSampleCount >= MIN_RESPONSE_SAMPLES &&
-                normalCluster.agreementRate >= MIN_AGREEMENT_RATE &&
-                cluster.agreementRate >= MIN_AGREEMENT_RATE -> PrinterEvidenceConfidence.MEDIUM
-            else -> PrinterEvidenceConfidence.LOW
+            else -> PrinterEvidenceConfidence.MEDIUM
         }
 
         val reason = when {
             cluster.validSampleCount == 0 -> "成功RAWがありません"
             cluster.validSampleCount < MIN_RESPONSE_SAMPLES ->
                 "成功RAWが${cluster.validSampleCount}件です。最低${MIN_RESPONSE_SAMPLES}件必要です"
+            cluster.responseLengthMismatch ->
+                "応答長が一致しません（${cluster.responseLengths.joinToString("/")}バイト）"
             cluster.agreementRate < MIN_AGREEMENT_RATE ->
                 "同一応答一致率が${cluster.agreementPercent}%です。採取条件または外れ値を確認してください"
             condition == PrinterStatusTestCondition.NORMAL -> "正常応答が再現しています"
@@ -212,17 +256,26 @@ object PrinterStatusValidationPolicy {
             candidate.stableChanges.isEmpty() -> "正常との差分ビットが安定していません"
             normalCluster.validSampleCount < MIN_RESPONSE_SAMPLES ->
                 "正常成功RAWが${normalCluster.validSampleCount}件です"
+            normalCluster.responseLengthMismatch ->
+                "正常応答長が一致しません（${normalCluster.responseLengths.joinToString("/")}バイト）"
             normalCluster.agreementRate < MIN_AGREEMENT_RATE ->
                 "正常応答の一致率が${normalCluster.agreementPercent}%です"
             else -> "${candidate.stableChanges.size}ビットの安定差分を検出"
         }
+
         val ready = when (condition) {
             PrinterStatusTestCondition.NORMAL ->
-                cluster.validSampleCount >= MIN_RESPONSE_SAMPLES && cluster.agreementRate >= MIN_AGREEMENT_RATE
+                cluster.validSampleCount >= MIN_RESPONSE_SAMPLES &&
+                    !cluster.responseLengthMismatch &&
+                    cluster.agreementRate >= MIN_AGREEMENT_RATE
             else ->
                 confidence.rank >= PrinterEvidenceConfidence.MEDIUM.rank &&
-                    candidate != null && !candidate.sizeMismatch && candidate.stableChanges.isNotEmpty()
+                    candidate != null &&
+                    !candidate.sizeMismatch &&
+                    candidate.stableChanges.isNotEmpty() &&
+                    !cluster.responseLengthMismatch
         }
+
         return PrinterStatusConditionEvidence(
             condition = condition,
             expectation = PrinterEvidenceExpectation.RESPONSE_PATTERN,
@@ -234,6 +287,7 @@ object PrinterStatusValidationPolicy {
             confidence = confidence,
             ready = ready,
             reason = reason,
+            sourceRecordIds = cluster.sourceRecordIds,
         )
     }
 
@@ -244,10 +298,12 @@ object PrinterStatusValidationPolicy {
         val conditionRecords = records.filter { it.condition == condition }
         val success = conditionRecords.count { it.success }
         val failure = conditionRecords.count { !it.success }
+        val sourceIds = conditionRecords.map { it.id }.filter { it > 0L }.distinct().sorted()
         val ready = failure >= MIN_FAILURE_SAMPLES && success == 0
         val confidence = when {
-            !ready -> if (failure == 0) PrinterEvidenceConfidence.NOT_READY else PrinterEvidenceConfidence.LOW
-            failure >= HIGH_CONFIDENCE_SAMPLES -> PrinterEvidenceConfidence.HIGH
+            failure == 0 -> PrinterEvidenceConfidence.NOT_READY
+            !ready -> PrinterEvidenceConfidence.LOW
+            failure >= HIGH_FAILURE_SAMPLES -> PrinterEvidenceConfidence.HIGH
             else -> PrinterEvidenceConfidence.MEDIUM
         }
         val reason = when {
@@ -266,6 +322,7 @@ object PrinterStatusValidationPolicy {
             confidence = confidence,
             ready = ready,
             reason = reason,
+            sourceRecordIds = sourceIds,
         )
     }
 }
@@ -286,12 +343,22 @@ object PrinterStatusValidationCsv {
         appendRow("総合信頼度", report.overallConfidence.displayName)
         appendRow("安定差分ビット数", report.stableChangeCount.toString())
         appendRow("外れ値候補数", report.totalOutlierCount.toString())
+        appendRow("応答長不一致条件数", report.responseLengthMismatchCount.toString())
         appendRow("元履歴ID", report.sourceRecordIds.joinToString("/"))
-        appendRow("重要", "本レポートは採取証跡から作成した候補です。メーカー仕様確認、実機互換性確認、正式解析への反映を自動的に行いません")
+        appendRow("メーカー仕様区分", report.manufacturerVerificationNote)
+        appendRow(
+            "重要",
+            "本レポートは保存済み実機証跡から作成した解析候補です。承認してもPrinterStatus解析、販売監視、自動印刷前確認へ自動適用しません",
+        )
+        appendRow(
+            "安全注意",
+            "CI成功は実機確認済みを意味しません。STAR／汎用DLE EOT互換をメーカー仕様確認済みとは表現しません",
+        )
         append('\n')
         appendRow(
-            "条件", "期待結果", "総数", "成功", "失敗", "有効応答", "異なる応答数",
-            "代表応答数", "外れ値候補", "一致率", "信頼度", "レビュー成立", "判定理由",
+            "条件", "期待結果", "総数", "成功", "失敗", "有効応答", "応答長",
+            "異なる応答数", "代表応答", "代表応答数", "外れ値候補", "外れ値履歴ID",
+            "一致率", "信頼度", "レビュー成立", "判定理由", "元履歴ID",
         )
         report.evidence.forEach { item ->
             appendRow(
@@ -301,13 +368,17 @@ object PrinterStatusValidationCsv {
                 item.successCount.toString(),
                 item.failureCount.toString(),
                 item.cluster?.validSampleCount?.toString().orEmpty(),
+                item.cluster?.responseLengths?.joinToString("/").orEmpty(),
                 item.cluster?.distinctResponseCount?.toString().orEmpty(),
+                item.cluster?.dominantResponseHex.orEmpty(),
                 item.cluster?.dominantCount?.toString().orEmpty(),
                 item.cluster?.outlierCount?.toString().orEmpty(),
+                item.cluster?.outlierRecordIds?.joinToString("/").orEmpty(),
                 item.cluster?.agreementPercent?.let { "$it%" }.orEmpty(),
                 item.confidence.displayName,
                 if (item.ready) "成立" else "未成立",
                 item.reason,
+                item.sourceRecordIds.joinToString("/"),
             )
         }
         append('\n')
@@ -328,7 +399,7 @@ object PrinterStatusValidationCsv {
         }
         if (report.blockers.isNotEmpty()) {
             append('\n')
-            appendRow("未完了理由")
+            appendRow("未成立理由")
             report.blockers.forEach { appendRow(it) }
         }
         append('\n')
@@ -360,10 +431,10 @@ object PrinterSoftwareCompletionPolicy {
         PrinterSoftwareCompletionItem("全帳票の統合印刷キュー", true, "売上・返品取消・点検・精算を統合"),
         PrinterSoftwareCompletionItem("状態取得方式の信頼区分", true, "EPSON仕様確認済みとSTAR／汎用未検証を分離"),
         PrinterSoftwareCompletionItem("販売中の状態監視と管理者通知", true, "継続異常を画面・Android通知へ表示"),
-        PrinterSoftwareCompletionItem("安全停止付き連続印刷試験", true, "各送信前確認・バックグラウンド停止・結果保存"),
+        PrinterSoftwareCompletionItem("安全停止付き連続印刷試験", true, "能力判定・各送信前確認・バックグラウンド停止・結果保存"),
         PrinterSoftwareCompletionItem("RAW採取・条件注記・履歴比較", true, "型番・モード・条件・HEX・CSVを保存"),
         PrinterSoftwareCompletionItem("再現性・外れ値・変化ビット候補", true, "保存済みRAWだけで機械集計"),
-        PrinterSoftwareCompletionItem("承認候補と監査証跡", true, "候補承認はランタイムへ自動適用しない"),
+        PrinterSoftwareCompletionItem("最終検証・承認候補と監査証跡", true, "候補承認はランタイムへ自動適用しない"),
         PrinterSoftwareCompletionItem("実機確認", false, "プリンター実機で別途実施が必要"),
         PrinterSoftwareCompletionItem("本番署名", false, "現在のAPKは開発版署名"),
     )
