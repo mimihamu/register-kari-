@@ -42,6 +42,7 @@ object PrinterHealthMonitor {
         val configuration = AdminSettingsStore(appContext).use { it.loadPrinterConfiguration() }
         val runtime = PrinterMonitoringStore(appContext).use { it.loadSettings() }
         val now = System.currentTimeMillis()
+        val capability = PrinterStatusCapabilityRegistry.forProfile(configuration.profile)
 
         val snapshot = when {
             !configuration.enabled -> PrinterHealthSnapshot(
@@ -60,7 +61,17 @@ object PrinterHealthMonitor {
                 printerName = configuration.name,
             )
 
-            else -> TcpPrinterStatusClient(configuration).query().fold(
+            !capability.automaticQueryAllowed -> PrinterHealthSnapshot(
+                level = PrinterHealthLevel.WARNING,
+                title = "状態自動監視は未検証です",
+                detail = "${configuration.profile.displayName} / 印刷送信は利用可能 / 診断画面の手動互換試行で確認",
+                checkedAt = now,
+                printerName = configuration.name,
+            )
+
+            else -> TcpPrinterStatusClient(configuration).query(
+                purpose = PrinterStatusCheckPurpose.SALES_MONITORING,
+            ).fold(
                 onSuccess = { status ->
                     val suffix = if (runtime.preflightEnabled) "印刷前診断：有効" else "印刷前診断：無効"
                     PrinterHealthSnapshot(
