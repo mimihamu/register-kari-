@@ -41,12 +41,12 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify v0.13 dev.4 pairing and UI safeguards
+      - name: Verify v0.13 dev.5 connection and UI safeguards
         run: |
-          grep -q 'versionCode = 41' app/build.gradle.kts
-          grep -q 'versionName = "0.13.0-dev.4"' app/build.gradle.kts
-          grep -q 'versionCode = 4' customer-display/build.gradle.kts
-          grep -q 'versionName = "0.13.0-dev.4"' customer-display/build.gradle.kts
+          grep -q 'versionCode = 42' app/build.gradle.kts
+          grep -q 'versionName = "0.13.0-dev.5"' app/build.gradle.kts
+          grep -q 'versionCode = 5' customer-display/build.gradle.kts
+          grep -q 'versionName = "0.13.0-dev.5"' customer-display/build.gradle.kts
           grep -q 'applicationId = "jp.co.tenposinfo.register.cd"' customer-display/build.gradle.kts
           ! grep -q 'android:screenOrientation="landscape"' customer-display/src/main/AndroidManifest.xml
           grep -q 'android:resizeableActivity="true"' customer-display/src/main/AndroidManifest.xml
@@ -54,12 +54,17 @@ jobs:
           grep -q 'CHANGE_WIFI_MULTICAST_STATE' customer-display/src/main/AndroidManifest.xml
           grep -q 'CUSTOMER_DISPLAY_PAIRING_WINDOW_MS = 120_000L' app/src/main/java/jp/co/tenposinfo/register/CustomerDisplayPairingNsd.kt
           grep -q 'CUSTOMER_DISPLAY_DISCOVERY_TIMEOUT_MS = 12_000L' customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayNsdDiscovery.kt
+          grep -q 'SCREEN_TRANSITION_GRACE_MS = 4_000L' customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayWebSocketClient.kt
+          grep -q 'HEARTBEAT_INTERVAL_MS = 15_000' customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayWebSocketClient.kt
+          grep -q 'SharedCustomerDisplaySession' customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayWebSocketClient.kt
+          grep -q 'CustomerDisplayConnectionHub.acquire' customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayWebSocketClient.kt
           grep -q '2分間ペアリング受付を開始' app/src/main/java/jp/co/tenposinfo/register/CustomerDisplaySettingsActivity.kt
           grep -q '同じWi-Fiのレジを探す' customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt
           grep -q 'このレジに接続' customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt
           grep -q 'CustomerDisplayPairingParser.parse' customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayNsdDiscovery.kt
           test -f app/src/test/java/jp/co/tenposinfo/register/V013CustomerDisplayPairingTest.kt
           test -f customer-display/src/test/java/jp/co/tenposinfo/register/cd/CustomerDisplayPairingParserTest.kt
+          test -f customer-display/src/test/java/jp/co/tenposinfo/register/cd/CustomerDisplayConnectionPolicyTest.kt
           test "$(grep -R -l 'AdminOverlayProvider' app/src/main/AndroidManifest.xml app/src/main/java 2>/dev/null | wc -l)" -eq 0
           grep -q 'CustomerDisplaySnapshotFactory.accounting' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
           grep -q 'RegisterLayoutPolicy' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
@@ -86,16 +91,21 @@ jobs:
       - name: Prepare named APKs and SHA-256
         run: |
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.13.0_dev4_pairing_debug.apk
-          cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.13.0_dev4_pairing_debug.apk
-          sha256sum artifacts/TSUGUREGI_v0.13.0_dev4_pairing_debug.apk | tee artifacts/TSUGUREGI_v0.13.0_dev4_pairing_debug.apk.sha256
-          sha256sum artifacts/TSUGUREGI_CD_v0.13.0_dev4_pairing_debug.apk | tee artifacts/TSUGUREGI_CD_v0.13.0_dev4_pairing_debug.apk.sha256
-          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.13.0_dev4_pairing_debug.apk | tee artifacts/build-summary.txt
-          stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.13.0_dev4_pairing_debug.apk | tee -a artifacts/build-summary.txt
-          echo "REGISTER_VERSION_NAME=0.13.0-dev.4" >> artifacts/build-summary.txt
-          echo "REGISTER_VERSION_CODE=41" >> artifacts/build-summary.txt
-          echo "CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.4" >> artifacts/build-summary.txt
-          echo "CUSTOMER_DISPLAY_VERSION_CODE=4" >> artifacts/build-summary.txt
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.13.0_dev5_connection_stability_debug.apk
+          cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.13.0_dev5_connection_stability_debug.apk
+          sha256sum artifacts/TSUGUREGI_v0.13.0_dev5_connection_stability_debug.apk | tee artifacts/TSUGUREGI_v0.13.0_dev5_connection_stability_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_CD_v0.13.0_dev5_connection_stability_debug.apk | tee artifacts/TSUGUREGI_CD_v0.13.0_dev5_connection_stability_debug.apk.sha256
+          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.13.0_dev5_connection_stability_debug.apk | tee artifacts/build-summary.txt
+          stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.13.0_dev5_connection_stability_debug.apk | tee -a artifacts/build-summary.txt
+          echo "REGISTER_VERSION_NAME=0.13.0-dev.5" >> artifacts/build-summary.txt
+          echo "REGISTER_VERSION_CODE=42" >> artifacts/build-summary.txt
+          echo "CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.5" >> artifacts/build-summary.txt
+          echo "CUSTOMER_DISPLAY_VERSION_CODE=5" >> artifacts/build-summary.txt
+          echo "CUSTOMER_DISPLAY_CONNECTION_SCOPE=shared-process-session" >> artifacts/build-summary.txt
+          echo "SCREEN_TRANSITION_GRACE_MILLISECONDS=4000" >> artifacts/build-summary.txt
+          echo "HEARTBEAT_INTERVAL_MILLISECONDS=15000" >> artifacts/build-summary.txt
+          echo "HALF_OPEN_DETECTION_MAX_MILLISECONDS=30000" >> artifacts/build-summary.txt
+          echo "FAST_RECONNECT_MILLISECONDS=500" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_PAIRING=nsd-temporary-window" >> artifacts/build-summary.txt
           echo "PAIRING_WINDOW_SECONDS=120" >> artifacts/build-summary.txt
           echo "DISCOVERY_TIMEOUT_SECONDS=12" >> artifacts/build-summary.txt
@@ -108,19 +118,19 @@ jobs:
           echo "REGISTER_LAUNCHER_COUNT=1" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_LAUNCHER_COUNT=1" >> artifacts/build-summary.txt
           echo "SIGNING=development-not-production" >> artifacts/build-summary.txt
-          echo "REAL_NSD_PAIRING_VERIFICATION=required" >> artifacts/build-summary.txt
+          echo "REAL_WIFI_TRANSITION_VERIFICATION=required" >> artifacts/build-summary.txt
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
       - name: Upload APKs
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.13.0-dev4-pairing-debug-apks
+          name: TSUGUREGI-v0.13.0-dev5-connection-stability-debug-apks
           path: |
-            artifacts/TSUGUREGI_v0.13.0_dev4_pairing_debug.apk
-            artifacts/TSUGUREGI_v0.13.0_dev4_pairing_debug.apk.sha256
-            artifacts/TSUGUREGI_CD_v0.13.0_dev4_pairing_debug.apk
-            artifacts/TSUGUREGI_CD_v0.13.0_dev4_pairing_debug.apk.sha256
+            artifacts/TSUGUREGI_v0.13.0_dev5_connection_stability_debug.apk
+            artifacts/TSUGUREGI_v0.13.0_dev5_connection_stability_debug.apk.sha256
+            artifacts/TSUGUREGI_CD_v0.13.0_dev5_connection_stability_debug.apk
+            artifacts/TSUGUREGI_CD_v0.13.0_dev5_connection_stability_debug.apk.sha256
             artifacts/build-summary.txt
           if-no-files-found: error
           retention-days: 30
