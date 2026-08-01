@@ -392,8 +392,8 @@ object PrinterStatusValidationCsv {
                     "0x${"%02X".format(change.mask)}",
                     change.normalValue.toString(),
                     change.conditionValue.toString(),
-                    item.candidate.normalSampleCount.toString(),
-                    item.candidate.conditionSampleCount.toString(),
+                    item.candidate?.normalSampleCount?.toString().orEmpty(),
+                    item.candidate?.conditionSampleCount?.toString().orEmpty(),
                 )
             }
         }
