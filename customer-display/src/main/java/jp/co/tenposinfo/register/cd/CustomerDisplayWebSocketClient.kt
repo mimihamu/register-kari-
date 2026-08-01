@@ -102,22 +102,29 @@ private object CustomerDisplayConnectionHub {
         settings: CustomerDisplayConnectionSettings,
         listener: CustomerDisplayConnectionListener,
     ): CustomerDisplayConnectionRegistration {
-        val selected = synchronized(lock) {
-            val current = session
-            if (current != null && current.settings == settings) {
-                current
-            } else {
-                current?.stopNow()
-                SharedCustomerDisplaySession(
-                    settings = settings,
-                    scheduler = scheduler,
-                    onStopped = ::removeIfCurrent,
-                ).also { session = it }
+        while (true) {
+            val selected = synchronized(lock) {
+                val current = session
+                if (current != null && current.settings == settings) {
+                    current
+                } else {
+                    current?.stopNow()
+                    SharedCustomerDisplaySession(
+                        settings = settings,
+                        scheduler = scheduler,
+                        onStopped = ::removeIfCurrent,
+                    ).also { session = it }
+                }
             }
-        }
-        val listenerId = selected.addListener(listener)
-        return CustomerDisplayConnectionRegistration {
-            selected.removeListener(listenerId)
+            val listenerId = selected.tryAddListener(listener)
+            if (listenerId != null) {
+                return CustomerDisplayConnectionRegistration {
+                    selected.removeListener(listenerId)
+                }
+            }
+            synchronized(lock) {
+                if (session === selected) session = null
+            }
         }
     }
 
@@ -150,13 +157,15 @@ private class SharedCustomerDisplaySession(
     @Volatile
     private var latestDisconnectReason: String? = null
     private var delayedStop: ScheduledFuture<*>? = null
+    private var terminal = false
 
-    fun addListener(listener: CustomerDisplayConnectionListener): Long {
+    fun tryAddListener(listener: CustomerDisplayConnectionListener): Long? {
         val id = listenerSequence.incrementAndGet()
         val replayConnected: Boolean
         val replaySnapshot: CustomerDisplaySnapshot?
         val replayReason: String?
         synchronized(listenerLock) {
+            if (terminal) return null
             delayedStop?.cancel(false)
             delayedStop = null
             listeners[id] = listener
@@ -165,26 +174,21 @@ private class SharedCustomerDisplaySession(
             replayReason = latestDisconnectReason
         }
         startWorker()
-        when {
-            replayConnected -> safeCall(listener.onConnected)
-            replayReason != null -> safeCall { listener.onDisconnected(replayReason) }
+        if (replayConnected) {
+            safeCall(listener.onConnected)
+            if (replaySnapshot != null) safeCall { listener.onSnapshot(replaySnapshot) }
+        } else if (replayReason != null) {
+            safeCall { listener.onDisconnected(replayReason) }
         }
-        if (replaySnapshot != null) safeCall { listener.onSnapshot(replaySnapshot) }
         return id
     }
 
     fun removeListener(id: Long) {
         synchronized(listenerLock) {
             listeners.remove(id)
-            if (listeners.isNotEmpty() || delayedStop != null) return
+            if (terminal || listeners.isNotEmpty() || delayedStop != null) return
             delayedStop = scheduler.schedule(
-                {
-                    val shouldStop = synchronized(listenerLock) {
-                        delayedStop = null
-                        listeners.isEmpty()
-                    }
-                    if (shouldStop) stopNow()
-                },
+                ::stopIfUnused,
                 CustomerDisplayConnectionPolicy.SCREEN_TRANSITION_GRACE_MS,
                 TimeUnit.MILLISECONDS,
             )
@@ -192,10 +196,33 @@ private class SharedCustomerDisplaySession(
     }
 
     fun stopNow() {
-        synchronized(listenerLock) {
-            delayedStop?.cancel(false)
-            delayedStop = null
+        val shouldStop = synchronized(listenerLock) {
+            if (terminal) {
+                false
+            } else {
+                terminal = true
+                delayedStop?.cancel(false)
+                delayedStop = null
+                true
+            }
         }
+        if (shouldStop) finishStop()
+    }
+
+    private fun stopIfUnused() {
+        val shouldStop = synchronized(listenerLock) {
+            delayedStop = null
+            if (terminal || listeners.isNotEmpty()) {
+                false
+            } else {
+                terminal = true
+                true
+            }
+        }
+        if (shouldStop) finishStop()
+    }
+
+    private fun finishStop() {
         if (running.getAndSet(false)) {
             runCatching { socket?.close() }
             socket = null
