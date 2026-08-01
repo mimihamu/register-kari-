@@ -122,8 +122,13 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
     fun queryPrinterStatus(
         configuration: PrinterConfiguration = loadConfiguration(),
         checkedBy: String = "印刷キュー",
+        purpose: PrinterStatusCheckPurpose = PrinterStatusCheckPurpose.MANUAL_DIAGNOSTIC,
+        experimentalConfirmed: Boolean = false,
     ): Result<PrinterRealtimeStatus> {
-        val result = TcpPrinterStatusClient(configuration).query()
+        val result = TcpPrinterStatusClient(configuration).query(
+            purpose = purpose,
+            experimentalConfirmed = experimentalConfirmed,
+        )
         result.onSuccess { monitoringStore.recordStatus(configuration, it, checkedBy) }
             .onFailure { monitoringStore.recordFailure(configuration, it, checkedBy) }
         return result
@@ -144,7 +149,11 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
             return Result.failure(IllegalStateException("有効なプリンター接続設定がありません"))
         }
         if (requireHealthyPrinter) {
-            val status = queryPrinterStatus(configuration, checkedBy = "安全印刷").getOrElse { error ->
+            val status = queryPrinterStatus(
+                configuration = configuration,
+                checkedBy = "安全印刷",
+                purpose = PrinterStatusCheckPurpose.SAFE_PRINT,
+            ).getOrElse { error ->
                 return Result.failure(
                     IllegalStateException(
                         "安全印刷前の状態確認に失敗しました：${error.message ?: error.javaClass.simpleName}",
