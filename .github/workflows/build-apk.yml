@@ -48,15 +48,15 @@ jobs:
       - name: Prepare named APK and SHA-256
         run: |
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.12.0_dev14_debug.apk
-          sha256sum artifacts/TSUGUREGI_v0.12.0_dev14_debug.apk | tee artifacts/TSUGUREGI_v0.12.0_dev14_debug.apk.sha256
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.12.0_dev15_debug.apk
+          sha256sum artifacts/TSUGUREGI_v0.12.0_dev15_debug.apk | tee artifacts/TSUGUREGI_v0.12.0_dev15_debug.apk.sha256
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.12.0-dev14-debug-apk
+          name: TSUGUREGI-v0.12.0-dev15-debug-apk
           path: |
-            artifacts/TSUGUREGI_v0.12.0_dev14_debug.apk
-            artifacts/TSUGUREGI_v0.12.0_dev14_debug.apk.sha256
+            artifacts/TSUGUREGI_v0.12.0_dev15_debug.apk
+            artifacts/TSUGUREGI_v0.12.0_dev15_debug.apk.sha256
           if-no-files-found: error
           retention-days: 30
