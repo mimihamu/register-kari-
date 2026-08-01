@@ -68,7 +68,7 @@ class PrinterToolsHubActivity : ComponentActivity() {
             MaterialTheme {
                 PrinterToolsHubScreen(
                     onOpenDiagnostics = { startActivity(Intent(this, PrinterStatusActivity::class.java)) },
-                    onOpenProbe = { startActivity(Intent(this, PrinterStatusProbeActivity::class.java)) },
+                    onOpenProbe = { startActivity(Intent(this, PrinterStatusLabActivity::class.java)) },
                     onOpenNotification = { startActivity(Intent(this, PrinterNotificationSettingsActivity::class.java)) },
                     onOpenSoakTest = { startActivity(Intent(this, PrinterSoakTestActivity::class.java)) },
                     onOpenHistory = { startActivity(Intent(this, PrinterSoakTestHistoryActivity::class.java)) },
@@ -116,7 +116,7 @@ private fun PrinterToolsHubScreen(
                     PrinterHubPanel(Modifier.width(540.dp).height(430.dp)) {
                         Text("プリンター運用を開く", fontSize = 29.sp, fontWeight = FontWeight.Bold, color = PhNavy)
                         Spacer(Modifier.height(8.dp))
-                        Text("状態診断、RAWプローブ、通知、連続試験、履歴、印刷キューを管理します。", color = Color.DarkGray)
+                        Text("状態診断、状態ラボ、通知、連続試験、履歴、印刷キューを管理します。", color = Color.DarkGray)
                         Spacer(Modifier.height(20.dp))
                         OutlinedTextField(
                             value = pin,
@@ -187,7 +187,7 @@ private fun PrinterToolsHubScreen(
                             if (capability.automaticQueryAllowed) {
                                 "状態自動監視と印刷前診断を使用できます。送信開始後の失敗は自動再送しません。"
                             } else {
-                                "STAR／汎用の状態取得は未検証です。自動監視には使わず、RAWプローブと手動診断で実機応答を採取します。"
+                                "STAR／汎用の状態取得は未検証です。自動監視には使わず、状態ラボで実機応答を蓄積・比較します。"
                             },
                             color = Color.DarkGray,
                             lineHeight = 22.sp,
@@ -200,7 +200,7 @@ private fun PrinterToolsHubScreen(
 
                     Column(Modifier.width(420.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         PrinterHubAction("状態診断", "解釈済みのオンライン、カバー、用紙、エラー", PhGreen, onOpenDiagnostics, Modifier.weight(1f))
-                        PrinterHubAction("状態RAWプローブ", "無加工の送受信HEX・ASCIIを採取してCSV保存", PhTeal, onOpenProbe, Modifier.weight(1f))
+                        PrinterHubAction("状態ラボ", "RAW採取、SQLite履歴、最大4件比較、CSV出力", PhTeal, onOpenProbe, Modifier.weight(1f))
                         PrinterHubAction("管理者通知", "Android通知の許可・端末通知設定", PhBlue, onOpenNotification, Modifier.weight(1f))
                         PrinterHubAction("連続印刷試験", "状態確認付きで1～500回。自動再送なし", PhOrange, onOpenSoakTest, Modifier.weight(1f))
                         PrinterHubAction("試験履歴・CSV", "詳細、保持期間、削除、過去CSV再出力", PhPurple, onOpenHistory, Modifier.weight(1f))
