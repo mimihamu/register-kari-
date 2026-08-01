@@ -1,6 +1,7 @@
 package jp.co.tenposinfo.register.cd
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -71,6 +72,13 @@ class CustomerDisplayPairingParserTest {
                 attributes = attributes(token = "short"),
             ),
         )
+    }
+
+    @Test
+    fun serviceTypeAcceptsPlatformTrailingDotDifference() {
+        assertTrue(CustomerDisplayNsdServiceType.matches("_tsuguregi-cd._tcp."))
+        assertTrue(CustomerDisplayNsdServiceType.matches("_tsuguregi-cd._tcp"))
+        assertFalse(CustomerDisplayNsdServiceType.matches("_http._tcp."))
     }
 
     @Test
