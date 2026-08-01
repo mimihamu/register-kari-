@@ -128,7 +128,7 @@ class CustomerDisplayWebSocketClient(
                 length = ((readRequired(input) shl 8) or readRequired(input)).toLong()
             } else if (length == 127L) {
                 length = 0L
-                repeat(8) { length = (length shl 8) or readRequired(input).toLong() }
+                kotlin.repeat(8) { length = (length shl 8) or readRequired(input).toLong() }
             }
             require(length <= MAX_FRAME_BYTES) { "受信データが大きすぎます" }
             val mask = if (masked) ByteArray(4).also { readFully(input, it) } else null

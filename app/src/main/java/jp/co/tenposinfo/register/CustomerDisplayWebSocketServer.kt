@@ -138,7 +138,7 @@ internal class CustomerDisplayWebSocketServer(
                 length = ((readRequired(input) shl 8) or readRequired(input)).toLong()
             } else if (length == 127L) {
                 length = 0L
-                repeat(8) { length = (length shl 8) or readRequired(input).toLong() }
+                kotlin.repeat(8) { length = (length shl 8) or readRequired(input).toLong() }
             }
             if (length > MAX_CLIENT_FRAME_BYTES) throw IllegalArgumentException("client frame too large")
             val mask = if (masked) ByteArray(4).also { readFully(input, it) } else null
