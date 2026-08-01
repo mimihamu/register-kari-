@@ -2,7 +2,9 @@ package jp.co.tenposinfo.register
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -84,6 +86,8 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
+    val resultStore = remember { PrinterSoakTestResultStore(context.applicationContext) }
+    val actor = remember { OperatorSessionRegistry.lastKnownName() ?: "プリンター連続試験" }
     var printCountText by remember { mutableStateOf("20") }
     var intervalSecondsText by remember { mutableStateOf("5") }
     var cutEachPrint by remember { mutableStateOf(false) }
@@ -94,6 +98,10 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
     var statusMessage by remember { mutableStateOf("試験条件を確認してください") }
     var statusColor by remember { mutableStateOf(StNavy) }
     var testJob by remember { mutableStateOf<Job?>(null) }
+    var activeRunId by remember { mutableStateOf<Long?>(null) }
+    var finalizedRunId by remember { mutableStateOf<Long?>(null) }
+    var lastResult by remember { mutableStateOf<PrinterSoakTestStoredResult?>(null) }
+    var recentRuns by remember { mutableStateOf(resultStore.listRecent(5)) }
     val logs = remember { mutableStateListOf<String>() }
 
     fun addLog(message: String) {
@@ -102,25 +110,105 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
         while (logs.size > 100) logs.removeAt(logs.lastIndex)
     }
 
-    fun stopTest(message: String, color: Color = StOrange) {
-        testJob?.cancel()
-        testJob = null
+    suspend fun finalizeRun(
+        runStatus: PrinterSoakTestRunStatus,
+        message: String,
+        color: Color,
+    ) {
+        val runId = activeRunId
         running = false
+        testJob = null
         statusMessage = message
         statusColor = color
         addLog(message)
+        if (runId == null || finalizedRunId == runId) return
+        finalizedRunId = runId
+        val stored = withContext(Dispatchers.IO) {
+            resultStore.finish(
+                runId = runId,
+                status = runStatus,
+                completedCount = completed,
+                summary = message,
+                actor = actor,
+            )
+        }
+        lastResult = stored
+        activeRunId = null
+        recentRuns = withContext(Dispatchers.IO) { resultStore.listRecent(5) }
+        addLog("試験結果を保存しました ID=${stored.runId}")
+        if (stored.csvPath != null) addLog("端末内CSV ${stored.csvPath}")
+    }
+
+    fun requestStop(message: String) {
+        val job = testJob
+        testJob = null
+        job?.cancel()
+        if (!running) return
+        running = false
+        statusMessage = message
+        statusColor = StOrange
+        addLog(message)
+        scope.launch {
+            finalizeRun(PrinterSoakTestRunStatus.STOPPED, message, StOrange)
+        }
+    }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv"),
+    ) { uri ->
+        val result = lastResult
+        if (uri == null || result == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val export = withContext(Dispatchers.IO) {
+                runCatching {
+                    val output = requireNotNull(context.contentResolver.openOutputStream(uri, "w")) {
+                        "保存先を開けません"
+                    }
+                    output.bufferedWriter(Charsets.UTF_8).use { writer ->
+                        writer.write("\uFEFF")
+                        writer.write(result.csvText)
+                    }
+                    resultStore.recordCsvExport(result.runId, actor, uri.toString())
+                }
+            }
+            export.fold(
+                onSuccess = {
+                    statusMessage = "CSVを保存しました：試験ID ${result.runId}"
+                    statusColor = StGreen
+                    addLog(statusMessage)
+                },
+                onFailure = {
+                    statusMessage = "CSV保存に失敗しました：${it.message ?: it.javaClass.simpleName}"
+                    statusColor = StRed
+                    addLog(statusMessage)
+                },
+            )
+        }
     }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP && running) {
-                stopTest("画面がバックグラウンドになったため安全停止しました")
+                requestStop("画面がバックグラウンドになったため安全停止しました")
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             testJob?.cancel()
+            val runId = activeRunId
+            if (runId != null && finalizedRunId != runId) {
+                runCatching {
+                    resultStore.finish(
+                        runId = runId,
+                        status = PrinterSoakTestRunStatus.STOPPED,
+                        completedCount = completed,
+                        summary = "画面破棄により安全停止",
+                        actor = actor,
+                    )
+                }
+            }
+            resultStore.close()
         }
     }
 
@@ -148,6 +236,8 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
         completed = 0
         total = count
         logs.clear()
+        lastResult = null
+        finalizedRunId = null
         statusMessage = "プリンター設定を確認中"
         statusColor = StBlue
         val startedAt = System.currentTimeMillis()
@@ -157,34 +247,79 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
                 AdminSettingsStore(context.applicationContext).use { it.loadPrinterConfiguration() }
             }
             if (!configuration.usable) {
-                stopTest("プリンターが未設定または無効です", StRed)
+                running = false
+                testJob = null
+                statusMessage = "プリンターが未設定または無効です"
+                statusColor = StRed
+                addLog(statusMessage)
                 return@launch
             }
             if (configuration.profile.statusProtocol == PrinterStatusProtocol.NONE) {
-                stopTest("状態取得非対応のプリンターでは連続印刷試験を開始できません", StRed)
+                running = false
+                testJob = null
+                statusMessage = "状態取得非対応のプリンターでは連続印刷試験を開始できません"
+                statusColor = StRed
+                addLog(statusMessage)
                 return@launch
             }
 
-            addLog("開始 ${configuration.name} ${configuration.host}:${configuration.port}")
+            activeRunId = withContext(Dispatchers.IO) {
+                resultStore.start(plan, configuration, actor, startedAt)
+            }
+            recentRuns = withContext(Dispatchers.IO) { resultStore.listRecent(5) }
+            addLog("開始 ID=$activeRunId ${configuration.name} ${configuration.host}:${configuration.port}")
+
             for (sequence in 1..plan.totalPrints) {
                 if (!isActive) return@launch
                 statusMessage = "$sequence / ${plan.totalPrints} 状態確認中"
                 statusColor = StBlue
 
+                val checkedAt = System.currentTimeMillis()
                 val statusResult = withContext(Dispatchers.IO) {
                     TcpPrinterStatusClient(configuration).query()
                 }
                 if (statusResult.isFailure) {
                     val error = statusResult.exceptionOrNull()
-                    stopTest(
-                        "状態確認に失敗したため送信前に停止しました：${error?.message ?: "不明なエラー"}",
-                        StRed,
-                    )
+                    val detail = "状態確認に失敗したため送信前に停止：${error?.message ?: "不明なエラー"}"
+                    activeRunId?.let { runId ->
+                        withContext(Dispatchers.IO) {
+                            resultStore.recordStep(
+                                runId,
+                                PrinterSoakTestStepRecord(
+                                    sequence = sequence,
+                                    checkedAt = checkedAt,
+                                    statusLevel = "QUERY_FAILED",
+                                    statusSummary = "状態取得失敗",
+                                    rawHex = "",
+                                    statusElapsedMillis = 0L,
+                                    sentAt = null,
+                                    outcome = PrinterSoakTestStepOutcome.STATUS_QUERY_FAILED,
+                                    detail = detail,
+                                ),
+                            )
+                        }
+                    }
+                    finalizeRun(PrinterSoakTestRunStatus.FAILED, detail, StRed)
                     return@launch
                 }
+
                 val printerStatus = statusResult.getOrThrow()
                 if (!PrinterSoakTestPolicy.canSend(printerStatus)) {
-                    stopTest(PrinterSoakTestPolicy.stoppedByStatusMessage(printerStatus), StRed)
+                    val detail = PrinterSoakTestPolicy.stoppedByStatusMessage(printerStatus)
+                    activeRunId?.let { runId ->
+                        withContext(Dispatchers.IO) {
+                            resultStore.recordStep(
+                                runId,
+                                printerStatus.toSoakStep(
+                                    sequence = sequence,
+                                    outcome = PrinterSoakTestStepOutcome.STOPPED_BY_STATUS,
+                                    sentAt = null,
+                                    detail = detail,
+                                ),
+                            )
+                        }
+                    }
+                    finalizeRun(PrinterSoakTestRunStatus.STOPPED, detail, StRed)
                     return@launch
                 }
 
@@ -195,6 +330,7 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
                     openDrawer = false,
                     appendCut = plan.cutEachPrint,
                 )
+                val sentAt = System.currentTimeMillis()
                 val sendResult = withContext(Dispatchers.IO) {
                     TcpEscPosPrinterGateway(
                         host = configuration.host,
@@ -204,10 +340,43 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
                 }
                 if (sendResult.isFailure) {
                     val error = sendResult.exceptionOrNull() ?: IllegalStateException("印刷送信失敗")
-                    stopTest(PrinterSoakTestPolicy.stoppedByFailureMessage(error), StRed)
+                    val disposition = PrinterRetrySafety.classify(error)
+                    val outcome = if (disposition == PrinterFailureDisposition.MANUAL_CONFIRMATION_REQUIRED) {
+                        PrinterSoakTestStepOutcome.SEND_RESULT_UNKNOWN
+                    } else {
+                        PrinterSoakTestStepOutcome.SEND_FAILED_BEFORE_WRITE
+                    }
+                    val detail = PrinterSoakTestPolicy.stoppedByFailureMessage(error)
+                    activeRunId?.let { runId ->
+                        withContext(Dispatchers.IO) {
+                            resultStore.recordStep(
+                                runId,
+                                printerStatus.toSoakStep(
+                                    sequence = sequence,
+                                    outcome = outcome,
+                                    sentAt = sentAt,
+                                    detail = detail,
+                                ),
+                            )
+                        }
+                    }
+                    finalizeRun(PrinterSoakTestRunStatus.FAILED, detail, StRed)
                     return@launch
                 }
 
+                activeRunId?.let { runId ->
+                    withContext(Dispatchers.IO) {
+                        resultStore.recordStep(
+                            runId,
+                            printerStatus.toSoakStep(
+                                sequence = sequence,
+                                outcome = PrinterSoakTestStepOutcome.SENT,
+                                sentAt = sentAt,
+                                detail = "送信完了（自動再送なし・ドロア作動なし）",
+                            ),
+                        )
+                    }
+                }
                 completed = sequence
                 statusMessage = "$sequence / ${plan.totalPrints} 完了"
                 statusColor = StGreen
@@ -215,11 +384,11 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
                 if (sequence < plan.totalPrints) delay(plan.intervalMillis)
             }
 
-            running = false
-            testJob = null
-            statusMessage = "連続印刷試験が完了しました：$completed / $total"
-            statusColor = StGreen
-            addLog("試験完了 $completed / $total")
+            finalizeRun(
+                PrinterSoakTestRunStatus.COMPLETED,
+                "連続印刷試験が完了しました：$completed / $total",
+                StGreen,
+            )
         }
     }
 
@@ -233,7 +402,7 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
                 Spacer(Modifier.width(24.dp))
                 Text("プリンター連続印刷試験", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.weight(1f))
-                Text("実機検証専用", color = Color.White, fontSize = 14.sp)
+                Text("結果保存・CSV対応", color = Color.White, fontSize = 14.sp)
             }
 
             Row(
@@ -297,7 +466,7 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
                     }
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "各印刷前に状態確認を行い、正常時だけ1枚送信します。注意・異常・応答なし・送信失敗では即時停止し、自動再送しません。ドロアは開きません。",
+                        "各印刷前に状態確認を行い、正常時だけ1枚送信します。注意・異常・応答なし・送信失敗では即時停止し、自動再送しません。ドロアは開きません。結果と各回のRAW状態はSQLiteとCSVへ保存します。",
                         color = Color.DarkGray,
                         lineHeight = 22.sp,
                     )
@@ -310,7 +479,9 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
                         ) { Text("連続印刷試験を開始", fontWeight = FontWeight.Bold) }
                     } else {
                         Button(
-                            onClick = { stopTest("操作により停止しました。最後の用紙が出ていないか確認してください") },
+                            onClick = {
+                                requestStop("操作により停止しました。最後の用紙が出ていないか確認してください")
+                            },
                             modifier = Modifier.fillMaxWidth().height(58.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = StRed),
                         ) { Text("安全停止", fontWeight = FontWeight.Bold) }
@@ -326,13 +497,24 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
                         border = BorderStroke(2.dp, statusColor),
                         shape = RoundedCornerShape(10.dp),
                     ) {
-                        Column(Modifier.fillMaxWidth().padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("$completed / $total", fontSize = 42.sp, fontWeight = FontWeight.Bold, color = statusColor)
+                        Column(Modifier.fillMaxWidth().padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("$completed / $total", fontSize = 40.sp, fontWeight = FontWeight.Bold, color = statusColor)
                             Spacer(Modifier.height(6.dp))
-                            Text(statusMessage, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                            Text(statusMessage, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
-                    Spacer(Modifier.height(14.dp))
+                    if (recentRuns.isNotEmpty()) {
+                        Spacer(Modifier.height(10.dp))
+                        Text("直近の保存結果", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        recentRuns.take(3).forEach { run ->
+                            Text(
+                                "ID ${run.id}  ${run.status.displayName}  ${run.completedCount}/${run.totalPlanned}  ${formatSoakTime(run.startedAt)}",
+                                color = if (run.status == PrinterSoakTestRunStatus.COMPLETED) StGreen else StOrange,
+                                fontSize = 13.sp,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
                     Text("試験ログ", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(6.dp))
                     Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
@@ -355,18 +537,48 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
             Row(
                 Modifier.fillMaxWidth().height(72.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 OutlinedButton(
                     onClick = onClose,
                     enabled = !running,
-                    modifier = Modifier.width(240.dp).fillMaxHeight(),
+                    modifier = Modifier.width(220.dp).fillMaxHeight(),
                 ) { Text("閉じる", fontWeight = FontWeight.Bold) }
+                Button(
+                    onClick = {
+                        val result = lastResult ?: return@Button
+                        exportLauncher.launch("TSUGUREGI_printer_soak_test_${result.runId}.csv")
+                    },
+                    enabled = !running && lastResult != null,
+                    modifier = Modifier.width(240.dp).fillMaxHeight(),
+                    colors = ButtonDefaults.buttonColors(containerColor = StBlue),
+                ) { Text("最新結果をCSV保存", fontWeight = FontWeight.Bold) }
                 Spacer(Modifier.weight(1f))
-                Text("印字結果、カット、紙詰まり、重複の有無は必ず目視確認してください", color = StRed, fontWeight = FontWeight.Bold)
+                Text("印字・カット・紙詰まり・重複の有無は必ず目視確認", color = StRed, fontWeight = FontWeight.Bold)
             }
         }
     }
 }
+
+private fun PrinterRealtimeStatus.toSoakStep(
+    sequence: Int,
+    outcome: PrinterSoakTestStepOutcome,
+    sentAt: Long?,
+    detail: String,
+): PrinterSoakTestStepRecord = PrinterSoakTestStepRecord(
+    sequence = sequence,
+    checkedAt = checkedAt,
+    statusLevel = level.name,
+    statusSummary = summary,
+    rawHex = rawHex,
+    statusElapsedMillis = elapsedMillis,
+    sentAt = sentAt,
+    outcome = outcome,
+    detail = detail,
+)
+
+private fun formatSoakTime(epochMillis: Long): String =
+    SimpleDateFormat("MM/dd HH:mm:ss", Locale.JAPAN).format(Date(epochMillis))
 
 @Composable
 private fun SoakPanel(modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
