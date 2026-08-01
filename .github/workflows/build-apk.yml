@@ -20,11 +20,11 @@ jobs:
           fetch-depth: 0
 
       - name: Verify blobs and apply integration
-        run: python .github/scripts/apply_dev22.py
+        run: python .github/scripts/apply_dev22_no_workflow.py
 
       - name: Commit integrated dev.22 implementation
         run: |
-          rm .github/scripts/apply_dev22.py
+          rm .github/scripts/apply_dev22.py .github/scripts/apply_dev22_no_workflow.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
