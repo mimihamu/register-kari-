@@ -5,7 +5,6 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.os.Handler
 import android.os.Looper
-import java.nio.charset.StandardCharsets
 
 internal const val CUSTOMER_DISPLAY_PAIRING_SERVICE_TYPE = "_tsuguregi-cd._tcp."
 internal const val CUSTOMER_DISPLAY_PAIRING_WINDOW_MS = 120_000L
@@ -74,7 +73,7 @@ internal class CustomerDisplayPairingAdvertiser(
             serviceType = CUSTOMER_DISPLAY_PAIRING_SERVICE_TYPE
             port = config.port
             CustomerDisplayPairingCodec.attributes(config).forEach { (key, value) ->
-                setAttribute(key, value.toByteArray(StandardCharsets.UTF_8))
+                setAttribute(key, value)
             }
         }
 
