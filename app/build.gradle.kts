@@ -19,8 +19,8 @@ android {
         applicationId = "jp.co.tenposinfo.register"
         minSdk = 26
         targetSdk = 36
-        versionCode = 36
-        versionName = "0.12.0-dev.22"
+        versionCode = 37
+        versionName = "0.12.0-dev.23"
         manifestPlaceholders["appLabel"] = "つぐレジ"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
