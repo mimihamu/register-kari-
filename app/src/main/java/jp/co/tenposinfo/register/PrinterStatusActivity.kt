@@ -88,8 +88,10 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
     var operationMessage by remember { mutableStateOf<String?>(null) }
     var checking by remember { mutableStateOf(false) }
     var autoMonitor by remember { mutableStateOf(false) }
+    var experimentalConfirmed by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf(monitoringStore.listHistory(100)) }
     val scope = rememberCoroutineScope()
+    val capability = PrinterStatusCapabilityRegistry.forProfile(configuration.profile)
 
     DisposableEffect(Unit) {
         onDispose {
@@ -102,11 +104,16 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
         history = withContext(Dispatchers.IO) { monitoringStore.listHistory(100) }
     }
 
-    suspend fun performCheck() {
+    suspend fun performCheck(purpose: PrinterStatusCheckPurpose) {
         if (checking) return
         checking = true
         val target = configuration
-        val result = withContext(Dispatchers.IO) { TcpPrinterStatusClient(target).query() }
+        val result = withContext(Dispatchers.IO) {
+            TcpPrinterStatusClient(target).query(
+                purpose = purpose,
+                experimentalConfirmed = experimentalConfirmed,
+            )
+        }
         result.onSuccess { current ->
             status = current
             errorMessage = null
@@ -124,10 +131,10 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
         checking = false
     }
 
-    LaunchedEffect(autoMonitor, configuration) {
-        if (!autoMonitor) return@LaunchedEffect
+    LaunchedEffect(autoMonitor, configuration, capability) {
+        if (!autoMonitor || !capability.automaticQueryAllowed) return@LaunchedEffect
         while (true) {
-            performCheck()
+            performCheck(PrinterStatusCheckPurpose.SALES_MONITORING)
             delay(5_000)
         }
     }
@@ -142,30 +149,80 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
                 Spacer(Modifier.width(24.dp))
                 Text("プリンター状態診断", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.weight(1f))
-                Text("状態履歴は端末内SQLiteへ保存", color = Color.White, fontSize = 14.sp)
+                Text("EPSON確認済み／STAR・汎用は手動互換試行", color = Color.White, fontSize = 14.sp)
             }
 
             Row(
                 Modifier.weight(1f).fillMaxWidth().padding(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                StatusPanel(Modifier.width(450.dp).fillMaxHeight()) {
+                StatusPanel(Modifier.width(470.dp).fillMaxHeight()) {
                     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                         Text("接続・運用設定", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = PsNavy)
                         Spacer(Modifier.height(10.dp))
                         StatusValue("プリンター", configuration.name)
                         StatusValue("機種", configuration.profile.displayName)
-                        StatusValue("状態方式", configuration.profile.statusProtocol.displayName)
+                        StatusValue("状態方式", capability.implementationName)
+                        StatusValue("検証区分", capability.verification.displayName)
                         StatusValue("接続先", if (configuration.host.isBlank()) "未設定" else "${configuration.host}:${configuration.port}")
                         StatusValue("タイムアウト", "${configuration.timeoutMillis}ms")
                         StatusValue("履歴上限", "${PrinterHistoryRetentionPolicy.MAX_ROWS}件")
                         Spacer(Modifier.height(8.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (capability.automaticQueryAllowed) {
+                                    PsGreen.copy(alpha = 0.07f)
+                                } else {
+                                    PsOrange.copy(alpha = 0.09f)
+                                },
+                            ),
+                            border = BorderStroke(
+                                1.dp,
+                                if (capability.automaticQueryAllowed) PsGreen else PsOrange,
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                                Text(
+                                    capability.verification.displayName,
+                                    color = if (capability.automaticQueryAllowed) PsGreen else PsOrange,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Text(capability.note, color = Color.DarkGray, fontSize = 13.sp, lineHeight = 18.sp)
+                            }
+                        }
+                        if (capability.verification == PrinterStatusVerification.EXPERIMENTAL_COMPATIBILITY) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = experimentalConfirmed,
+                                    onCheckedChange = {
+                                        experimentalConfirmed = it
+                                        status = null
+                                        errorMessage = null
+                                    },
+                                )
+                                Text("未検証のDLE EOT互換試行を手動で実行する")
+                            }
+                        }
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(
                                 checked = runtimeSettings.preflightEnabled,
-                                onCheckedChange = { runtimeSettings = runtimeSettings.copy(preflightEnabled = it) },
+                                onCheckedChange = { requested ->
+                                    runtimeSettings = runtimeSettings.copy(
+                                        preflightEnabled = requested && capability.automaticQueryAllowed,
+                                    )
+                                },
+                                enabled = capability.automaticQueryAllowed || runtimeSettings.preflightEnabled,
                             )
                             Text("自動印刷前に状態確認")
+                        }
+                        if (!capability.automaticQueryAllowed && runtimeSettings.preflightEnabled) {
+                            Text(
+                                "この機種では自動印刷前診断を利用できません。チェックを外して保存するまで自動印刷は送信待ちになります。",
+                                color = PsRed,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                            )
                         }
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(
@@ -221,6 +278,8 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
                                 retentionText = runtimeSettings.historyRetentionDays.toString()
                                 status = null
                                 errorMessage = null
+                                autoMonitor = false
+                                experimentalConfirmed = false
                                 operationMessage = "保存済み設定を再読込しました"
                             },
                             modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -229,13 +288,19 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
                             Checkbox(
                                 checked = autoMonitor,
                                 onCheckedChange = { autoMonitor = it },
-                                enabled = configuration.host.isNotBlank(),
+                                enabled = configuration.host.isNotBlank() && capability.automaticQueryAllowed,
                             )
                             Text("5秒ごとに自動確認")
                         }
                         Button(
-                            onClick = { scope.launch { performCheck() } },
-                            enabled = !checking && configuration.host.isNotBlank(),
+                            onClick = {
+                                scope.launch {
+                                    performCheck(PrinterStatusCheckPurpose.MANUAL_DIAGNOSTIC)
+                                }
+                            },
+                            enabled = !checking &&
+                                configuration.host.isNotBlank() &&
+                                (capability.verification != PrinterStatusVerification.EXPERIMENTAL_COMPATIBILITY || experimentalConfirmed),
                             modifier = Modifier.fillMaxWidth().height(56.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = PsGreen),
                         ) {
@@ -323,7 +388,15 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
                     Text("閉じる", fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.weight(1f))
-                Text("自動監視中は他画面から印刷しないでください", color = PsRed, fontWeight = FontWeight.Bold)
+                Text(
+                    if (capability.automaticQueryAllowed) {
+                        "自動監視中は他画面から印刷しないでください"
+                    } else {
+                        "STAR・汎用の状態結果は互換試行であり、実機確認完了を意味しません"
+                    },
+                    color = PsRed,
+                    fontWeight = FontWeight.Bold,
+                )
             }
         }
     }
