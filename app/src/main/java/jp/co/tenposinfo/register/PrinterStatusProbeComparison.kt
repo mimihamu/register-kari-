@@ -69,14 +69,20 @@ object PrinterStatusProbeMultiCsv {
         return buildString {
             append("\uFEFF")
             appendRow(
-                "ID", "実行日時", "機種", "プリセット", "検証区分", "接続先",
+                "ID", "実行日時", "試験条件", "プリンター実機型番", "エミュレーション",
+                "試験メモ", "機種プロファイル", "プリセット", "検証区分", "接続先",
                 "成功", "応答時間ms", "受信バイト数", "送信HEX", "受信HEX",
                 "受信ASCII", "解析レベル", "解析概要", "固定ビット", "エラー", "実行者",
+                "注記更新日時", "注記更新者",
             )
             normalized.forEach { record ->
                 appendRow(
                     record.id.toString(),
                     synchronized(dateFormat) { dateFormat.format(Date(record.startedAt)) },
+                    record.condition.displayName,
+                    record.printerModel,
+                    record.emulationMode,
+                    record.memo,
                     record.profile.displayName,
                     record.preset.displayName,
                     record.verification.displayName,
@@ -92,15 +98,25 @@ object PrinterStatusProbeMultiCsv {
                     record.protocolValid?.let { if (it) "一致" else "不一致" }.orEmpty(),
                     record.errorMessage.orEmpty(),
                     record.actor,
+                    record.annotatedAt.takeIf { it > 0 }?.let {
+                        synchronized(dateFormat) { dateFormat.format(Date(it)) }
+                    }.orEmpty(),
+                    record.annotatedBy,
                 )
             }
             if (PrinterStatusProbeComparisonPolicy.canCompare(normalized)) {
                 append('\n')
-                appendRow("比較基準ID", "比較先ID", "同一応答", "基準サイズ", "比較先サイズ", "差分バイト数", "差分位置（0始まり）")
+                appendRow(
+                    "比較基準ID", "基準試験条件", "比較先ID", "比較先試験条件",
+                    "同一応答", "基準サイズ", "比較先サイズ", "差分バイト数", "差分位置（0始まり）",
+                )
+                val byId = normalized.associateBy { it.id }
                 PrinterStatusProbeComparisonPolicy.compare(normalized).forEach { comparison ->
                     appendRow(
                         comparison.baseId.toString(),
+                        byId[comparison.baseId]?.condition?.displayName.orEmpty(),
                         comparison.comparedId.toString(),
+                        byId[comparison.comparedId]?.condition?.displayName.orEmpty(),
                         if (comparison.sameResponse) "同一" else "差分あり",
                         comparison.baseSize.toString(),
                         comparison.comparedSize.toString(),
