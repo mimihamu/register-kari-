@@ -1,0 +1,58 @@
+name: v0.13 source reference fix
+
+on:
+  push:
+    branches:
+      - develop/v0.13
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    if: ${{ !contains(github.event.head_commit.message, '[v013-source-fix]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v0.13
+          fetch-depth: 0
+      - name: Fix Kotlin references
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          cd_main = Path('customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt')
+          text = cd_main.read_text(encoding='utf-8')
+          text = text.replace('import androidx.compose.foundation.layout.weight\n', '')
+          cd_main.write_text(text, encoding='utf-8')
+
+          register_settings = Path('app/src/main/java/jp/co/tenposinfo/register/CustomerDisplaySettingsActivity.kt')
+          text = register_settings.read_text(encoding='utf-8')
+          text = text.replace(
+              'import androidx.compose.ui.text.input.KeyboardOptions',
+              'import androidx.compose.foundation.text.KeyboardOptions',
+          )
+          register_settings.write_text(text, encoding='utf-8')
+
+          for name in [
+              'app/src/main/java/jp/co/tenposinfo/register/CustomerDisplayWebSocketServer.kt',
+              'customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayWebSocketClient.kt',
+          ]:
+              path = Path(name)
+              text = path.read_text(encoding='utf-8').replace('repeat(8) {', 'kotlin.repeat(8) {')
+              path.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit fix
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/jp/co/tenposinfo/register/CustomerDisplaySettingsActivity.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/CustomerDisplayWebSocketServer.kt \
+                  customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt \
+                  customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayWebSocketClient.kt
+          git commit -m "fix(v0.13): correct Kotlin source references [v013-source-fix]"
+          git push origin HEAD:develop/v0.13
