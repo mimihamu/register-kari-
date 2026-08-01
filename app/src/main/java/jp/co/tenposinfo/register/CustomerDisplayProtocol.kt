@@ -90,16 +90,34 @@ object CustomerDisplaySnapshotFactory {
             numberOfProducts = items.sumOf { it.quantity },
             subtotalAmount = total,
             totalAmount = total,
-            orderItems = items.map { item ->
-                CustomerDisplayOrderItem(
-                    productId = item.product.id,
-                    name = item.product.name,
-                    quantity = item.quantity,
-                    unitPrice = item.unitPrice,
-                    amount = item.baseAmount,
-                    latest = item.product.id == latestProductId,
-                )
-            },
+            orderItems = orderItems(items, latestProductId),
+        )
+    }
+
+    fun accounting(
+        items: List<CartItem>,
+        paymentState: PaymentState,
+        storeName: String,
+    ): CustomerDisplaySnapshot {
+        if (items.isEmpty()) return standby(storeName)
+        val total = TaxEngine.calculate(items).grossAmount
+        val methods = paymentState.allocations
+            .map { it.method.displayName }
+            .distinct()
+            .joinToString("＋")
+            .ifBlank { "未選択" }
+        return CustomerDisplaySnapshot(
+            mode = CustomerDisplayMode.ACCOUNTING,
+            storeName = storeName,
+            numberOfProducts = items.sumOf { it.quantity },
+            subtotalAmount = total,
+            totalAmount = total,
+            paymentMethod = methods,
+            receivedAmount = paymentState.allocations.sumOf { it.receivedAmount },
+            shortageAmount = paymentState.remaining(total),
+            changeAmount = paymentState.changeAmount,
+            message = if (paymentState.remaining(total) > 0L) "お支払い金額をご確認ください" else "お支払いを確認しました",
+            orderItems = orderItems(items),
         )
     }
 
@@ -118,14 +136,20 @@ object CustomerDisplaySnapshotFactory {
         shortageAmount = 0L,
         changeAmount = detail.summary.changeAmount,
         message = if (detail.summary.changeAmount > 0L) "お釣りをご確認ください" else "ありがとうございました",
-        orderItems = detail.items.map { item ->
-            CustomerDisplayOrderItem(
-                productId = item.product.id,
-                name = item.product.name,
-                quantity = item.quantity,
-                unitPrice = item.unitPrice,
-                amount = item.baseAmount,
-            )
-        },
+        orderItems = orderItems(detail.items),
     )
+
+    private fun orderItems(
+        items: List<CartItem>,
+        latestProductId: String? = null,
+    ): List<CustomerDisplayOrderItem> = items.map { item ->
+        CustomerDisplayOrderItem(
+            productId = item.product.id,
+            name = item.product.name,
+            quantity = item.quantity,
+            unitPrice = item.unitPrice,
+            amount = item.baseAmount,
+            latest = item.product.id == latestProductId,
+        )
+    }
 }
