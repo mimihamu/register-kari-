@@ -78,6 +78,11 @@
             android:screenOrientation="landscape" />
 
         <activity
+            android:name=".PrinterSoakTestActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
             android:name=".UnifiedPrintQueueActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
