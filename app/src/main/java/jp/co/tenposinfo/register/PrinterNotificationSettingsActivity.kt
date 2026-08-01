@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -54,7 +55,6 @@ private val PnGreen = Color(0xFF2E7D32)
 private val PnOrange = Color(0xFFEF6C00)
 private val PnRed = Color(0xFFC62828)
 private val PnBackground = Color(0xFFF4F7FA)
-private val PnBorder = Color(0xFFD5DEE7)
 
 class PrinterNotificationSettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -217,7 +217,7 @@ private fun PrinterNotificationSettingsScreen(
                 Modifier.fillMaxWidth().height(72.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(onClick = onClose, modifier = Modifier.width(240.dp).fillMaxSize()) {
+                OutlinedButton(onClick = onClose, modifier = Modifier.width(240.dp).fillMaxHeight()) {
                     Text("閉じる", fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.weight(1f))
