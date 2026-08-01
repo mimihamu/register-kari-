@@ -36,6 +36,17 @@
             </intent-filter>
         </activity>
         <activity
+            android:name=".PrinterStatusAnalysisActivity"
+            android:exported="true"
+            android:label="つぐレジ 応答分析"
+            android:screenOrientation="landscape"
+            tools:replace="android:exported">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
             android:name=".PrinterNotificationSettingsActivity"
             android:exported="true"
             android:label="つぐレジ 通知設定"
