@@ -130,10 +130,10 @@ class V012PrinterStatusValidationFinalizationTest {
             PrinterStatusTestCondition.CUTTER_ERROR to "12 12 1A 12",
         )
         responses.forEach { (condition, hex) ->
-            repeat(sampleCount) { result += successRecord(id++, condition, hex) }
+            kotlin.repeat(sampleCount) { result += successRecord(id++, condition, hex) }
         }
-        repeat(failureCount) { result += failureRecord(id++, PrinterStatusTestCondition.POWER_OFF) }
-        repeat(failureCount) { result += failureRecord(id++, PrinterStatusTestCondition.LAN_DISCONNECTED) }
+        kotlin.repeat(failureCount) { result += failureRecord(id++, PrinterStatusTestCondition.POWER_OFF) }
+        kotlin.repeat(failureCount) { result += failureRecord(id++, PrinterStatusTestCondition.LAN_DISCONNECTED) }
         return result
     }
 
