@@ -8,8 +8,8 @@ import java.nio.charset.Charset
  * 日本語コードページ、カット、ドロア、双方向ステータスの機種差分を集約する。
  */
 enum class PrinterStatusProtocol(val displayName: String) {
-    EPSON_DLE_EOT("EPSON DLE EOT"),
-    ESC_POS_DLE_EOT_COMPATIBLE("DLE EOT互換"),
+    EPSON_DLE_EOT("EPSON DLE EOT（仕様確認済み）"),
+    ESC_POS_DLE_EOT_COMPATIBLE("DLE EOT互換（未検証）"),
     NONE("非対応"),
 }
 
@@ -23,17 +23,17 @@ enum class PrinterProfile(
 ) {
     EPSON_TM_JAPAN(
         displayName = "EPSON TM（日本語）",
-        description = "TM-m30II／TM-T88系などのESC/POS対応機",
+        description = "TM-m30II／TM-T88系などのESC/POS対応機。DLE EOT状態取得を使用",
         statusProtocol = PrinterStatusProtocol.EPSON_DLE_EOT,
     ),
     STAR_ESC_POS(
         displayName = "STAR ESC/POS",
-        description = "mC-Print／TSP系のESC/POSエミュレーション",
+        description = "STAR機のESC/POSエミュレーション。印刷互換／状態取得は要実機確認",
         statusProtocol = PrinterStatusProtocol.ESC_POS_DLE_EOT_COMPATIBLE,
     ),
     GENERIC_ESC_POS(
         displayName = "汎用ESC/POS",
-        description = "TCP 9100対応の互換プリンター",
+        description = "TCP 9100対応の互換プリンター。状態取得は要実機確認",
         statusProtocol = PrinterStatusProtocol.ESC_POS_DLE_EOT_COMPATIBLE,
     ),
 }
