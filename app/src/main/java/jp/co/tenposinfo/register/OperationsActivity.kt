@@ -69,6 +69,7 @@ private val OpPaleYellow = Color(0xFFFFF4D9)
 class OperationsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
             MaterialTheme {
                 OperationsApp(onClose = { finish() })

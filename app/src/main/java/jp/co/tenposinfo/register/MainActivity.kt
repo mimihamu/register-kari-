@@ -75,10 +75,10 @@ private val Border = Color(0xFFD5DEE7)
 
 internal object RegisterLayoutPolicy {
     const val DIAGNOSTIC_CARD_HEIGHT_DP = 280
-    const val COMPACT_VALUE_HEIGHT_DP = 40
-    const val COMPACT_KEY_HEIGHT_DP = 36
-    const val COMPACT_KEY_GAP_DP = 2
-    const val COMPACT_FUNCTION_HEIGHT_DP = 34
+    const val COMPACT_VALUE_HEIGHT_DP = 46
+    const val COMPACT_KEY_HEIGHT_DP = 42
+    const val COMPACT_KEY_GAP_DP = 5
+    const val COMPACT_FUNCTION_HEIGHT_DP = 40
 
     fun salesUtilityRequiredHeightDp(panelPaddingDp: Int = 32): Int =
         40 + 4 +
@@ -97,12 +97,7 @@ internal object RegisterLayoutPolicy {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = android.graphics.Color.rgb(23, 63, 107)
-        window.navigationBarColor = android.graphics.Color.WHITE
-        WindowCompat.getInsetsController(window, window.decorView).apply {
-  isAppearanceLightStatusBars = false
-  isAppearanceLightNavigationBars = true
-        }
+        configureRegisterSystemBars(window)
         setContent {
             MaterialTheme {
                 RegisterApp()
@@ -1694,23 +1689,24 @@ private fun NumberPad(
     onBottomAction: () -> Unit,
     compact: Boolean = false,
 ) {
-    val buttonHeight = if (compact) RegisterLayoutPolicy.COMPACT_KEY_HEIGHT_DP.dp else 44.dp
+    val buttonHeight = if (compact) RegisterLayoutPolicy.COMPACT_KEY_HEIGHT_DP.dp else 48.dp
     val rowGap = if (compact) RegisterLayoutPolicy.COMPACT_KEY_GAP_DP.dp else 6.dp
+    val columnGap = if (compact) 6.dp else 8.dp
     val content: @Composable () -> Unit = {
     for (rowStart in 1..9 step 3) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(columnGap)) {
             for (digit in rowStart until rowStart + 3) {
                 OutlinedButton(onClick = { onDigit(digit.toString()) }, modifier = Modifier.weight(1f).height(buttonHeight)) {
-                    Text(digit.toString())
+                    Text(digit.toString(), fontSize = if (compact) 16.sp else 18.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
         Spacer(Modifier.height(rowGap))
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(columnGap)) {
         OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f).height(buttonHeight)) { Text("C", color = Danger) }
         OutlinedButton(onClick = { onDigit("0") }, modifier = Modifier.weight(1f).height(buttonHeight)) { Text("0") }
-        BlueButton(bottomActionLabel, onBottomAction, Modifier.weight(1.4f).height(buttonHeight))
+        BlueButton(bottomActionLabel, onBottomAction, Modifier.weight(1f).height(buttonHeight))
     }
     }
     if (compact) {

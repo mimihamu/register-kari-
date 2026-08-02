@@ -1,5 +1,6 @@
 package jp.co.tenposinfo.register
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -65,6 +66,7 @@ private val DcPaleBlue = Color(0xFFEAF3FA)
 class DynamicCatalogSettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
             MaterialTheme {
                 DynamicCatalogSettingsApp(onClose = { finish() })
@@ -100,6 +102,9 @@ private fun DynamicCatalogSettingsApp(onClose: () -> Unit) {
                 onTaxes = { message = null; screen = DynamicCatalogScreen.TAX_RULES },
                 onAssignments = { message = null; screen = DynamicCatalogScreen.ASSIGNMENTS },
                 onRevisions = { message = null; screen = DynamicCatalogScreen.REVISIONS },
+                onTaxInvoice = { context.startActivity(Intent(context, TaxInvoiceSettingsActivity::class.java)) },
+                onRevisionEditor = { context.startActivity(Intent(context, MenuRevisionEditorActivity::class.java)) },
+                onSync = { context.startActivity(Intent(context, SyncSettingsActivity::class.java)) },
                 onClose = onClose,
             )
             DynamicCatalogScreen.TAX_RULES -> DynamicTaxRuleScreen(
@@ -135,6 +140,9 @@ private fun DynamicMenu(
     onTaxes: () -> Unit,
     onAssignments: () -> Unit,
     onRevisions: () -> Unit,
+    onTaxInvoice: () -> Unit,
+    onRevisionEditor: () -> Unit,
+    onSync: () -> Unit,
     onClose: () -> Unit,
 ) {
     val rules = remember(refresh) { store.listTaxRules() }
@@ -143,6 +151,18 @@ private fun DynamicMenu(
     Column(Modifier.fillMaxSize()) {
         DcHeader("SCR-270", "任意税率・メニュー改定", onClose)
         Column(Modifier.fillMaxSize().padding(26.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick = onTaxInvoice, modifier = Modifier.weight(1f).height(46.dp)) {
+                    Text("税・インボイス", fontWeight = FontWeight.Bold)
+                }
+                OutlinedButton(onClick = onRevisionEditor, modifier = Modifier.weight(1f).height(46.dp)) {
+                    Text("改定内容編集", fontWeight = FontWeight.Bold)
+                }
+                OutlinedButton(onClick = onSync, modifier = Modifier.weight(1f).height(46.dp)) {
+                    Text("同期基盤", fontWeight = FontWeight.Bold)
+                }
+            }
+            Spacer(Modifier.height(14.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 DcSummary("有効な税区分", "${rules.count { it.enabled }}件", Modifier.weight(1f))
                 DcSummary("予約中の改定", "${revisions.count { it.status == "SCHEDULED" && it.effectiveDate > LocalDate.now().toString() }}件", Modifier.weight(1f))
@@ -486,7 +506,7 @@ private fun DcHeader(screenId: String, title: String, onBack: () -> Unit) {
         Modifier.fillMaxWidth().height(62.dp).background(DcNavy).padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("REGISTER", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 23.sp)
+        Text("つぐレジ", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 23.sp)
         Spacer(Modifier.width(22.dp))
         Text("$screenId  $title", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 21.sp)
         Spacer(Modifier.weight(1f))

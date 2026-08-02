@@ -1,5 +1,6 @@
 package jp.co.tenposinfo.register
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -63,6 +64,7 @@ private val CmPaleYellow = Color(0xFFFFF4D9)
 class CatalogSettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
             MaterialTheme {
                 CatalogSettingsApp(onClose = { finish() })
@@ -111,6 +113,7 @@ private fun CatalogSettingsApp(onClose: () -> Unit) {
                 onLayout = { message = null; screen = CatalogScreen.LAYOUT },
                 onTaxes = { message = null; screen = CatalogScreen.TAXES },
                 onProfiles = { message = null; screen = CatalogScreen.PROFILES },
+                onDynamic = { context.startActivity(Intent(context, DynamicCatalogSettingsActivity::class.java)) },
                 onClose = onClose,
             )
 
@@ -176,6 +179,7 @@ private fun CatalogMenuScreen(
     onLayout: () -> Unit,
     onTaxes: () -> Unit,
     onProfiles: () -> Unit,
+    onDynamic: () -> Unit,
     onClose: () -> Unit,
 ) {
     val products = remember(refresh) { store.listProducts() }
@@ -190,6 +194,13 @@ private fun CatalogMenuScreen(
                 SummaryCard("部門", "${departments.count { it.enabled }}件", Modifier.weight(1f))
                 SummaryCard("グループ", "${groups.count { it.enabled }}件", Modifier.weight(1f))
                 SummaryCard("現在の販売プロファイル", activeProfile?.name ?: "未設定", Modifier.weight(1.4f))
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                OutlinedButton(
+                    onClick = onDynamic,
+                    modifier = Modifier.width(240.dp).height(46.dp),
+                ) { Text("任意税率・メニュー改定", fontWeight = FontWeight.Bold) }
             }
             if (message != null) {
                 Spacer(Modifier.height(12.dp))
@@ -743,7 +754,7 @@ private fun CatalogHeader(screenId: String, title: String, onBack: () -> Unit) {
         Modifier.fillMaxWidth().height(62.dp).background(CmNavy).padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("REGISTER", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(18.dp))
         Text("$screenId  $title", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.weight(1f))

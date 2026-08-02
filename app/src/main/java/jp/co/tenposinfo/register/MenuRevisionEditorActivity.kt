@@ -66,6 +66,7 @@ private val MrSame = Color(0xFFEAF5EC)
 class MenuRevisionEditorActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
             MaterialTheme {
                 MenuRevisionEditorApp(onClose = { finish() })
@@ -639,7 +640,7 @@ private fun MrHeader(title: String, subtitle: String, onClose: () -> Unit) {
         Modifier.fillMaxWidth().height(62.dp).background(MrNavy).padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("REGISTER", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+        Text("つぐレジ", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(20.dp))
         Text(title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.weight(1f))
