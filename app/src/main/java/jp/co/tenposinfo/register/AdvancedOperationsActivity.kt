@@ -64,6 +64,7 @@ private val AoPaleBlue = Color(0xFFEAF3FA)
 private val AoPaleGreen = Color(0xFFEAF5EC)
 private val AoPaleYellow = Color(0xFFFFF4D9)
 
+@Deprecated("旧管理画面。正式導線はOperationsActivityを使用してください")
 class AdvancedOperationsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
