@@ -1,0 +1,83 @@
+name: Apply v0.21 data protection
+
+on:
+  pull_request:
+    branches:
+      - develop/v0.20
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout v0.21
+        uses: actions/checkout@v4
+        with:
+          ref: develop/v0.21
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle 9.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Apply data protection implementation
+        run: python3 tools/apply_v021.py
+
+      - name: Verify generated source
+        run: |
+          grep -q 'versionCode = 51' app/build.gradle.kts
+          grep -q 'versionName = "0.21.0-dev.1"' app/build.gradle.kts
+          grep -q 'DataRestoreBootstrapProvider' app/src/main/AndroidManifest.xml
+          grep -q 'android:initOrder="10"' app/src/main/AndroidManifest.xml
+          grep -q 'DataProtectionActivity' app/src/main/AndroidManifest.xml
+          grep -q 'VACUUM INTO' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
+          grep -q 'PRAGMA integrity_check' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
+          grep -q 'PRAGMA foreign_key_check' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
+          grep -q 'DATA_RESTORE_APPLIED' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
+          grep -q '次回起動時に復元' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -q 'V021DataProtectionPolicyTest' app/src/test/java/jp/co/tenposinfo/register/V021DataProtectionPolicyTest.kt
+          grep -q 'データ保全' app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt
+          ! grep -q '初期責任者PIN：0000' app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt
+          test -s docs/V0.21_DATA_PROTECTION.md
+
+      - name: Run unit tests
+        run: gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest
+
+      - name: Build debug APKs
+        run: gradle --no-daemon :app:assembleDebug :customer-display:assembleDebug
+
+      - name: Commit generated source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            app/build.gradle.kts \
+            app/src/main/AndroidManifest.xml \
+            app/src/main/java/jp/co/tenposinfo/register/RegisterApplication.kt \
+            app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt \
+            app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt \
+            app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt \
+            app/src/test/java/jp/co/tenposinfo/register/V021DataProtectionPolicyTest.kt \
+            docs/V0.21_DATA_PROTECTION.md
+          git commit -m "feat: add integrity backup and staged restore safety" || exit 0
+          git push origin HEAD:develop/v0.21
