@@ -46,18 +46,6 @@ class SecureOperationsCoordinator(
             store.startBusinessDay(businessDate, openingCash, OperationsActorFormatter.direct(operator))
         }
 
-    fun endBusinessDay(actualCash: Long, managerPin: String): Long {
-        val businessDate = store.activeBusinessSession()?.businessDate ?: LocalDate.now().toString()
-        return executionGuard.runExclusive("BUSINESS_CLOSE:$businessDate", "営業終了を処理中です") {
-            val operator = requireOperator(OperationsAction.SETTLEMENT)
-            val managerName = requireManagerName(managerPin)
-            store.endBusinessDay(
-                actualCash,
-                OperationsActorFormatter.approved(operator, managerName),
-            )
-        }
-    }
-
     fun recordCashMovement(type: CashMovementType, amount: Long, reason: String): Long {
         val operator = requireOperator(OperationsAction.CASH_MOVEMENT)
         return store.recordCashMovement(type, amount, reason, OperationsActorFormatter.direct(operator))
@@ -71,12 +59,8 @@ class SecureOperationsCoordinator(
         val session = store.activeBusinessSession()
             ?: throw IllegalStateException("営業中の営業日がありません")
         val businessDate = session.businessDate
-        val persistentKey = if (type == SettlementReportType.Z_SETTLEMENT) {
-            "Z_SETTLEMENT:$businessDate"
-        } else {
-            null
-        }
-        val executionKey = persistentKey ?: "X_INSPECTION:$businessDate"
+        val persistentKey = OperationsIdempotencyPolicy.settlementKey(type, session.id)
+        val executionKey = persistentKey ?: "X_INSPECTION:SESSION:${session.id}"
         var backupActor = "責任者"
         val settlementId = executionGuard.runExclusive(executionKey, "点検・精算を処理中です") {
             val operator = requireOperator(OperationsAction.SETTLEMENT)

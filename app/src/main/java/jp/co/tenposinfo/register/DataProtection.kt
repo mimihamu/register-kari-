@@ -52,7 +52,7 @@ data class RestoreBlockers(
 
 object DataRestorePolicy {
     fun reasons(blockers: RestoreBlockers): List<String> = buildList {
-        if (blockers.activeBusinessSessions > 0) add("営業中またはZ精算後の営業日があります")
+        if (blockers.activeBusinessSessions > 0) add("営業中の営業セッションがあります")
         if (blockers.cartItems > 0) add("販売画面に未会計商品があります")
         if (blockers.heldTickets > 0) add("保留伝票があります")
         if (blockers.pendingSalePrintJobs > 0) add("未完了の売上印刷があります")
@@ -448,7 +448,7 @@ class DataProtectionManager(context: Context) {
             ConsistencyCheck("ORPHAN_SYNC_OUTBOX", setOf("sync_outbox", "sales_journal"), "SELECT COUNT(*) FROM sync_outbox o LEFT JOIN sales_journal j ON j.event_id=o.event_id WHERE j.event_id IS NULL", "Drive同期キューのジャーナルがありません"),
             ConsistencyCheck("SALE_PAYMENT_MISMATCH", setOf("sales", "sale_payments"), "SELECT COUNT(*) FROM sales s LEFT JOIN (SELECT sale_id,SUM(applied_amount) amount FROM sale_payments GROUP BY sale_id) p ON p.sale_id=s.id WHERE COALESCE(p.amount,0)<>s.total_amount", "売上合計と支払配賦が一致しません"),
             ConsistencyCheck("REVERSAL_PAYMENT_MISMATCH", setOf("reversal_transactions", "reversal_payments"), "SELECT COUNT(*) FROM reversal_transactions r LEFT JOIN (SELECT reversal_id,SUM(amount) amount FROM reversal_payments GROUP BY reversal_id) p ON p.reversal_id=r.id WHERE COALESCE(p.amount,0)<>r.gross_amount", "返品合計と返金配賦が一致しません"),
-            ConsistencyCheck("MULTIPLE_ACTIVE_BUSINESS", setOf("business_sessions"), "SELECT CASE WHEN COUNT(*)>1 THEN COUNT(*) ELSE 0 END FROM business_sessions WHERE status IN ('OPEN','Z_SETTLED')", "営業中または終了待ちの営業日が複数あります"),
+            ConsistencyCheck("MULTIPLE_ACTIVE_BUSINESS", setOf("business_sessions"), "SELECT CASE WHEN COUNT(*)>1 THEN COUNT(*) ELSE 0 END FROM business_sessions WHERE status = 'OPEN'", "営業中の営業セッションが複数あります"),
         )
         checks.forEach { check ->
             if (tableCounts.keys.containsAll(check.tables)) {
@@ -457,7 +457,7 @@ class DataProtectionManager(context: Context) {
             }
         }
         val blockers = RestoreBlockers(
-            activeBusinessSessions = countIfTable(database, tableCounts, "business_sessions", "status IN ('OPEN','Z_SETTLED')"),
+            activeBusinessSessions = countIfTable(database, tableCounts, "business_sessions", "status = 'OPEN'"),
             cartItems = countIfTable(database, tableCounts, "cart_items", "quantity > 0"),
             heldTickets = countIfTable(database, tableCounts, "held_tickets", "1=1"),
             pendingSalePrintJobs = countIfTable(database, tableCounts, "print_jobs", "status IN ('PENDING','PRINTING','RETRY','FAILED')"),

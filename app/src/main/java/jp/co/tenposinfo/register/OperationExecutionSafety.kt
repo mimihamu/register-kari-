@@ -1,6 +1,5 @@
 package jp.co.tenposinfo.register
 
-import java.time.LocalDate
 import java.util.concurrent.ConcurrentHashMap
 
 object OperationsIdempotencyPolicy {
@@ -12,9 +11,12 @@ object OperationsIdempotencyPolicy {
     fun reversalRequestKey(type: ReversalType, originalSaleId: Long, requestId: String): String =
         PartialReturnPolicy.operationKey(type, originalSaleId, requestId)
 
-    fun settlementKey(type: SettlementReportType, businessDate: LocalDate): String? = when (type) {
-        SettlementReportType.X_INSPECTION -> null
-        SettlementReportType.Z_SETTLEMENT -> "Z_SETTLEMENT:$businessDate"
+    fun settlementKey(type: SettlementReportType, businessSessionId: Long): String? {
+        require(businessSessionId > 0L) { "businessSessionId must be positive" }
+        return when (type) {
+            SettlementReportType.X_INSPECTION -> null
+            SettlementReportType.Z_SETTLEMENT -> "Z_SETTLEMENT:SESSION:$businessSessionId"
+        }
     }
 }
 

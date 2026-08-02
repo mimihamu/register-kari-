@@ -30,18 +30,26 @@ class V018BusinessSessionIntegrationTest {
     }
 
     @Test
-    fun onlyOpenSessionMayAcceptOperations() {
+    fun onlyOpenSessionMayAcceptOperationsAndSettlement() {
         assertTrue(BusinessSessionTransitionPolicy.mayOperate(BusinessSessionStatus.OPEN))
+        assertTrue(BusinessSessionTransitionPolicy.maySettle(BusinessSessionStatus.OPEN))
         assertFalse(BusinessSessionTransitionPolicy.mayOperate(BusinessSessionStatus.Z_SETTLED))
+        assertFalse(BusinessSessionTransitionPolicy.maySettle(BusinessSessionStatus.Z_SETTLED))
         assertFalse(BusinessSessionTransitionPolicy.mayOperate(BusinessSessionStatus.CLOSED))
+        assertFalse(BusinessSessionTransitionPolicy.maySettle(BusinessSessionStatus.CLOSED))
         assertFalse(BusinessSessionTransitionPolicy.mayOperate(null))
+        assertFalse(BusinessSessionTransitionPolicy.maySettle(null))
     }
 
     @Test
-    fun onlyZSettledSessionMayClose() {
-        assertFalse(BusinessSessionTransitionPolicy.mayClose(BusinessSessionStatus.OPEN))
-        assertTrue(BusinessSessionTransitionPolicy.mayClose(BusinessSessionStatus.Z_SETTLED))
-        assertFalse(BusinessSessionTransitionPolicy.mayClose(BusinessSessionStatus.CLOSED))
-        assertFalse(BusinessSessionTransitionPolicy.mayClose(null))
+    fun zSettlementClosesSessionWhileXInspectionKeepsItOpen() {
+        assertEquals(
+            BusinessSessionStatus.OPEN,
+            BusinessSessionLifecyclePolicy.resultStatus(SettlementReportType.X_INSPECTION, BusinessSessionStatus.OPEN),
+        )
+        assertEquals(
+            BusinessSessionStatus.CLOSED,
+            BusinessSessionLifecyclePolicy.resultStatus(SettlementReportType.Z_SETTLEMENT, BusinessSessionStatus.OPEN),
+        )
     }
 }

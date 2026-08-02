@@ -67,6 +67,7 @@ object SchemaMigration {
 
 object BusinessSessionSchema {
     fun ensure(db: SQLiteDatabase) {
+        BusinessSessionMultiplicityMigration.ensure(db)
         if (!SchemaMigration.tableExists(db, "sales")) return
         SchemaMigration.ensureColumn(db, "sales", "business_session_id", "INTEGER")
         SchemaMigration.ensureColumn(db, "sales", "business_date", "TEXT")
@@ -87,10 +88,18 @@ object BusinessSessionSchema {
                 db.execSQL(
                     """
                     UPDATE settlement_reports
-                    SET business_session_id = (
-                        SELECT bs.id FROM business_sessions bs
-                        WHERE bs.business_date = settlement_reports.business_date
-                        ORDER BY bs.opened_at DESC LIMIT 1
+                    SET business_session_id = COALESCE(
+                        (
+                            SELECT bs.id FROM business_sessions bs
+                            WHERE bs.opened_at <= settlement_reports.created_at
+                              AND (bs.closed_at IS NULL OR settlement_reports.created_at <= bs.closed_at)
+                            ORDER BY bs.opened_at DESC LIMIT 1
+                        ),
+                        (
+                            SELECT bs.id FROM business_sessions bs
+                            WHERE bs.business_date = settlement_reports.business_date
+                            ORDER BY bs.opened_at DESC LIMIT 1
+                        )
                     )
                     WHERE business_session_id IS NULL
                     """.trimIndent(),
@@ -106,7 +115,7 @@ object BusinessSessionSchema {
             """
             SELECT id, business_date
             FROM business_sessions
-            WHERE status IN ('OPEN','Z_SETTLED')
+            WHERE status = 'OPEN'
             ORDER BY opened_at DESC LIMIT 1
             """.trimIndent(),
             null,
@@ -148,6 +157,23 @@ object BusinessSessionSchema {
         }
     }
 
+    fun sessionById(db: SQLiteDatabase, sessionId: Long): BusinessSessionWindow? {
+        ensure(db)
+        if (sessionId <= 0L || !SchemaMigration.tableExists(db, "business_sessions")) return null
+        return db.rawQuery(
+            "SELECT id, business_date, opened_at, closed_at, opening_cash FROM business_sessions WHERE id=? LIMIT 1",
+            arrayOf(sessionId.toString()),
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) null else BusinessSessionWindow(
+                id = cursor.getLong(0),
+                businessDate = cursor.getString(1),
+                openedAt = cursor.getLong(2),
+                closedAt = if (cursor.isNull(3)) null else cursor.getLong(3),
+                openingCash = cursor.getLong(4),
+            )
+        }
+    }
+
     private fun backfill(db: SQLiteDatabase, table: String) {
         db.execSQL(
             """
@@ -155,14 +181,14 @@ object BusinessSessionSchema {
             SET business_session_id = COALESCE(
                     (
                         SELECT bs.id FROM business_sessions bs
-                        WHERE $table.business_date IS NOT NULL
-                          AND bs.business_date = $table.business_date
+                        WHERE bs.opened_at <= $table.created_at
+                          AND (bs.closed_at IS NULL OR $table.created_at <= bs.closed_at)
                         ORDER BY bs.opened_at DESC LIMIT 1
                     ),
                     (
                         SELECT bs.id FROM business_sessions bs
-                        WHERE bs.opened_at <= $table.created_at
-                          AND (bs.closed_at IS NULL OR $table.created_at <= bs.closed_at)
+                        WHERE $table.business_date IS NOT NULL
+                          AND bs.business_date = $table.business_date
                         ORDER BY bs.opened_at DESC LIMIT 1
                     )
                 ),

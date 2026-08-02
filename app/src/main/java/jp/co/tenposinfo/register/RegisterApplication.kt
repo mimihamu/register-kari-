@@ -175,7 +175,7 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
 
         val buttons = mutableListOf<Pair<String, () -> Unit>>()
         if (operator.allows(RegisterPermission.SETTLEMENT)) {
-            buttons += "営業開始・終了画面へ" to { activity.startActivity(Intent(activity, OperationsActivity::class.java)) }
+            buttons += "営業開始・状態画面へ" to { activity.startActivity(Intent(activity, OperationsActivity::class.java)) }
         }
         if (operator.allows(RegisterPermission.SETTINGS)) {
             buttons += "各種設定" to { activity.startActivity(Intent(activity, AdminSettingsActivity::class.java)) }
@@ -189,7 +189,7 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
                 activity = activity,
                 tagValue = BUSINESS_GATE_TAG,
                 title = "営業開始が必要です",
-                message = "開始釣銭を登録して営業を開始してください。\nZ精算後は営業終了を完了するまで販売できません。",
+                message = "開始釣銭を登録して営業を開始してください。\nZ精算を実行すると営業は終了し、同じ営業日でも再度営業開始できます。",
                 buttons = buttons,
             ),
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),

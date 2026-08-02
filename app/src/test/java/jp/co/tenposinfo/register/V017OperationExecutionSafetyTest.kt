@@ -1,6 +1,5 @@
 package jp.co.tenposinfo.register
 
-import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -14,13 +13,15 @@ class V017OperationExecutionSafetyTest {
     }
 
     @Test
-    fun onlyZSettlementHasPersistentBusinessDateKey() {
-        val date = LocalDate.of(2026, 8, 2)
-
-        assertNull(OperationsIdempotencyPolicy.settlementKey(SettlementReportType.X_INSPECTION, date))
+    fun onlyZSettlementHasPersistentBusinessSessionKey() {
+        assertNull(OperationsIdempotencyPolicy.settlementKey(SettlementReportType.X_INSPECTION, 41L))
         assertEquals(
-            "Z_SETTLEMENT:2026-08-02",
-            OperationsIdempotencyPolicy.settlementKey(SettlementReportType.Z_SETTLEMENT, date),
+            "Z_SETTLEMENT:SESSION:41",
+            OperationsIdempotencyPolicy.settlementKey(SettlementReportType.Z_SETTLEMENT, 41L),
+        )
+        assertTrue(
+            OperationsIdempotencyPolicy.settlementKey(SettlementReportType.Z_SETTLEMENT, 41L) !=
+                OperationsIdempotencyPolicy.settlementKey(SettlementReportType.Z_SETTLEMENT, 42L),
         )
     }
 
@@ -41,12 +42,12 @@ class V017OperationExecutionSafetyTest {
     fun guardReleasesKeyAfterFailure() {
         val guard = OperationExecutionGuard()
         runCatching {
-            guard.runExclusive("Z_SETTLEMENT:2026-08-02", "処理中") {
+            guard.runExclusive("Z_SETTLEMENT:SESSION:41", "処理中") {
                 error("expected")
             }
         }
 
-        val result = guard.runExclusive("Z_SETTLEMENT:2026-08-02", "処理中") { 10 }
+        val result = guard.runExclusive("Z_SETTLEMENT:SESSION:41", "処理中") { 10 }
         assertEquals(10, result)
     }
 }

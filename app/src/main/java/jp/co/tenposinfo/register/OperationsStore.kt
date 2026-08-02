@@ -26,6 +26,7 @@ data class PaymentTotal(
 )
 
 data class DailyOperationsSummary(
+    val businessSessionId: Long,
     val businessDate: String,
     val salesGross: Long,
     val reversalGross: Long,
@@ -63,6 +64,7 @@ data class ReversalRecord(
 
 data class SettlementRecord(
     val id: Long,
+    val businessSessionId: Long,
     val businessDate: String,
     val type: SettlementReportType,
     val salesGross: Long,
@@ -95,8 +97,8 @@ object BusinessSessionTransitionPolicy {
     fun mayStart(date: LocalDate, today: LocalDate = LocalDate.now()): Boolean =
         !date.isAfter(today) && !date.isBefore(today.minusDays(1))
 
-    fun mayOperate(status: BusinessSessionStatus?): Boolean = status == BusinessSessionStatus.OPEN
-    fun mayClose(status: BusinessSessionStatus?): Boolean = status == BusinessSessionStatus.Z_SETTLED
+    fun mayOperate(status: BusinessSessionStatus?): Boolean = BusinessSessionLifecyclePolicy.isActive(status)
+    fun maySettle(status: BusinessSessionStatus?): Boolean = BusinessSessionLifecyclePolicy.isActive(status)
 }
 
 /**
@@ -137,8 +139,8 @@ class OperationsStore(context: Context) {
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
         val now = System.currentTimeMillis()
         return db.transaction {
-            check(queryActiveSession(this) == null) { "営業中または終了待ちの営業日があります" }
-            val id = insertWithOnConflict(
+            check(BusinessSessionLifecyclePolicy.mayStart(queryActiveSession(this)?.status)) { "営業中の営業セッションがあります" }
+            val id = insertOrThrow(
                 "business_sessions",
                 null,
                 ContentValues().apply {
@@ -148,13 +150,11 @@ class OperationsStore(context: Context) {
                     put("opened_by", operatorName.trim())
                     put("opened_at", now)
                 },
-                SQLiteDatabase.CONFLICT_IGNORE,
             )
-            check(id != -1L) { "この営業日は既に開始済みです" }
             insertAudit(
                 eventType = "BUSINESS_OPEN",
                 referenceId = id,
-                detail = "営業日 $businessDate / 開始釣銭 ${openingCash}円",
+                detail = "営業日 $businessDate / セッションNo.$id / 開始釣銭 ${openingCash}円",
                 operatorName = operatorName,
                 createdAt = now,
             )
@@ -162,37 +162,9 @@ class OperationsStore(context: Context) {
         }
     }
 
+    @Deprecated("v0.24以降、営業終了はZ精算と同一トランザクションで完了します")
     fun endBusinessDay(actualCash: Long, operatorName: String): Long {
-        require(actualCash >= 0) { "現金実査額は0円以上で入力してください" }
-        require(operatorName.isNotBlank()) { "担当者を入力してください" }
-        val now = System.currentTimeMillis()
-        return db.transaction {
-            val session = queryActiveSession(this) ?: error("営業中の営業日がありません")
-            check(BusinessSessionTransitionPolicy.mayClose(session.status)) { "営業終了前にZ精算を実行してください" }
-            val summary = dailySummary(LocalDate.parse(session.businessDate))
-            val variance = OperationsMath.variance(actualCash, summary.expectedCash)
-            val updated = update(
-                "business_sessions",
-                ContentValues().apply {
-                    put("status", BusinessSessionStatus.CLOSED.name)
-                    put("closed_by", operatorName.trim())
-                    put("closed_at", now)
-                    put("closing_actual", actualCash)
-                    put("close_variance", variance)
-                },
-                "id = ? AND status = ?",
-                arrayOf(session.id.toString(), BusinessSessionStatus.Z_SETTLED.name),
-            )
-            check(updated == 1) { "営業終了状態が更新されました。画面を更新してください" }
-            insertAudit(
-                eventType = "BUSINESS_CLOSE",
-                referenceId = session.id,
-                detail = "営業日 ${session.businessDate} / 現金実査 ${actualCash}円 / 過不足 ${variance}円",
-                operatorName = operatorName,
-                createdAt = now,
-            )
-            session.id
-        }
+        throw IllegalStateException("営業終了はZ精算の完了時に自動で行われます")
     }
 
     fun dailySummary(date: LocalDate? = null): DailyOperationsSummary {
@@ -205,6 +177,16 @@ class OperationsStore(context: Context) {
             BusinessSessionSchema.sessionForDate(db, date)
                 ?: BusinessSessionDisplayFallback.forDate(date)
         } ?: error("営業日を特定できません")
+        return summaryForSession(session)
+    }
+
+    fun summaryForSession(sessionId: Long): DailyOperationsSummary {
+        val session = BusinessSessionSchema.sessionById(db, sessionId)
+            ?: error("営業セッションNo.${sessionId}が見つかりません")
+        return summaryForSession(session)
+    }
+
+    private fun summaryForSession(session: BusinessSessionWindow): DailyOperationsSummary {
         val sessionId = session.id
         val salesGross = longQuery(
             "SELECT COALESCE(SUM(total_amount), 0) FROM sales WHERE business_session_id = ?",
@@ -278,6 +260,7 @@ class OperationsStore(context: Context) {
         ) > 0
 
         return DailyOperationsSummary(
+            businessSessionId = sessionId,
             businessDate = session.businessDate,
             salesGross = salesGross,
             reversalGross = reversalGross,
@@ -646,21 +629,20 @@ class OperationsStore(context: Context) {
         val now = System.currentTimeMillis()
 
         return db.transaction {
-            val session = queryActiveSession(this) ?: error("営業中の営業日がありません")
-            check(BusinessSessionTransitionPolicy.mayOperate(session.status)) { "この営業日は既にZ精算済みです" }
-            val businessDate = LocalDate.parse(session.businessDate)
-            val operationKey = OperationsIdempotencyPolicy.settlementKey(type, businessDate)
+            val session = queryActiveSession(this) ?: error("営業中の営業セッションがありません")
+            check(BusinessSessionTransitionPolicy.maySettle(session.status)) { "この営業セッションは既に終了しています" }
+            val operationKey = OperationsIdempotencyPolicy.settlementKey(type, session.id)
             if (operationKey != null) {
                 claimOperationKey(
                     operationKey = operationKey,
                     operationType = type.name,
-                    duplicateMessage = "この営業日は既にZ精算済みです",
+                    duplicateMessage = "この営業セッションは既にZ精算済みです",
                     createdAt = now,
                 )
             }
-            val summary = dailySummary(businessDate)
+            val summary = summaryForSession(session.toWindow())
             if (type == SettlementReportType.Z_SETTLEMENT && summary.settled) {
-                throw IllegalStateException("この営業日は既にZ精算済みです")
+                throw IllegalStateException("この営業セッションは既にZ精算済みです")
             }
             val actual = actualCash ?: summary.expectedCash
             require(actual >= 0) { "現金実査額は0円以上で入力してください" }
@@ -690,19 +672,34 @@ class OperationsStore(context: Context) {
             if (type == SettlementReportType.Z_SETTLEMENT) {
                 val updated = update(
                     "business_sessions",
-                    ContentValues().apply { put("status", BusinessSessionStatus.Z_SETTLED.name) },
+                    ContentValues().apply {
+                        put("status", BusinessSessionLifecyclePolicy.resultStatus(type, session.status).name)
+                        put("closed_by", operatorName.trim())
+                        put("closed_at", now)
+                        put("closing_actual", actual)
+                        put("close_variance", variance)
+                    },
                     "id = ? AND status = ?",
                     arrayOf(session.id.toString(), BusinessSessionStatus.OPEN.name),
                 )
-                check(updated == 1) { "営業日状態が更新されました。画面を更新してください" }
+                check(updated == 1) { "営業セッション状態が更新されました。画面を更新してください" }
             }
             insertAudit(
                 eventType = type.name,
                 referenceId = id,
-                detail = "営業日 ${summary.businessDate} / 純売上 ${summary.netSales}円 / 現金差異 ${variance}円",
+                detail = "営業日 ${summary.businessDate} / セッションNo.${session.id} / 純売上 ${summary.netSales}円 / 現金差異 ${variance}円",
                 operatorName = operatorName,
                 createdAt = now,
             )
+            if (type == SettlementReportType.Z_SETTLEMENT) {
+                insertAudit(
+                    eventType = "BUSINESS_CLOSE",
+                    referenceId = session.id,
+                    detail = "Z精算No.${id}により営業終了 / 営業日 ${summary.businessDate} / 現金実査 ${actual}円 / 過不足 ${variance}円",
+                    operatorName = operatorName,
+                    createdAt = now,
+                )
+            }
             if (operationKey != null) bindOperationKey(operationKey, id)
             id
         }
@@ -712,7 +709,7 @@ class OperationsStore(context: Context) {
         db.query(
             "settlement_reports",
             arrayOf(
-                "id", "business_date", "report_type", "sales_gross", "reversal_gross", "net_sales",
+                "id", "business_session_id", "business_date", "report_type", "sales_gross", "reversal_gross", "net_sales",
                 "expected_cash", "actual_cash", "variance", "transaction_count", "reversal_count",
                 "pending_prints", "held_tickets", "operator_name", "created_at",
             ),
@@ -727,20 +724,21 @@ class OperationsStore(context: Context) {
             while (cursor.moveToNext()) {
                 result += SettlementRecord(
                     id = cursor.getLong(0),
-                    businessDate = cursor.getString(1),
-                    type = SettlementReportType.valueOf(cursor.getString(2)),
-                    salesGross = cursor.getLong(3),
-                    reversalGross = cursor.getLong(4),
-                    netSales = cursor.getLong(5),
-                    expectedCash = cursor.getLong(6),
-                    actualCash = cursor.getLong(7),
-                    variance = cursor.getLong(8),
-                    transactionCount = cursor.getInt(9),
-                    reversalCount = cursor.getInt(10),
-                    pendingPrints = cursor.getInt(11),
-                    heldTickets = cursor.getInt(12),
-                    operatorName = cursor.getString(13),
-                    createdAt = cursor.getLong(14),
+                    businessSessionId = cursor.getLong(1),
+                    businessDate = cursor.getString(2),
+                    type = SettlementReportType.valueOf(cursor.getString(3)),
+                    salesGross = cursor.getLong(4),
+                    reversalGross = cursor.getLong(5),
+                    netSales = cursor.getLong(6),
+                    expectedCash = cursor.getLong(7),
+                    actualCash = cursor.getLong(8),
+                    variance = cursor.getLong(9),
+                    transactionCount = cursor.getInt(10),
+                    reversalCount = cursor.getInt(11),
+                    pendingPrints = cursor.getInt(12),
+                    heldTickets = cursor.getInt(13),
+                    operatorName = cursor.getString(14),
+                    createdAt = cursor.getLong(15),
                 )
             }
             return result
@@ -777,8 +775,8 @@ class OperationsStore(context: Context) {
     private fun queryActiveSession(database: SQLiteDatabase): BusinessSessionRecord? = database.query(
         "business_sessions",
         SESSION_COLUMNS,
-        "status IN (?, ?)",
-        arrayOf(BusinessSessionStatus.OPEN.name, BusinessSessionStatus.Z_SETTLED.name),
+        "status = ?",
+        arrayOf(BusinessSessionStatus.OPEN.name),
         null,
         null,
         "opened_at DESC",
@@ -864,7 +862,7 @@ class OperationsStore(context: Context) {
             """
             CREATE TABLE IF NOT EXISTS business_sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                business_date TEXT NOT NULL UNIQUE,
+                business_date TEXT NOT NULL,
                 status TEXT NOT NULL,
                 opening_cash INTEGER NOT NULL,
                 opened_by TEXT NOT NULL,
