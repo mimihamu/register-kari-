@@ -70,6 +70,7 @@ private fun CustomerDisplaySettingsScreen(
     var message by remember { mutableStateOf<String?>(null) }
     var pairingState by remember { mutableStateOf(CustomerDisplayPairingState()) }
     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var runtimeStatus by remember { mutableStateOf(CustomerDisplayRuntime.status()) }
     val advertiser = remember {
         CustomerDisplayPairingAdvertiser(context) { state -> pairingState = state }
     }
@@ -86,6 +87,13 @@ private fun CustomerDisplaySettingsScreen(
 
     DisposableEffect(advertiser) {
         onDispose { advertiser.stop(null) }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            runtimeStatus = CustomerDisplayRuntime.status()
+            kotlinx.coroutines.delay(1_000L)
+        }
     }
 
     LaunchedEffect(pairingState.status, pairingState.endsAtMillis) {
@@ -144,6 +152,36 @@ private fun CustomerDisplaySettingsScreen(
                 Text("顧客表示は任意機能です。OFFでも販売・会計は継続します。")
             }
             OutlinedButton(onClick = onClose) { Text("閉じる") }
+        }
+
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = when {
+                    !runtimeStatus.enabled -> Color(0xFFF1F3F5)
+                    runtimeStatus.running && runtimeStatus.connectedClients > 0 -> Color(0xFFE8F5E9)
+                    runtimeStatus.running -> Color(0xFFFFF8E1)
+                    else -> Color(0xFFFFEBEE)
+                },
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text("現在の接続状態", fontWeight = FontWeight.Bold)
+                Text(
+                    when {
+                        !runtimeStatus.enabled -> "顧客表示：OFF"
+                        runtimeStatus.running -> "顧客表示サーバー：待受中（ポート ${runtimeStatus.port ?: "-"}）"
+                        else -> "顧客表示サーバー：停止"
+                    },
+                    color = Color(0xFF173F6B),
+                    fontWeight = FontWeight.Bold,
+                )
+                Text("接続中のつぐレジ CD：${runtimeStatus.connectedClients}台")
+                Text("現在の表示状態：${runtimeStatus.latestMode.displayLabel()}")
+                runtimeStatus.lastError?.let {
+                    Text("最終エラー：$it", color = Color(0xFFC62828))
+                }
+            }
         }
 
         Card(
@@ -227,6 +265,7 @@ private fun CustomerDisplaySettingsScreen(
                                 enabled = true
                                 store.save(config)
                                 CustomerDisplayRuntime.applySettings(context, config)
+                                runtimeStatus = CustomerDisplayRuntime.status()
                                 advertiser.start(config)
                                 message = "顧客表示をONにしてペアリング受付を開始しました"
                             }
@@ -272,10 +311,19 @@ private fun CustomerDisplaySettingsScreen(
                 buildConfig(enabled)?.let { config ->
                     store.save(config)
                     CustomerDisplayRuntime.applySettings(context, config)
+                    runtimeStatus = CustomerDisplayRuntime.status()
                     message = if (enabled) "保存しました。顧客表示サーバーを起動しました。" else "保存しました。顧客表示サーバーを停止しました。"
                 }
             }) { Text("保存") }
             Spacer(Modifier.height(1.dp))
         }
     }
+}
+
+private fun CustomerDisplayMode.displayLabel(): String = when (this) {
+    CustomerDisplayMode.STANDBY -> "待機"
+    CustomerDisplayMode.SALES -> "販売中"
+    CustomerDisplayMode.ACCOUNTING -> "小計・会計中"
+    CustomerDisplayMode.COMPLETE -> "会計完了"
+    CustomerDisplayMode.DISCONNECTED -> "切断"
 }
