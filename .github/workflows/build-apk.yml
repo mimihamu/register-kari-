@@ -41,29 +41,46 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify v0.19 generated sources
+      - name: Verify v0.20 canonical operations route
         run: |
-          grep -q 'versionCode = 49' app/build.gradle.kts
-          grep -q 'versionName = "0.19.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 50' app/build.gradle.kts
+          grep -q 'versionName = "0.20.0-dev.1"' app/build.gradle.kts
           grep -q 'androidx.work:work-runtime:2.11.2' app/build.gradle.kts
           grep -q 'versionCode = 6' customer-display/build.gradle.kts
           grep -q 'versionName = "0.13.0-dev.6"' customer-display/build.gradle.kts
 
+          operations_count=$(grep -c 'android:name=".OperationsActivity"' app/src/main/AndroidManifest.xml)
+          test "$operations_count" -eq 1
+          ! grep -q '<activity-alias' app/src/main/AndroidManifest.xml
+          ! grep -q 'AdvancedOperationsActivity' app/src/main/AndroidManifest.xml
+
+          grep -q 'is OperationsActivity -> guardManagementActivity' app/src/main/java/jp/co/tenposinfo/register/RegisterApplication.kt
+          grep -q 'OperationsStore(activity.applicationContext)' app/src/main/java/jp/co/tenposinfo/register/RegisterApplication.kt
+          ! grep -q 'AdvancedOperationsStore.isBusinessOpen' app/src/main/java/jp/co/tenposinfo/register/RegisterApplication.kt
+          grep -q 'OperationsActivity::class.java' app/src/main/java/jp/co/tenposinfo/register/RegisterApplication.kt
+          grep -q 'OperationsActivity::class.java' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+
+          grep -q '@Deprecated' app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsActivity.kt
+          test -s app/src/main/java/jp/co/tenposinfo/register/OperationsRoutingPolicy.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V020OperationsRoutingTest.kt
+          test -s docs/V0.20_OPERATIONS_ROUTING.md
+
           test -s app/src/main/java/jp/co/tenposinfo/register/PartialReturn.kt
-          test -s app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
-          test -s app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          test -s app/src/main/java/jp/co/tenposinfo/register/OperationDocuments.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V019PartialReturnPolicyTest.kt
-          test -s docs/V0.19_PARTIAL_RETURN.md
+          test -s app/src/test/java/jp/co/tenposinfo/register/V018BusinessSessionIntegrationTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V017OperationExecutionSafetyTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V016OperationsAuthorizationTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V015TaxInvoicePolicyTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V014HeldTicketSafetyTest.kt
 
           ! grep -q 'サンプル居酒屋' app/src/main/java/jp/co/tenposinfo/register/OperationDocuments.kt
           ! grep -q 'T1234567890123' app/src/main/java/jp/co/tenposinfo/register/OperationDocuments.kt
           ! grep -q 'テストPIN' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
           ! grep -q 'pin != "0000"' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
 
-          test ! -e .github/workflows/v019-apply.yml
-          test ! -e .github/workflows/v019-inventory.yml
-          test ! -e tools/apply_v019.py
+          test ! -e .github/workflows/v020-apply.yml
+          test ! -e .github/workflows/v020-inventory.yml
+          test ! -e tools/apply_v020.py
 
       - name: Verify launcher configuration
         run: |
@@ -84,25 +101,24 @@ jobs:
       - name: Prepare named APKs and SHA-256
         run: |
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.19.0_dev1_partial_return_debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.20.0_dev1_canonical_operations_debug.apk
           cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
-          sha256sum artifacts/TSUGUREGI_v0.19.0_dev1_partial_return_debug.apk | tee artifacts/TSUGUREGI_v0.19.0_dev1_partial_return_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_v0.20.0_dev1_canonical_operations_debug.apk | tee artifacts/TSUGUREGI_v0.20.0_dev1_canonical_operations_debug.apk.sha256
           sha256sum artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
-          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.19.0_dev1_partial_return_debug.apk | tee artifacts/build-summary.txt
+          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.20.0_dev1_canonical_operations_debug.apk | tee artifacts/build-summary.txt
           stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee -a artifacts/build-summary.txt
-          echo "REGISTER_VERSION_NAME=0.19.0-dev.1" >> artifacts/build-summary.txt
-          echo "REGISTER_VERSION_CODE=49" >> artifacts/build-summary.txt
+          echo "REGISTER_VERSION_NAME=0.20.0-dev.1" >> artifacts/build-summary.txt
+          echo "REGISTER_VERSION_CODE=50" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.6" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_VERSION_CODE=6" >> artifacts/build-summary.txt
-          echo "PARTIAL_RETURN=item-quantity-and-remaining-balance" >> artifacts/build-summary.txt
-          echo "RETURN_TAX_SNAPSHOT=sale-time-dynamic-rate" >> artifacts/build-summary.txt
-          echo "RETURN_DISCOUNT=proportional-final-remainder" >> artifacts/build-summary.txt
-          echo "RETURN_PAYMENT_ALLOCATION=original-payment-proportion" >> artifacts/build-summary.txt
+          echo "OPERATIONS_ACTIVITY=canonical-direct-manifest-registration" >> artifacts/build-summary.txt
+          echo "LEGACY_OPERATIONS_ACTIVITY=manifest-unregistered-deprecated" >> artifacts/build-summary.txt
+          echo "BUSINESS_DAY_GATE=canonical-operations-store" >> artifacts/build-summary.txt
+          echo "SECURE_OPERATIONS_UI=reachable-from-sales-and-permission-gates" >> artifacts/build-summary.txt
+          echo "PARTIAL_RETURN=item-quantity-and-sale-time-tax-snapshot" >> artifacts/build-summary.txt
           echo "RETURN_RECEIPT=58mm-80mm-configured-issuer" >> artifacts/build-summary.txt
-          echo "RETURN_ATOMICITY=items-payments-audit-print-single-transaction" >> artifacts/build-summary.txt
-          echo "RETURN_IDEMPOTENCY=per-request-persistent-key" >> artifacts/build-summary.txt
           echo "BUSINESS_DAY_AGGREGATION=business-session-id" >> artifacts/build-summary.txt
-          echo "BUSINESS_CLOSE_REQUIRES=z-settled-and-manager-pin" >> artifacts/build-summary.txt
+          echo "OPERATION_IDEMPOTENCY=persistent-deterministic-key" >> artifacts/build-summary.txt
           echo "OPERATIONS_PERMISSIONS=per-action-and-write-time" >> artifacts/build-summary.txt
           echo "TAX_ROUNDING=once-per-invoice-and-rate" >> artifacts/build-summary.txt
           echo "SALE_COMMIT_IDEMPOTENCY=persistent-uuid-key" >> artifacts/build-summary.txt
@@ -111,18 +127,18 @@ jobs:
           echo "REGISTER_PACKAGE=jp.co.tenposinfo.register.dev" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_PACKAGE=jp.co.tenposinfo.register.cd.dev" >> artifacts/build-summary.txt
           echo "SIGNING=development-not-production" >> artifacts/build-summary.txt
-          echo "REAL_DEVICE_PARTIAL_RETURN_VERIFICATION=required" >> artifacts/build-summary.txt
-          echo "REAL_DEVICE_RETURN_PRINTER_VERIFICATION=required" >> artifacts/build-summary.txt
+          echo "REAL_DEVICE_CANONICAL_OPERATIONS_ROUTE_VERIFICATION=required" >> artifacts/build-summary.txt
+          echo "REAL_DEVICE_LEGACY_SCREEN_UNREACHABLE_VERIFICATION=required" >> artifacts/build-summary.txt
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
       - name: Upload APKs
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.19.0-dev1-partial-return-apks
+          name: TSUGUREGI-v0.20.0-dev1-canonical-operations-apks
           path: |
-            artifacts/TSUGUREGI_v0.19.0_dev1_partial_return_debug.apk
-            artifacts/TSUGUREGI_v0.19.0_dev1_partial_return_debug.apk.sha256
+            artifacts/TSUGUREGI_v0.20.0_dev1_canonical_operations_debug.apk
+            artifacts/TSUGUREGI_v0.20.0_dev1_canonical_operations_debug.apk.sha256
             artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
             artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
             artifacts/build-summary.txt

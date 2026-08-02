@@ -28,7 +28,7 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
     override fun onActivityResumed(activity: Activity) {
         when (activity) {
             is MainActivity -> updateMainActivity(activity)
-            is OperationsActivity, is AdvancedOperationsActivity -> guardManagementActivity(activity)
+            is OperationsActivity -> guardManagementActivity(activity)
             is AdminSettingsActivity -> guardSettingsActivity(activity)
         }
     }
@@ -166,7 +166,7 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
             if (existing != null) content.removeView(existing)
             return
         }
-        val open = runCatching { AdvancedOperationsStore.isBusinessOpen(activity.applicationContext) }.getOrDefault(false)
+        val open = runCatching { isCanonicalBusinessSessionOpen(activity) }.getOrDefault(false)
         if (open) {
             if (existing != null) content.removeView(existing)
             return
@@ -194,6 +194,15 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
             ),
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
         )
+    }
+
+    private fun isCanonicalBusinessSessionOpen(activity: Activity): Boolean {
+        val store = OperationsStore(activity.applicationContext)
+        return try {
+            store.activeBusinessSession()?.status == BusinessSessionStatus.OPEN
+        } finally {
+            store.close()
+        }
     }
 
     private fun guardManagementActivity(activity: Activity) {
