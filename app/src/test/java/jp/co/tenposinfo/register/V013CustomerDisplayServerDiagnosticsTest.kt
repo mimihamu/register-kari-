@@ -67,11 +67,13 @@ class V013CustomerDisplayServerDiagnosticsTest {
 
     private fun connectWithRetry(port: Int): Socket {
         var lastError: Exception? = null
-        repeat(40) {
+        var attempt = 0
+        while (attempt < 40) {
             try {
                 return Socket("127.0.0.1", port).apply { soTimeout = 2_000 }
             } catch (error: Exception) {
                 lastError = error
+                attempt++
                 Thread.sleep(25L)
             }
         }
