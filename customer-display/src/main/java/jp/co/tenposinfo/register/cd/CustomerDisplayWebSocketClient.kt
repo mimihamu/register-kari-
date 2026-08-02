@@ -151,17 +151,24 @@ private class SharedCustomerDisplaySession(
     @Volatile
     private var worker: Thread? = null
     @Volatile
-    private var connected = false
+    private var transportConnected = false
+    @Volatile
+    private var visibleDisconnected = true
+    @Volatile
+    private var everEstablishedConnection = false
     @Volatile
     private var latestSnapshot: CustomerDisplaySnapshot? = null
     @Volatile
     private var latestDisconnectReason: String? = null
     private var delayedStop: ScheduledFuture<*>? = null
+    private var pendingVisibleDisconnect: ScheduledFuture<*>? = null
+    private var connectionGeneration = 0L
     private var terminal = false
+    private var lastLoggedMode: CustomerDisplayMode? = null
 
     fun tryAddListener(listener: CustomerDisplayConnectionListener): Long? {
         val id = listenerSequence.incrementAndGet()
-        val replayConnected: Boolean
+        val replayAsConnected: Boolean
         val replaySnapshot: CustomerDisplaySnapshot?
         val replayReason: String?
         synchronized(listenerLock) {
@@ -169,12 +176,15 @@ private class SharedCustomerDisplaySession(
             delayedStop?.cancel(false)
             delayedStop = null
             listeners[id] = listener
-            replayConnected = connected
             replaySnapshot = latestSnapshot
-            replayReason = latestDisconnectReason
+            replayAsConnected = transportConnected || CustomerDisplayConnectionPresentationPolicy.shouldReplayLastSnapshot(
+                hasPresentedSnapshot = replaySnapshot != null,
+                visibleDisconnected = visibleDisconnected,
+            )
+            replayReason = if (visibleDisconnected) latestDisconnectReason else null
         }
         startWorker()
-        if (replayConnected) {
+        if (replayAsConnected) {
             safeCall(listener.onConnected)
             if (replaySnapshot != null) safeCall { listener.onSnapshot(replaySnapshot) }
         } else if (replayReason != null) {
@@ -203,6 +213,8 @@ private class SharedCustomerDisplaySession(
                 terminal = true
                 delayedStop?.cancel(false)
                 delayedStop = null
+                pendingVisibleDisconnect?.cancel(false)
+                pendingVisibleDisconnect = null
                 true
             }
         }
@@ -216,6 +228,8 @@ private class SharedCustomerDisplaySession(
                 false
             } else {
                 terminal = true
+                pendingVisibleDisconnect?.cancel(false)
+                pendingVisibleDisconnect = null
                 true
             }
         }
@@ -229,12 +243,20 @@ private class SharedCustomerDisplaySession(
             worker?.interrupt()
             worker = null
         }
-        connected = false
+        transportConnected = false
+        CustomerDisplayConnectionEventLog.record(
+            CustomerDisplayConnectionEventType.STOPPED,
+            "画面利用終了により接続セッションを停止",
+        )
         onStopped(this)
     }
 
     private fun startWorker() {
         if (!running.compareAndSet(false, true)) return
+        CustomerDisplayConnectionEventLog.record(
+            CustomerDisplayConnectionEventType.STARTING,
+            "${settings.host}:${settings.port} へ接続開始",
+        )
         worker = thread(
             start = true,
             isDaemon = true,
@@ -247,24 +269,22 @@ private class SharedCustomerDisplaySession(
     private fun reconnectLoop() {
         var failedAttempts = 0
         while (running.get()) {
-            var hadEstablishedConnection = false
             val reason = runCatching {
                 connectAndRead {
-                    hadEstablishedConnection = true
                     notifyConnected()
                 }
                 "接続が終了しました"
             }.exceptionOrNull()?.message ?: "接続が終了しました"
             if (!running.get()) return
 
-            notifyDisconnected(reason)
+            scheduleDisconnectedPresentation(reason)
             val delayMillis = CustomerDisplayConnectionPolicy.retryDelayMillis(
                 failedAttempts = failedAttempts,
-                hadEstablishedConnection = hadEstablishedConnection,
+                hadEstablishedConnection = everEstablishedConnection,
             )
             failedAttempts = CustomerDisplayConnectionPolicy.nextFailedAttemptCount(
                 failedAttempts = failedAttempts,
-                hadEstablishedConnection = hadEstablishedConnection,
+                hadEstablishedConnection = everEstablishedConnection,
             )
             try {
                 Thread.sleep(delayMillis)
@@ -372,26 +392,103 @@ private class SharedCustomerDisplaySession(
     }
 
     private fun notifyConnected() {
-        connected = true
-        latestDisconnectReason = null
-        listenerSnapshot().forEach { listener -> safeCall(listener.onConnected) }
+        val currentListeners = synchronized(listenerLock) {
+            transportConnected = true
+            everEstablishedConnection = true
+            visibleDisconnected = false
+            latestDisconnectReason = null
+            connectionGeneration++
+            pendingVisibleDisconnect?.cancel(false)
+            pendingVisibleDisconnect = null
+            listeners.values.toList()
+        }
+        CustomerDisplayConnectionEventLog.record(
+            CustomerDisplayConnectionEventType.CONNECTED,
+            "${settings.host}:${settings.port} へ接続",
+        )
+        currentListeners.forEach { listener -> safeCall(listener.onConnected) }
     }
 
     private fun notifySnapshot(snapshot: CustomerDisplaySnapshot) {
-        latestSnapshot = snapshot
-        connected = true
-        latestDisconnectReason = null
-        listenerSnapshot().forEach { listener -> safeCall { listener.onSnapshot(snapshot) } }
+        val modeChanged: Boolean
+        val currentListeners = synchronized(listenerLock) {
+            latestSnapshot = snapshot
+            transportConnected = true
+            everEstablishedConnection = true
+            visibleDisconnected = false
+            latestDisconnectReason = null
+            connectionGeneration++
+            pendingVisibleDisconnect?.cancel(false)
+            pendingVisibleDisconnect = null
+            modeChanged = lastLoggedMode != snapshot.mode
+            lastLoggedMode = snapshot.mode
+            listeners.values.toList()
+        }
+        if (modeChanged) {
+            CustomerDisplayConnectionEventLog.record(
+                CustomerDisplayConnectionEventType.MODE_CHANGED,
+                "表示=${snapshot.mode.name} sequence=${snapshot.sequence}",
+            )
+        }
+        currentListeners.forEach { listener -> safeCall { listener.onSnapshot(snapshot) } }
     }
 
-    private fun notifyDisconnected(reason: String) {
-        connected = false
-        latestDisconnectReason = reason
-        listenerSnapshot().forEach { listener -> safeCall { listener.onDisconnected(reason) } }
+    private fun scheduleDisconnectedPresentation(reason: String) {
+        val immediateListeners: List<CustomerDisplayConnectionListener>
+        val generation: Long
+        val delayMillis: Long
+        synchronized(listenerLock) {
+            transportConnected = false
+            latestDisconnectReason = reason
+            generation = ++connectionGeneration
+            pendingVisibleDisconnect?.cancel(false)
+            pendingVisibleDisconnect = null
+            delayMillis = if (visibleDisconnected) {
+                0L
+            } else {
+                CustomerDisplayConnectionPresentationPolicy.disconnectDelayMillis(latestSnapshot != null)
+            }
+            if (delayMillis == 0L) {
+                visibleDisconnected = true
+                immediateListeners = listeners.values.toList()
+            } else {
+                immediateListeners = emptyList()
+                pendingVisibleDisconnect = scheduler.schedule(
+                    { revealDisconnectedIfStillCurrent(generation, reason) },
+                    delayMillis,
+                    TimeUnit.MILLISECONDS,
+                )
+            }
+        }
+
+        if (delayMillis > 0L) {
+            CustomerDisplayConnectionEventLog.record(
+                CustomerDisplayConnectionEventType.TRANSIENT_LOSS,
+                "${delayMillis}msは直前画面を維持: ${reason.take(120)}",
+            )
+        } else {
+            CustomerDisplayConnectionEventLog.record(
+                CustomerDisplayConnectionEventType.DISCONNECTED,
+                reason,
+            )
+            immediateListeners.forEach { listener -> safeCall { listener.onDisconnected(reason) } }
+        }
     }
 
-    private fun listenerSnapshot(): List<CustomerDisplayConnectionListener> =
-        synchronized(listenerLock) { listeners.values.toList() }
+    private fun revealDisconnectedIfStillCurrent(generation: Long, reason: String) {
+        val currentListeners = synchronized(listenerLock) {
+            if (terminal || transportConnected || generation != connectionGeneration) return
+            pendingVisibleDisconnect = null
+            visibleDisconnected = true
+            latestDisconnectReason = reason
+            listeners.values.toList()
+        }
+        CustomerDisplayConnectionEventLog.record(
+            CustomerDisplayConnectionEventType.DISCONNECTED,
+            "猶予後も復旧せず表示切替: ${reason.take(160)}",
+        )
+        currentListeners.forEach { listener -> safeCall { listener.onDisconnected(reason) } }
+    }
 
     private data class HttpResponse(val lines: List<String>, val headers: Map<String, String>)
 
