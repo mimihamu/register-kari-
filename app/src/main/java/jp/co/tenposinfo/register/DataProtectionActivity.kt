@@ -70,10 +70,15 @@ class DataProtectionActivity : ComponentActivity() {
 @Composable
 private fun DataProtectionScreen(onClose: () -> Unit) {
     val context = LocalContext.current
-    val manager = remember { DataProtectionManager(context.applicationContext) }
+    val appContext = context.applicationContext
+    val manager = remember { DataProtectionManager(appContext) }
+    val autoStatusStore = remember { AutoBackupStatusStore(appContext) }
+    val metadataStore = remember { AutoBackupMetadataStore(appContext) }
     val scope = rememberCoroutineScope()
     var report by remember { mutableStateOf<DataProtectionReport?>(null) }
     var backups by remember { mutableStateOf<List<BackupRecord>>(emptyList()) }
+    var metadataByFile by remember { mutableStateOf<Map<String, AutoBackupMetadata>>(emptyMap()) }
+    var autoStatus by remember { mutableStateOf(autoStatusStore.load()) }
     var selected by remember { mutableStateOf<String?>(null) }
     var pending by remember { mutableStateOf(manager.pendingRestoreStatus()) }
     var pin by remember { mutableStateOf("") }
@@ -86,6 +91,8 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
             busy = true
             message = runCatching { task() }.getOrElse { "エラー: ${it.message}" }
             backups = withContext(Dispatchers.IO) { manager.listBackups() }
+            metadataByFile = withContext(Dispatchers.IO) { metadataStore.readAll() }
+            autoStatus = autoStatusStore.load()
             pending = manager.pendingRestoreStatus()
             busy = false
         }
@@ -99,12 +106,13 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
         pendingExport = null
         if (uri != null && fileName != null) {
             runTask {
-                val actor = OperatorSessionRegistry.current(context.applicationContext)?.name ?: "責任者"
+                val actor = OperatorSessionRegistry.current(appContext)?.name ?: "責任者"
                 val result = withContext(Dispatchers.IO) {
                     context.contentResolver.openOutputStream(uri, "w")?.use { output ->
                         manager.exportBackup(fileName, output, actor)
                     } ?: error("保存先を開けません")
                 }
+                withContext(Dispatchers.IO) { metadataStore.registerExport(result) }
                 "外部保存完了: ${result.fileName} / ${result.bytesWritten} bytes"
             }
         }
@@ -112,11 +120,13 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runTask {
-                val actor = OperatorSessionRegistry.current(context.applicationContext)?.name ?: "責任者"
+                val actor = OperatorSessionRegistry.current(appContext)?.name ?: "責任者"
                 val imported = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.use { input ->
+                    val record = context.contentResolver.openInputStream(uri)?.use { input ->
                         manager.importBackup(input, actor)
                     } ?: error("取込ファイルを開けません")
+                    metadataStore.registerManualBackup(manager.verifyBackup(record.fileName))
+                    record
                 }
                 selected = imported.fileName
                 "外部バックアップ取込完了: ${imported.fileName}"
@@ -126,8 +136,27 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
 
     LaunchedEffect(Unit) {
         backups = withContext(Dispatchers.IO) { manager.listBackups() }
+        metadataByFile = withContext(Dispatchers.IO) { metadataStore.readAll() }
+        autoStatus = autoStatusStore.load()
         report = withContext(Dispatchers.IO) { manager.diagnose() }
         message = if (report?.healthy == true) "DB整合性は正常です" else "DB整合性エラーを確認してください"
+    }
+
+    val deletionCandidates = remember(backups, metadataByFile, pending) {
+        AutoBackupRetentionPolicy.selectDeletionCandidates(
+            backups.map { backup ->
+                val metadata = metadataByFile[backup.fileName]
+                BackupRetentionEntry(
+                    fileName = backup.fileName,
+                    createdAt = backup.createdAt,
+                    valid = backup.valid,
+                    reason = metadata?.reason,
+                    businessDate = metadata?.businessDate,
+                    state = metadata?.state ?: AutoBackupFileState.READY,
+                    pendingRestore = pending.backupFileName == backup.fileName,
+                )
+            },
+        )
     }
 
     Surface(Modifier.fillMaxSize(), color = DpBackground) {
@@ -151,15 +180,45 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                             Spacer(Modifier.height(8.dp)); Text("復元前ブロッカー", fontWeight = FontWeight.Bold)
                             val reasons = DataRestorePolicy.reasons(current.restoreBlockers)
                             Text(if (reasons.isEmpty()) "なし" else reasons.joinToString("\n"), color = if (reasons.isEmpty()) DpGreen else DpDanger)
-                            Spacer(Modifier.height(8.dp))
+                            Spacer(Modifier.height(6.dp))
                             LazyColumn(Modifier.weight(1f)) {
                                 items(current.issues) { issue -> Text("${issue.code}: ${issue.message}${if (issue.count > 0) " (${issue.count})" else ""}", color = if (issue.severity == IntegritySeverity.ERROR) DpDanger else Color.DarkGray, modifier = Modifier.padding(vertical = 3.dp)) }
                             }
                         } else Spacer(Modifier.weight(1f))
+
+                        Text("自動バックアップ", fontWeight = FontWeight.Bold, color = DpNavy)
+                        Text("状態: ${if (autoStatus.enabled) "有効" else "無効"} / 最終結果: ${autoStatus.lastResult.displayName}", color = if (autoStatus.lastResult == AutoBackupResultState.FAILED || autoStatus.lastResult == AutoBackupResultState.SKIPPED_LOW_STORAGE) DpDanger else DpGreen)
+                        Text("最終実行: ${autoStatus.lastCompletedAt?.let(::formatTime) ?: "未実行"} / 条件: ${autoStatus.nextCondition}", fontSize = 13.sp)
+                        autoStatus.lastReason?.let { Text("作成理由: ${it.displayName}", fontSize = 13.sp) }
+                        autoStatus.lastRetentionResult?.let { Text("自動整理: $it", fontSize = 13.sp) }
+                        autoStatus.lastError?.let { Text("エラー詳細: $it", color = DpDanger, fontSize = 13.sp) }
+                        Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = { runTask { report = withContext(Dispatchers.IO) { manager.diagnose() }; if (report?.healthy == true) "DB整合性は正常です" else "DB整合性エラーがあります" } }, enabled = !busy, colors = ButtonDefaults.buttonColors(containerColor = DpBlue)) { Text("再診断") }
-                            Button(onClick = { runTask { val actor = OperatorSessionRegistry.current(context.applicationContext)?.name ?: "責任者"; val backup = withContext(Dispatchers.IO) { manager.createBackup(actor) }; "バックアップ作成: ${backup.fileName}" } }, enabled = !busy && current?.healthy == true, colors = ButtonDefaults.buttonColors(containerColor = DpGreen)) { Text("バックアップ作成") }
+                            Button(onClick = {
+                                runTask {
+                                    val actor = OperatorSessionRegistry.current(appContext)?.name ?: "責任者"
+                                    val backup = withContext(Dispatchers.IO) {
+                                        val record = manager.createBackup(actor)
+                                        metadataStore.registerManualBackup(manager.verifyBackup(record.fileName))
+                                        record
+                                    }
+                                    "手動バックアップ作成: ${backup.fileName}"
+                                }
+                            }, enabled = !busy && current?.healthy == true, colors = ButtonDefaults.buttonColors(containerColor = DpGreen)) { Text("通常バックアップ") }
                         }
+                        Spacer(Modifier.height(6.dp))
+                        OutlinedButton(
+                            onClick = {
+                                runTask {
+                                    val actor = OperatorSessionRegistry.current(appContext)?.name ?: "責任者"
+                                    withContext(Dispatchers.IO) { AutoBackupScheduler.enqueueManualNow(appContext, actor) }
+                                    "自動バックアップを要求しました。完了結果はこの画面で確認できます。"
+                                }
+                            },
+                            enabled = !busy && current?.healthy == true,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("自動バックアップを今すぐ実行") }
                     }
                 }
                 Card(Modifier.weight(1f).fillMaxHeight(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
@@ -168,9 +227,19 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                         Spacer(Modifier.height(8.dp))
                         LazyColumn(Modifier.weight(1f)) {
                             items(backups, key = { it.fileName }) { backup ->
+                                val metadata = metadataByFile[backup.fileName]
                                 Column(Modifier.fillMaxWidth().background(if (selected == backup.fileName) DpSelected else Color.Transparent).clickable { selected = backup.fileName }.padding(10.dp)) {
                                     Text(backup.fileName, fontWeight = FontWeight.Bold)
                                     Text("${backup.sizeBytes} bytes / ${formatTime(backup.createdAt)} / ${backup.appVersion ?: "不明"}")
+                                    Text(
+                                        "作成理由: ${metadata?.reason?.displayName ?: "手動・外部取込"} / ${if (backup.fileName in deletionCandidates) "削除候補" else "保持対象"}",
+                                        color = if (backup.fileName in deletionCandidates) DpDanger else DpGreen,
+                                        fontSize = 13.sp,
+                                    )
+                                    if (metadata != null) {
+                                        Text("営業日: ${metadata.businessDate ?: "なし"} / セッション: ${metadata.businessSessionId ?: "なし"} / Z精算: ${metadata.settlementId ?: "なし"}", fontSize = 13.sp)
+                                        Text("外部保存: ${if (metadata.exportedExternally) "済み" else "未保存"} / 最終検証: ${metadata.lastVerifiedAt?.let(::formatTime) ?: "未検証"} / 状態: ${metadata.state.name}", fontSize = 13.sp)
+                                    }
                                     if (!backup.valid) Text(backup.error.orEmpty(), color = DpDanger)
                                 }
                             }
