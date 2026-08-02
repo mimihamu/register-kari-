@@ -1,5 +1,7 @@
 package jp.co.tenposinfo.register
 
+import java.math.BigInteger
+
 enum class TaxCategory(
     val displayName: String,
     val symbol: String,
@@ -86,12 +88,42 @@ object TaxEngine {
      * 値引後の金額を税率単位に合算し、1インボイス・税率ごとに一度だけ端数処理する。
      * 商品が任意税率マスターを使用している場合も、商品スナップショットの税率・内外税方式で計算する。
      */
+    private fun floorMultiplyDivide(amount: Long, multiplier: Int, divisor: Int): Long {
+        require(amount >= 0) { "amount must not be negative" }
+        require(multiplier >= 0) { "multiplier must not be negative" }
+        require(divisor > 0) { "divisor must be positive" }
+        return BigInteger.valueOf(amount)
+            .multiply(BigInteger.valueOf(multiplier.toLong()))
+            .divide(BigInteger.valueOf(divisor.toLong()))
+            .longValueExact()
+    }
+
+    /**
+     * 同率の内税・外税が混在する場合、内税部分と外税部分の正確な税相当額を
+     * 分数のまま加算し、税率単位で最後に一度だけ切り捨てる。
+     */
+    private fun mixedTaxAmount(includedGross: Long, excludedNet: Long, rate: Int): Long {
+        val rateValue = BigInteger.valueOf(rate.toLong())
+        val hundred = BigInteger.valueOf(100L)
+        val grossDivisor = BigInteger.valueOf((100L + rate).toLong())
+        val includedNumerator = BigInteger.valueOf(includedGross)
+            .multiply(rateValue)
+            .multiply(hundred)
+        val excludedNumerator = BigInteger.valueOf(excludedNet)
+            .multiply(rateValue)
+            .multiply(grossDivisor)
+        return includedNumerator
+            .add(excludedNumerator)
+            .divide(hundred.multiply(grossDivisor))
+            .longValueExact()
+    }
+
     fun calculate(items: List<CartItem>): TaxSummary {
         val taxableBuckets = items
             .filter { it.product.taxable }
             .groupBy { it.product.taxRatePercent }
             .map { (rate, rows) ->
-                require(rate in 0..100) { "tax rate must be between 0 and 100" }
+                require(rate in 1..100) { "tax rate must be between 1 and 100" }
                 val includedGross = rows.filter { it.product.taxIncluded }.sumOf { it.baseAmount }
                 val excludedNet = rows.filterNot { it.product.taxIncluded }.sumOf { it.baseAmount }
                 val categories = rows.map { it.product.taxCategory }.toSet()
@@ -102,20 +134,20 @@ object TaxEngine {
                 val gross: Long
                 when {
                     includedGross > 0 && excludedNet > 0 -> {
-                        val includedNet = includedGross * 100 / (100 + rate)
-                        net = includedNet + excludedNet
-                        tax = net * rate / 100
-                        gross = net + tax
+                        val excludedTax = floorMultiplyDivide(excludedNet, rate, 100)
+                        gross = Math.addExact(Math.addExact(includedGross, excludedNet), excludedTax)
+                        tax = mixedTaxAmount(includedGross, excludedNet, rate)
+                        net = gross - tax
                     }
                     includedGross > 0 -> {
-                        tax = includedGross * rate / (100 + rate)
+                        tax = floorMultiplyDivide(includedGross, rate, 100 + rate)
                         net = includedGross - tax
                         gross = includedGross
                     }
                     else -> {
                         net = excludedNet
-                        tax = net * rate / 100
-                        gross = net + tax
+                        tax = floorMultiplyDivide(net, rate, 100)
+                        gross = Math.addExact(net, tax)
                     }
                 }
                 TaxBucket(rate, true, categories, net, tax, gross, keys)

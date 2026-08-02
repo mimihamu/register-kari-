@@ -196,7 +196,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         commitKey: String? = null,
     ): Long {
         require(items.isNotEmpty()) { "Cannot save an empty sale" }
-        TaxEngine.validateMixedTax(items, MixedTaxPolicy.BLOCK)
+        val mixedTaxPolicy = TaxInvoiceSettingsStore(applicationContext).load().mixedTaxPolicy
+        TaxEngine.validateMixedTax(items, mixedTaxPolicy)
         val summary = TaxEngine.calculate(items)
         require(paymentState.remaining(summary.grossAmount) == 0L) { "Payment is incomplete" }
         val normalizedCommitKey = commitKey?.trim()?.takeIf { it.isNotEmpty() }

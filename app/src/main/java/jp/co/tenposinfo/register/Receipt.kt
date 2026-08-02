@@ -52,6 +52,8 @@ data class PrintJobRecord(
 
 data class ReceiptData(
     val storeName: String,
+    val storeAddress: String = "",
+    val storePhone: String = "",
     val registrationNumber: String,
     val saleId: Long,
     val createdAt: Long,
@@ -74,18 +76,25 @@ enum class ReceiptPaper(val widthMm: Int, val charsPerLine: Int) {
 }
 
 object ReceiptFactory {
-    fun fromSale(detail: SaleDetailRecord, reprint: Boolean = false): ReceiptData = ReceiptData(
-        storeName = "サンプル居酒屋",
-        registrationNumber = "T1234567890123",
-        saleId = detail.summary.id,
-        createdAt = detail.summary.createdAt,
-        operatorName = detail.summary.operatorName,
-        items = detail.items,
-        taxSummary = detail.taxSummary,
-        payments = detail.payments,
-        changeAmount = detail.summary.changeAmount,
-        reprint = reprint,
-    )
+    private fun issuer(): InvoiceIssuerProfile = TaxInvoiceSettingsRegistry.current().issuer
+
+    fun fromSale(detail: SaleDetailRecord, reprint: Boolean = false): ReceiptData {
+        val issuer = issuer()
+        return ReceiptData(
+            storeName = issuer.storeName,
+            storeAddress = issuer.address,
+            storePhone = issuer.phone,
+            registrationNumber = issuer.registrationNumber,
+            saleId = detail.summary.id,
+            createdAt = detail.summary.createdAt,
+            operatorName = detail.summary.operatorName,
+            items = detail.items,
+            taxSummary = detail.taxSummary,
+            payments = detail.payments,
+            changeAmount = detail.summary.changeAmount,
+            reprint = reprint,
+        )
+    }
 
     fun fromCurrentSale(
         saleId: Long,
@@ -94,17 +103,22 @@ object ReceiptFactory {
         items: List<CartItem>,
         payments: List<PaymentAllocation>,
         changeAmount: Long,
-    ): ReceiptData = ReceiptData(
-        storeName = "サンプル居酒屋",
-        registrationNumber = "T1234567890123",
-        saleId = saleId,
-        createdAt = createdAt,
-        operatorName = operatorName,
-        items = items,
-        taxSummary = TaxEngine.calculate(items),
-        payments = payments,
-        changeAmount = changeAmount,
-    )
+    ): ReceiptData {
+        val issuer = issuer()
+        return ReceiptData(
+            storeName = issuer.storeName,
+            storeAddress = issuer.address,
+            storePhone = issuer.phone,
+            registrationNumber = issuer.registrationNumber,
+            saleId = saleId,
+            createdAt = createdAt,
+            operatorName = operatorName,
+            items = items,
+            taxSummary = TaxEngine.calculate(items),
+            payments = payments,
+            changeAmount = changeAmount,
+        )
+    }
 }
 
 /**
@@ -117,6 +131,8 @@ object ReceiptRenderer {
         val width = paper.charsPerLine
         val lines = mutableListOf<String>()
         lines += center(data.storeName, width)
+        if (data.storeAddress.isNotBlank()) lines += center(data.storeAddress, width)
+        if (data.storePhone.isNotBlank()) lines += center("TEL ${data.storePhone}", width)
         if (data.reprint) lines += center("【再発行】", width)
         lines += center("領収書／レシート", width)
         lines += separator(width, '=')
@@ -136,15 +152,14 @@ object ReceiptRenderer {
         }
 
         lines += separator(width, '-')
-        lines += amountLine("小計（税抜）", yen(data.taxSummary.netAmount), width)
+        lines += amountLine("税抜金額等", yen(data.taxSummary.netAmount), width)
         data.taxSummary.buckets.forEach { bucket ->
-            val label = if (bucket.taxable) {
-                "${bucket.ratePercent}%対象 消費税"
+            if (bucket.taxable) {
+                lines += amountLine("${bucket.ratePercent}%対象額（税込）", yen(bucket.grossAmount), width)
+                lines += amountLine("  消費税等", yen(bucket.taxAmount), width)
             } else {
-                "非課税対象"
+                lines += amountLine("非課税対象額", yen(bucket.grossAmount), width)
             }
-            val value = if (bucket.taxable) yen(bucket.taxAmount) else yen(bucket.grossAmount)
-            lines += amountLine(label, value, width)
         }
         lines += separator(width, '=')
         lines += amountLine("合計", yen(data.taxSummary.grossAmount), width)
@@ -157,7 +172,9 @@ object ReceiptRenderer {
         }
         if (data.changeAmount > 0) lines += amountLine("お釣り", yen(data.changeAmount), width)
         lines += separator(width, '-')
-        lines += fit("登録番号 ${data.registrationNumber}", width)
+        if (data.registrationNumber.isNotBlank()) {
+            lines += fit("登録番号 ${data.registrationNumber}", width)
+        }
         lines += "※は軽減税率対象商品です"
         lines += "内/外は内税・外税区分です"
         lines += center("ありがとうございました", width)

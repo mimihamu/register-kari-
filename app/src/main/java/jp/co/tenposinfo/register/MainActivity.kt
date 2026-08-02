@@ -1241,10 +1241,14 @@ private fun PaymentScreen(
 ) {
     val summary = TaxEngine.calculate(items)
     val remaining = state.remaining(summary.grossAmount)
+    val paymentContext = LocalContext.current
+    val mixedPolicy = remember { TaxInvoiceSettingsStore(paymentContext.applicationContext).load().mixedTaxPolicy }
     var input by remember { mutableStateOf("") }
     var operationMessage by remember { mutableStateOf<String?>(null) }
     var acknowledgedMixedTax by remember { mutableStateOf(false) }
-    val mixed = TaxEngine.validateMixedTax(items, MixedTaxPolicy.WARN)
+    val mixed = TaxEngine.validateMixedTax(items, MixedTaxPolicy.ALLOW)
+    val mixedBlocked = mixed.hasMixedTax && mixedPolicy == MixedTaxPolicy.BLOCK
+    val mixedNeedsAcknowledgement = mixed.hasMixedTax && mixedPolicy == MixedTaxPolicy.WARN
 
     fun add(method: PaymentMethod) {
         val amount = input.toLongOrNull()
@@ -1276,12 +1280,29 @@ private fun PaymentScreen(
                     AmountRow(label, yen(bucket.taxAmount))
                 }
                 if (mixed.hasMixedTax) {
+                    val instruction = when (mixedPolicy) {
+                        MixedTaxPolicy.ALLOW -> "設定により許可されています。税率単位で一度だけ端数処理します。"
+                        MixedTaxPolicy.WARN -> if (acknowledgedMixedTax) {
+                            "確認済みです。会計確定できます。"
+                        } else {
+                            "内容を確認し、この表示を押して確認済みにしてください。"
+                        }
+                        MixedTaxPolicy.BLOCK -> "設定により禁止されています。商品税区分を修正してください。"
+                    }
                     Card(
                         colors = CardDefaults.cardColors(containerColor = Warning),
-                        modifier = Modifier.fillMaxWidth().clickable { acknowledgedMixedTax = !acknowledgedMixedTax },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(
+                                if (mixedPolicy == MixedTaxPolicy.WARN) {
+                                    Modifier.clickable { acknowledgedMixedTax = !acknowledgedMixedTax }
+                                } else {
+                                    Modifier
+                                },
+                            ),
                     ) {
                         Text(
-                            "${mixed.message}\n同率の内税・外税混在は禁止です。商品税区分を修正してください。",
+                            "${mixed.message}\n$instruction",
                             modifier = Modifier.padding(12.dp),
                             fontWeight = FontWeight.Bold,
                         )
@@ -1353,7 +1374,7 @@ private fun PaymentScreen(
             onBack = onBack,
             confirmLabel = if (completing) "会計確定中…" else "会計確定",
             onConfirm = onComplete,
-            confirmEnabled = remaining == 0L && !mixed.hasMixedTax && !completing,
+            confirmEnabled = remaining == 0L && !mixedBlocked && (!mixedNeedsAcknowledgement || acknowledgedMixedTax) && !completing,
         )
     }
 }

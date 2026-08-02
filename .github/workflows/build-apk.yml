@@ -41,10 +41,10 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify v0.14 dev.1 held-ticket and payment safety
+      - name: Verify v0.15 dev.1 tax invoice and sales profile
         run: |
-          grep -q 'versionCode = 44' app/build.gradle.kts
-          grep -q 'versionName = "0.14.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 45' app/build.gradle.kts
+          grep -q 'versionName = "0.15.0-dev.1"' app/build.gradle.kts
           grep -q 'versionCode = 6' customer-display/build.gradle.kts
           grep -q 'versionName = "0.13.0-dev.6"' customer-display/build.gradle.kts
           grep -q 'applicationId = "jp.co.tenposinfo.register.cd"' customer-display/build.gradle.kts
@@ -76,6 +76,17 @@ jobs:
 
           test -f app/src/test/java/jp/co/tenposinfo/register/V014HeldTicketSafetyTest.kt
           test -f app/src/test/java/jp/co/tenposinfo/register/V014PaymentDraftTest.kt
+          test -f app/src/main/java/jp/co/tenposinfo/register/TaxInvoiceSettings.kt
+          test -f app/src/main/java/jp/co/tenposinfo/register/TaxInvoiceSettingsActivity.kt
+          grep -q 'mixedTaxAmount' app/src/main/java/jp/co/tenposinfo/register/Domain.kt
+          grep -q 'TaxInvoiceSettingsStore(applicationContext).load().mixedTaxPolicy' app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt
+          grep -q 'mixedNeedsAcknowledgement' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q '対象額（税込）' app/src/main/java/jp/co/tenposinfo/register/Receipt.kt
+          grep -q 'TaxInvoiceSettingsActivity' app/src/main/AndroidManifest.xml
+          test -f app/src/test/java/jp/co/tenposinfo/register/V015TaxInvoicePolicyTest.kt
+          test -f app/src/test/java/jp/co/tenposinfo/register/V015SalesProfileSnapshotTest.kt
+          test ! -e .github/workflows/v015-apply.yml
+          test ! -e tools/apply_v015.py
           test ! -e .github/workflows/v014-apply.yml
           test ! -e .github/workflows/v014-sale-atomicity.yml
           test ! -e .github/workflows/v014-payment-draft.yml
@@ -107,14 +118,14 @@ jobs:
       - name: Prepare named APKs and SHA-256
         run: |
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.14.0_dev1_held_payment_safety_debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.15.0_dev1_tax_invoice_profile_debug.apk
           cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
-          sha256sum artifacts/TSUGUREGI_v0.14.0_dev1_held_payment_safety_debug.apk | tee artifacts/TSUGUREGI_v0.14.0_dev1_held_payment_safety_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_v0.15.0_dev1_tax_invoice_profile_debug.apk | tee artifacts/TSUGUREGI_v0.15.0_dev1_tax_invoice_profile_debug.apk.sha256
           sha256sum artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
-          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.14.0_dev1_held_payment_safety_debug.apk | tee artifacts/build-summary.txt
+          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.15.0_dev1_tax_invoice_profile_debug.apk | tee artifacts/build-summary.txt
           stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee -a artifacts/build-summary.txt
-          echo "REGISTER_VERSION_NAME=0.14.0-dev.1" >> artifacts/build-summary.txt
-          echo "REGISTER_VERSION_CODE=44" >> artifacts/build-summary.txt
+          echo "REGISTER_VERSION_NAME=0.15.0-dev.1" >> artifacts/build-summary.txt
+          echo "REGISTER_VERSION_CODE=45" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.6" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_VERSION_CODE=6" >> artifacts/build-summary.txt
           echo "HELD_TICKET_SWAP=single-sqlite-transaction" >> artifacts/build-summary.txt
@@ -127,22 +138,28 @@ jobs:
           echo "PAYMENT_DRAFT=sqlite-cart-fingerprint-bound" >> artifacts/build-summary.txt
           echo "PAYMENT_DRAFT_RESTORE=available" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_TRANSIENT_OUTAGE_SUPPRESSION=3000ms" >> artifacts/build-summary.txt
+          echo "TAX_ROUNDING=once-per-invoice-and-rate" >> artifacts/build-summary.txt
+          echo "MIXED_INCLUDED_EXCLUDED_POLICY=allow-warn-block-default-block" >> artifacts/build-summary.txt
+          echo "INVOICE_ISSUER_SETTINGS=store-address-phone-registration" >> artifacts/build-summary.txt
+          echo "RECEIPT_RATE_BREAKDOWN=taxable-amount-and-tax" >> artifacts/build-summary.txt
+          echo "SALES_PROFILE=runtime-time-selection-with-line-snapshot" >> artifacts/build-summary.txt
           echo "REGISTER_PACKAGE=jp.co.tenposinfo.register.dev" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_PACKAGE=jp.co.tenposinfo.register.cd.dev" >> artifacts/build-summary.txt
           echo "REGISTER_LAUNCHER_COUNT=1" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_LAUNCHER_COUNT=1" >> artifacts/build-summary.txt
           echo "SIGNING=development-not-production" >> artifacts/build-summary.txt
           echo "REAL_DEVICE_HELD_PAYMENT_VERIFICATION=required" >> artifacts/build-summary.txt
+          echo "REAL_DEVICE_TAX_RECEIPT_PROFILE_VERIFICATION=required" >> artifacts/build-summary.txt
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
       - name: Upload APKs
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.14.0-dev1-held-payment-safety-apks
+          name: TSUGUREGI-v0.15.0-dev1-tax-invoice-profile-apks
           path: |
-            artifacts/TSUGUREGI_v0.14.0_dev1_held_payment_safety_debug.apk
-            artifacts/TSUGUREGI_v0.14.0_dev1_held_payment_safety_debug.apk.sha256
+            artifacts/TSUGUREGI_v0.15.0_dev1_tax_invoice_profile_debug.apk
+            artifacts/TSUGUREGI_v0.15.0_dev1_tax_invoice_profile_debug.apk.sha256
             artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
             artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
             artifacts/build-summary.txt
