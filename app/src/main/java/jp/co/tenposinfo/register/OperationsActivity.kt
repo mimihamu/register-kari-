@@ -203,15 +203,9 @@ private fun OperationsApp(onClose: () -> Unit) {
                 onSave = { type, amount, reason ->
                     val result = runCatching { secureStore.recordCashMovement(type, amount, reason) }
                     message = result.fold(
-                        onSuccess = {
-                            if (type == SettlementReportType.Z_SETTLEMENT) {
-                                "Z精算を保存し、営業を終了しました（No.$it）"
-                            } else {
-                                "X点検を保存しました（No.$it）"
-                            }
-                        },
-                        onFailure = { it.message ?: "保存に失敗しました" },
-                    )
+              onSuccess = { "${type.displayName}を保存しました（No.$it）" },
+              onFailure = { it.message ?: "保存に失敗しました" },
+          )
                     if (result.isSuccess) revision++
                     activeOperator = OperatorSessionRegistry.current(appContext)
                 },
