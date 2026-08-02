@@ -68,23 +68,54 @@ class SecureOperationsCoordinator(
         actualCash: Long?,
         managerPin: String,
     ): Long {
-        val businessDate = store.activeBusinessSession()?.businessDate
+        val session = store.activeBusinessSession()
             ?: throw IllegalStateException("営業中の営業日がありません")
+        val businessDate = session.businessDate
         val persistentKey = if (type == SettlementReportType.Z_SETTLEMENT) {
             "Z_SETTLEMENT:$businessDate"
         } else {
             null
         }
         val executionKey = persistentKey ?: "X_INSPECTION:$businessDate"
-        return executionGuard.runExclusive(executionKey, "点検・精算を処理中です") {
+        var backupActor = "責任者"
+        val settlementId = executionGuard.runExclusive(executionKey, "点検・精算を処理中です") {
             val operator = requireOperator(OperationsAction.SETTLEMENT)
             val actor = if (OperationsAuthorizationPolicy.requiresManagerApproval(OperationsAction.SETTLEMENT, type)) {
                 OperationsActorFormatter.approved(operator, requireManagerName(managerPin))
             } else {
                 OperationsActorFormatter.direct(operator)
             }
+            backupActor = actor
             store.recordSettlement(type, actualCash, actor)
         }
+
+        if (AutoBackupTriggerPolicy.shouldEnqueue(type, settlementCommitted = true)) {
+            runCatching {
+                AutoBackupScheduler.enqueueZSettlement(
+                    context = appContext,
+                    businessDate = businessDate,
+                    businessSessionId = session.id,
+                    settlementId = settlementId,
+                    actorName = backupActor,
+                )
+            }.onFailure { error ->
+                runCatching {
+                    AutoBackupStatusStore(appContext).completed(
+                        BackupCreationReason.Z_SETTLEMENT,
+                        AutoBackupResultState.FAILED,
+                        error.message ?: error.javaClass.simpleName,
+                    )
+                    AutoBackupAudit.record(
+                        appContext,
+                        "DATA_BACKUP_AUTO_FAILED",
+                        "Z精算確定後の要求登録に失敗: ${error.message}",
+                        backupActor,
+                        settlementId,
+                    )
+                }
+            }
+        }
+        return settlementId
     }
 
     fun createReversal(
