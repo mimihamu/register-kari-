@@ -1,0 +1,73 @@
+name: Apply v0.16 secure operations
+
+on:
+  push:
+    branches:
+      - develop/v0.16
+    paths:
+      - tools/apply_v016.py
+      - .github/workflows/v016-apply.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout v0.16
+        uses: actions/checkout@v4
+        with:
+          ref: develop/v0.16
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle 9.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Apply source changes
+        run: python3 tools/apply_v016.py
+
+      - name: Verify removed regressions
+        run: |
+          ! grep -R 'テストPIN' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          ! grep -R 'pin != "0000"' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          ! grep -R 'onValueChange = { operator =' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q 'managerNameForPin' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
+          grep -q 'OperatorSessionRegistry.current' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
+
+      - name: Run unit tests
+        run: gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest
+
+      - name: Build debug APKs
+        run: gradle --no-daemon :app:assembleDebug :customer-display:assembleDebug
+
+      - name: Commit generated source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt \
+            app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt \
+            app/src/test/java/jp/co/tenposinfo/register/V016OperationsAuthorizationTest.kt \
+            docs/V0.16_OPERATIONS_AUTHORIZATION.md
+          git commit -m "feat(v0.16): enforce management authorization and manager approval"
+          git push origin HEAD:develop/v0.16
