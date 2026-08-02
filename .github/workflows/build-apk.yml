@@ -4,12 +4,19 @@ on:
   push:
     branches:
       - develop/v0.29
+  pull_request:
+    branches:
+      - develop/v0.28
+    types:
+      - synchronize
+      - reopened
 
 permissions:
   contents: write
 
 jobs:
   apply-responsive-layout:
+    if: github.event_name == 'push' || github.event.pull_request.head.ref == 'develop/v0.29'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
