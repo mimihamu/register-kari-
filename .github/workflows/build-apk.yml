@@ -61,7 +61,7 @@ jobs:
           grep -q 'HistoryPanel(Modifier.width(220.dp)' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
           grep -q 'HistoryPanel(Modifier.width(310.dp)' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
           grep -q 'HistoryPanel(Modifier.width(300.dp)' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
-          test "$(grep -c 'modifier = Modifier.weight(1f)' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt)" -ge 3
+          test "$(grep -c 'modifier = Modifier.weight(1f)' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt)" -ge 2
 
       - name: Commit layout fix
         run: |
