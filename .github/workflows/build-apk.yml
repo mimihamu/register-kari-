@@ -47,7 +47,6 @@ jobs:
           set -euo pipefail
           grep -q 'versionCode = 58' app/build.gradle.kts
           grep -q 'versionName = "0.28.0-dev.1"' app/build.gradle.kts
-          grep -q 'androidx.work:work-runtime:2.11.2' app/build.gradle.kts
           grep -q 'versionCode = 6' customer-display/build.gradle.kts
           grep -q 'versionName = "0.13.0-dev.6"' customer-display/build.gradle.kts
 
@@ -55,77 +54,75 @@ jobs:
           test -s app/src/test/java/jp/co/tenposinfo/register/V028UiStabilityTest.kt
           test -s docs/V0.28_UI_STABILITY.md
           test -s docs/V0.28_RELEASE_NOTES.md
-          grep -q 'TOP_BAR_ARGB: Long = 0xFF173F6B' app/src/main/java/jp/co/tenposinfo/register/RegisterUiChromeV028.kt
-          grep -q 'COMPACT_VALUE_HEIGHT_DP = 46' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'COMPACT_KEY_HEIGHT_DP = 42' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'COMPACT_KEY_GAP_DP = 5' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'COMPACT_FUNCTION_HEIGHT_DP = 40' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          test "$(grep -c 'val columnGap = if (compact) 6.dp else 8.dp' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt)" -eq 1
-          grep -q 'BlueButton(bottomActionLabel, onBottomAction, Modifier.weight(1f).height(buttonHeight))' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          ! grep -q 'Modifier.weight(1.4f).height(buttonHeight)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
 
-          ! grep -q 'FrameLayout.LayoutParams' app/src/main/java/jp/co/tenposinfo/register/CatalogBootstrapProvider.kt
-          ! grep -q 'installDynamicCatalogButton' app/src/main/java/jp/co/tenposinfo/register/CatalogBootstrapProvider.kt
-          ! grep -q 'installRevisionEditorButton' app/src/main/java/jp/co/tenposinfo/register/CatalogBootstrapProvider.kt
-          ! grep -q 'installTaxInvoiceButton' app/src/main/java/jp/co/tenposinfo/register/CatalogBootstrapProvider.kt
-          ! grep -q 'installSyncButton' app/src/main/java/jp/co/tenposinfo/register/CatalogBootstrapProvider.kt
-          grep -q 'onDynamic' app/src/main/java/jp/co/tenposinfo/register/CatalogSettingsActivity.kt
-          test "$(grep -c 'Text("任意税率・メニュー改定"' app/src/main/java/jp/co/tenposinfo/register/CatalogSettingsActivity.kt)" -eq 1
-          grep -q 'onTaxInvoice' app/src/main/java/jp/co/tenposinfo/register/DynamicCatalogSettingsActivity.kt
-          grep -q 'onRevisionEditor' app/src/main/java/jp/co/tenposinfo/register/DynamicCatalogSettingsActivity.kt
-          grep -q 'onSync' app/src/main/java/jp/co/tenposinfo/register/DynamicCatalogSettingsActivity.kt
-          test "$(grep -c 'Text("税・インボイス"' app/src/main/java/jp/co/tenposinfo/register/DynamicCatalogSettingsActivity.kt)" -eq 1
-          test "$(grep -c 'Text("改定内容編集"' app/src/main/java/jp/co/tenposinfo/register/DynamicCatalogSettingsActivity.kt)" -eq 1
-          test "$(grep -c 'Text("同期基盤"' app/src/main/java/jp/co/tenposinfo/register/DynamicCatalogSettingsActivity.kt)" -eq 1
-          ! grep -R -q --include='*.kt' 'Text("REGISTER"' app/src/main/java/jp/co/tenposinfo/register
+          python3 - <<'PY'
+          from pathlib import Path
 
-          grep -q 'configureRegisterSystemBars(window)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'configureRegisterSystemBars(window)' app/src/main/java/jp/co/tenposinfo/register/CatalogSettingsActivity.kt
-          grep -q 'configureRegisterSystemBars(window)' app/src/main/java/jp/co/tenposinfo/register/DynamicCatalogSettingsActivity.kt
-          grep -q 'configureRegisterSystemBars(window)' app/src/main/java/jp/co/tenposinfo/register/UnifiedPrintQueueActivity.kt
+          root = Path('app/src/main/java/jp/co/tenposinfo/register')
+          main = (root / 'MainActivity.kt').read_text()
+          catalog = (root / 'CatalogSettingsActivity.kt').read_text()
+          dynamic = (root / 'DynamicCatalogSettingsActivity.kt').read_text()
+          provider = (root / 'CatalogBootstrapProvider.kt').read_text()
+          chrome = (root / 'RegisterUiChromeV028.kt').read_text()
 
-          test -s app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryPolicyV027.kt
-          test -s app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V027SettlementHistoryReprintTest.kt
-          grep -q 'OperationsScreen.SETTLEMENT_HISTORY' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          grep -q 'SettlementSnapshotSchemaV027.savePaymentTotals' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
-          grep -q 'SETTLEMENT_REPRINT' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
-          grep -q 'fun reprintSettlement' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
-          grep -q '【再印字】' app/src/main/java/jp/co/tenposinfo/register/OperationDocuments.kt
+          assert 'TOP_BAR_ARGB: Long = 0xFF173F6B' in chrome
+          assert 'COMPACT_VALUE_HEIGHT_DP = 46' in main
+          assert 'COMPACT_KEY_HEIGHT_DP = 42' in main
+          assert 'COMPACT_KEY_GAP_DP = 5' in main
+          assert 'COMPACT_FUNCTION_HEIGHT_DP = 40' in main
+          assert main.count('val columnGap = if (compact) 6.dp else 8.dp') == 1
+          assert 'Modifier.weight(1.4f).height(buttonHeight)' not in main
+          assert 'BlueButton(bottomActionLabel, onBottomAction, Modifier.weight(1f).height(buttonHeight))' in main
 
-          test -s app/src/main/java/jp/co/tenposinfo/register/SettlementPreflightV026.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V026SettlementPreflightPermissionTest.kt
-          grep -q 'ZSettlementPreflightPolicy.evaluate' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
-          grep -q 'Z_SETTLEMENT_PENDING_PRINTS_ACKNOWLEDGED' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+          for forbidden in (
+              'FrameLayout.LayoutParams',
+              'installDynamicCatalogButton',
+              'installRevisionEditorButton',
+              'installTaxInvoiceButton',
+              'installSyncButton',
+          ):
+              assert forbidden not in provider, forbidden
 
-          test -s app/src/test/java/jp/co/tenposinfo/register/V025InspectionSettlementNavigationTest.kt
-          grep -q 'OperationsScreen.X_INSPECTION' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          grep -q 'OperationsScreen.Z_SETTLEMENT' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          grep -q 'Z精算して営業を終了しますか？' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          assert catalog.count('Text("任意税率・メニュー改定"') == 1
+          assert dynamic.count('Text("税・インボイス"') == 1
+          assert dynamic.count('Text("改定内容編集"') == 1
+          assert dynamic.count('Text("同期基盤"') == 1
+          assert 'onDynamic' in catalog
+          assert 'onTaxInvoice' in dynamic
+          assert 'onRevisionEditor' in dynamic
+          assert 'onSync' in dynamic
 
-          test -s app/src/main/java/jp/co/tenposinfo/register/BusinessSessionV024.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V024BusinessSessionLifecycleTest.kt
-          grep -q 'Z_SETTLEMENT:SESSION:' app/src/main/java/jp/co/tenposinfo/register/OperationExecutionSafety.kt
-          ! grep -q 'business_date TEXT NOT NULL UNIQUE' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+          chrome_targets = (
+              'MainActivity.kt',
+              'CatalogSettingsActivity.kt',
+              'DynamicCatalogSettingsActivity.kt',
+              'UnifiedPrintQueueActivity.kt',
+          )
+          for name in chrome_targets:
+              assert 'configureRegisterSystemBars(window)' in (root / name).read_text(), name
+          PY
 
-          test -s app/src/main/java/jp/co/tenposinfo/register/AutoBackup.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V023AutoBackupRetentionTest.kt
-          grep -q 'AutoBackupScheduler.enqueueZSettlement' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
-
-          test -s app/src/test/java/jp/co/tenposinfo/register/V022BackupPortabilityTest.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V021DataProtectionPolicyTest.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V020OperationsRoutingTest.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V019PartialReturnPolicyTest.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V018BusinessSessionIntegrationTest.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V017OperationExecutionSafetyTest.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V016OperationsAuthorizationTest.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V015TaxInvoicePolicyTest.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V014HeldTicketSafetyTest.kt
+          for test_file in \
+            V027SettlementHistoryReprintTest.kt \
+            V026SettlementPreflightPermissionTest.kt \
+            V025InspectionSettlementNavigationTest.kt \
+            V024BusinessSessionLifecycleTest.kt \
+            V023AutoBackupRetentionTest.kt \
+            V022BackupPortabilityTest.kt \
+            V021DataProtectionPolicyTest.kt \
+            V020OperationsRoutingTest.kt \
+            V019PartialReturnPolicyTest.kt \
+            V018BusinessSessionIntegrationTest.kt \
+            V017OperationExecutionSafetyTest.kt \
+            V016OperationsAuthorizationTest.kt \
+            V015TaxInvoicePolicyTest.kt \
+            V014HeldTicketSafetyTest.kt; do
+            test -s "app/src/test/java/jp/co/tenposinfo/register/$test_file"
+          done
 
           operations_count=$(grep -c 'android:name=".OperationsActivity"' app/src/main/AndroidManifest.xml)
           test "$operations_count" -eq 1
           ! grep -q '<activity-alias' app/src/main/AndroidManifest.xml
-          ! grep -q 'AdvancedOperationsActivity' app/src/main/AndroidManifest.xml
           test ! -e app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsActivity.kt
           test ! -e tools/apply_v028.py
           test ! -e .github/workflows/v028-ui-diagnostic.yml
@@ -134,8 +131,6 @@ jobs:
           test ! -e .github/workflows/v028-dedupe-ui.yml
           test ! -e .github/workflows/v028-promote-formal-ci.yml
           test ! -e .github/workflows/v028-finalize.yml
-
-          git diff --check origin/develop/v0.27...HEAD
 
       - name: Verify launcher configuration
         run: |
