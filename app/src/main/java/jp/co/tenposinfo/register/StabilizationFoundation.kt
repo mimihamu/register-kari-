@@ -116,6 +116,17 @@ object BusinessSessionSchema {
         }
     }
 
+    fun currentOpen(db: SQLiteDatabase): BusinessSessionLink? {
+        ensure(db)
+        if (!SchemaMigration.tableExists(db, "business_sessions")) return null
+        return db.rawQuery(
+            "SELECT id, business_date FROM business_sessions WHERE status = 'OPEN' ORDER BY opened_at DESC LIMIT 1",
+            null,
+        ).use { cursor ->
+            if (cursor.moveToFirst()) BusinessSessionLink(cursor.getLong(0), cursor.getString(1)) else null
+        }
+    }
+
     fun sessionForDate(db: SQLiteDatabase, date: LocalDate): BusinessSessionWindow? {
         ensure(db)
         if (!SchemaMigration.tableExists(db, "business_sessions")) return BusinessSessionDisplayFallback.forDate(date)
@@ -141,17 +152,28 @@ object BusinessSessionSchema {
         db.execSQL(
             """
             UPDATE $table
-            SET business_session_id = (
-                    SELECT bs.id FROM business_sessions bs
-                    WHERE bs.opened_at <= $table.created_at
-                      AND (bs.closed_at IS NULL OR $table.created_at <= bs.closed_at)
-                    ORDER BY bs.opened_at DESC LIMIT 1
+            SET business_session_id = COALESCE(
+                    (
+                        SELECT bs.id FROM business_sessions bs
+                        WHERE $table.business_date IS NOT NULL
+                          AND bs.business_date = $table.business_date
+                        ORDER BY bs.opened_at DESC LIMIT 1
+                    ),
+                    (
+                        SELECT bs.id FROM business_sessions bs
+                        WHERE bs.opened_at <= $table.created_at
+                          AND (bs.closed_at IS NULL OR $table.created_at <= bs.closed_at)
+                        ORDER BY bs.opened_at DESC LIMIT 1
+                    )
                 ),
-                business_date = (
-                    SELECT bs.business_date FROM business_sessions bs
-                    WHERE bs.opened_at <= $table.created_at
-                      AND (bs.closed_at IS NULL OR $table.created_at <= bs.closed_at)
-                    ORDER BY bs.opened_at DESC LIMIT 1
+                business_date = COALESCE(
+                    $table.business_date,
+                    (
+                        SELECT bs.business_date FROM business_sessions bs
+                        WHERE bs.opened_at <= $table.created_at
+                          AND (bs.closed_at IS NULL OR $table.created_at <= bs.closed_at)
+                        ORDER BY bs.opened_at DESC LIMIT 1
+                    )
                 )
             WHERE business_session_id IS NULL
             """.trimIndent(),

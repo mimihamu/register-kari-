@@ -28,7 +28,7 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
     override fun onActivityResumed(activity: Activity) {
         when (activity) {
             is MainActivity -> updateMainActivity(activity)
-            is AdvancedOperationsActivity -> guardManagementActivity(activity)
+            is OperationsActivity, is AdvancedOperationsActivity -> guardManagementActivity(activity)
             is AdminSettingsActivity -> guardSettingsActivity(activity)
         }
     }

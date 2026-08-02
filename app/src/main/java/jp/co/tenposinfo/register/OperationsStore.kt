@@ -4,7 +4,6 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import java.time.LocalDate
-import java.time.ZoneId
 
 enum class CashMovementType(val displayName: String, val sign: Long) {
     IN("入金", 1),
@@ -34,6 +33,7 @@ data class DailyOperationsSummary(
     val transactionCount: Int,
     val reversalCount: Int,
     val paymentTotals: List<PaymentTotal>,
+    val openingCash: Long,
     val cashIn: Long,
     val cashOut: Long,
     val expectedCash: Long,
@@ -84,9 +84,19 @@ object OperationsMath {
         cashSalesAfterRefunds: Long,
         cashIn: Long,
         cashOut: Long,
-    ): Long = cashSalesAfterRefunds + cashIn - cashOut
+        openingCash: Long = 0L,
+    ): Long = openingCash + cashSalesAfterRefunds + cashIn - cashOut
 
     fun variance(actualCash: Long, expectedCash: Long): Long = actualCash - expectedCash
+}
+
+
+object BusinessSessionTransitionPolicy {
+    fun mayStart(date: LocalDate, today: LocalDate = LocalDate.now()): Boolean =
+        !date.isAfter(today) && !date.isBefore(today.minusDays(1))
+
+    fun mayOperate(status: BusinessSessionStatus?): Boolean = status == BusinessSessionStatus.OPEN
+    fun mayClose(status: BusinessSessionStatus?): Boolean = status == BusinessSessionStatus.Z_SETTLED
 }
 
 /**
@@ -103,23 +113,113 @@ class OperationsStore(context: Context) {
 
     fun close() = baseDatabase.close()
 
-    fun dailySummary(date: LocalDate = LocalDate.now()): DailyOperationsSummary {
-        val (from, to) = dayBounds(date)
+    fun activeBusinessSession(): BusinessSessionRecord? = queryActiveSession(db)
+
+    fun recentBusinessSessions(limit: Int = 30): List<BusinessSessionRecord> = db.query(
+        "business_sessions",
+        SESSION_COLUMNS,
+        null,
+        null,
+        null,
+        null,
+        "opened_at DESC",
+        limit.coerceIn(1, 100).toString(),
+    ).use { cursor ->
+        val result = mutableListOf<BusinessSessionRecord>()
+        while (cursor.moveToNext()) result += cursor.toBusinessSessionRecord()
+        result
+    }
+
+    fun startBusinessDay(businessDate: LocalDate, openingCash: Long, operatorName: String): Long {
+        require(BusinessSessionTransitionPolicy.mayStart(businessDate)) { "営業日は本日または前日を指定してください" }
+        require(openingCash >= 0) { "開始釣銭は0円以上で入力してください" }
+        require(operatorName.isNotBlank()) { "担当者を入力してください" }
+        val now = System.currentTimeMillis()
+        return db.transaction {
+            check(queryActiveSession(this) == null) { "営業中または終了待ちの営業日があります" }
+            val id = insertWithOnConflict(
+                "business_sessions",
+                null,
+                ContentValues().apply {
+                    put("business_date", businessDate.toString())
+                    put("status", BusinessSessionStatus.OPEN.name)
+                    put("opening_cash", openingCash)
+                    put("opened_by", operatorName.trim())
+                    put("opened_at", now)
+                },
+                SQLiteDatabase.CONFLICT_IGNORE,
+            )
+            check(id != -1L) { "この営業日は既に開始済みです" }
+            insertAudit(
+                eventType = "BUSINESS_OPEN",
+                referenceId = id,
+                detail = "営業日 $businessDate / 開始釣銭 ${openingCash}円",
+                operatorName = operatorName,
+                createdAt = now,
+            )
+            id
+        }
+    }
+
+    fun endBusinessDay(actualCash: Long, operatorName: String): Long {
+        require(actualCash >= 0) { "現金実査額は0円以上で入力してください" }
+        require(operatorName.isNotBlank()) { "担当者を入力してください" }
+        val now = System.currentTimeMillis()
+        return db.transaction {
+            val session = queryActiveSession(this) ?: error("営業中の営業日がありません")
+            check(BusinessSessionTransitionPolicy.mayClose(session.status)) { "営業終了前にZ精算を実行してください" }
+            val summary = dailySummary(LocalDate.parse(session.businessDate))
+            val variance = OperationsMath.variance(actualCash, summary.expectedCash)
+            val updated = update(
+                "business_sessions",
+                ContentValues().apply {
+                    put("status", BusinessSessionStatus.CLOSED.name)
+                    put("closed_by", operatorName.trim())
+                    put("closed_at", now)
+                    put("closing_actual", actualCash)
+                    put("close_variance", variance)
+                },
+                "id = ? AND status = ?",
+                arrayOf(session.id.toString(), BusinessSessionStatus.Z_SETTLED.name),
+            )
+            check(updated == 1) { "営業終了状態が更新されました。画面を更新してください" }
+            insertAudit(
+                eventType = "BUSINESS_CLOSE",
+                referenceId = session.id,
+                detail = "営業日 ${session.businessDate} / 現金実査 ${actualCash}円 / 過不足 ${variance}円",
+                operatorName = operatorName,
+                createdAt = now,
+            )
+            session.id
+        }
+    }
+
+    fun dailySummary(date: LocalDate? = null): DailyOperationsSummary {
+        BusinessSessionSchema.ensure(db)
+        val session = if (date == null) {
+            queryActiveSession(db)?.toWindow()
+                ?: BusinessSessionSchema.sessionForDate(db, LocalDate.now())
+                ?: BusinessSessionDisplayFallback.forDate(LocalDate.now())
+        } else {
+            BusinessSessionSchema.sessionForDate(db, date)
+                ?: BusinessSessionDisplayFallback.forDate(date)
+        } ?: error("営業日を特定できません")
+        val sessionId = session.id
         val salesGross = longQuery(
-            "SELECT COALESCE(SUM(total_amount), 0) FROM sales WHERE created_at >= ? AND created_at < ?",
-            arrayOf(from.toString(), to.toString()),
+            "SELECT COALESCE(SUM(total_amount), 0) FROM sales WHERE business_session_id = ?",
+            arrayOf(sessionId.toString()),
         )
         val transactionCount = longQuery(
-            "SELECT COUNT(*) FROM sales WHERE created_at >= ? AND created_at < ?",
-            arrayOf(from.toString(), to.toString()),
+            "SELECT COUNT(*) FROM sales WHERE business_session_id = ?",
+            arrayOf(sessionId.toString()),
         ).toInt()
         val reversalGross = longQuery(
-            "SELECT COALESCE(SUM(gross_amount), 0) FROM reversal_transactions WHERE created_at >= ? AND created_at < ?",
-            arrayOf(from.toString(), to.toString()),
+            "SELECT COALESCE(SUM(gross_amount), 0) FROM reversal_transactions WHERE business_session_id = ?",
+            arrayOf(sessionId.toString()),
         )
         val reversalCount = longQuery(
-            "SELECT COUNT(*) FROM reversal_transactions WHERE created_at >= ? AND created_at < ?",
-            arrayOf(from.toString(), to.toString()),
+            "SELECT COUNT(*) FROM reversal_transactions WHERE business_session_id = ?",
+            arrayOf(sessionId.toString()),
         ).toInt()
 
         val paymentMap = linkedMapOf<String, Long>()
@@ -128,26 +228,24 @@ class OperationsStore(context: Context) {
             SELECT p.payment_method, COALESCE(SUM(p.applied_amount), 0)
             FROM sale_payments p
             INNER JOIN sales s ON s.id = p.sale_id
-            WHERE s.created_at >= ? AND s.created_at < ?
+            WHERE s.business_session_id = ?
             GROUP BY p.payment_method
             ORDER BY p.payment_method
             """.trimIndent(),
-            arrayOf(from.toString(), to.toString()),
+            arrayOf(sessionId.toString()),
         ).use { cursor ->
-            while (cursor.moveToNext()) {
-                paymentMap[cursor.getString(0)] = cursor.getLong(1)
-            }
+            while (cursor.moveToNext()) paymentMap[cursor.getString(0)] = cursor.getLong(1)
         }
         db.rawQuery(
             """
             SELECT p.payment_method, COALESCE(SUM(p.amount), 0)
             FROM reversal_payments p
             INNER JOIN reversal_transactions r ON r.id = p.reversal_id
-            WHERE r.created_at >= ? AND r.created_at < ?
+            WHERE r.business_session_id = ?
             GROUP BY p.payment_method
             ORDER BY p.payment_method
             """.trimIndent(),
-            arrayOf(from.toString(), to.toString()),
+            arrayOf(sessionId.toString()),
         ).use { cursor ->
             while (cursor.moveToNext()) {
                 val method = cursor.getString(0)
@@ -155,32 +253,33 @@ class OperationsStore(context: Context) {
             }
         }
 
-        val cashIn = movementTotal(CashMovementType.IN, from, to)
-        val cashOut = movementTotal(CashMovementType.OUT, from, to)
+        val cashIn = movementTotal(CashMovementType.IN, sessionId)
+        val cashOut = movementTotal(CashMovementType.OUT, sessionId)
         val expectedCash = OperationsMath.expectedCash(
             cashSalesAfterRefunds = paymentMap[PaymentMethod.CASH.name] ?: 0L,
             cashIn = cashIn,
             cashOut = cashOut,
+            openingCash = session.openingCash,
         )
         val pendingPrints = longQuery(
             "SELECT COUNT(*) FROM print_jobs WHERE status <> ?",
             arrayOf(PrintJobStatus.COMPLETED.name),
         ).toInt()
         val heldTickets = longQuery("SELECT COUNT(*) FROM held_tickets").toInt()
-        val businessDate = date.toString()
         val settled = longQuery(
-            "SELECT COUNT(*) FROM settlement_reports WHERE business_date = ? AND report_type = ?",
-            arrayOf(businessDate, SettlementReportType.Z_SETTLEMENT.name),
+            "SELECT COUNT(*) FROM settlement_reports WHERE business_session_id = ? AND report_type = ?",
+            arrayOf(sessionId.toString(), SettlementReportType.Z_SETTLEMENT.name),
         ) > 0
 
         return DailyOperationsSummary(
-            businessDate = businessDate,
+            businessDate = session.businessDate,
             salesGross = salesGross,
             reversalGross = reversalGross,
             netSales = salesGross - reversalGross,
             transactionCount = transactionCount,
             reversalCount = reversalCount,
             paymentTotals = paymentMap.map { PaymentTotal(it.key, it.value) },
+            openingCash = session.openingCash,
             cashIn = cashIn,
             cashOut = cashOut,
             expectedCash = expectedCash,
@@ -201,6 +300,8 @@ class OperationsStore(context: Context) {
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
         val now = System.currentTimeMillis()
         return db.transaction {
+            val session = queryActiveSession(this) ?: error("営業開始後に入出金を登録してください")
+            check(BusinessSessionTransitionPolicy.mayOperate(session.status)) { "Z精算後は入出金できません" }
             val id = insertOrThrow(
                 "cash_movements",
                 null,
@@ -209,6 +310,8 @@ class OperationsStore(context: Context) {
                     put("amount", amount)
                     put("reason", reason.trim())
                     put("operator_name", operatorName.trim())
+                    put("business_session_id", session.id)
+                    put("business_date", session.businessDate)
                     put("created_at", now)
                 },
             )
@@ -261,6 +364,8 @@ class OperationsStore(context: Context) {
         val operationKey = OperationsIdempotencyPolicy.reversalKey(originalSaleId)
 
         return db.transaction {
+            val session = queryActiveSession(this) ?: error("営業開始後に返品・取消を実行してください")
+            check(BusinessSessionTransitionPolicy.mayOperate(session.status)) { "Z精算後は返品・取消できません" }
             claimOperationKey(
                 operationKey = operationKey,
                 operationType = type.name,
@@ -294,6 +399,8 @@ class OperationsStore(context: Context) {
                     put("gross_amount", sale.first)
                     put("reason", reason.trim())
                     put("operator_name", operatorName.trim())
+                    put("business_session_id", session.id)
+                    put("business_date", session.businessDate)
                     put("created_at", now)
                 },
             )
@@ -398,13 +505,15 @@ class OperationsStore(context: Context) {
         type: SettlementReportType,
         actualCash: Long?,
         operatorName: String,
-        date: LocalDate = LocalDate.now(),
     ): Long {
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
         val now = System.currentTimeMillis()
-        val operationKey = OperationsIdempotencyPolicy.settlementKey(type, date)
 
         return db.transaction {
+            val session = queryActiveSession(this) ?: error("営業中の営業日がありません")
+            check(BusinessSessionTransitionPolicy.mayOperate(session.status)) { "この営業日は既にZ精算済みです" }
+            val businessDate = LocalDate.parse(session.businessDate)
+            val operationKey = OperationsIdempotencyPolicy.settlementKey(type, businessDate)
             if (operationKey != null) {
                 claimOperationKey(
                     operationKey = operationKey,
@@ -413,7 +522,7 @@ class OperationsStore(context: Context) {
                     createdAt = now,
                 )
             }
-            val summary = dailySummary(date)
+            val summary = dailySummary(businessDate)
             if (type == SettlementReportType.Z_SETTLEMENT && summary.settled) {
                 throw IllegalStateException("この営業日は既にZ精算済みです")
             }
@@ -425,6 +534,7 @@ class OperationsStore(context: Context) {
                 "settlement_reports",
                 null,
                 ContentValues().apply {
+                    put("business_session_id", session.id)
                     put("business_date", summary.businessDate)
                     put("report_type", type.name)
                     put("sales_gross", summary.salesGross)
@@ -441,6 +551,15 @@ class OperationsStore(context: Context) {
                     put("created_at", now)
                 },
             )
+            if (type == SettlementReportType.Z_SETTLEMENT) {
+                val updated = update(
+                    "business_sessions",
+                    ContentValues().apply { put("status", BusinessSessionStatus.Z_SETTLED.name) },
+                    "id = ? AND status = ?",
+                    arrayOf(session.id.toString(), BusinessSessionStatus.OPEN.name),
+                )
+                check(updated == 1) { "営業日状態が更新されました。画面を更新してください" }
+            }
             insertAudit(
                 eventType = type.name,
                 referenceId = id,
@@ -492,17 +611,42 @@ class OperationsStore(context: Context) {
         }
     }
 
-    private fun movementTotal(type: CashMovementType, from: Long, to: Long): Long = longQuery(
-        "SELECT COALESCE(SUM(amount), 0) FROM cash_movements WHERE movement_type = ? AND created_at >= ? AND created_at < ?",
-        arrayOf(type.name, from.toString(), to.toString()),
+    private fun movementTotal(type: CashMovementType, sessionId: Long): Long = longQuery(
+        "SELECT COALESCE(SUM(amount), 0) FROM cash_movements WHERE movement_type = ? AND business_session_id = ?",
+        arrayOf(type.name, sessionId.toString()),
     )
 
-    private fun dayBounds(date: LocalDate): Pair<Long, Long> {
-        val zone = ZoneId.systemDefault()
-        val from = date.atStartOfDay(zone).toInstant().toEpochMilli()
-        val to = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-        return from to to
-    }
+    private fun queryActiveSession(database: SQLiteDatabase): BusinessSessionRecord? = database.query(
+        "business_sessions",
+        SESSION_COLUMNS,
+        "status IN (?, ?)",
+        arrayOf(BusinessSessionStatus.OPEN.name, BusinessSessionStatus.Z_SETTLED.name),
+        null,
+        null,
+        "opened_at DESC",
+        "1",
+    ).use { cursor -> if (cursor.moveToFirst()) cursor.toBusinessSessionRecord() else null }
+
+    private fun android.database.Cursor.toBusinessSessionRecord() = BusinessSessionRecord(
+        id = getLong(0),
+        businessDate = getString(1),
+        status = BusinessSessionStatus.valueOf(getString(2)),
+        openingCash = getLong(3),
+        openedBy = getString(4),
+        openedAt = getLong(5),
+        closedBy = if (isNull(6)) null else getString(6),
+        closedAt = if (isNull(7)) null else getLong(7),
+        closingActual = if (isNull(8)) null else getLong(8),
+        closeVariance = if (isNull(9)) null else getLong(9),
+    )
+
+    private fun BusinessSessionRecord.toWindow() = BusinessSessionWindow(
+        id = id,
+        businessDate = businessDate,
+        openedAt = openedAt,
+        closedAt = closedAt,
+        openingCash = openingCash,
+    )
 
     private fun longQuery(sql: String, args: Array<String> = emptyArray()): Long =
         db.rawQuery(sql, args).use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else 0L }
@@ -560,12 +704,30 @@ class OperationsStore(context: Context) {
     private fun ensureSchema() {
         db.execSQL(
             """
+            CREATE TABLE IF NOT EXISTS business_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                business_date TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL,
+                opening_cash INTEGER NOT NULL,
+                opened_by TEXT NOT NULL,
+                opened_at INTEGER NOT NULL,
+                closed_by TEXT,
+                closed_at INTEGER,
+                closing_actual INTEGER,
+                close_variance INTEGER
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
             CREATE TABLE IF NOT EXISTS cash_movements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 movement_type TEXT NOT NULL,
                 amount INTEGER NOT NULL,
                 reason TEXT NOT NULL,
                 operator_name TEXT NOT NULL,
+                business_session_id INTEGER,
+                business_date TEXT,
                 created_at INTEGER NOT NULL
             )
             """.trimIndent(),
@@ -579,6 +741,8 @@ class OperationsStore(context: Context) {
                 gross_amount INTEGER NOT NULL,
                 reason TEXT NOT NULL,
                 operator_name TEXT NOT NULL,
+                business_session_id INTEGER,
+                business_date TEXT,
                 created_at INTEGER NOT NULL,
                 FOREIGN KEY(original_sale_id) REFERENCES sales(id)
             )
@@ -599,6 +763,7 @@ class OperationsStore(context: Context) {
             """
             CREATE TABLE IF NOT EXISTS settlement_reports (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                business_session_id INTEGER,
                 business_date TEXT NOT NULL,
                 report_type TEXT NOT NULL,
                 sales_gross INTEGER NOT NULL,
@@ -638,11 +803,21 @@ class OperationsStore(context: Context) {
             )
             """.trimIndent(),
         )
-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_cash_movements_created ON cash_movements(created_at)")
+        BusinessSessionSchema.ensure(db)
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_business_sessions_status ON business_sessions(status, opened_at)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_cash_movements_session ON cash_movements(business_session_id, movement_type)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_reversal_original_sale ON reversal_transactions(original_sale_id)")
-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_reversal_created ON reversal_transactions(created_at)")
-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_settlement_date ON settlement_reports(business_date, report_type)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_reversal_session ON reversal_transactions(business_session_id, created_at)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_settlement_session ON settlement_reports(business_session_id, report_type)")
     }
+
+    companion object {
+        private val SESSION_COLUMNS = arrayOf(
+            "id", "business_date", "status", "opening_cash", "opened_by", "opened_at",
+            "closed_by", "closed_at", "closing_actual", "close_variance",
+        )
+    }
+
 }
 
 private inline fun <T> SQLiteDatabase.transaction(block: SQLiteDatabase.() -> T): T {
