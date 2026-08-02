@@ -1,17 +1,18 @@
-name: Validate v0.27 settlement history
+name: Build つぐレジ APK
 
 on:
-  pull_request:
+  push:
     branches:
-      - develop/v0.26
+      - main
+      - develop/**
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  validate-v027:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'develop/v0.27'
+  build-debug-apk:
     runs-on: ubuntu-latest
     timeout-minutes: 35
 
@@ -20,7 +21,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -41,27 +41,153 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify v0.27 sources
+      - name: Verify cumulative v0.14-v0.27 sources
         run: |
           set -euo pipefail
           grep -q 'versionCode = 57' app/build.gradle.kts
           grep -q 'versionName = "0.27.0-dev.1"' app/build.gradle.kts
+          grep -q 'androidx.work:work-runtime:2.11.2' app/build.gradle.kts
+          grep -q 'versionCode = 6' customer-display/build.gradle.kts
+          grep -q 'versionName = "0.13.0-dev.6"' customer-display/build.gradle.kts
+
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryPolicyV027.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V027SettlementHistoryReprintTest.kt
           test -s docs/V0.27_SETTLEMENT_HISTORY_REPRINT.md
           test -s docs/V0.27_RELEASE_NOTES.md
           grep -q 'OperationsScreen.SETTLEMENT_HISTORY' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q 'recentSettlementsForSession' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
           grep -q 'SettlementSnapshotSchemaV027.savePaymentTotals' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+          grep -q 'settlement_payment_totals' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryPolicyV027.kt
+          grep -q 'snapshot_version' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryPolicyV027.kt
           grep -q 'SETTLEMENT_REPRINT' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
           grep -q 'fun reprintSettlement' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
           grep -q 'AutomaticPrintScheduler.enqueueNow' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
+          grep -q '【再印字】' app/src/main/java/jp/co/tenposinfo/register/OperationDocuments.kt
+          grep -q '営業セッション No.' app/src/main/java/jp/co/tenposinfo/register/OperationDocuments.kt
           grep -q 'HistoryPanel(Modifier.width(220.dp)' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
+          grep -q 'HistoryPanel(Modifier.width(310.dp)' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
+          grep -q 'HistoryPanel(Modifier.width(300.dp)' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
           test "$(grep -c 'modifier = Modifier.weight(1f)' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt)" -ge 2
-          git diff --check origin/develop/v0.26...HEAD
+
+          test -s app/src/main/java/jp/co/tenposinfo/register/SettlementPreflightV026.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V026SettlementPreflightPermissionTest.kt
+          test -s docs/V0.26_Z_SETTLEMENT_PREFLIGHT.md
+          grep -q 'ZSettlementPreflightPolicy.evaluate' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+          grep -q 'Z_SETTLEMENT_PENDING_PRINTS_ACKNOWLEDGED' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+          grep -q 'OperationsAction.X_INSPECTION' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
+          grep -q 'OperationsAction.Z_SETTLEMENT' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
+
+          test -s app/src/test/java/jp/co/tenposinfo/register/V025InspectionSettlementNavigationTest.kt
+          test -s docs/V0.25_INSPECTION_SETTLEMENT_SPLIT.md
+          grep -q 'OperationsScreen.X_INSPECTION' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q 'OperationsScreen.Z_SETTLEMENT' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q 'Z精算して営業を終了しますか？' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          ! grep -q 'OperationsScreen.SETTLEMENT ->' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          ! grep -q 'var reportType by remember' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+
+          test -s app/src/main/java/jp/co/tenposinfo/register/BusinessSessionV024.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V024BusinessSessionLifecycleTest.kt
+          grep -q 'BusinessSessionMultiplicityMigration.ensure' app/src/main/java/jp/co/tenposinfo/register/StabilizationFoundation.kt
+          grep -q 'Z_SETTLEMENT:SESSION:' app/src/main/java/jp/co/tenposinfo/register/OperationExecutionSafety.kt
+          grep -q 'put("closed_at", now)' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+          ! grep -q 'business_date TEXT NOT NULL UNIQUE' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+
+          test -s app/src/main/java/jp/co/tenposinfo/register/AutoBackup.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V023AutoBackupRetentionTest.kt
+          grep -q 'AutoBackupScheduler.enqueueZSettlement' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
+          grep -q 'settlementCommitted = true' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
+
+          test -s app/src/test/java/jp/co/tenposinfo/register/V022BackupPortabilityTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V021DataProtectionPolicyTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V020OperationsRoutingTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V019PartialReturnPolicyTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V018BusinessSessionIntegrationTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V017OperationExecutionSafetyTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V016OperationsAuthorizationTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V015TaxInvoicePolicyTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V014HeldTicketSafetyTest.kt
+
+          operations_count=$(grep -c 'android:name=".OperationsActivity"' app/src/main/AndroidManifest.xml)
+          test "$operations_count" -eq 1
+          ! grep -q '<activity-alias' app/src/main/AndroidManifest.xml
+          ! grep -q 'AdvancedOperationsActivity' app/src/main/AndroidManifest.xml
+          test ! -e app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsActivity.kt
+          test ! -e tools/apply_v027.py
+          test ! -e docs/V0.27_WORKFLOW_TRIGGER.md
+          test ! -e tools/apply_v026.py
+          test ! -e docs/V0.26_WORKFLOW_TRIGGER.md
+
+      - name: Verify launcher configuration
+        run: |
+          set -euo pipefail
+          register_launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' app/src/main app/src/debug | wc -l)
+          cd_launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' customer-display/src/main | wc -l)
+          test "$register_launcher_count" -eq 1
+          test "$cd_launcher_count" -eq 1
+          test "$(grep -c 'android.intent.category.LAUNCHER' app/src/debug/AndroidManifest.xml || true)" -eq 0
+          grep -q 'android:name=".MainActivity"' app/src/main/AndroidManifest.xml
+          grep -q 'android:name=".MainActivity"' customer-display/src/main/AndroidManifest.xml
 
       - name: Run cumulative unit tests
         run: gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest
 
       - name: Build debug APKs
         run: gradle --no-daemon :app:assembleDebug :customer-display:assembleDebug
+
+      - name: Prepare named APKs and SHA-256
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.27.0_dev1_settlement_history_reprint_debug.apk
+          cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
+          sha256sum artifacts/TSUGUREGI_v0.27.0_dev1_settlement_history_reprint_debug.apk | tee artifacts/TSUGUREGI_v0.27.0_dev1_settlement_history_reprint_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
+          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.27.0_dev1_settlement_history_reprint_debug.apk | tee artifacts/build-summary.txt
+          stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee -a artifacts/build-summary.txt
+          echo 'REGISTER_VERSION_NAME=0.27.0-dev.1' >> artifacts/build-summary.txt
+          echo 'REGISTER_VERSION_CODE=57' >> artifacts/build-summary.txt
+          echo 'CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.6' >> artifacts/build-summary.txt
+          echo 'CUSTOMER_DISPLAY_VERSION_CODE=6' >> artifacts/build-summary.txt
+          echo 'SETTLEMENT_HISTORY=business-session' >> artifacts/build-summary.txt
+          echo 'SETTLEMENT_HISTORY_FILTER=x-z-all' >> artifacts/build-summary.txt
+          echo 'SETTLEMENT_SNAPSHOT=complete-v1' >> artifacts/build-summary.txt
+          echo 'SETTLEMENT_INITIAL_PRINT=queued' >> artifacts/build-summary.txt
+          echo 'X_REPRINT_PERMISSION=x-inspection' >> artifacts/build-summary.txt
+          echo 'Z_REPRINT_PERMISSION=z-settlement-manager-pin' >> artifacts/build-summary.txt
+          echo 'SETTLEMENT_REPRINT_AUDIT=enabled' >> artifacts/build-summary.txt
+          echo 'LEGACY_REPRINT=saved-payload-only' >> artifacts/build-summary.txt
+          echo 'Z_PREFLIGHT_HELD_TICKETS=blocked' >> artifacts/build-summary.txt
+          echo 'Z_PREFLIGHT_PENDING_PRINTS=manager-acknowledgement' >> artifacts/build-summary.txt
+          echo 'Z_SETTLEMENT=atomic-business-session-close' >> artifacts/build-summary.txt
+          echo 'BUSINESS_DATE_SESSIONS=multiple-per-date' >> artifacts/build-summary.txt
+          echo 'AUTO_BACKUP_TRIGGER=committed-z-settlement' >> artifacts/build-summary.txt
+          echo 'AUTO_BACKUP_STORAGE=internal-only' >> artifacts/build-summary.txt
+          echo 'BACKUP_EXPORT=storage-access-framework' >> artifacts/build-summary.txt
+          echo 'SIGNING=development-not-production' >> artifacts/build-summary.txt
+          echo 'REAL_DEVICE_SESSION_HISTORY_FILTER_VERIFICATION=required' >> artifacts/build-summary.txt
+          echo 'REAL_DEVICE_X_SNAPSHOT_IMMUTABILITY_VERIFICATION=required' >> artifacts/build-summary.txt
+          echo 'REAL_DEVICE_X_REPRINT_VERIFICATION=required' >> artifacts/build-summary.txt
+          echo 'REAL_DEVICE_Z_REPRINT_PIN_VERIFICATION=required' >> artifacts/build-summary.txt
+          echo 'REAL_DEVICE_58_80MM_SETTLEMENT_PRINT_VERIFICATION=required' >> artifacts/build-summary.txt
+          echo 'REAL_DEVICE_REPRINT_AUDIT_VERIFICATION=required' >> artifacts/build-summary.txt
+          echo 'REAL_DEVICE_PRINT_RETRY_VERIFICATION=required' >> artifacts/build-summary.txt
+          echo 'REAL_DEVICE_Z_AUTO_BACKUP_VERIFICATION=required' >> artifacts/build-summary.txt
+          git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
+
+      - name: Upload APKs
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSUGUREGI-v0.27.0-dev1-settlement-history-reprint-apks
+          path: |
+            artifacts/TSUGUREGI_v0.27.0_dev1_settlement_history_reprint_debug.apk
+            artifacts/TSUGUREGI_v0.27.0_dev1_settlement_history_reprint_debug.apk.sha256
+            artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
+            artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
+            artifacts/build-summary.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Report artifact ID
+        run: echo "ARTIFACT_ID=${{ steps.upload.outputs.artifact-id }}"
