@@ -26,6 +26,8 @@ data class CustomerDisplayOrderItem(
 data class CustomerDisplaySnapshot(
     val schemaVersion: Int,
     val sequence: Long,
+    val serverInstanceId: String? = null,
+    val sentAtMillis: Long = 0L,
     val mode: CustomerDisplayMode,
     val transactionId: String?,
     val storeName: String,
@@ -68,6 +70,8 @@ data class CustomerDisplaySnapshot(
             return CustomerDisplaySnapshot(
                 schemaVersion = schemaVersion,
                 sequence = root.getLong("sequence"),
+                serverInstanceId = root.optNullableString("serverInstanceId"),
+                sentAtMillis = root.optLong("sentAtMillis"),
                 mode = CustomerDisplayMode.valueOf(root.getString("mode")),
                 transactionId = root.optNullableString("transactionId"),
                 storeName = root.optString("storeName", "つぐレジ"),
@@ -86,6 +90,8 @@ data class CustomerDisplaySnapshot(
         fun initial(): CustomerDisplaySnapshot = CustomerDisplaySnapshot(
             schemaVersion = CUSTOMER_DISPLAY_SCHEMA_VERSION,
             sequence = 0L,
+            serverInstanceId = null,
+            sentAtMillis = 0L,
             mode = CustomerDisplayMode.STANDBY,
             transactionId = null,
             storeName = "つぐレジ",
@@ -126,7 +132,16 @@ object CustomerDisplayStateReducer {
         if (incoming.schemaVersion != CUSTOMER_DISPLAY_SCHEMA_VERSION) {
             return current.copy(lastError = "未対応の通信形式です")
         }
-        if (incoming.sequence <= current.snapshot.sequence) return current
+        val currentInstance = current.snapshot.serverInstanceId
+        val incomingInstance = incoming.serverInstanceId
+        val sameKnownServerInstance =
+            !currentInstance.isNullOrBlank() &&
+                !incomingInstance.isNullOrBlank() &&
+                currentInstance == incomingInstance
+        val eitherInstanceUnknown = currentInstance.isNullOrBlank() || incomingInstance.isNullOrBlank()
+        if ((sameKnownServerInstance || eitherInstanceUnknown) && incoming.sequence <= current.snapshot.sequence) {
+            return current
+        }
         return current.copy(
             connected = true,
             snapshot = incoming,
