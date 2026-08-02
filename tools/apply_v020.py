@@ -60,16 +60,11 @@ object OperationsRoutingPolicy {
 
     fun isCanonical(className: String): Boolean = className == CANONICAL_ACTIVITY
 
-    fun manifestUsesCanonicalRoute(manifest: String): Boolean {
-        val canonicalActivity = Regex(
-            "<activity\\s+[^>]*android:name=\\\"\\.OperationsActivity\\\"[^>]*/>",
-            setOf(RegexOption.DOT_MATCHES_ALL),
-        ).containsMatchIn(manifest)
-        return canonicalActivity &&
+    fun manifestUsesCanonicalRoute(manifest: String): Boolean =
+        manifest.contains("android:name=\".OperationsActivity\"") &&
             !manifest.contains("<activity-alias") &&
-            !manifest.contains("android:name=\\\".AdvancedOperationsActivity\\\"") &&
-            !manifest.contains("android:targetActivity=\\\".AdvancedOperationsActivity\\\"")
-    }
+            !manifest.contains("android:name=\".AdvancedOperationsActivity\"") &&
+            !manifest.contains("android:targetActivity=\".AdvancedOperationsActivity\"")
 }
 ''',
     encoding="utf-8",
