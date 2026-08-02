@@ -30,6 +30,7 @@ internal class CustomerDisplayWebSocketServer(
     private val config: CustomerDisplayServerConfig,
     private val latestPayload: () -> String,
     private val onError: (String) -> Unit = {},
+    private val onClientCountChanged: (Int) -> Unit = {},
 ) {
     private val running = AtomicBoolean(false)
     private val clients = ConcurrentHashMap.newKeySet<ClientConnection>()
@@ -72,17 +73,20 @@ internal class CustomerDisplayWebSocketServer(
         serverSocket = null
         clients.toList().forEach { it.close() }
         clients.clear()
+        notifyClientCount()
         executor.shutdownNow()
     }
 
     fun broadcast(payload: String) {
         clients.toList().forEach { connection ->
             if (!connection.sendText(payload)) {
-                clients.remove(connection)
+                if (clients.remove(connection)) notifyClientCount()
                 connection.close()
             }
         }
     }
+
+    fun clientCount(): Int = clients.size
 
     private fun handleClient(socket: Socket) {
         var connection: ClientConnection? = null
@@ -112,6 +116,7 @@ internal class CustomerDisplayWebSocketServer(
 
             connection = ClientConnection(socket)
             clients += connection
+            notifyClientCount()
             connection.sendText(latestPayload())
             readClientFrames(connection)
         } catch (_: EOFException) {
@@ -119,9 +124,15 @@ internal class CustomerDisplayWebSocketServer(
         } catch (error: Exception) {
             if (running.get()) onError(error.message ?: error.javaClass.simpleName)
         } finally {
-            connection?.let { clients.remove(it) }
+            connection?.let {
+                if (clients.remove(it)) notifyClientCount()
+            }
             connection?.close() ?: runCatching { socket.close() }
         }
+    }
+
+    private fun notifyClientCount() {
+        runCatching { onClientCountChanged(clients.size) }
     }
 
     private fun readClientFrames(connection: ClientConnection) {
@@ -144,7 +155,9 @@ internal class CustomerDisplayWebSocketServer(
             val mask = if (masked) ByteArray(4).also { readFully(input, it) } else null
             val payload = ByteArray(length.toInt()).also { readFully(input, it) }
             if (mask != null) {
-                payload.indices.forEach { index -> payload[index] = (payload[index].toInt() xor mask[index % 4].toInt()).toByte() }
+                payload.indices.forEach { index ->
+                    payload[index] = (payload[index].toInt() xor mask[index % 4].toInt()).toByte()
+                }
             }
             when (opcode) {
                 0x8 -> {
