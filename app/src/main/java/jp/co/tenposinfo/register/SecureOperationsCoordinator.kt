@@ -80,6 +80,8 @@ class SecureOperationsCoordinator(
             store.recordSettlement(type, actualCash, actor, pendingPrintsAcknowledged)
         }
 
+        runCatching { AutomaticPrintScheduler.enqueueNow(appContext) }
+
         if (AutoBackupTriggerPolicy.shouldEnqueue(type, settlementCommitted = true)) {
             runCatching {
                 AutoBackupScheduler.enqueueZSettlement(
@@ -107,6 +109,33 @@ class SecureOperationsCoordinator(
             }
         }
         return settlementId
+    }
+
+    fun reprintSettlement(
+        reportId: Long,
+        paperWidthMm: Int,
+        managerPin: String,
+    ): Long {
+        val record = store.settlementById(reportId)
+            ?: throw IllegalArgumentException("点検・精算履歴No.${reportId}が見つかりません")
+        val action = when (record.type) {
+            SettlementReportType.X_INSPECTION -> OperationsAction.X_INSPECTION
+            SettlementReportType.Z_SETTLEMENT -> OperationsAction.Z_SETTLEMENT
+        }
+        return executionGuard.runExclusive(
+            "SETTLEMENT_REPRINT:${reportId}",
+            "点検・精算票を再印字処理中です",
+        ) {
+            val operator = requireOperator(action)
+            val actor = if (record.type == SettlementReportType.Z_SETTLEMENT) {
+                OperationsActorFormatter.approved(operator, requireManagerName(managerPin))
+            } else {
+                OperationsActorFormatter.direct(operator)
+            }
+            val jobId = store.reprintSettlement(reportId, paperWidthMm, actor)
+            runCatching { AutomaticPrintScheduler.enqueueNow(appContext) }
+            jobId
+        }
     }
 
     fun createReversal(

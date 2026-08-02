@@ -83,6 +83,7 @@ private enum class OperationsScreen {
     DAILY_SALES,
     X_INSPECTION,
     Z_SETTLEMENT,
+    SETTLEMENT_HISTORY,
     CASH_MOVEMENT,
     REVERSAL,
 }
@@ -121,6 +122,17 @@ private fun OperationsApp(onClose: () -> Unit) {
             screen = destination
         } else {
             message = "${permission.displayName}の権限がありません"
+        }
+    }
+
+    fun openSettlementHistory() {
+        val current = OperatorSessionRegistry.current(appContext)
+        activeOperator = current
+        if (current != null && SettlementHistoryPolicyV027.canView(current.permissions)) {
+            message = null
+            screen = OperationsScreen.SETTLEMENT_HISTORY
+        } else {
+            message = "点検・精算履歴の表示権限がありません"
         }
     }
 
@@ -169,6 +181,7 @@ private fun OperationsApp(onClose: () -> Unit) {
                 onDailySales = { openScreen(RegisterPermission.VIEW_SALES, OperationsScreen.DAILY_SALES) },
                 onXInspection = { openScreen(RegisterPermission.X_INSPECTION, OperationsScreen.X_INSPECTION) },
                 onZSettlement = { openScreen(RegisterPermission.Z_SETTLEMENT, OperationsScreen.Z_SETTLEMENT) },
+                onSettlementHistory = ::openSettlementHistory,
                 onCashMovement = { openScreen(RegisterPermission.CASH_MOVEMENT, OperationsScreen.CASH_MOVEMENT) },
                 onReversal = { openScreen(RegisterPermission.REVERSAL, OperationsScreen.REVERSAL) },
                 onClose = onClose,
@@ -204,7 +217,9 @@ private fun OperationsApp(onClose: () -> Unit) {
                 title = "X点検",
                 session = store.activeBusinessSession(),
                 summary = store.dailySummary(),
-                history = store.recentSettlements(),
+                history = store.activeBusinessSession()?.let {
+                    store.recentSettlementsForSession(it.id, SettlementReportType.X_INSPECTION)
+                } ?: emptyList(),
                 operatorName = operator.name,
                 revision = revision,
                 onExecute = { actualCash, pin, pendingPrintsAcknowledged ->
@@ -225,7 +240,9 @@ private fun OperationsApp(onClose: () -> Unit) {
                 title = "Z精算・営業終了",
                 session = store.activeBusinessSession(),
                 summary = store.dailySummary(),
-                history = store.recentSettlements(),
+                history = store.activeBusinessSession()?.let {
+                    store.recentSettlementsForSession(it.id, SettlementReportType.Z_SETTLEMENT)
+                } ?: emptyList(),
                 operatorName = operator.name,
                 revision = revision,
                 onExecute = { actualCash, pin, pendingPrintsAcknowledged ->
@@ -237,6 +254,30 @@ private fun OperationsApp(onClose: () -> Unit) {
                     )
                 },
                 message = message,
+                onBack = { screen = OperationsScreen.MENU },
+            )
+
+            OperationsScreen.SETTLEMENT_HISTORY -> SettlementHistoryScreenV027(
+                sessions = store.recentBusinessSessions(100),
+                settlements = store.recentSettlements(500),
+                operatorName = operator.name,
+                permissions = operator.permissions,
+                revision = revision,
+                message = message,
+                previewLoader = store::previewSettlement,
+                onReprint = { record, paperWidthMm, managerPin ->
+                    val result = runCatching {
+                        secureStore.reprintSettlement(record.id, paperWidthMm, managerPin)
+                    }
+                    message = result.fold(
+                        onSuccess = {
+                            "${record.type.displayName}票の再印字を受け付けました（印刷ジョブNo.$it）"
+                        },
+                        onFailure = { it.message ?: "再印字に失敗しました" },
+                    )
+                    if (result.isSuccess) revision++
+                    activeOperator = OperatorSessionRegistry.current(appContext)
+                },
                 onBack = { screen = OperationsScreen.MENU },
             )
 
@@ -306,6 +347,7 @@ private fun OperationsMenuScreen(
     onDailySales: () -> Unit,
     onXInspection: () -> Unit,
     onZSettlement: () -> Unit,
+    onSettlementHistory: () -> Unit,
     onCashMovement: () -> Unit,
     onReversal: () -> Unit,
     onClose: () -> Unit,
@@ -398,6 +440,14 @@ private fun OperationsMenuScreen(
                         Modifier.weight(1f),
                         RegisterPermission.REVERSAL in permissions,
                         onReversal,
+                    )
+                    MenuTile(
+                        "点検・精算履歴",
+                        "SCR-520\nセッション別確認・再印字",
+                        Color(0xFFEDE7F6),
+                        Modifier.weight(1f),
+                        SettlementHistoryPolicyV027.canView(permissions),
+                        onSettlementHistory,
                     )
                 }
             }

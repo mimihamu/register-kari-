@@ -39,6 +39,10 @@ data class SettlementDocumentData(
     val pendingPrints: Int,
     val heldTickets: Int,
     val paymentTotals: List<PaymentTotal>,
+    val businessSessionId: Long = 0L,
+    val snapshotVersion: Int = SettlementSnapshotSchemaV027.SNAPSHOT_VERSION,
+    val reprintedAt: Long? = null,
+    val reprintedBy: String? = null,
 )
 
 object OperationDocumentRenderer {
@@ -92,11 +96,15 @@ object OperationDocumentRenderer {
         if (issuer.address.isNotBlank()) lines += center(issuer.address, width)
         if (issuer.phone.isNotBlank()) lines += center(issuer.phone, width)
         lines += center(if (data.type == SettlementReportType.Z_SETTLEMENT) "【Z精算票】" else "【X点検票】", width)
+        if (data.reprintedAt != null) lines += center("【再印字】", width)
         lines += separator(width, '=')
         lines += "営業日 ${data.businessDate}"
+        if (data.businessSessionId > 0) lines += "営業セッション No.${data.businessSessionId}"
         lines += "レポートNo.${data.reportId}"
         lines += "発行 ${formatDate(data.createdAt)}"
         lines += "担当 ${data.operatorName}"
+        data.reprintedAt?.let { lines += "再印字 ${formatDate(it)}" }
+        data.reprintedBy?.takeIf(String::isNotBlank)?.let { lines += "再印字担当 $it" }
         lines += separator(width, '-')
         lines += amountLine("売上総額", yen(data.salesGross), width)
         lines += amountLine("返品・取消", "-${yen(data.reversalGross)}", width)

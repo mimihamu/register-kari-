@@ -79,6 +79,10 @@ data class SettlementRecord(
     val heldTickets: Int,
     val operatorName: String,
     val createdAt: Long,
+    val openingCash: Long = 0L,
+    val cashIn: Long = 0L,
+    val cashOut: Long = 0L,
+    val snapshotVersion: Int = 0,
 )
 
 object OperationsMath {
@@ -674,9 +678,48 @@ class OperationsStore(context: Context) {
                     put("reversal_count", summary.reversalCount)
                     put("pending_prints", summary.pendingPrints)
                     put("held_tickets", summary.heldTickets)
+                    put("opening_cash", summary.openingCash)
+                    put("cash_in", summary.cashIn)
+                    put("cash_out", summary.cashOut)
+                    put("snapshot_version", SettlementSnapshotSchemaV027.SNAPSHOT_VERSION)
                     put("operator_name", operatorName.trim())
                     put("created_at", now)
                 },
+            )
+            SettlementSnapshotSchemaV027.savePaymentTotals(this, id, summary.paymentTotals)
+            val paperWidthMm = PrinterConfigurationRegistry.current()?.paperWidthMm ?: 80
+            val document = SettlementDocumentData(
+                reportId = id,
+                businessDate = summary.businessDate,
+                type = type,
+                createdAt = now,
+                operatorName = operatorName.trim(),
+                salesGross = summary.salesGross,
+                reversalGross = summary.reversalGross,
+                netSales = summary.netSales,
+                openingCash = summary.openingCash,
+                cashIn = summary.cashIn,
+                cashOut = summary.cashOut,
+                expectedCash = summary.expectedCash,
+                actualCash = actual,
+                variance = variance,
+                transactionCount = summary.transactionCount,
+                reversalCount = summary.reversalCount,
+                pendingPrints = summary.pendingPrints,
+                heldTickets = summary.heldTickets,
+                paymentTotals = summary.paymentTotals,
+                businessSessionId = session.id,
+            )
+            val previewText = OperationDocumentRenderer.renderSettlement(
+                document,
+                ReceiptPaper.fromWidth(paperWidthMm),
+            )
+            val printJobId = insertDocumentJob(
+                OperationDocumentType.SETTLEMENT_REPORT,
+                id,
+                paperWidthMm,
+                previewText,
+                now,
             )
             if (type == SettlementReportType.Z_SETTLEMENT) {
                 val updated = update(
@@ -696,7 +739,7 @@ class OperationsStore(context: Context) {
             insertAudit(
                 eventType = type.name,
                 referenceId = id,
-                detail = "営業日 ${summary.businessDate} / セッションNo.${session.id} / 純売上 ${summary.netSales}円 / 現金差異 ${variance}円",
+                detail = "営業日 ${summary.businessDate} / セッションNo.${session.id} / 純売上 ${summary.netSales}円 / 現金差異 ${variance}円 / 印刷ジョブNo.${printJobId}",
                 operatorName = operatorName,
                 createdAt = now,
             )
@@ -723,44 +766,177 @@ class OperationsStore(context: Context) {
         }
     }
 
-    fun recentSettlements(limit: Int = 50): List<SettlementRecord> {
-        db.query(
-            "settlement_reports",
-            arrayOf(
-                "id", "business_session_id", "business_date", "report_type", "sales_gross", "reversal_gross", "net_sales",
-                "expected_cash", "actual_cash", "variance", "transaction_count", "reversal_count",
-                "pending_prints", "held_tickets", "operator_name", "created_at",
-            ),
-            null,
-            null,
-            null,
-            null,
-            "created_at DESC",
-            limit.coerceIn(1, 500).toString(),
-        ).use { cursor ->
-            val result = mutableListOf<SettlementRecord>()
-            while (cursor.moveToNext()) {
-                result += SettlementRecord(
-                    id = cursor.getLong(0),
-                    businessSessionId = cursor.getLong(1),
-                    businessDate = cursor.getString(2),
-                    type = SettlementReportType.valueOf(cursor.getString(3)),
-                    salesGross = cursor.getLong(4),
-                    reversalGross = cursor.getLong(5),
-                    netSales = cursor.getLong(6),
-                    expectedCash = cursor.getLong(7),
-                    actualCash = cursor.getLong(8),
-                    variance = cursor.getLong(9),
-                    transactionCount = cursor.getInt(10),
-                    reversalCount = cursor.getInt(11),
-                    pendingPrints = cursor.getInt(12),
-                    heldTickets = cursor.getInt(13),
-                    operatorName = cursor.getString(14),
-                    createdAt = cursor.getLong(15),
+    fun recentSettlements(limit: Int = 50): List<SettlementRecord> =
+        querySettlements(null, null, limit)
+
+    fun recentSettlementsForSession(
+        businessSessionId: Long,
+        type: SettlementReportType? = null,
+        limit: Int = 200,
+    ): List<SettlementRecord> {
+        val selection = if (type == null) {
+            "business_session_id = ?"
+        } else {
+            "business_session_id = ? AND report_type = ?"
+        }
+        val args = if (type == null) {
+            arrayOf(businessSessionId.toString())
+        } else {
+            arrayOf(businessSessionId.toString(), type.name)
+        }
+        return querySettlements(selection, args, limit)
+    }
+
+    fun settlementById(reportId: Long): SettlementRecord? = db.query(
+        "settlement_reports",
+        SETTLEMENT_COLUMNS,
+        "id = ?",
+        arrayOf(reportId.toString()),
+        null,
+        null,
+        null,
+        "1",
+    ).use { cursor -> if (cursor.moveToFirst()) cursor.toSettlementRecordV027() else null }
+
+    fun previewSettlement(reportId: Long, paperWidthMm: Int): String {
+        val record = settlementById(reportId)
+            ?: throw IllegalArgumentException("点検・精算履歴No.${reportId}が見つかりません")
+        val paper = ReceiptPaper.fromWidth(paperWidthMm)
+        val document = settlementDocumentData(record)
+        if (document != null) return OperationDocumentRenderer.renderSettlement(document, paper)
+        return SettlementSnapshotSchemaV027.originalPayload(db, reportId)
+            ?: throw IllegalStateException(
+                "v0.26以前の履歴で完全な保存明細または保存済み印字データがないため再印字できません",
+            )
+    }
+
+    fun reprintSettlement(
+        reportId: Long,
+        paperWidthMm: Int,
+        operatorName: String,
+    ): Long {
+        require(operatorName.isNotBlank()) { "再印字担当者を入力してください" }
+        val normalizedWidth = if (paperWidthMm >= 80) 80 else 58
+        val now = System.currentTimeMillis()
+        return db.transaction {
+            val record = settlementById(reportId)
+                ?: throw IllegalArgumentException("点検・精算履歴No.${reportId}が見つかりません")
+            val document = settlementDocumentData(
+                record = record,
+                reprintedAt = now,
+                reprintedBy = operatorName.trim(),
+            )
+            val payload = if (document != null) {
+                OperationDocumentRenderer.renderSettlement(
+                    document,
+                    ReceiptPaper.fromWidth(normalizedWidth),
+                )
+            } else {
+                val original = SettlementSnapshotSchemaV027.originalPayload(this, reportId)
+                    ?: throw IllegalStateException(
+                        "v0.26以前の履歴で完全な保存明細または保存済み印字データがないため再印字できません",
+                    )
+                val reprintedAtText = java.text.SimpleDateFormat(
+                    "yyyy/MM/dd HH:mm:ss",
+                    java.util.Locale.JAPAN,
+                ).format(java.util.Date(now))
+                SettlementSnapshotSchemaV027.legacyReprintPayload(
+                    originalPayload = original,
+                    operatorName = operatorName.trim(),
+                    reprintedAtText = reprintedAtText,
                 )
             }
-            return result
+            val jobId = insertDocumentJob(
+                OperationDocumentType.SETTLEMENT_REPORT,
+                reportId,
+                normalizedWidth,
+                payload,
+                now,
+            )
+            insertAudit(
+                eventType = "SETTLEMENT_REPRINT",
+                referenceId = reportId,
+                detail = "${record.type.displayName}No.${record.id} / 営業日 ${record.businessDate} / セッションNo.${record.businessSessionId} / ${normalizedWidth}mm / 印刷ジョブNo.${jobId}",
+                operatorName = operatorName,
+                createdAt = now,
+            )
+            jobId
         }
+    }
+
+    private fun querySettlements(
+        selection: String?,
+        args: Array<String>?,
+        limit: Int,
+    ): List<SettlementRecord> = db.query(
+        "settlement_reports",
+        SETTLEMENT_COLUMNS,
+        selection,
+        args,
+        null,
+        null,
+        "created_at DESC, id DESC",
+        limit.coerceIn(1, 500).toString(),
+    ).use { cursor ->
+        buildList {
+            while (cursor.moveToNext()) add(cursor.toSettlementRecordV027())
+        }
+    }
+
+    private fun android.database.Cursor.toSettlementRecordV027() = SettlementRecord(
+        id = getLong(0),
+        businessSessionId = getLong(1),
+        businessDate = getString(2),
+        type = SettlementReportType.valueOf(getString(3)),
+        salesGross = getLong(4),
+        reversalGross = getLong(5),
+        netSales = getLong(6),
+        expectedCash = getLong(7),
+        actualCash = getLong(8),
+        variance = getLong(9),
+        transactionCount = getInt(10),
+        reversalCount = getInt(11),
+        pendingPrints = getInt(12),
+        heldTickets = getInt(13),
+        operatorName = getString(14),
+        createdAt = getLong(15),
+        openingCash = getLong(16),
+        cashIn = getLong(17),
+        cashOut = getLong(18),
+        snapshotVersion = getInt(19),
+    )
+
+    private fun settlementDocumentData(
+        record: SettlementRecord,
+        reprintedAt: Long? = null,
+        reprintedBy: String? = null,
+    ): SettlementDocumentData? {
+        if (record.snapshotVersion < SettlementSnapshotSchemaV027.SNAPSHOT_VERSION) return null
+        return SettlementDocumentData(
+            reportId = record.id,
+            businessDate = record.businessDate,
+            type = record.type,
+            createdAt = record.createdAt,
+            operatorName = record.operatorName,
+            salesGross = record.salesGross,
+            reversalGross = record.reversalGross,
+            netSales = record.netSales,
+            openingCash = record.openingCash,
+            cashIn = record.cashIn,
+            cashOut = record.cashOut,
+            expectedCash = record.expectedCash,
+            actualCash = record.actualCash,
+            variance = record.variance,
+            transactionCount = record.transactionCount,
+            reversalCount = record.reversalCount,
+            pendingPrints = record.pendingPrints,
+            heldTickets = record.heldTickets,
+            paymentTotals = SettlementSnapshotSchemaV027.loadPaymentTotals(db, record.id),
+            businessSessionId = record.businessSessionId,
+            snapshotVersion = record.snapshotVersion,
+            reprintedAt = reprintedAt,
+            reprintedBy = reprintedBy,
+        )
     }
 
     private fun SQLiteDatabase.insertDocumentJob(
@@ -997,6 +1173,7 @@ class OperationsStore(context: Context) {
             )
             """.trimIndent(),
         )
+        SettlementSnapshotSchemaV027.ensure(db)
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS operation_commit_keys (
@@ -1035,6 +1212,13 @@ class OperationsStore(context: Context) {
         private val SESSION_COLUMNS = arrayOf(
             "id", "business_date", "status", "opening_cash", "opened_by", "opened_at",
             "closed_by", "closed_at", "closing_actual", "close_variance",
+        )
+        private val SETTLEMENT_COLUMNS = arrayOf(
+            "id", "business_session_id", "business_date", "report_type",
+            "sales_gross", "reversal_gross", "net_sales", "expected_cash",
+            "actual_cash", "variance", "transaction_count", "reversal_count",
+            "pending_prints", "held_tickets", "operator_name", "created_at",
+            "opening_cash", "cash_in", "cash_out", "snapshot_version",
         )
     }
 
