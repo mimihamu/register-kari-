@@ -1,58 +1,167 @@
-name: Format v0.24 cash movement correction
+name: Build つぐレジ APK
 
 on:
-  pull_request:
+  push:
     branches:
-      - develop/v0.23
+      - main
+      - develop/**
+  pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  format-source:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'develop/v0.24'
+  build-debug-apk:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          ref: develop/v0.24
-          fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
-      - name: Replace cash movement result block by boundaries
-        shell: bash
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle 9.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Verify cumulative v0.14-v0.24 sources
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
+          grep -q 'versionCode = 54' app/build.gradle.kts
+          grep -q 'versionName = "0.24.0-dev.1"' app/build.gradle.kts
+          grep -q 'androidx.work:work-runtime:2.11.2' app/build.gradle.kts
+          grep -q 'versionCode = 6' customer-display/build.gradle.kts
+          grep -q 'versionName = "0.13.0-dev.6"' customer-display/build.gradle.kts
 
-          path = Path('app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt')
-          text = path.read_text()
-          screen_start = text.index('            OperationsScreen.CASH_MOVEMENT -> CashMovementScreen(')
-          screen_end = text.index('            OperationsScreen.REVERSAL -> ReversalScreen(', screen_start)
-          segment = text[screen_start:screen_end]
-          block_start = segment.index('                    message = result.fold(')
-          block_end = segment.index('                    if (result.isSuccess)', block_start)
-          replacement = '''                    message = result.fold(
-                        onSuccess = { "${type.displayName}を保存しました（No.$it）" },
-                        onFailure = { it.message ?: "保存に失敗しました" },
-                    )
-'''
-          segment = segment[:block_start] + replacement + segment[block_end:]
-          updated = text[:screen_start] + segment + text[screen_end:]
-          if updated == text:
-              raise SystemExit('cash movement block was not changed')
-          path.write_text(updated)
-          PY
-          git diff --check
-          sed -n '202,214p' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          test -s app/src/main/java/jp/co/tenposinfo/register/BusinessSessionV024.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V024BusinessSessionLifecycleTest.kt
+          test -s docs/V0.24_Z_SETTLEMENT_SESSION_CLOSE.md
+          grep -q 'BusinessSessionMultiplicityMigration.ensure' app/src/main/java/jp/co/tenposinfo/register/StabilizationFoundation.kt
+          grep -q 'Z_SETTLEMENT:SESSION:' app/src/main/java/jp/co/tenposinfo/register/OperationExecutionSafety.kt
+          grep -q 'BusinessSessionStatus.CLOSED' app/src/main/java/jp/co/tenposinfo/register/BusinessSessionV024.kt
+          grep -q 'put("closed_at", now)' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+          grep -q 'Z精算して営業終了' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q '同じ営業日でも' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q 'onSuccess = { "${type.displayName}を保存しました（No.$it）" }' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          ! grep -q 'business_date TEXT NOT NULL UNIQUE' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+          ! grep -q 'business_date TEXT NOT NULL UNIQUE' app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsStore.kt
+          ! grep -q 'secureStore.endBusinessDay' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
 
-      - name: Commit formatting correction
-        shell: bash
+          test -s app/src/main/java/jp/co/tenposinfo/register/AutoBackup.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V023AutoBackupRetentionTest.kt
+          test -s docs/V0.23_AUTOMATIC_BACKUP_RETENTION.md
+          grep -q 'ExistingWorkPolicy.KEEP' app/src/main/java/jp/co/tenposinfo/register/AutoBackup.kt
+          grep -q 'AutoBackupScheduler.enqueueZSettlement' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
+          grep -q 'settlementCommitted = true' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
+
+          test -s app/src/test/java/jp/co/tenposinfo/register/V022BackupPortabilityTest.kt
+          test -s docs/V0.22_BACKUP_PORTABILITY.md
+          grep -q 'ActivityResultContracts.CreateDocument' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -q 'ActivityResultContracts.OpenDocument' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          ! grep -q 'MANAGE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml
+          ! grep -q 'WRITE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml
+          ! grep -q 'READ_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml
+
+          test -s app/src/test/java/jp/co/tenposinfo/register/V021DataProtectionPolicyTest.kt
+          test -s docs/V0.21_DATA_PROTECTION.md
+          grep -q 'PRAGMA integrity_check' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
+          grep -q 'PRAGMA foreign_key_check' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
+          grep -q 'VACUUM INTO' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
+
+          test -s app/src/test/java/jp/co/tenposinfo/register/V020OperationsRoutingTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V019PartialReturnPolicyTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V018BusinessSessionIntegrationTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V017OperationExecutionSafetyTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V016OperationsAuthorizationTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V015TaxInvoicePolicyTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V014HeldTicketSafetyTest.kt
+
+          operations_count=$(grep -c 'android:name=".OperationsActivity"' app/src/main/AndroidManifest.xml)
+          test "$operations_count" -eq 1
+          ! grep -q '<activity-alias' app/src/main/AndroidManifest.xml
+          ! grep -q 'AdvancedOperationsActivity' app/src/main/AndroidManifest.xml
+          test ! -e app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsActivity.kt
+          test ! -e .github/workflows/inspect-v024.yml
+          test ! -e .github/workflows/v024-apply.yml
+          test ! -e tools/v024.patch
+          test ! -e tools/v024.patch.b64.00
+          test ! -e tools/v024.patch.gz.b64.00
+          test ! -e tools/v024.patch.gz.b64.01
+          test ! -e tools/v024.patch.gz.b64.02
+
+      - name: Verify launcher configuration
         run: |
           set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          git commit -m 'style: format cash movement result block'
-          git push origin HEAD:develop/v0.24
+          register_launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' app/src/main app/src/debug | wc -l)
+          cd_launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' customer-display/src/main | wc -l)
+          test "$register_launcher_count" -eq 1
+          test "$cd_launcher_count" -eq 1
+          test "$(grep -c 'android.intent.category.LAUNCHER' app/src/debug/AndroidManifest.xml || true)" -eq 0
+          grep -q 'android:name=".MainActivity"' app/src/main/AndroidManifest.xml
+          grep -q 'android:name=".MainActivity"' customer-display/src/main/AndroidManifest.xml
+
+      - name: Run cumulative unit tests
+        run: gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest
+
+      - name: Build debug APKs
+        run: gradle --no-daemon :app:assembleDebug :customer-display:assembleDebug
+
+      - name: Prepare named APKs and SHA-256
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.24.0_dev1_session_z_close_debug.apk
+          cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
+          sha256sum artifacts/TSUGUREGI_v0.24.0_dev1_session_z_close_debug.apk | tee artifacts/TSUGUREGI_v0.24.0_dev1_session_z_close_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
+          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.24.0_dev1_session_z_close_debug.apk | tee artifacts/build-summary.txt
+          stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee -a artifacts/build-summary.txt
+          echo 'REGISTER_VERSION_NAME=0.24.0-dev.1' >> artifacts/build-summary.txt
+          echo 'REGISTER_VERSION_CODE=54' >> artifacts/build-summary.txt
+          echo 'CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.6' >> artifacts/build-summary.txt
+          echo 'CUSTOMER_DISPLAY_VERSION_CODE=6' >> artifacts/build-summary.txt
+          echo 'Z_SETTLEMENT=atomic-business-session-close' >> artifacts/build-summary.txt
+          echo 'BUSINESS_DATE_SESSIONS=multiple-per-date' >> artifacts/build-summary.txt
+          echo 'Z_IDEMPOTENCY=business-session-id' >> artifacts/build-summary.txt
+          echo 'AUTO_BACKUP_TRIGGER=committed-z-settlement' >> artifacts/build-summary.txt
+          echo 'AUTO_BACKUP_STORAGE=internal-only' >> artifacts/build-summary.txt
+          echo 'BACKUP_EXPORT=storage-access-framework' >> artifacts/build-summary.txt
+          echo 'SIGNING=development-not-production' >> artifacts/build-summary.txt
+          echo 'REAL_DEVICE_SAME_DATE_REOPEN_VERIFICATION=required' >> artifacts/build-summary.txt
+          echo 'REAL_DEVICE_Z_ATOMIC_CLOSE_VERIFICATION=required' >> artifacts/build-summary.txt
+          echo 'REAL_DEVICE_Z_AUTO_BACKUP_VERIFICATION=required' >> artifacts/build-summary.txt
+          git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
+
+      - name: Upload APKs
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSUGUREGI-v0.24.0-dev1-session-z-close-apks
+          path: |
+            artifacts/TSUGUREGI_v0.24.0_dev1_session_z_close_debug.apk
+            artifacts/TSUGUREGI_v0.24.0_dev1_session_z_close_debug.apk.sha256
+            artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
+            artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
+            artifacts/build-summary.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Report artifact ID
+        run: echo "ARTIFACT_ID=${{ steps.upload.outputs.artifact-id }}"
