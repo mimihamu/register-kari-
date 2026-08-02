@@ -49,6 +49,61 @@ class CustomerDisplayConnectionPresentationPolicyTest {
     }
 
     @Test
+    fun reconnectWithinGraceNeverMakesDisconnectVisible() {
+        val state = CustomerDisplayConnectionVisibilityState()
+        state.onSnapshot()
+
+        val loss = state.onTransportLost("screen transition")
+
+        assertEquals(3_000L, loss.delayMillis)
+        assertFalse(loss.notifyImmediately)
+        assertFalse(state.visibleDisconnected)
+        assertTrue(state.shouldPresentAsConnected())
+
+        state.onConnected()
+
+        assertFalse(state.revealDisconnectedIfCurrent(loss.generation))
+        assertFalse(state.visibleDisconnected)
+        assertTrue(state.shouldPresentAsConnected())
+    }
+
+    @Test
+    fun outageLongerThanGraceMakesDisconnectVisible() {
+        val state = CustomerDisplayConnectionVisibilityState()
+        state.onSnapshot()
+        val loss = state.onTransportLost("wifi disconnected")
+
+        assertTrue(state.revealDisconnectedIfCurrent(loss.generation))
+        assertTrue(state.visibleDisconnected)
+        assertFalse(state.shouldPresentAsConnected())
+        assertEquals("wifi disconnected", state.latestDisconnectReason)
+    }
+
+    @Test
+    fun staleTimeoutCannotOverrideNewerConnectionOrLoss() {
+        val state = CustomerDisplayConnectionVisibilityState()
+        state.onSnapshot()
+        val firstLoss = state.onTransportLost("first")
+        state.onConnected()
+        val secondLoss = state.onTransportLost("second")
+
+        assertFalse(state.revealDisconnectedIfCurrent(firstLoss.generation))
+        assertTrue(state.revealDisconnectedIfCurrent(secondLoss.generation))
+        assertEquals("second", state.latestDisconnectReason)
+    }
+
+    @Test
+    fun initialFailureIsVisibleWithoutSnapshot() {
+        val state = CustomerDisplayConnectionVisibilityState()
+        val loss = state.onTransportLost("unreachable")
+
+        assertTrue(loss.notifyImmediately)
+        assertEquals(0L, loss.delayMillis)
+        assertTrue(state.visibleDisconnected)
+        assertFalse(state.shouldPresentAsConnected())
+    }
+
+    @Test
     fun connectionEventLogIsBoundedAndNewestFirst() {
         CustomerDisplayConnectionEventLog.clear()
         repeat(120) { index ->
