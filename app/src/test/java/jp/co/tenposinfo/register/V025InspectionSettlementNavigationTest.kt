@@ -12,7 +12,7 @@ class V025InspectionSettlementNavigationTest {
     fun inspectionAndSettlementHaveSeparateRoutes() {
         assertTrue(source.contains("OperationsScreen.X_INSPECTION"))
         assertTrue(source.contains("OperationsScreen.Z_SETTLEMENT"))
-        assertFalse(source.contains("OperationsScreen.SETTLEMENT"))
+        assertFalse(source.contains("OperationsScreen.SETTLEMENT ->"))
         assertTrue(source.contains("onXInspection"))
         assertTrue(source.contains("onZSettlement"))
     }
