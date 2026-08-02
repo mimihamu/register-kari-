@@ -16,6 +16,7 @@ data class ReversalDocumentData(
     val items: List<CartItem>,
     val taxSummary: TaxSummary,
     val refundPayments: List<PaymentTotal>,
+    val issuer: InvoiceIssuerProfile = TaxInvoiceSettingsRegistry.current().issuer,
 )
 
 data class SettlementDocumentData(
@@ -46,7 +47,9 @@ object OperationDocumentRenderer {
     fun renderReversal(data: ReversalDocumentData, paper: ReceiptPaper): String {
         val width = paper.charsPerLine
         val lines = mutableListOf<String>()
-        lines += center("サンプル居酒屋", width)
+        lines += center(data.issuer.storeName, width)
+        if (data.issuer.address.isNotBlank()) lines += center(data.issuer.address, width)
+        if (data.issuer.phone.isNotBlank()) lines += center(data.issuer.phone, width)
         lines += center(if (data.type == ReversalType.CANCEL) "【取消レシート】" else "【返品レシート】", width)
         lines += separator(width, '=')
         lines += "処理No.${data.reversalId}  元売上No.${data.originalSaleId}"
@@ -75,14 +78,19 @@ object OperationDocumentRenderer {
         }
         lines += separator(width, '-')
         lines += "※は軽減税率対象商品です"
-        lines += "登録番号 T1234567890123"
+        if (data.issuer.registrationNumber.isNotBlank()) {
+            lines += "登録番号 ${data.issuer.registrationNumber}"
+        }
         return lines.joinToString("\n")
     }
 
     fun renderSettlement(data: SettlementDocumentData, paper: ReceiptPaper): String {
         val width = paper.charsPerLine
         val lines = mutableListOf<String>()
-        lines += center("サンプル居酒屋", width)
+        val issuer = TaxInvoiceSettingsRegistry.current().issuer
+        lines += center(issuer.storeName, width)
+        if (issuer.address.isNotBlank()) lines += center(issuer.address, width)
+        if (issuer.phone.isNotBlank()) lines += center(issuer.phone, width)
         lines += center(if (data.type == SettlementReportType.Z_SETTLEMENT) "【Z精算票】" else "【X点検票】", width)
         lines += separator(width, '=')
         lines += "営業日 ${data.businessDate}"

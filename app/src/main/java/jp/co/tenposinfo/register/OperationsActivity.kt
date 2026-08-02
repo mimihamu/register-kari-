@@ -52,6 +52,7 @@ import java.text.SimpleDateFormat
 import java.time.LocalDate
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 private val OpNavy = Color(0xFF173F6B)
 private val OpBlue = Color(0xFF1976B9)
@@ -220,14 +221,30 @@ private fun OperationsApp(onClose: () -> Unit) {
                 operatorName = operator.name,
                 revision = revision,
                 message = message,
-                onExecute = { saleId, type, reason, pin ->
-                    val result = runCatching { secureStore.createFullReversal(saleId, type, reason, pin) }
+                loadLines = store::loadReturnableLines,
+                onExecute = { saleId, type, quantities, reason, pin, paperWidth, requestId ->
+                    val result = runCatching {
+                        secureStore.createReversal(
+                            saleId,
+                            type,
+                            quantities,
+                            reason,
+                            pin,
+                            paperWidth,
+                            requestId,
+                        )
+                    }
                     message = result.fold(
-                        onSuccess = { "${type.displayName}を反対取引として保存しました（No.$it）" },
+                        onSuccess = { "${type.displayName}を保存しました（No.${it.reversalId}／返金 ${opYen(it.refundAmount)}）" },
                         onFailure = { it.message ?: "処理に失敗しました" },
                     )
-                    if (result.isSuccess) revision++
+                    result.onSuccess {
+                        revision++
+                        AutomaticPrintScheduler.enqueueNow(appContext)
+                        DriveOutboxScheduler.enqueueNow(appContext)
+                    }
                     activeOperator = OperatorSessionRegistry.current(appContext)
+                    result.getOrNull()
                 },
                 onBack = { screen = OperationsScreen.MENU },
             )
@@ -748,45 +765,120 @@ private fun ReversalScreen(
     operatorName: String,
     revision: Int,
     message: String?,
-    onExecute: (Long, ReversalType, String, String) -> Unit,
+    loadLines: (Long) -> List<ReturnableSaleLine>,
+    onExecute: (Long, ReversalType, Map<Long, Int>, String, String, Int, String) -> PartialReversalResult?,
     onBack: () -> Unit,
 ) {
     var selectedSaleId by remember { mutableStateOf<Long?>(null) }
+    var lines by remember { mutableStateOf<List<ReturnableSaleLine>>(emptyList()) }
+    var quantities by remember { mutableStateOf<Map<Long, Int>>(emptyMap()) }
     var type by remember { mutableStateOf(ReversalType.RETURN) }
     var reason by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
+    var paperWidth by remember { mutableStateOf(80) }
+    var requestId by remember { mutableStateOf(UUID.randomUUID().toString()) }
+    var savedResult by remember { mutableStateOf<PartialReversalResult?>(null) }
+    var localMessage by remember { mutableStateOf<String?>(null) }
     @Suppress("UNUSED_VARIABLE") val refresh = revision
     val selected = sales.firstOrNull { it.id == selectedSaleId }
+    val selectedItems = runCatching { PartialReturnPolicy.select(type, lines, quantities) }.getOrNull().orEmpty()
+    val previewSummary = selectedItems.takeIf { it.isNotEmpty() }?.let { TaxEngine.calculate(it.map { pair -> pair.second }) }
+    val canCancel = lines.isNotEmpty() && lines.all { it.returnedQuantity == 0 && it.remainingQuantity > 0 }
+    val canExecute = selected != null && reason.isNotBlank() && pin.isNotBlank() && when (type) {
+        ReversalType.CANCEL -> canCancel
+        ReversalType.RETURN -> selectedItems.isNotEmpty()
+    }
 
     Column(Modifier.fillMaxSize()) {
         OpHeader("SCR-400/410", "返品・取消")
-        Row(Modifier.weight(1f).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            OpPanel(Modifier.weight(1f).fillMaxHeight()) {
-                Text("元売上を選択", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = OpNavy)
+        Row(Modifier.weight(1f).padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OpPanel(Modifier.width(315.dp).fillMaxHeight()) {
+                Text("元売上を選択", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = OpNavy)
                 Spacer(Modifier.height(8.dp))
-                if (sales.isEmpty()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("売上はありません", color = Color.Gray) }
-                } else {
-                    LazyColumn {
-                        itemsIndexed(sales) { _, sale ->
-                            val reversed = sale.id in reversedSaleIds
-                            val selectedRow = sale.id == selectedSaleId
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .background(if (selectedRow) OpPaleBlue else Color.Transparent)
-                                    .clickable(enabled = !reversed) { selectedSaleId = sale.id }
-                                    .padding(horizontal = 8.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text("No.${sale.id}  ${opDateTime(sale.createdAt)}", fontWeight = FontWeight.Bold)
-                                    Text("${sale.paymentLabel} / 担当 ${sale.operatorName}", color = Color.Gray)
+                LazyColumn(Modifier.weight(1f)) {
+                    itemsIndexed(sales) { _, sale ->
+                        val completed = sale.id in reversedSaleIds
+                        val selectedRow = sale.id == selectedSaleId
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .background(if (selectedRow) OpPaleBlue else Color.Transparent)
+                                .clickable(enabled = !completed) {
+                                    selectedSaleId = sale.id
+                                    lines = runCatching { loadLines(sale.id) }.getOrElse {
+                                        localMessage = it.message ?: "明細取得に失敗しました"
+                                        emptyList()
+                                    }
+                                    quantities = emptyMap()
+                                    savedResult = null
+                                    requestId = UUID.randomUUID().toString()
                                 }
-                                Text(opYen(sale.totalAmount), fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                                if (reversed) {
-                                    Spacer(Modifier.width(10.dp))
-                                    Text("処理済", color = OpDanger, fontWeight = FontWeight.Bold)
+                                .padding(horizontal = 7.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("No.${sale.id}  ${opDateTime(sale.createdAt)}", fontWeight = FontWeight.Bold)
+                                Text("${sale.paymentLabel} / ${sale.operatorName}", color = Color.Gray, fontSize = 12.sp)
+                            }
+                            Text(opYen(sale.totalAmount), fontWeight = FontWeight.Bold)
+                            if (completed) Text(" 完了", color = OpDanger, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("最近の処理", fontWeight = FontWeight.Bold, color = OpNavy)
+                reversals.take(3).forEach { record ->
+                    Text("${record.type.displayName} No.${record.originalSaleId}  -${opYen(record.grossAmount)}", fontSize = 12.sp)
+                }
+            }
+
+            OpPanel(Modifier.weight(1f).fillMaxHeight()) {
+                Text("返品商品・数量", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = OpNavy)
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    if (type == ReversalType.CANCEL) "取消は未返品の全商品を対象にします" else "商品ごとに返品数量を指定してください",
+                    color = Color.DarkGray,
+                )
+                Spacer(Modifier.height(8.dp))
+                if (selected == null) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("元売上を選択してください", color = Color.Gray) }
+                } else if (lines.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("返品可能な明細がありません", color = OpDanger) }
+                } else {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        itemsIndexed(lines) { _, line ->
+                            val requested = if (type == ReversalType.CANCEL) line.remainingQuantity else quantities[line.saleItemId] ?: 0
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = if (line.remainingQuantity == 0) Color(0xFFF1F1F1) else Color.White),
+                                border = BorderStroke(1.dp, OpBorder),
+                            ) {
+                                Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("${line.productName} [${line.taxSymbol}]", fontWeight = FontWeight.Bold)
+                                        Text(
+                                            "${opYen(line.unitPrice)} / 販売 ${line.originalQuantity}・返品済 ${line.returnedQuantity}・残 ${line.remainingQuantity}",
+                                            color = Color.Gray,
+                                            fontSize = 12.sp,
+                                        )
+                                        if (line.remainingDiscount > 0) Text("値引残 ${opYen(line.remainingDiscount)}", color = Color.Gray, fontSize = 12.sp)
+                                    }
+                                    OutlinedButton(
+                                        onClick = {
+                                            val next = (requested - 1).coerceAtLeast(0)
+                                            quantities = quantities + (line.saleItemId to next)
+                                        },
+                                        enabled = type == ReversalType.RETURN && requested > 0,
+                                        modifier = Modifier.width(48.dp),
+                                    ) { Text("−") }
+                                    Text("$requested", modifier = Modifier.width(42.dp), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold)
+                                    OutlinedButton(
+                                        onClick = {
+                                            val next = (requested + 1).coerceAtMost(line.remainingQuantity)
+                                            quantities = quantities + (line.saleItemId to next)
+                                        },
+                                        enabled = type == ReversalType.RETURN && requested < line.remainingQuantity,
+                                        modifier = Modifier.width(48.dp),
+                                    ) { Text("＋") }
                                 }
                             }
                         }
@@ -794,25 +886,36 @@ private fun ReversalScreen(
                 }
             }
 
-            OpPanel(Modifier.width(410.dp).fillMaxHeight()) {
-                Text("反対取引", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = OpNavy)
-                Spacer(Modifier.height(10.dp))
-                OpAmountRow("元売上", selected?.let { "No.${it.id}" } ?: "未選択")
-                OpAmountRow("金額", selected?.let { opYen(it.totalAmount) } ?: opYen(0), emphasized = true)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OpChoiceButton("返品", type == ReversalType.RETURN, Modifier.weight(1f)) { type = ReversalType.RETURN }
-                    OpChoiceButton("取消", type == ReversalType.CANCEL, Modifier.weight(1f)) { type = ReversalType.CANCEL }
-                }
+            OpPanel(Modifier.width(390.dp).fillMaxHeight()) {
+                Text("返品・取消確定", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = OpNavy)
                 Spacer(Modifier.height(8.dp))
+                OpAmountRow("元売上", selected?.let { "No.${it.id}" } ?: "未選択")
+                OpAmountRow("返金予定", opYen(previewSummary?.grossAmount ?: 0L), emphasized = true)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OpChoiceButton("返品", type == ReversalType.RETURN, Modifier.weight(1f)) {
+                        type = ReversalType.RETURN
+                        requestId = UUID.randomUUID().toString()
+                    }
+                    OpChoiceButton("取消", type == ReversalType.CANCEL, Modifier.weight(1f)) {
+                        type = ReversalType.CANCEL
+                        requestId = UUID.randomUUID().toString()
+                    }
+                }
+                Spacer(Modifier.height(7.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OpChoiceButton("58mm", paperWidth == 58, Modifier.weight(1f)) { paperWidth = 58 }
+                    OpChoiceButton("80mm", paperWidth == 80, Modifier.weight(1f)) { paperWidth = 80 }
+                }
+                Spacer(Modifier.height(7.dp))
                 OutlinedTextField(
                     value = reason,
                     onValueChange = { reason = it.take(100) },
                     label = { Text("理由（必須）") },
-                    modifier = Modifier.fillMaxWidth().height(90.dp),
+                    modifier = Modifier.fillMaxWidth().height(82.dp),
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(7.dp))
                 OpAuthenticatedOperator(operatorName)
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(7.dp))
                 OutlinedTextField(
                     value = pin,
                     onValueChange = { pin = it.filter(Char::isDigit).take(8) },
@@ -821,46 +924,39 @@ private fun ReversalScreen(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Spacer(Modifier.weight(1f))
-                Text("元売上は変更・削除せず、全額の反対取引として追記します。", color = Color.DarkGray)
                 Spacer(Modifier.height(8.dp))
                 Button(
                     onClick = {
-                        selectedSaleId?.let { onExecute(it, type, reason, pin) }
-                        reason = ""
-                        pin = ""
-                        selectedSaleId = null
+                        val saleId = selectedSaleId ?: return@Button
+                        val result = onExecute(saleId, type, quantities, reason, pin, paperWidth, requestId)
+                        if (result != null) {
+                            savedResult = result
+                            lines = loadLines(saleId)
+                            quantities = emptyMap()
+                            reason = ""
+                            pin = ""
+                            requestId = UUID.randomUUID().toString()
+                        }
                     },
-                    enabled = selected != null,
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    enabled = canExecute,
+                    modifier = Modifier.fillMaxWidth().height(53.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = OpDanger),
                 ) { Text("${type.displayName}を確定", fontWeight = FontWeight.Bold) }
-                if (message != null) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(message, color = if (message.contains("違い") || message.contains("既に") || message.contains("失敗")) OpDanger else OpGreen)
+                (localMessage ?: message)?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(it, color = if (it.contains("失敗") || it.contains("違い") || it.contains("超え") || it.contains("できません")) OpDanger else OpGreen, fontSize = 12.sp)
                 }
-            }
-
-            OpPanel(Modifier.width(330.dp).fillMaxHeight()) {
-                Text("処理履歴", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = OpNavy)
-                Spacer(Modifier.height(8.dp))
-                if (reversals.isEmpty()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("履歴はありません", color = Color.Gray) }
-                } else {
-                    LazyColumn {
-                        itemsIndexed(reversals) { _, record ->
-                            Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                                Row(Modifier.fillMaxWidth()) {
-                                    Text(record.type.displayName, color = OpDanger, fontWeight = FontWeight.Bold)
-                                    Spacer(Modifier.weight(1f))
-                                    Text("-${opYen(record.grossAmount)}", fontWeight = FontWeight.Bold)
-                                }
-                                Text("元売上 No.${record.originalSaleId} / ${record.reason}")
-                                Text("${opDateTime(record.createdAt)} / ${record.operatorName}", color = Color.Gray)
-                            }
-                        }
-                    }
-                }
+                savedResult?.let { result ->
+                    Spacer(Modifier.height(7.dp))
+                    Text("印刷ジョブ No.${result.printJobId}", fontWeight = FontWeight.Bold, color = OpNavy)
+                    Text(
+                        result.previewText,
+                        fontSize = 9.sp,
+                        lineHeight = 11.sp,
+                        modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                    )
+                } ?: Spacer(Modifier.weight(1f))
+                Text("元売上は変更せず、返品明細と反対支払を追記します。", color = Color.DarkGray, fontSize = 11.sp)
             }
         }
         OpBottomBar("レジ管理へ戻る", onBack)

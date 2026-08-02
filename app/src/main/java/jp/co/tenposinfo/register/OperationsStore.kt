@@ -104,7 +104,8 @@ object BusinessSessionTransitionPolicy {
  * 返品・取消は元売上を上書きせず、反対取引と反対支払を別テーブルへ記録する。
  */
 class OperationsStore(context: Context) {
-    private val baseDatabase = RegisterDatabase(context.applicationContext)
+    private val appContext = context.applicationContext
+    private val baseDatabase = RegisterDatabase(appContext)
     private val db: SQLiteDatabase = baseDatabase.writableDatabase
 
     init {
@@ -261,9 +262,14 @@ class OperationsStore(context: Context) {
             cashOut = cashOut,
             openingCash = session.openingCash,
         )
-        val pendingPrints = longQuery(
-            "SELECT COUNT(*) FROM print_jobs WHERE status <> ?",
-            arrayOf(PrintJobStatus.COMPLETED.name),
+        val pendingPrints = (
+            longQuery(
+                "SELECT COUNT(*) FROM print_jobs WHERE status <> ?",
+                arrayOf(PrintJobStatus.COMPLETED.name),
+            ) + longQuery(
+                "SELECT COUNT(*) FROM document_print_jobs WHERE status <> ?",
+                arrayOf(PrintJobStatus.COMPLETED.name),
+            )
         ).toInt()
         val heldTickets = longQuery("SELECT COUNT(*) FROM held_tickets").toInt()
         val settled = longQuery(
@@ -352,32 +358,95 @@ class OperationsStore(context: Context) {
         }
     }
 
-    fun createFullReversal(
+    fun loadReturnableLines(saleId: Long): List<ReturnableSaleLine> =
+        loadReturnableLines(db, saleId)
+
+    private fun loadReturnableLines(database: SQLiteDatabase, saleId: Long): List<ReturnableSaleLine> = database.rawQuery(
+        """
+        SELECT si.id, si.product_id, si.product_name, si.unit_price, si.tax_category,
+               COALESCE(lts.tax_key, si.tax_category),
+               COALESCE(lts.tax_label, si.tax_category),
+               COALESCE(lts.rate_percent, CASE si.tax_category WHEN 'INCLUDED_10' THEN 10 WHEN 'EXCLUDED_10' THEN 10 WHEN 'INCLUDED_8' THEN 8 WHEN 'EXCLUDED_8' THEN 8 ELSE 0 END),
+               COALESCE(lts.tax_included, CASE WHEN si.tax_category IN ('INCLUDED_10','INCLUDED_8') THEN 1 ELSE 0 END),
+               COALESCE(lts.taxable, CASE WHEN si.tax_category = 'NON_TAXABLE' THEN 0 ELSE 1 END),
+               COALESCE(lts.reduced, CASE WHEN si.tax_category IN ('INCLUDED_8','EXCLUDED_8') THEN 1 ELSE 0 END),
+               COALESCE(lts.tax_symbol, CASE si.tax_category WHEN 'INCLUDED_10' THEN '内' WHEN 'EXCLUDED_10' THEN '外' WHEN 'INCLUDED_8' THEN '内※' WHEN 'EXCLUDED_8' THEN '外※' ELSE '非' END),
+               si.quantity, si.discount_amount, si.note,
+               CASE WHEN EXISTS (
+                   SELECT 1 FROM reversal_transactions legacy
+                   WHERE legacy.original_sale_id = si.sale_id
+                     AND NOT EXISTS (SELECT 1 FROM reversal_items legacy_item WHERE legacy_item.reversal_id = legacy.id)
+               ) THEN si.quantity ELSE COALESCE(SUM(ri.return_quantity), 0) END AS returned_quantity,
+               CASE WHEN EXISTS (
+                   SELECT 1 FROM reversal_transactions legacy
+                   WHERE legacy.original_sale_id = si.sale_id
+                     AND NOT EXISTS (SELECT 1 FROM reversal_items legacy_item WHERE legacy_item.reversal_id = legacy.id)
+               ) THEN si.discount_amount ELSE COALESCE(SUM(ri.discount_amount), 0) END AS refunded_discount
+        FROM sale_items si
+        LEFT JOIN line_tax_snapshots lts
+          ON lts.scope = 'SALE'
+         AND lts.owner_id = si.sale_id
+         AND lts.line_no = (SELECT COUNT(*) FROM sale_items si2 WHERE si2.sale_id = si.sale_id AND si2.id <= si.id)
+        LEFT JOIN reversal_items ri ON ri.sale_item_id = si.id
+        WHERE si.sale_id = ?
+        GROUP BY si.id, si.product_id, si.product_name, si.unit_price, si.tax_category,
+                 lts.tax_key, lts.tax_label, lts.rate_percent, lts.tax_included, lts.taxable, lts.reduced, lts.tax_symbol,
+                 si.quantity, si.discount_amount, si.note
+        ORDER BY si.id ASC
+        """.trimIndent(),
+        arrayOf(saleId.toString()),
+    ).use { cursor ->
+        val result = mutableListOf<ReturnableSaleLine>()
+        while (cursor.moveToNext()) {
+            val legacy = TaxCategory.valueOf(cursor.getString(4))
+            result += ReturnableSaleLine(
+                saleItemId = cursor.getLong(0),
+                productId = cursor.getString(1),
+                productName = cursor.getString(2),
+                unitPrice = cursor.getLong(3),
+                taxCategory = legacy,
+                taxKey = cursor.getString(5),
+                taxLabel = cursor.getString(6).takeUnless { it == legacy.name } ?: legacy.displayName,
+                taxRatePercent = cursor.getInt(7),
+                taxIncluded = cursor.getInt(8) != 0,
+                taxable = cursor.getInt(9) != 0,
+                reduced = cursor.getInt(10) != 0,
+                taxSymbol = cursor.getString(11),
+                originalQuantity = cursor.getInt(12),
+                originalDiscount = cursor.getLong(13),
+                note = cursor.getString(14),
+                returnedQuantity = cursor.getInt(15),
+                refundedDiscount = cursor.getLong(16),
+            )
+        }
+        result
+    }
+
+    fun createReversal(
         originalSaleId: Long,
         type: ReversalType,
+        requestedQuantities: Map<Long, Int>,
         reason: String,
         operatorName: String,
-    ): Long {
+        paperWidthMm: Int,
+        requestId: String,
+    ): PartialReversalResult {
         require(reason.isNotBlank()) { "理由を入力してください" }
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
         val now = System.currentTimeMillis()
-        val operationKey = OperationsIdempotencyPolicy.reversalKey(originalSaleId)
+        val operationKey = OperationsIdempotencyPolicy.reversalRequestKey(type, originalSaleId, requestId)
+        val issuer = TaxInvoiceSettingsStore(appContext).load().issuer
+        var savedResult: PartialReversalResult? = null
 
-        return db.transaction {
+        db.transaction {
             val session = queryActiveSession(this) ?: error("営業開始後に返品・取消を実行してください")
             check(BusinessSessionTransitionPolicy.mayOperate(session.status)) { "Z精算後は返品・取消できません" }
             claimOperationKey(
                 operationKey = operationKey,
                 operationType = type.name,
-                duplicateMessage = "この売上は既に返品または取消済みです",
+                duplicateMessage = "同じ返品・取消要求は既に処理済みです",
                 createdAt = now,
             )
-            val alreadyReversed = rawQuery(
-                "SELECT COUNT(*) FROM reversal_transactions WHERE original_sale_id = ?",
-                arrayOf(originalSaleId.toString()),
-            ).use { cursor -> cursor.moveToFirst() && cursor.getLong(0) > 0 }
-            check(!alreadyReversed) { "この売上は既に返品または取消済みです" }
-
             val sale = query(
                 "sales",
                 arrayOf("total_amount", "payment_method"),
@@ -390,22 +459,14 @@ class OperationsStore(context: Context) {
                 if (!cursor.moveToFirst()) null else cursor.getLong(0) to cursor.getString(1)
             } ?: throw IllegalArgumentException("元売上が見つかりません")
 
-            val reversalId = insertOrThrow(
-                "reversal_transactions",
-                null,
-                ContentValues().apply {
-                    put("original_sale_id", originalSaleId)
-                    put("reversal_type", type.name)
-                    put("gross_amount", sale.first)
-                    put("reason", reason.trim())
-                    put("operator_name", operatorName.trim())
-                    put("business_session_id", session.id)
-                    put("business_date", session.businessDate)
-                    put("created_at", now)
-                },
-            )
+            val lines = loadReturnableLines(this, originalSaleId)
+            val selected = PartialReturnPolicy.select(type, lines, requestedQuantities)
+            val items = selected.map { it.second }
+            val taxSummary = TaxEngine.calculate(items)
+            val refundTotal = taxSummary.grossAmount
+            require(refundTotal > 0) { "返金額が0円です" }
 
-            var paymentRows = 0
+            val originalPayments = mutableListOf<PaymentTotal>()
             query(
                 "sale_payments",
                 arrayOf("payment_method", "applied_amount"),
@@ -415,42 +476,114 @@ class OperationsStore(context: Context) {
                 null,
                 "sequence_no ASC",
             ).use { cursor ->
-                while (cursor.moveToNext()) {
-                    insertOrThrow(
-                        "reversal_payments",
-                        null,
-                        ContentValues().apply {
-                            put("reversal_id", reversalId)
-                            put("payment_method", cursor.getString(0))
-                            put("amount", cursor.getLong(1))
-                        },
-                    )
-                    paymentRows++
-                }
+                while (cursor.moveToNext()) originalPayments += PaymentTotal(cursor.getString(0), cursor.getLong(1))
             }
-            if (paymentRows == 0) {
-                val fallbackMethod = if (sale.second.contains("現金")) PaymentMethod.CASH.name else "OTHER"
+            val fallbackMethod = if (sale.second.contains("現金")) PaymentMethod.CASH.name else "OTHER"
+            val refundPayments = PartialReturnPolicy.allocateRefundPayments(refundTotal, originalPayments, fallbackMethod)
+
+            val reversalId = insertOrThrow(
+                "reversal_transactions",
+                null,
+                ContentValues().apply {
+                    put("original_sale_id", originalSaleId)
+                    put("reversal_type", type.name)
+                    put("gross_amount", refundTotal)
+                    put("reason", reason.trim())
+                    put("operator_name", operatorName.trim())
+                    put("business_session_id", session.id)
+                    put("business_date", session.businessDate)
+                    put("created_at", now)
+                },
+            )
+            selected.forEach { (line, item) ->
+                insertOrThrow(
+                    "reversal_items",
+                    null,
+                    ContentValues().apply {
+                        put("reversal_id", reversalId)
+                        put("sale_item_id", line.saleItemId)
+                        put("product_id", line.productId)
+                        put("product_name", line.productName)
+                        put("unit_price", line.unitPrice)
+                        put("tax_category", line.taxCategory.name)
+                        put("tax_key", line.taxKey)
+                        put("tax_label", line.taxLabel)
+                        put("tax_rate_percent", line.taxRatePercent)
+                        put("tax_included", if (line.taxIncluded) 1 else 0)
+                        put("taxable", if (line.taxable) 1 else 0)
+                        put("reduced", if (line.reduced) 1 else 0)
+                        put("tax_symbol", line.taxSymbol)
+                        put("original_quantity", line.originalQuantity)
+                        put("return_quantity", item.quantity)
+                        put("discount_amount", item.discountAmount)
+                        put("gross_amount", item.baseAmount)
+                    },
+                )
+            }
+            refundPayments.forEach { payment ->
                 insertOrThrow(
                     "reversal_payments",
                     null,
                     ContentValues().apply {
                         put("reversal_id", reversalId)
-                        put("payment_method", fallbackMethod)
-                        put("amount", sale.first)
+                        put("payment_method", payment.method)
+                        put("amount", payment.amount)
                     },
                 )
             }
-
+            val document = ReversalDocumentData(
+                reversalId = reversalId,
+                originalSaleId = originalSaleId,
+                type = type,
+                createdAt = now,
+                operatorName = operatorName.trim(),
+                reason = reason.trim(),
+                items = items,
+                taxSummary = taxSummary,
+                refundPayments = refundPayments,
+                issuer = issuer,
+            )
+            val preview = OperationDocumentRenderer.renderReversal(document, ReceiptPaper.fromWidth(paperWidthMm))
+            val printJobId = insertDocumentJob(
+                OperationDocumentType.REVERSAL_RECEIPT,
+                reversalId,
+                paperWidthMm,
+                preview,
+                now,
+            )
             insertAudit(
                 eventType = type.name,
                 referenceId = reversalId,
-                detail = "元売上 No.$originalSaleId / ${sale.first}円 / ${reason.trim()}",
+                detail = "元売上 No.$originalSaleId / 返金 ${refundTotal}円 / ${reason.trim()}",
                 operatorName = operatorName,
                 createdAt = now,
             )
             bindOperationKey(operationKey, reversalId)
-            reversalId
+            savedResult = PartialReversalResult(reversalId, refundTotal, printJobId, preview)
         }
+        return checkNotNull(savedResult)
+    }
+
+    fun createFullReversal(
+        originalSaleId: Long,
+        type: ReversalType,
+        reason: String,
+        operatorName: String,
+    ): Long {
+        val requested = if (type == ReversalType.RETURN) {
+            loadReturnableLines(originalSaleId).associate { it.saleItemId to it.remainingQuantity }
+        } else {
+            emptyMap()
+        }
+        return createReversal(
+            originalSaleId = originalSaleId,
+            type = type,
+            requestedQuantities = requested,
+            reason = reason,
+            operatorName = operatorName,
+            paperWidthMm = 80,
+            requestId = "FULL-${type.name}",
+        ).reversalId
     }
 
     fun isSaleReversed(saleId: Long): Boolean = longQuery(
@@ -458,20 +591,23 @@ class OperationsStore(context: Context) {
         arrayOf(saleId.toString()),
     ) > 0
 
-    fun reversedSaleIds(): Set<Long> {
-        db.query(
-            "reversal_transactions",
-            arrayOf("original_sale_id"),
-            null,
-            null,
-            null,
-            null,
-            null,
-        ).use { cursor ->
-            val result = mutableSetOf<Long>()
-            while (cursor.moveToNext()) result += cursor.getLong(0)
-            return result
-        }
+    fun reversedSaleIds(): Set<Long> = db.rawQuery(
+        """
+        SELECT si.sale_id
+        FROM sale_items si
+        LEFT JOIN reversal_items ri ON ri.sale_item_id = si.id
+        GROUP BY si.sale_id
+        HAVING SUM(si.quantity) <= COALESCE(SUM(ri.return_quantity), 0)
+        UNION
+        SELECT rt.original_sale_id
+        FROM reversal_transactions rt
+        WHERE NOT EXISTS (SELECT 1 FROM reversal_items ri2 WHERE ri2.reversal_id = rt.id)
+        """.trimIndent(),
+        null,
+    ).use { cursor ->
+        val result = mutableSetOf<Long>()
+        while (cursor.moveToNext()) result += cursor.getLong(0)
+        result
     }
 
     fun recentReversals(limit: Int = 50): List<ReversalRecord> {
@@ -610,6 +746,28 @@ class OperationsStore(context: Context) {
             return result
         }
     }
+
+    private fun SQLiteDatabase.insertDocumentJob(
+        type: OperationDocumentType,
+        referenceId: Long,
+        paperWidthMm: Int,
+        payloadText: String,
+        now: Long,
+    ): Long = insertOrThrow(
+        "document_print_jobs",
+        null,
+        ContentValues().apply {
+            put("document_type", type.name)
+            put("reference_id", referenceId)
+            put("paper_width_mm", if (paperWidthMm >= 80) 80 else 58)
+            put("status", PrintJobStatus.PENDING.name)
+            put("attempt_count", 0)
+            putNull("last_error")
+            put("payload_text", payloadText)
+            put("created_at", now)
+            put("updated_at", now)
+        },
+    )
 
     private fun movementTotal(type: CashMovementType, sessionId: Long): Long = longQuery(
         "SELECT COALESCE(SUM(amount), 0) FROM cash_movements WHERE movement_type = ? AND business_session_id = ?",
@@ -761,6 +919,48 @@ class OperationsStore(context: Context) {
         )
         db.execSQL(
             """
+            CREATE TABLE IF NOT EXISTS reversal_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                reversal_id INTEGER NOT NULL,
+                sale_item_id INTEGER NOT NULL,
+                product_id TEXT NOT NULL,
+                product_name TEXT NOT NULL,
+                unit_price INTEGER NOT NULL,
+                tax_category TEXT NOT NULL,
+                tax_key TEXT NOT NULL DEFAULT '',
+                tax_label TEXT NOT NULL DEFAULT '',
+                tax_rate_percent INTEGER NOT NULL DEFAULT 0,
+                tax_included INTEGER NOT NULL DEFAULT 0,
+                taxable INTEGER NOT NULL DEFAULT 0,
+                reduced INTEGER NOT NULL DEFAULT 0,
+                tax_symbol TEXT NOT NULL DEFAULT '',
+                original_quantity INTEGER NOT NULL,
+                return_quantity INTEGER NOT NULL,
+                discount_amount INTEGER NOT NULL,
+                gross_amount INTEGER NOT NULL,
+                FOREIGN KEY(reversal_id) REFERENCES reversal_transactions(id) ON DELETE CASCADE,
+                FOREIGN KEY(sale_item_id) REFERENCES sale_items(id)
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS document_print_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                document_type TEXT NOT NULL,
+                reference_id INTEGER NOT NULL,
+                paper_width_mm INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                attempt_count INTEGER NOT NULL,
+                last_error TEXT,
+                payload_text TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
             CREATE TABLE IF NOT EXISTS settlement_reports (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 business_session_id INTEGER,
@@ -804,9 +1004,13 @@ class OperationsStore(context: Context) {
             """.trimIndent(),
         )
         BusinessSessionSchema.ensure(db)
+        TaxSnapshotSchema.ensureReversalColumns(db)
+        DocumentPrintSafetySchema.ensure(db)
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_business_sessions_status ON business_sessions(status, opened_at)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_cash_movements_session ON cash_movements(business_session_id, movement_type)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_reversal_original_sale ON reversal_transactions(original_sale_id)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_reversal_items_sale_item ON reversal_items(sale_item_id)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_document_jobs_status ON document_print_jobs(status, created_at)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_reversal_session ON reversal_transactions(business_session_id, created_at)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_settlement_session ON settlement_reports(business_session_id, report_type)")
     }
