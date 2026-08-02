@@ -27,6 +27,8 @@ data class CustomerDisplayOrderItem(
 data class CustomerDisplaySnapshot(
     val schemaVersion: Int = CUSTOMER_DISPLAY_SCHEMA_VERSION,
     val sequence: Long = 0L,
+    val serverInstanceId: String? = null,
+    val sentAtMillis: Long = 0L,
     val mode: CustomerDisplayMode,
     val transactionId: String? = null,
     val storeName: String,
@@ -43,6 +45,8 @@ data class CustomerDisplaySnapshot(
     fun toJson(): String = JSONObject().apply {
         put("schemaVersion", schemaVersion)
         put("sequence", sequence)
+        put("serverInstanceId", serverInstanceId ?: JSONObject.NULL)
+        put("sentAtMillis", sentAtMillis)
         put("mode", mode.name)
         put("transactionId", transactionId ?: JSONObject.NULL)
         put("storeName", storeName)
