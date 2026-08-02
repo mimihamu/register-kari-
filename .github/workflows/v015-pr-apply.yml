@@ -1,4 +1,4 @@
-name: Export v0.15 tested source patch
+name: Apply v0.15 tested source
 
 on:
   pull_request:
@@ -11,10 +11,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  export:
+  apply:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -42,7 +42,7 @@ jobs:
           PY
           python -m py_compile tools/apply_v015.py
 
-      - name: Apply the already-tested source changes
+      - name: Apply tested app source, tests, and documentation
         shell: bash
         run: |
           python tools/apply_v015.py
@@ -61,33 +61,18 @@ jobs:
           text = text.replace('assertEquals(1_100L, dinnerProduct.unitPrice)', 'assertEquals(1_000L, dinnerProduct.unitPrice)')
           profile.write_text(text, encoding='utf-8')
           PY
+          git checkout -- .github/workflows/build-apk.yml .github/workflows/v015-apply.yml .github/workflows/v015-pr-apply.yml
           rm -rf tools
 
-      - name: Package implementation files
+      - name: Commit and push non-workflow implementation
         shell: bash
         run: |
-          tar -czf v015-tested-source.tar.gz \
-            .github/workflows/build-apk.yml \
-            app/build.gradle.kts \
-            app/src/main/AndroidManifest.xml \
-            app/src/main/java/jp/co/tenposinfo/register/CatalogBootstrapProvider.kt \
-            app/src/main/java/jp/co/tenposinfo/register/Domain.kt \
-            app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt \
-            app/src/main/java/jp/co/tenposinfo/register/Receipt.kt \
-            app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt \
-            app/src/main/java/jp/co/tenposinfo/register/TaxInvoiceSettings.kt \
-            app/src/main/java/jp/co/tenposinfo/register/TaxInvoiceSettingsActivity.kt \
-            app/src/test/java/jp/co/tenposinfo/register/V015SalesProfileSnapshotTest.kt \
-            app/src/test/java/jp/co/tenposinfo/register/V015TaxInvoicePolicyTest.kt \
-            docs/V0.15_TAX_INVOICE_PROFILE.md
-          sha256sum v015-tested-source.tar.gz > v015-tested-source.tar.gz.sha256
-
-      - name: Upload tested source patch
-        uses: actions/upload-artifact@v4
-        with:
-          name: v015-tested-source-patch
-          path: |
-            v015-tested-source.tar.gz
-            v015-tested-source.tar.gz.sha256
-          if-no-files-found: error
-          retention-days: 7
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app docs
+          if git diff --cached --quiet; then
+            echo 'No non-workflow source changes to commit.'
+            exit 0
+          fi
+          git commit -m 'feat(v0.15): finalize tax invoice and sales profile behavior'
+          git push origin HEAD:develop/v0.15
