@@ -21,6 +21,71 @@ internal object CustomerDisplayConnectionPresentationPolicy {
     ): Boolean = hasPresentedSnapshot && !visibleDisconnected
 }
 
+internal data class CustomerDisplayTransportLossDecision(
+    val generation: Long,
+    val delayMillis: Long,
+    val notifyImmediately: Boolean,
+)
+
+/**
+ * ソケット状態と顧客に見せる状態を分離する純粋な状態機械。
+ * 呼び出し側が同期を保証する。
+ */
+internal class CustomerDisplayConnectionVisibilityState {
+    var transportConnected: Boolean = false
+        private set
+    var visibleDisconnected: Boolean = true
+        private set
+    var hasPresentedSnapshot: Boolean = false
+        private set
+    var latestDisconnectReason: String? = null
+        private set
+    var generation: Long = 0L
+        private set
+
+    fun onConnected(): Long {
+        transportConnected = true
+        visibleDisconnected = false
+        latestDisconnectReason = null
+        generation++
+        return generation
+    }
+
+    fun onSnapshot(): Long {
+        hasPresentedSnapshot = true
+        return onConnected()
+    }
+
+    fun onTransportLost(reason: String): CustomerDisplayTransportLossDecision {
+        transportConnected = false
+        latestDisconnectReason = reason
+        generation++
+        val delay = if (visibleDisconnected) {
+            0L
+        } else {
+            CustomerDisplayConnectionPresentationPolicy.disconnectDelayMillis(hasPresentedSnapshot)
+        }
+        if (delay == 0L) visibleDisconnected = true
+        return CustomerDisplayTransportLossDecision(
+            generation = generation,
+            delayMillis = delay,
+            notifyImmediately = delay == 0L,
+        )
+    }
+
+    fun revealDisconnectedIfCurrent(expectedGeneration: Long): Boolean {
+        if (transportConnected || expectedGeneration != generation) return false
+        visibleDisconnected = true
+        return true
+    }
+
+    fun shouldPresentAsConnected(): Boolean =
+        transportConnected || CustomerDisplayConnectionPresentationPolicy.shouldReplayLastSnapshot(
+            hasPresentedSnapshot = hasPresentedSnapshot,
+            visibleDisconnected = visibleDisconnected,
+        )
+}
+
 internal enum class CustomerDisplayConnectionEventType {
     STARTING,
     CONNECTED,
