@@ -1,4 +1,4 @@
-name: Correct v0.24 cash movement compilation issue
+name: Format v0.24 cash movement correction
 
 on:
   pull_request:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  correct-source:
+  format-source:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'develop/v0.24'
     runs-on: ubuntu-latest
     steps:
@@ -19,49 +19,36 @@ jobs:
           ref: develop/v0.24
           fetch-depth: 0
 
-      - name: Correct cash movement result message
+      - name: Format cash movement result block
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           path = Path('app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt')
           text = path.read_text()
-          start = text.index('            OperationsScreen.CASH_MOVEMENT -> CashMovementScreen(')
-          end = text.index('            OperationsScreen.REVERSAL -> ReversalScreen(', start)
-          segment = text[start:end]
-          pattern = re.compile(
-              r'''                    message = result\.fold\(\n'''
-              r'''                        onSuccess = \{\n'''
-              r'''                            if \(type == SettlementReportType\.Z_SETTLEMENT\) \{\n'''
-              r'''                                "Z精算を保存し、営業を終了しました（No\.\$it）"\n'''
-              r'''                            \} else \{\n'''
-              r'''                                "X点検を保存しました（No\.\$it）"\n'''
-              r'''                            \}\n'''
-              r'''                        \},\n'''
-              r'''                        onFailure = \{ it\.message \?: "保存に失敗しました" \},\n'''
-              r'''                    \)'''
-          )
-          replacement = '''                    message = result.fold(
+          old = '''                    message = result.fold(
+              onSuccess = { "${type.displayName}を保存しました（No.$it）" },
+              onFailure = { it.message ?: "保存に失敗しました" },
+          )'''
+          new = '''                    message = result.fold(
                         onSuccess = { "${type.displayName}を保存しました（No.$it）" },
                         onFailure = { it.message ?: "保存に失敗しました" },
                     )'''
-          segment, count = pattern.subn(replacement, segment)
+          count = text.count(old)
           if count != 1:
-              raise SystemExit(f'cash movement correction count={count}')
-          path.write_text(text[:start] + segment + text[end:])
+              raise SystemExit(f'format correction count={count}')
+          path.write_text(text.replace(old, new, 1))
           PY
           git diff --check
-          grep -q 'onSuccess = { "${type.displayName}を保存しました（No.$it）" }' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
 
-      - name: Commit correction
+      - name: Commit formatting correction
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          git commit -m 'fix: restore cash movement result message'
+          git commit -m 'style: format cash movement result block'
           git push origin HEAD:develop/v0.24
