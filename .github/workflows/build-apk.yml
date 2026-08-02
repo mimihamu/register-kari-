@@ -41,42 +41,52 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify v0.13 dev.6 transition and diagnostics safeguards
+      - name: Verify v0.14 dev.1 held-ticket and payment safety
         run: |
-          grep -q 'versionCode = 43' app/build.gradle.kts
-          grep -q 'versionName = "0.13.0-dev.6"' app/build.gradle.kts
+          grep -q 'versionCode = 44' app/build.gradle.kts
+          grep -q 'versionName = "0.14.0-dev.1"' app/build.gradle.kts
           grep -q 'versionCode = 6' customer-display/build.gradle.kts
           grep -q 'versionName = "0.13.0-dev.6"' customer-display/build.gradle.kts
           grep -q 'applicationId = "jp.co.tenposinfo.register.cd"' customer-display/build.gradle.kts
-          ! grep -q 'android:screenOrientation="landscape"' customer-display/src/main/AndroidManifest.xml
-          grep -q 'android:resizeableActivity="true"' customer-display/src/main/AndroidManifest.xml
-          grep -q 'CHANGE_WIFI_MULTICAST_STATE' app/src/main/AndroidManifest.xml
-          grep -q 'CHANGE_WIFI_MULTICAST_STATE' customer-display/src/main/AndroidManifest.xml
-          grep -q 'CUSTOMER_DISPLAY_PAIRING_WINDOW_MS = 120_000L' app/src/main/java/jp/co/tenposinfo/register/CustomerDisplayPairingNsd.kt
-          grep -q 'CUSTOMER_DISPLAY_DISCOVERY_TIMEOUT_MS = 12_000L' customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayNsdDiscovery.kt
-          grep -q 'SCREEN_TRANSITION_GRACE_MS = 4_000L' customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayWebSocketClient.kt
+
+          test -f app/src/main/java/jp/co/tenposinfo/register/HeldTicketSafety.kt
+          grep -q 'class HeldTicketSafetyCoordinator' app/src/main/java/jp/co/tenposinfo/register/HeldTicketSafety.kt
+          grep -q 'db.beginTransaction()' app/src/main/java/jp/co/tenposinfo/register/HeldTicketSafety.kt
+          grep -q 'LineTaxSnapshotStore.SCOPE_HELD' app/src/main/java/jp/co/tenposinfo/register/HeldTicketSafety.kt
+          grep -q '退避して呼出' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q '削除確定' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q '名称変更' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+
+          grep -q 'class SaleCommitGuard' app/src/main/java/jp/co/tenposinfo/register/HeldTicketSafety.kt
+          grep -q 'saleCommitGuard.tryBegin' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q '会計確定中' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'commitKey = commitKey' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'commitKey: String? = null' app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt
+          grep -q 'SaleCommitIdempotencySchema.find' app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt
+          grep -q 'SaleCommitIdempotencySchema.record' app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt
+          grep -q 'delete("cart_items", null, null)' app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt
+          test -f app/src/main/java/jp/co/tenposinfo/register/SaleCommitIdempotencySchema.kt
+          grep -q 'sale_commit_keys' app/src/main/java/jp/co/tenposinfo/register/SaleCommitIdempotencySchema.kt
+
+          test -f app/src/main/java/jp/co/tenposinfo/register/PaymentDraftStore.kt
+          grep -q 'payment_draft_meta' app/src/main/java/jp/co/tenposinfo/register/PaymentDraftStore.kt
+          grep -q 'fun loadOrCreate' app/src/main/java/jp/co/tenposinfo/register/PaymentDraftStore.kt
+          grep -q 'PaymentDraftFingerprint.of' app/src/main/java/jp/co/tenposinfo/register/PaymentDraftStore.kt
+          grep -q '前回中断した支払入力を復元しました' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+
+          test -f app/src/test/java/jp/co/tenposinfo/register/V014HeldTicketSafetyTest.kt
+          test -f app/src/test/java/jp/co/tenposinfo/register/V014PaymentDraftTest.kt
+          test ! -e .github/workflows/v014-apply.yml
+          test ! -e .github/workflows/v014-sale-atomicity.yml
+          test ! -e .github/workflows/v014-payment-draft.yml
+          test ! -e .github/workflows/v014-idempotency.yml
+
           grep -q 'TRANSIENT_OUTAGE_GRACE_MS = 3_000L' customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayConnectionPresentation.kt
-          grep -q 'scheduleDisconnectedPresentation' customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayWebSocketClient.kt
-          grep -q 'revealDisconnectedIfStillCurrent' customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayWebSocketClient.kt
-          grep -q 'CustomerDisplayConnectionEventLog.record' customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayWebSocketClient.kt
-          grep -q 'HEARTBEAT_INTERVAL_MS = 15_000' customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayWebSocketClient.kt
-          grep -q 'SharedCustomerDisplaySession' customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayWebSocketClient.kt
-          grep -q 'onClientCountChanged' app/src/main/java/jp/co/tenposinfo/register/CustomerDisplayWebSocketServer.kt
-          grep -q 'connectedClients = connectedClients' app/src/main/java/jp/co/tenposinfo/register/CustomerDisplayRuntime.kt
-          grep -q '接続中のつぐレジ CD' app/src/main/java/jp/co/tenposinfo/register/CustomerDisplaySettingsActivity.kt
-          grep -q '2分間ペアリング受付を開始' app/src/main/java/jp/co/tenposinfo/register/CustomerDisplaySettingsActivity.kt
-          grep -q '同じWi-Fiのレジを探す' customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt
-          grep -q 'このレジに接続' customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt
-          test -f app/src/test/java/jp/co/tenposinfo/register/V013CustomerDisplayPairingTest.kt
-          test -f customer-display/src/test/java/jp/co/tenposinfo/register/cd/CustomerDisplayPairingParserTest.kt
-          test -f customer-display/src/test/java/jp/co/tenposinfo/register/cd/CustomerDisplayConnectionPolicyTest.kt
-          test -f customer-display/src/test/java/jp/co/tenposinfo/register/cd/CustomerDisplayConnectionPresentationPolicyTest.kt
-          test "$(grep -R -l 'AdminOverlayProvider' app/src/main/AndroidManifest.xml app/src/main/java 2>/dev/null | wc -l)" -eq 0
-          grep -q 'CustomerDisplaySnapshotFactory.accounting' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'RegisterLayoutPolicy' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'LocalMinimumInteractiveComponentSize provides 0.dp' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'serverInstanceId' customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayModel.kt
           grep -q 'CustomerDisplayScrollPolicy.targetIndex' customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt
           grep -q 'state = listState' customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt
+          grep -q 'CustomerDisplaySnapshotFactory.accounting' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'RegisterLayoutPolicy' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
 
       - name: Verify launcher configuration
         run: |
@@ -97,47 +107,42 @@ jobs:
       - name: Prepare named APKs and SHA-256
         run: |
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.13.0_dev6_transition_fix_debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.14.0_dev1_held_payment_safety_debug.apk
           cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
-          sha256sum artifacts/TSUGUREGI_v0.13.0_dev6_transition_fix_debug.apk | tee artifacts/TSUGUREGI_v0.13.0_dev6_transition_fix_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_v0.14.0_dev1_held_payment_safety_debug.apk | tee artifacts/TSUGUREGI_v0.14.0_dev1_held_payment_safety_debug.apk.sha256
           sha256sum artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
-          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.13.0_dev6_transition_fix_debug.apk | tee artifacts/build-summary.txt
+          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.14.0_dev1_held_payment_safety_debug.apk | tee artifacts/build-summary.txt
           stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee -a artifacts/build-summary.txt
-          echo "REGISTER_VERSION_NAME=0.13.0-dev.6" >> artifacts/build-summary.txt
-          echo "REGISTER_VERSION_CODE=43" >> artifacts/build-summary.txt
+          echo "REGISTER_VERSION_NAME=0.14.0-dev.1" >> artifacts/build-summary.txt
+          echo "REGISTER_VERSION_CODE=44" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.6" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_VERSION_CODE=6" >> artifacts/build-summary.txt
-          echo "CUSTOMER_DISPLAY_CONNECTION_SCOPE=shared-process-session" >> artifacts/build-summary.txt
-          echo "SCREEN_TRANSITION_GRACE_MILLISECONDS=4000" >> artifacts/build-summary.txt
-          echo "TRANSIENT_OUTAGE_DISPLAY_GRACE_MILLISECONDS=3000" >> artifacts/build-summary.txt
-          echo "HEARTBEAT_INTERVAL_MILLISECONDS=15000" >> artifacts/build-summary.txt
-          echo "HALF_OPEN_DETECTION_MAX_MILLISECONDS=30000" >> artifacts/build-summary.txt
-          echo "FAST_RECONNECT_MILLISECONDS=500" >> artifacts/build-summary.txt
-          echo "CUSTOMER_DISPLAY_CONNECTION_EVENT_LOG=bounded-memory-no-sale-data" >> artifacts/build-summary.txt
-          echo "REGISTER_CONNECTED_CD_COUNT=available" >> artifacts/build-summary.txt
-          echo "CUSTOMER_DISPLAY_PAIRING=nsd-temporary-window" >> artifacts/build-summary.txt
-          echo "PAIRING_WINDOW_SECONDS=120" >> artifacts/build-summary.txt
-          echo "DISCOVERY_TIMEOUT_SECONDS=12" >> artifacts/build-summary.txt
-          echo "MANUAL_CONNECTION_FALLBACK=available" >> artifacts/build-summary.txt
-          echo "REGISTER_LAYOUT_CONTROLS=fixed-visible" >> artifacts/build-summary.txt
-          echo "CUSTOMER_DISPLAY_LATEST_ITEM=automatic-scroll" >> artifacts/build-summary.txt
-          echo "CUSTOMER_DISPLAY_ACCOUNTING=real-time" >> artifacts/build-summary.txt
+          echo "HELD_TICKET_SWAP=single-sqlite-transaction" >> artifacts/build-summary.txt
+          echo "HELD_TICKET_CURRENT_CART=auto-park-before-load" >> artifacts/build-summary.txt
+          echo "HELD_TICKET_DELETE=two-step-confirmation" >> artifacts/build-summary.txt
+          echo "HELD_TICKET_RENAME=available" >> artifacts/build-summary.txt
+          echo "SALE_COMMIT_GUARD=process-atomic" >> artifacts/build-summary.txt
+          echo "SALE_COMMIT_IDEMPOTENCY=persistent-uuid-key" >> artifacts/build-summary.txt
+          echo "SALE_AND_CART_CLEAR=single-sqlite-transaction" >> artifacts/build-summary.txt
+          echo "PAYMENT_DRAFT=sqlite-cart-fingerprint-bound" >> artifacts/build-summary.txt
+          echo "PAYMENT_DRAFT_RESTORE=available" >> artifacts/build-summary.txt
+          echo "CUSTOMER_DISPLAY_TRANSIENT_OUTAGE_SUPPRESSION=3000ms" >> artifacts/build-summary.txt
           echo "REGISTER_PACKAGE=jp.co.tenposinfo.register.dev" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_PACKAGE=jp.co.tenposinfo.register.cd.dev" >> artifacts/build-summary.txt
           echo "REGISTER_LAUNCHER_COUNT=1" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_LAUNCHER_COUNT=1" >> artifacts/build-summary.txt
           echo "SIGNING=development-not-production" >> artifacts/build-summary.txt
-          echo "REAL_WIFI_TRANSITION_VERIFICATION=required" >> artifacts/build-summary.txt
+          echo "REAL_DEVICE_HELD_PAYMENT_VERIFICATION=required" >> artifacts/build-summary.txt
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
       - name: Upload APKs
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.13.0-dev6-transition-fix-debug-apks
+          name: TSUGUREGI-v0.14.0-dev1-held-payment-safety-apks
           path: |
-            artifacts/TSUGUREGI_v0.13.0_dev6_transition_fix_debug.apk
-            artifacts/TSUGUREGI_v0.13.0_dev6_transition_fix_debug.apk.sha256
+            artifacts/TSUGUREGI_v0.14.0_dev1_held_payment_safety_debug.apk
+            artifacts/TSUGUREGI_v0.14.0_dev1_held_payment_safety_debug.apk.sha256
             artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
             artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
             artifacts/build-summary.txt
