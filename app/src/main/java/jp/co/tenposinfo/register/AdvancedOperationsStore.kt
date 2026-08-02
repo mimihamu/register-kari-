@@ -435,7 +435,7 @@ class AdvancedOperationsStore(context: Context) {
             }
             insertAudit(type.name, id, "営業日 ${summary.businessDate} / セッションNo.${session.id} / 純売上 ${summary.netSales}円 / 現金差異 ${variance}円", operatorName, now)
             if (type == SettlementReportType.Z_SETTLEMENT) {
-                insertAudit("BUSINESS_CLOSE", session.id, "Z精算No.$idにより営業終了 / 現金実査 ${actual}円 / 過不足 ${variance}円", operatorName, now)
+                insertAudit("BUSINESS_CLOSE", session.id, "Z精算No.${id}により営業終了 / 現金実査 ${actual}円 / 過不足 ${variance}円", operatorName, now)
             }
             id
         }

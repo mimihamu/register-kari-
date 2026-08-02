@@ -182,7 +182,7 @@ class OperationsStore(context: Context) {
 
     fun summaryForSession(sessionId: Long): DailyOperationsSummary {
         val session = BusinessSessionSchema.sessionById(db, sessionId)
-            ?: error("営業セッションNo.$sessionIdが見つかりません")
+            ?: error("営業セッションNo.${sessionId}が見つかりません")
         return summaryForSession(session)
     }
 
@@ -695,7 +695,7 @@ class OperationsStore(context: Context) {
                 insertAudit(
                     eventType = "BUSINESS_CLOSE",
                     referenceId = session.id,
-                    detail = "Z精算No.$idにより営業終了 / 営業日 ${summary.businessDate} / 現金実査 ${actual}円 / 過不足 ${variance}円",
+                    detail = "Z精算No.${id}により営業終了 / 営業日 ${summary.businessDate} / 現金実査 ${actual}円 / 過不足 ${variance}円",
                     operatorName = operatorName,
                     createdAt = now,
                 )
