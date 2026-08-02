@@ -36,7 +36,7 @@ class V028UiStabilityTest {
         val catalog = source("CatalogSettingsActivity.kt")
         val dynamic = source("DynamicCatalogSettingsActivity.kt")
         assertEquals(1, main.lineSequence().count {
-            it.trim() == "val columnGap = if (compact) 6.dp else 8.dp"
+            it.trim() == "val columnGap = if (compact) resolvedRowGapDp.dp else 8.dp"
         })
         assertEquals(1, Regex("Text\\(\\\"任意税率・メニュー改定\\\"").findAll(catalog).count())
         assertEquals(1, Regex("Text\\(\\\"税・インボイス\\\"").findAll(dynamic).count())
