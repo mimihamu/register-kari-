@@ -22,6 +22,26 @@ jobs:
           ref: develop/v0.27
           fetch-depth: 0
 
+      - name: Narrow applicator target
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("tools/apply_v027.py")
+          lines = path.read_text().splitlines()
+          replacement = "text = replace_once(text, 'data class SettlementRecord(\\n    val id: Long,\\n    val businessSessionId: Long,\\n    val businessDate: String,\\n    val type: SettlementReportType,\\n    val salesGross: Long,\\n    val reversalGross: Long,\\n    val netSales: Long,\\n    val expectedCash: Long,\\n    val actualCash: Long,\\n    val variance: Long,\\n    val transactionCount: Int,\\n    val reversalCount: Int,\\n    val pendingPrints: Int,\\n    val heldTickets: Int,\\n    val operatorName: String,\\n    val createdAt: Long,\\n)', 'data class SettlementRecord(\\n    val id: Long,\\n    val businessSessionId: Long,\\n    val businessDate: String,\\n    val type: SettlementReportType,\\n    val salesGross: Long,\\n    val reversalGross: Long,\\n    val netSales: Long,\\n    val expectedCash: Long,\\n    val actualCash: Long,\\n    val variance: Long,\\n    val transactionCount: Int,\\n    val reversalCount: Int,\\n    val pendingPrints: Int,\\n    val heldTickets: Int,\\n    val operatorName: String,\\n    val createdAt: Long,\\n    val openingCash: Long = 0L,\\n    val cashIn: Long = 0L,\\n    val cashOut: Long = 0L,\\n    val snapshotVersion: Int = 0,\\n)', 'settlement record snapshot fields')"
+          found = False
+          for index, line in enumerate(lines):
+              if "settlement record snapshot fields" in line:
+                  lines[index] = replacement
+                  found = True
+                  break
+          if not found:
+              raise RuntimeError("settlement record replacement line not found")
+          path.write_text("\n".join(lines) + "\n")
+          PY
+          python3 -m py_compile tools/apply_v027.py
+
       - name: Apply v0.27 sources
         run: |
           set -euo pipefail
@@ -44,7 +64,7 @@ jobs:
       - name: Commit v0.27 implementation
         run: |
           set -euo pipefail
-          if git diff --quiet; then
+          if git diff --quiet -- app docs; then
             echo "No implementation changes to commit"
             exit 0
           fi
