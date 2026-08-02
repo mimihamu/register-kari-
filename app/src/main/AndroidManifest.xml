@@ -62,6 +62,11 @@
             android:screenOrientation="landscape" />
 
         <activity
+            android:name=".TaxInvoiceSettingsActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
             android:name=".DynamicCatalogSettingsActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
