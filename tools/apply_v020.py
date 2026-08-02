@@ -60,11 +60,11 @@ object OperationsRoutingPolicy {
 
     fun isCanonical(className: String): Boolean = className == CANONICAL_ACTIVITY
 
-    fun manifestUsesCanonicalRoute(manifest: String): Boolean =
-        manifest.contains("android:name=\".OperationsActivity\"") &&
-            !manifest.contains("<activity-alias") &&
-            !manifest.contains("android:name=\".AdvancedOperationsActivity\"") &&
-            !manifest.contains("android:targetActivity=\".AdvancedOperationsActivity\"")
+    fun hasLegacyRoute(
+        declaredActivities: Set<String>,
+        aliasTargets: Set<String>,
+    ): Boolean =
+        LEGACY_ACTIVITY in declaredActivities || LEGACY_ACTIVITY in aliasTargets
 }
 ''',
     encoding="utf-8",
@@ -78,37 +78,40 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class V020OperationsRoutingTest {
-    private val canonicalManifest = """
-        <application>
-            <activity
-                android:name=".OperationsActivity"
-                android:exported="false"
-                android:screenOrientation="landscape" />
-        </application>
-    """.trimIndent()
-
     @Test
     fun canonicalActivityIsTheOnlyAcceptedManagementTarget() {
-        assertTrue(OperationsRoutingPolicy.isCanonical("jp.co.tenposinfo.register.OperationsActivity"))
-        assertFalse(OperationsRoutingPolicy.isCanonical("jp.co.tenposinfo.register.AdvancedOperationsActivity"))
+        assertTrue(OperationsRoutingPolicy.isCanonical(OperationsRoutingPolicy.CANONICAL_ACTIVITY))
+        assertFalse(OperationsRoutingPolicy.isCanonical(OperationsRoutingPolicy.LEGACY_ACTIVITY))
     }
 
     @Test
-    fun directActivityRegistrationIsAccepted() {
-        assertTrue(OperationsRoutingPolicy.manifestUsesCanonicalRoute(canonicalManifest))
+    fun canonicalOnlyRegistrationHasNoLegacyRoute() {
+        assertFalse(
+            OperationsRoutingPolicy.hasLegacyRoute(
+                declaredActivities = setOf(OperationsRoutingPolicy.CANONICAL_ACTIVITY),
+                aliasTargets = emptySet(),
+            ),
+        )
     }
 
     @Test
-    fun legacyAliasIsRejected() {
-        val legacy = """
-            <application>
-                <activity android:name=".AdvancedOperationsActivity" />
-                <activity-alias
-                    android:name=".OperationsActivity"
-                    android:targetActivity=".AdvancedOperationsActivity" />
-            </application>
-        """.trimIndent()
-        assertFalse(OperationsRoutingPolicy.manifestUsesCanonicalRoute(legacy))
+    fun directLegacyActivityRegistrationIsRejected() {
+        assertTrue(
+            OperationsRoutingPolicy.hasLegacyRoute(
+                declaredActivities = setOf(OperationsRoutingPolicy.LEGACY_ACTIVITY),
+                aliasTargets = emptySet(),
+            ),
+        )
+    }
+
+    @Test
+    fun legacyAliasTargetIsRejected() {
+        assertTrue(
+            OperationsRoutingPolicy.hasLegacyRoute(
+                declaredActivities = setOf(OperationsRoutingPolicy.CANONICAL_ACTIVITY),
+                aliasTargets = setOf(OperationsRoutingPolicy.LEGACY_ACTIVITY),
+            ),
+        )
     }
 }
 ''',
@@ -142,13 +145,10 @@ AndroidManifestで`.OperationsActivity`が実Activityではなく、旧`.Advance
 
 ## 回帰防止
 
-CIで次を確認する。
-
-- `.OperationsActivity`の通常Activity登録が1件だけ存在する。
-- `activity-alias`が存在しない。
-- `.AdvancedOperationsActivity`がManifestに存在しない。
-- MainActivityとRegisterApplicationの管理導線が`OperationsActivity::class.java`を使用する。
-- 販売画面の営業中判定が正式`OperationsStore`を使用する。
+- 単体テストは正式Activity名と旧Activity名の純粋な判定規約を検証する。
+- CIは実AndroidManifestを直接検査し、通常Activity登録、alias不在、旧Activity不在を確認する。
+- MainActivityとRegisterApplicationの管理導線が`OperationsActivity::class.java`を使用することを検査する。
+- 販売画面の営業中判定が正式`OperationsStore`を使用することを検査する。
 ''',
     encoding="utf-8",
 )
