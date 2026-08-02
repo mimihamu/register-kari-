@@ -87,24 +87,47 @@ class SecureOperationsCoordinator(
         }
     }
 
+    fun createReversal(
+        originalSaleId: Long,
+        type: ReversalType,
+        requestedQuantities: Map<Long, Int>,
+        reason: String,
+        managerPin: String,
+        paperWidthMm: Int,
+        requestId: String,
+    ): PartialReversalResult {
+        val executionKey = OperationsIdempotencyPolicy.reversalKey(originalSaleId)
+        return executionGuard.runExclusive(executionKey, "返品・取消を処理中です") {
+            val operator = requireOperator(OperationsAction.REVERSAL)
+            val managerName = requireManagerName(managerPin)
+            store.createReversal(
+                originalSaleId = originalSaleId,
+                type = type,
+                requestedQuantities = requestedQuantities,
+                reason = reason,
+                operatorName = OperationsActorFormatter.approved(operator, managerName),
+                paperWidthMm = paperWidthMm,
+                requestId = requestId,
+            )
+        }
+    }
+
     fun createFullReversal(
         originalSaleId: Long,
         type: ReversalType,
         reason: String,
         managerPin: String,
-    ): Long {
-        val executionKey = OperationsIdempotencyPolicy.reversalKey(originalSaleId)
-        return executionGuard.runExclusive(executionKey, "返品・取消を処理中です") {
-            val operator = requireOperator(OperationsAction.REVERSAL)
-            val managerName = requireManagerName(managerPin)
-            store.createFullReversal(
-                originalSaleId,
-                type,
-                reason,
-                OperationsActorFormatter.approved(operator, managerName),
-            )
-        }
-    }
+    ): Long = createReversal(
+        originalSaleId = originalSaleId,
+        type = type,
+        requestedQuantities = if (type == ReversalType.RETURN) {
+            store.loadReturnableLines(originalSaleId).associate { it.saleItemId to it.remainingQuantity }
+        } else emptyMap(),
+        reason = reason,
+        managerPin = managerPin,
+        paperWidthMm = 80,
+        requestId = "FULL-${type.name}",
+    ).reversalId
 
     private fun requireOperator(action: OperationsAction): AuthenticatedOperator {
         val operator = OperatorSessionRegistry.current(appContext)

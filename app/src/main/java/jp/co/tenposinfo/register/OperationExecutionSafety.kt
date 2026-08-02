@@ -9,6 +9,9 @@ object OperationsIdempotencyPolicy {
         return "REVERSAL:$originalSaleId"
     }
 
+    fun reversalRequestKey(type: ReversalType, originalSaleId: Long, requestId: String): String =
+        PartialReturnPolicy.operationKey(type, originalSaleId, requestId)
+
     fun settlementKey(type: SettlementReportType, businessDate: LocalDate): String? = when (type) {
         SettlementReportType.X_INSPECTION -> null
         SettlementReportType.Z_SETTLEMENT -> "Z_SETTLEMENT:$businessDate"
