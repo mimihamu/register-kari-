@@ -47,10 +47,11 @@ jobs:
           from pathlib import Path
           path = Path('tools/apply_v016.py')
           text = path.read_text(encoding='utf-8')
-          needle = "text = replace_once(text, '    var operator by remember { mutableStateOf(\"責任者\") }\\n', '', \"{} operator state\")"
+          prefix = "text = replace_once(text, '    var operator by remember { mutableStateOf(\"責任者\") }\\n', '', \""
+          suffix = " operator state\")"
           replacement = "text = text.replace('    var operator by remember { mutableStateOf(\"責任者\") }\\n', '', 1)"
           for label in ('settlement', 'cash', 'reversal'):
-              old = needle.format(label)
+              old = prefix + label + suffix
               if old not in text:
                   raise SystemExit(f'missing replacement target: {label}')
               text = text.replace(old, replacement, 1)
