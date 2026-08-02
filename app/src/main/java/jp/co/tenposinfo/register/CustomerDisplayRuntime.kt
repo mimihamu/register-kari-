@@ -1,6 +1,7 @@
 package jp.co.tenposinfo.register
 
 import android.content.Context
+import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
@@ -9,6 +10,7 @@ import java.util.concurrent.atomic.AtomicLong
 object CustomerDisplayRuntime {
     private val lock = Any()
     private val sequence = AtomicLong(System.currentTimeMillis())
+    private val serverInstanceId = UUID.randomUUID().toString()
 
     @Volatile
     private var currentConfig: CustomerDisplayServerConfig? = null
@@ -60,7 +62,11 @@ object CustomerDisplayRuntime {
     }
 
     fun publish(snapshot: CustomerDisplaySnapshot) {
-        val normalized = snapshot.copy(sequence = sequence.incrementAndGet())
+        val normalized = snapshot.copy(
+            sequence = sequence.incrementAndGet(),
+            serverInstanceId = serverInstanceId,
+            sentAtMillis = System.currentTimeMillis(),
+        )
         latestSnapshot = normalized
         server?.broadcast(normalized.toJson())
     }
@@ -81,6 +87,7 @@ object CustomerDisplayRuntime {
         latestMode = latestSnapshot.mode,
         latestSequence = latestSnapshot.sequence,
         port = currentConfig?.port,
+        serverInstanceId = serverInstanceId,
     )
 
     private fun stopLocked() {
@@ -102,6 +109,7 @@ data class CustomerDisplayRuntimeStatus(
     val latestMode: CustomerDisplayMode,
     val latestSequence: Long,
     val port: Int?,
+    val serverInstanceId: String,
 )
 
 internal class CustomerDisplayPoller(
