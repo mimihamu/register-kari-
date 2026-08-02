@@ -1,5 +1,6 @@
 package jp.co.tenposinfo.register
 
+import java.nio.file.Files
 import java.time.LocalDate
 import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
@@ -113,6 +114,32 @@ class V023AutoBackupRetentionTest {
         )
         val deleted = AutoBackupRetentionPolicy.selectDeletionCandidates(entries, zBusinessDays = 1)
         assertEquals(setOf("old-z.tgbak"), deleted)
+    }
+
+    @Test
+    fun temporaryCleanupDeletesOnlyStaleBackupWorkFiles() {
+        val root = Files.createTempDirectory("v023-backup-cleanup").toFile()
+        val backupDir = root.resolve("data_backups").apply { mkdirs() }
+        val cacheDir = root.resolve("cache").apply { mkdirs() }
+        val now = 1_800_000_000_000L
+        val stale = now - AutoBackupTemporaryFilePolicy.DEFAULT_STALE_MILLIS - 1L
+        val fresh = now - AutoBackupTemporaryFilePolicy.DEFAULT_STALE_MILLIS + 1L
+
+        val staleArchive = backupDir.resolve("old.tgbak.tmp").apply { writeText("partial"); setLastModified(stale) }
+        val freshArchive = backupDir.resolve("fresh.tgbak.tmp").apply { writeText("partial"); setLastModified(fresh) }
+        val finalArchive = backupDir.resolve("valid.tgbak").apply { writeText("complete"); setLastModified(stale) }
+        val staleCache = cacheDir.resolve("backup-old").apply { mkdirs(); resolve("register.db").writeText("partial"); setLastModified(stale) }
+        val unrelatedCache = cacheDir.resolve("verify-old").apply { mkdirs(); setLastModified(stale) }
+
+        val deleted = AutoBackupTemporaryFilePolicy.cleanup(backupDir, cacheDir, now)
+
+        assertFalse(staleArchive.exists())
+        assertFalse(staleCache.exists())
+        assertTrue(freshArchive.exists())
+        assertTrue(finalArchive.exists())
+        assertTrue(unrelatedCache.exists())
+        assertEquals(setOf(staleArchive.absolutePath, staleCache.absolutePath), deleted.toSet())
+        root.deleteRecursively()
     }
 
     private fun entry(
