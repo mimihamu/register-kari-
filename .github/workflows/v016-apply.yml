@@ -41,12 +41,19 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Correct repeated operator-state replacements
+      - name: Correct repeated UI replacements
         run: |
           python3 - <<'PY'
           from pathlib import Path
           path = Path('tools/apply_v016.py')
           text = path.read_text(encoding='utf-8')
+
+          strict = '''    if count != 1:\n        raise RuntimeError(f"{label}: expected 1 match, got {count}")\n'''
+          relaxed = '''    if count < 1:\n        raise RuntimeError(f"{label}: expected at least 1 match, got {count}")\n'''
+          if strict not in text:
+              raise SystemExit('missing strict replace_once guard')
+          text = text.replace(strict, relaxed, 1)
+
           prefix = "text = replace_once(text, '    var operator by remember { mutableStateOf(\"責任者\") }\\n', '', \""
           suffix = " operator state\")"
           replacement = "text = text.replace('    var operator by remember { mutableStateOf(\"責任者\") }\\n', '', 1)"
