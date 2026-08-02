@@ -145,24 +145,18 @@ private class SharedCustomerDisplaySession(
     private val random = SecureRandom()
     private val listenerSequence = AtomicLong(0L)
     private val listeners = linkedMapOf<Long, CustomerDisplayConnectionListener>()
+    private val visibility = CustomerDisplayConnectionVisibilityState()
 
     @Volatile
     private var socket: Socket? = null
     @Volatile
     private var worker: Thread? = null
     @Volatile
-    private var transportConnected = false
-    @Volatile
-    private var visibleDisconnected = true
-    @Volatile
     private var everEstablishedConnection = false
     @Volatile
     private var latestSnapshot: CustomerDisplaySnapshot? = null
-    @Volatile
-    private var latestDisconnectReason: String? = null
     private var delayedStop: ScheduledFuture<*>? = null
     private var pendingVisibleDisconnect: ScheduledFuture<*>? = null
-    private var connectionGeneration = 0L
     private var terminal = false
     private var lastLoggedMode: CustomerDisplayMode? = null
 
@@ -177,11 +171,8 @@ private class SharedCustomerDisplaySession(
             delayedStop = null
             listeners[id] = listener
             replaySnapshot = latestSnapshot
-            replayAsConnected = transportConnected || CustomerDisplayConnectionPresentationPolicy.shouldReplayLastSnapshot(
-                hasPresentedSnapshot = replaySnapshot != null,
-                visibleDisconnected = visibleDisconnected,
-            )
-            replayReason = if (visibleDisconnected) latestDisconnectReason else null
+            replayAsConnected = visibility.shouldPresentAsConnected()
+            replayReason = if (visibility.visibleDisconnected) visibility.latestDisconnectReason else null
         }
         startWorker()
         if (replayAsConnected) {
@@ -243,7 +234,6 @@ private class SharedCustomerDisplaySession(
             worker?.interrupt()
             worker = null
         }
-        transportConnected = false
         CustomerDisplayConnectionEventLog.record(
             CustomerDisplayConnectionEventType.STOPPED,
             "画面利用終了により接続セッションを停止",
@@ -393,11 +383,8 @@ private class SharedCustomerDisplaySession(
 
     private fun notifyConnected() {
         val currentListeners = synchronized(listenerLock) {
-            transportConnected = true
+            visibility.onConnected()
             everEstablishedConnection = true
-            visibleDisconnected = false
-            latestDisconnectReason = null
-            connectionGeneration++
             pendingVisibleDisconnect?.cancel(false)
             pendingVisibleDisconnect = null
             listeners.values.toList()
@@ -410,77 +397,59 @@ private class SharedCustomerDisplaySession(
     }
 
     private fun notifySnapshot(snapshot: CustomerDisplaySnapshot) {
-        val modeChanged: Boolean
-        val currentListeners = synchronized(listenerLock) {
+        val result = synchronized(listenerLock) {
             latestSnapshot = snapshot
-            transportConnected = true
+            visibility.onSnapshot()
             everEstablishedConnection = true
-            visibleDisconnected = false
-            latestDisconnectReason = null
-            connectionGeneration++
             pendingVisibleDisconnect?.cancel(false)
             pendingVisibleDisconnect = null
-            modeChanged = lastLoggedMode != snapshot.mode
+            val changed = lastLoggedMode != snapshot.mode
             lastLoggedMode = snapshot.mode
-            listeners.values.toList()
+            changed to listeners.values.toList()
         }
-        if (modeChanged) {
+        if (result.first) {
             CustomerDisplayConnectionEventLog.record(
                 CustomerDisplayConnectionEventType.MODE_CHANGED,
                 "表示=${snapshot.mode.name} sequence=${snapshot.sequence}",
             )
         }
-        currentListeners.forEach { listener -> safeCall { listener.onSnapshot(snapshot) } }
+        result.second.forEach { listener -> safeCall { listener.onSnapshot(snapshot) } }
     }
 
     private fun scheduleDisconnectedPresentation(reason: String) {
-        val immediateListeners: List<CustomerDisplayConnectionListener>
-        val generation: Long
-        val delayMillis: Long
-        synchronized(listenerLock) {
-            transportConnected = false
-            latestDisconnectReason = reason
-            generation = ++connectionGeneration
+        val result = synchronized(listenerLock) {
             pendingVisibleDisconnect?.cancel(false)
             pendingVisibleDisconnect = null
-            delayMillis = if (visibleDisconnected) {
-                0L
-            } else {
-                CustomerDisplayConnectionPresentationPolicy.disconnectDelayMillis(latestSnapshot != null)
-            }
-            if (delayMillis == 0L) {
-                visibleDisconnected = true
-                immediateListeners = listeners.values.toList()
-            } else {
-                immediateListeners = emptyList()
+            val decision = visibility.onTransportLost(reason)
+            val immediateListeners = if (decision.notifyImmediately) listeners.values.toList() else emptyList()
+            if (!decision.notifyImmediately) {
                 pendingVisibleDisconnect = scheduler.schedule(
-                    { revealDisconnectedIfStillCurrent(generation, reason) },
-                    delayMillis,
+                    { revealDisconnectedIfStillCurrent(decision.generation, reason) },
+                    decision.delayMillis,
                     TimeUnit.MILLISECONDS,
                 )
             }
+            decision to immediateListeners
         }
-
-        if (delayMillis > 0L) {
+        val decision = result.first
+        if (decision.delayMillis > 0L) {
             CustomerDisplayConnectionEventLog.record(
                 CustomerDisplayConnectionEventType.TRANSIENT_LOSS,
-                "${delayMillis}msは直前画面を維持: ${reason.take(120)}",
+                "${decision.delayMillis}msは直前画面を維持: ${reason.take(120)}",
             )
         } else {
             CustomerDisplayConnectionEventLog.record(
                 CustomerDisplayConnectionEventType.DISCONNECTED,
                 reason,
             )
-            immediateListeners.forEach { listener -> safeCall { listener.onDisconnected(reason) } }
+            result.second.forEach { listener -> safeCall { listener.onDisconnected(reason) } }
         }
     }
 
     private fun revealDisconnectedIfStillCurrent(generation: Long, reason: String) {
         val currentListeners = synchronized(listenerLock) {
-            if (terminal || transportConnected || generation != connectionGeneration) return
+            if (terminal || !visibility.revealDisconnectedIfCurrent(generation)) return
             pendingVisibleDisconnect = null
-            visibleDisconnected = true
-            latestDisconnectReason = reason
             listeners.values.toList()
         }
         CustomerDisplayConnectionEventLog.record(
