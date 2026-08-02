@@ -1,4 +1,4 @@
-name: Apply v0.24 source changes
+name: Fix v0.24 source typo
 
 on:
   pull_request:
@@ -10,12 +10,8 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: apply-v024-source-pr
-  cancel-in-progress: false
-
 jobs:
-  apply:
+  fix:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'develop/v0.24'
     runs-on: ubuntu-latest
     steps:
@@ -24,26 +20,39 @@ jobs:
           ref: develop/v0.24
           fetch-depth: 0
 
-      - name: Reconstruct and verify patch
+      - name: Correct reversal button label
         shell: bash
         run: |
           set -euo pipefail
-          cat tools/v024.patch.gz.b64.00 tools/v024.patch.gz.b64.01 tools/v024.patch.gz.b64.02 \
-            | tr -d '\r\n ' \
-            | base64 --decode > /tmp/v024.patch.gz
-          echo '74b5f0d2a1acc18ed5048c6c681966f5c47a8e63f1bdf95756dfaafe86f8e322  /tmp/v024.patch.gz' | sha256sum --check
-          gzip --decompress --stdout /tmp/v024.patch.gz > /tmp/v024.patch
-          echo '441d37e5268927b153cc1caaf90eee88dcadee0fe67c205b11f6bb3271c67f9e  /tmp/v024.patch' | sha256sum --check
-          git apply --check /tmp/v024.patch
-          git apply /tmp/v024.patch
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsActivity.kt')
+          text = path.read_text()
+          old = '''                ) {
+                    Text(
+                        if (type == SettlementReportType.Z_SETTLEMENT) "Z精算して営業終了" else "X点検を確定",
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                if (message != null) Text(message, color = messageColor(message), fontSize = 13.sp)
+'''
+          new = '''                ) {
+                    Text("${type.displayName}を確定", fontWeight = FontWeight.Bold)
+                }
+                if (message != null) Text(message, color = messageColor(message), fontSize = 13.sp)
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one reversal label block, found {text.count(old)}')
+          path.write_text(text.replace(old, new))
+          PY
           git diff --check
 
-      - name: Commit application sources, tests, and documentation
+      - name: Commit and push correction
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app docs
-          git commit -m 'feat: close business session with Z settlement'
+          git add app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsActivity.kt
+          git commit -m 'fix: restore reversal confirmation label'
           git push origin HEAD:develop/v0.24
