@@ -1,18 +1,16 @@
-name: Fix v0.24 source typo
+name: Apply v0.24 source correction
 
 on:
   pull_request:
     branches:
       - develop/v0.23
-    paths:
-      - .github/workflows/inspect-v024.yml
 
 permissions:
   contents: write
 
 jobs:
   fix:
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'develop/v0.24'
+    if: github.event.pull_request.head.ref == 'develop/v0.24'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +18,7 @@ jobs:
           ref: develop/v0.24
           fetch-depth: 0
 
-      - name: Correct reversal button label
+      - name: Correct reversal confirmation label
         shell: bash
         run: |
           set -euo pipefail
@@ -37,17 +35,18 @@ jobs:
                 if (message != null) Text(message, color = messageColor(message), fontSize = 13.sp)
 '''
           new = '''                ) {
-                    Text("${type.displayName}を確定", fontWeight = FontWeight.Bold)
+                    Text(type.displayName + "を確定", fontWeight = FontWeight.Bold)
                 }
                 if (message != null) Text(message, color = messageColor(message), fontSize = 13.sp)
 '''
-          if text.count(old) != 1:
-              raise SystemExit(f'expected one reversal label block, found {text.count(old)}')
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'expected one reversal block, found {count}')
           path.write_text(text.replace(old, new))
           PY
           git diff --check
 
-      - name: Commit and push correction
+      - name: Commit source correction
         shell: bash
         run: |
           set -euo pipefail
