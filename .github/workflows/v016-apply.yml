@@ -1,12 +1,9 @@
 name: Apply v0.16 secure operations
 
 on:
-  push:
+  pull_request:
     branches:
-      - develop/v0.16
-    paths:
-      - tools/apply_v016.py
-      - .github/workflows/v016-apply.yml
+      - develop/v0.15
   workflow_dispatch:
 
 permissions:
@@ -14,6 +11,7 @@ permissions:
 
 jobs:
   apply:
+    if: github.head_ref == 'develop/v0.16'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -71,5 +69,3 @@ jobs:
             docs/V0.16_OPERATIONS_AUTHORIZATION.md
           git commit -m "feat(v0.16): enforce management authorization and manager approval"
           git push origin HEAD:develop/v0.16
-
-# trigger: 2026-08-02-v016
