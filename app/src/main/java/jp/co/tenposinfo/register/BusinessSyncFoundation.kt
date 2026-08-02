@@ -33,7 +33,7 @@ object BusinessDateResolver {
             """
             SELECT business_date
             FROM business_sessions
-            WHERE status IN ('OPEN', 'Z_SETTLED')
+            WHERE status = 'OPEN'
             ORDER BY opened_at DESC
             LIMIT 1
             """.trimIndent(),
@@ -214,7 +214,7 @@ object JournalOutboxSchema {
                 INSERT OR IGNORE INTO sales_journal(event_id, business_date, event_type, aggregate_id, payload_json, created_at)
                 VALUES(
                     'reversal-' || NEW.id || '-' || NEW.created_at,
-                    COALESCE((SELECT business_date FROM business_sessions WHERE status IN ('OPEN','Z_SETTLED') ORDER BY opened_at DESC LIMIT 1), strftime('%Y-%m-%d', NEW.created_at / 1000, 'unixepoch', 'localtime')),
+                    COALESCE((SELECT business_date FROM business_sessions WHERE status = 'OPEN' ORDER BY opened_at DESC LIMIT 1), strftime('%Y-%m-%d', NEW.created_at / 1000, 'unixepoch', 'localtime')),
                     'REVERSAL', CAST(NEW.id AS TEXT),
                     '{"reversalId":' || NEW.id || ',"originalSaleId":' || NEW.original_sale_id || ',"amount":' || NEW.gross_amount || '}',
                     NEW.created_at
@@ -256,7 +256,7 @@ object JournalOutboxSchema {
                 INSERT OR IGNORE INTO sales_journal(event_id, business_date, event_type, aggregate_id, payload_json, created_at)
                 VALUES(
                     'cash-' || NEW.id || '-' || NEW.created_at,
-                    COALESCE((SELECT business_date FROM business_sessions WHERE status IN ('OPEN','Z_SETTLED') ORDER BY opened_at DESC LIMIT 1), strftime('%Y-%m-%d', NEW.created_at / 1000, 'unixepoch', 'localtime')),
+                    COALESCE((SELECT business_date FROM business_sessions WHERE status = 'OPEN' ORDER BY opened_at DESC LIMIT 1), strftime('%Y-%m-%d', NEW.created_at / 1000, 'unixepoch', 'localtime')),
                     'CASH_MOVEMENT', CAST(NEW.id AS TEXT),
                     '{"movementId":' || NEW.id || ',"amount":' || NEW.amount || '}',
                     NEW.created_at

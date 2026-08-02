@@ -117,7 +117,7 @@ private fun AdvancedOperationsApp(onClose: () -> Unit) {
                     if (RegisterPermission.SETTLEMENT in permissions) {
                         message = null
                         screen = AdvancedScreen.BUSINESS
-                    } else message = "営業開始・終了の権限がありません"
+                    } else message = "営業開始・状態の権限がありません"
                 },
                 onDaily = {
                     if (RegisterPermission.VIEW_SALES in permissions) {
@@ -168,17 +168,6 @@ private fun AdvancedOperationsApp(onClose: () -> Unit) {
                     message = result.fold(
                         onSuccess = { "営業を開始しました（No.$it）" },
                         onFailure = { it.message ?: "営業開始に失敗しました" },
-                    )
-                    if (result.isSuccess) revision++
-                },
-                onCloseDay = { actualCash, operator, pin ->
-                    val result = runCatching {
-                        require(OperatorSessionRegistry.verifyManagerPin(context.applicationContext, pin)) { "責任者PINが違います" }
-                        store.endBusinessDay(actualCash, operator)
-                    }
-                    message = result.fold(
-                        onSuccess = { "営業を終了しました（No.$it）" },
-                        onFailure = { it.message ?: "営業終了に失敗しました" },
                     )
                     if (result.isSuccess) revision++
                 },
@@ -305,7 +294,7 @@ private fun AdvancedMenuScreen(
                 Text(
                     when (session?.status) {
                         BusinessSessionStatus.OPEN -> "販売可能です"
-                        BusinessSessionStatus.Z_SETTLED -> "販売停止中。営業終了を実行してください"
+                        BusinessSessionStatus.Z_SETTLED -> "旧状態です。アプリ再起動後に営業終了へ移行します"
                         else -> "営業開始と開始釣銭の登録が必要です"
                     },
                     color = if (session?.status == BusinessSessionStatus.OPEN) AoGreen else AoDanger,
@@ -318,7 +307,7 @@ private fun AdvancedMenuScreen(
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    AoMenuTile("営業開始・終了", "開始釣銭／Z精算後の終了", AoPaleGreen, Modifier.weight(1f), onBusiness)
+                    AoMenuTile("営業開始・状態", "開始釣銭／Z精算で営業終了", AoPaleGreen, Modifier.weight(1f), onBusiness)
                     AoMenuTile("当日売上", "売上・支払・現金理論", AoPaleBlue, Modifier.weight(1f), onDaily)
                     AoMenuTile("点検・精算", "X点検／Z精算票", AoPaleYellow, Modifier.weight(1f), onSettlement)
                 }
@@ -341,21 +330,19 @@ private fun BusinessDayScreen(
     revision: Int,
     message: String?,
     onStart: (Long, String) -> Unit,
-    onCloseDay: (Long, String, String) -> Unit,
     onBack: () -> Unit,
 ) {
     var openingCash by remember { mutableStateOf("") }
-    var actualCash by remember { mutableStateOf("") }
     var operator by remember { mutableStateOf(OperatorSessionRegistry.lastKnownName() ?: "責任者") }
-    var pin by remember { mutableStateOf("") }
     @Suppress("UNUSED_VARIABLE") val refresh = revision
 
     Column(Modifier.fillMaxSize()) {
-        AoHeader("SCR-020/520", "営業開始・営業終了")
+        AoHeader("SCR-020/520", "営業開始・状態")
         Row(Modifier.weight(1f).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             AoPanel(Modifier.width(430.dp).fillMaxHeight()) {
-                Text("現在の営業日", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = AoNavy)
+                Text("現在の営業セッション", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = AoNavy)
                 Spacer(Modifier.height(10.dp))
+                AoAmountRow("営業セッション", session?.let { "No.${it.id}" } ?: "未開始")
                 AoAmountRow("営業日", session?.businessDate ?: LocalDate.now().toString())
                 AoAmountRow("状態", session?.status?.displayName ?: "未開始", emphasized = true)
                 AoAmountRow("開始釣銭", aoYen(session?.openingCash ?: 0))
@@ -371,6 +358,8 @@ private fun BusinessDayScreen(
                 if (session == null) {
                     Spacer(Modifier.height(8.dp))
                     AoNumericField("開始釣銭", openingCash, { openingCash = it })
+                    Spacer(Modifier.height(8.dp))
+                    Text("同じ営業日でも、前の営業がZ精算済みなら再度開始できます。", color = Color.DarkGray)
                     Spacer(Modifier.weight(1f))
                     Button(
                         onClick = { onStart(openingCash.toLongOrNull() ?: 0L, operator) },
@@ -378,28 +367,10 @@ private fun BusinessDayScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = AoBlue),
                     ) { Text("営業を開始", fontWeight = FontWeight.Bold) }
                 } else {
+                    Spacer(Modifier.height(14.dp))
+                    Text("Z精算の完了と同時に、この営業セッションは終了します。", color = AoDanger, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
-                    AoNumericField("営業終了時の現金実査額", actualCash, { actualCash = it })
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = pin,
-                        onValueChange = { pin = it.filter(Char::isDigit).take(8) },
-                        label = { Text("責任者PIN") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.weight(1f))
-                    Button(
-                        onClick = { onCloseDay(actualCash.toLongOrNull() ?: summary.expectedCash, operator, pin) },
-                        enabled = session.status == BusinessSessionStatus.Z_SETTLED,
-                        modifier = Modifier.fillMaxWidth().height(58.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = AoDanger),
-                    ) { Text("営業を終了", fontWeight = FontWeight.Bold) }
-                    if (session.status == BusinessSessionStatus.OPEN) {
-                        Spacer(Modifier.height(6.dp))
-                        Text("営業終了には先にZ精算が必要です", color = AoDanger)
-                    }
+                    Text("点検・精算画面から「Z精算して営業終了」を実行してください。", color = Color.DarkGray)
                 }
                 if (message != null) {
                     Spacer(Modifier.height(8.dp))
@@ -407,7 +378,7 @@ private fun BusinessDayScreen(
                 }
             }
             AoPanel(Modifier.weight(1f).fillMaxHeight()) {
-                Text("営業履歴", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = AoNavy)
+                Text("営業セッション履歴", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = AoNavy)
                 Spacer(Modifier.height(8.dp))
                 if (history.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("履歴はありません", color = Color.Gray) }
@@ -416,14 +387,11 @@ private fun BusinessDayScreen(
                         items(history) { record ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("${record.businessDate}  ${record.status.displayName}", fontWeight = FontWeight.Bold)
+                                    Text("${record.businessDate}  No.${record.id}  ${record.status.displayName}", fontWeight = FontWeight.Bold)
                                     Text("開始 ${aoDateTime(record.openedAt)} / ${record.openedBy}", color = Color.Gray)
-                                    if (record.closedAt != null) Text("終了 ${aoDateTime(record.closedAt)} / ${record.closedBy}", color = Color.Gray)
+                                    if (record.closedAt != null) Text("終了 ${aoDateTime(record.closedAt)} / ${record.closedBy.orEmpty()}", color = Color.Gray)
                                 }
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text("開始 ${aoYen(record.openingCash)}")
-                                    if (record.closeVariance != null) Text("過不足 ${aoSignedYen(record.closeVariance)}")
-                                }
+                                Text(aoYen(record.openingCash), color = AoNavy)
                             }
                         }
                     }
@@ -555,7 +523,12 @@ private fun AdvancedSettlementScreen(
                     enabled = session?.status == BusinessSessionStatus.OPEN,
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = if (type == SettlementReportType.Z_SETTLEMENT) AoDanger else AoBlue),
-                ) { Text("${type.displayName}を確定", fontWeight = FontWeight.Bold) }
+                ) {
+                    Text(
+                        if (type == SettlementReportType.Z_SETTLEMENT) "Z精算して営業終了" else "X点検を確定",
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
                 if (session?.status != BusinessSessionStatus.OPEN) Text("営業中のみ実行できます", color = AoDanger)
                 if (message != null) Text(message, color = messageColor(message))
             }
@@ -575,7 +548,8 @@ private fun AdvancedSettlementScreen(
                                 Spacer(Modifier.weight(1f))
                                 Text(aoDateTime(record.createdAt), color = Color.Gray)
                             }
-                            Text("${record.businessDate}  純売上 ${aoYen(record.netSales)}")
+                            Text("${record.businessDate}  セッションNo.${record.businessSessionId}")
+                            Text("純売上 ${aoYen(record.netSales)}")
                             Text("実査 ${aoYen(record.actualCash)} / 過不足 ${aoSignedYen(record.variance)}", color = Color.Gray)
                         }
                     }
@@ -798,7 +772,12 @@ private fun AdvancedReversalScreen(
                     enabled = session?.status == BusinessSessionStatus.OPEN && selectedSale != null && refund > 0,
                     modifier = Modifier.fillMaxWidth().height(54.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = AoDanger),
-                ) { Text("${type.displayName}を確定", fontWeight = FontWeight.Bold) }
+                ) {
+                    Text(
+                        if (type == SettlementReportType.Z_SETTLEMENT) "Z精算して営業終了" else "X点検を確定",
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
                 if (message != null) Text(message, color = messageColor(message), fontSize = 13.sp)
                 if (savedPreview != null) {
                     Spacer(Modifier.height(6.dp))
