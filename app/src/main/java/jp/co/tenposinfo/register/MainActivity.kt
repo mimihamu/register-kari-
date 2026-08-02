@@ -1692,7 +1692,6 @@ private fun NumberPad(
     val buttonHeight = if (compact) RegisterLayoutPolicy.COMPACT_KEY_HEIGHT_DP.dp else 48.dp
     val rowGap = if (compact) RegisterLayoutPolicy.COMPACT_KEY_GAP_DP.dp else 6.dp
     val columnGap = if (compact) 6.dp else 8.dp
-    val columnGap = if (compact) 6.dp else 8.dp
     val content: @Composable () -> Unit = {
     for (rowStart in 1..9 step 3) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(columnGap)) {

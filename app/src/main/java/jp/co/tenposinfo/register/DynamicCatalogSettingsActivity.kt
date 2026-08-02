@@ -163,18 +163,6 @@ private fun DynamicMenu(
                 }
             }
             Spacer(Modifier.height(14.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = onTaxInvoice, modifier = Modifier.weight(1f).height(46.dp)) {
-                    Text("税・インボイス", fontWeight = FontWeight.Bold)
-                }
-                OutlinedButton(onClick = onRevisionEditor, modifier = Modifier.weight(1f).height(46.dp)) {
-                    Text("改定内容編集", fontWeight = FontWeight.Bold)
-                }
-                OutlinedButton(onClick = onSync, modifier = Modifier.weight(1f).height(46.dp)) {
-                    Text("同期基盤", fontWeight = FontWeight.Bold)
-                }
-            }
-            Spacer(Modifier.height(14.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 DcSummary("有効な税区分", "${rules.count { it.enabled }}件", Modifier.weight(1f))
                 DcSummary("予約中の改定", "${revisions.count { it.status == "SCHEDULED" && it.effectiveDate > LocalDate.now().toString() }}件", Modifier.weight(1f))
