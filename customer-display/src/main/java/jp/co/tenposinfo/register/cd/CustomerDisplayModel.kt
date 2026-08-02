@@ -134,12 +134,9 @@ object CustomerDisplayStateReducer {
         }
         val currentInstance = current.snapshot.serverInstanceId
         val incomingInstance = incoming.serverInstanceId
-        val sameKnownServerInstance =
-            !currentInstance.isNullOrBlank() &&
-                !incomingInstance.isNullOrBlank() &&
-                currentInstance == incomingInstance
-        val eitherInstanceUnknown = currentInstance.isNullOrBlank() || incomingInstance.isNullOrBlank()
-        if ((sameKnownServerInstance || eitherInstanceUnknown) && incoming.sequence <= current.snapshot.sequence) {
+        val incomingIdentifiedServer = !incomingInstance.isNullOrBlank()
+        val serverInstanceChanged = incomingIdentifiedServer && incomingInstance != currentInstance
+        if (!serverInstanceChanged && incoming.sequence <= current.snapshot.sequence) {
             return current
         }
         return current.copy(
