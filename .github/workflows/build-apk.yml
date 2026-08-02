@@ -140,7 +140,7 @@ jobs:
           echo "CUSTOMER_DISPLAY_TRANSIENT_OUTAGE_SUPPRESSION=3000ms" >> artifacts/build-summary.txt
           echo "TAX_ROUNDING=once-per-invoice-and-rate" >> artifacts/build-summary.txt
           echo "MIXED_INCLUDED_EXCLUDED_POLICY=allow-warn-block-default-block" >> artifacts/build-summary.txt
-          echo "INVOICE_ISSUER_SETTINGS=store-address-phone-registration" >> artifacts/build-sumary.txt
+          echo "INVOICE_ISSUER_SETTINGS=store-address-phone-registration" >> artifacts/build-summary.txt
           echo "RECEIPT_RATE_BREAKDOWN=taxable-amount-and-tax" >> artifacts/build-summary.txt
           echo "SALES_PROFILE=runtime-time-selection-with-line-snapshot" >> artifacts/build-summary.txt
           echo "REGISTER_PACKAGE=jp.co.tenposinfo.register.dev" >> artifacts/build-summary.txt
