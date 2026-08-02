@@ -1,0 +1,60 @@
+name: Inspect v0.21 data protection
+
+on:
+  push:
+    branches:
+      - develop/v0.21
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout v0.21
+        uses: actions/checkout@v4
+        with:
+          ref: develop/v0.21
+          fetch-depth: 0
+
+      - name: Build inventory
+        run: |
+          mkdir -p inventory
+          {
+            echo '===== HEAD ====='
+            git rev-parse HEAD
+            echo
+            echo '===== APP SOURCE FILES ====='
+            find app/src/main/java/jp/co/tenposinfo/register -maxdepth 1 -type f -printf '%f\n' | sort
+            echo
+            echo '===== TEST FILES ====='
+            find app/src/test/java/jp/co/tenposinfo/register -maxdepth 1 -type f -printf '%f\n' | sort
+            echo
+            echo '===== DATABASE HELPERS ====='
+            grep -RInE 'SQLiteOpenHelper|SQLiteDatabase|DATABASE_NAME|DB_NAME|onCreate\(|onUpgrade\(' app/src/main/java/jp/co/tenposinfo/register || true
+            echo
+            echo '===== BACKUP RESTORE EXPORT ====='
+            grep -RInEi 'backup|restore|integrity_check|quick_check|export|import|復元|バックアップ|整合性' app/src/main/java/jp/co/tenposinfo/register app/src/test/java/jp/co/tenposinfo/register docs || true
+            echo
+            echo '===== DRIVE OUTBOX QUEUES ====='
+            grep -RInEi 'Drive|Outbox|journal|queue|pending|upload|sync' app/src/main/java/jp/co/tenposinfo/register | head -n 1600 || true
+            echo
+            echo '===== SALES DB TABLES ====='
+            grep -RInE 'CREATE TABLE|ALTER TABLE|DROP TABLE' app/src/main/java/jp/co/tenposinfo/register | head -n 1600 || true
+            echo
+            echo '===== DATABASE FILE ACCESS ====='
+            grep -RInE 'getDatabasePath|databaseName|writableDatabase|readableDatabase|close\(\)' app/src/main/java/jp/co/tenposinfo/register | head -n 1600 || true
+            echo
+            echo '===== MANIFEST / FILE PROVIDERS ====='
+            cat app/src/main/AndroidManifest.xml
+          } > inventory/v021-inventory.txt
+
+      - name: Upload inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: v021-data-protection-inventory
+          path: inventory/v021-inventory.txt
+          if-no-files-found: error
+          retention-days: 7
