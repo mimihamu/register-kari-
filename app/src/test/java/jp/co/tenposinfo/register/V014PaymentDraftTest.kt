@@ -2,6 +2,8 @@ package jp.co.tenposinfo.register
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class V014PaymentDraftTest {
@@ -75,5 +77,45 @@ class V014PaymentDraftTest {
         assertEquals(600L, restored.paidAmount)
         assertEquals(0L, restored.remaining(600L))
         assertEquals(800L, restored.changeAmount)
+    }
+
+    @Test
+    fun paymentCommitKeysAreValidAndUnique() {
+        val first = PaymentCommitKey.newKey()
+        val second = PaymentCommitKey.newKey()
+
+        assertTrue(PaymentCommitKey.isValid(first))
+        assertTrue(PaymentCommitKey.isValid(second))
+        assertNotEquals(first, second)
+    }
+
+    @Test
+    fun existingCommitMustMatchCartAndTotal() {
+        val existing = SaleCommitIdempotencySchema.ExistingCommit(
+            saleId = 42L,
+            cartFingerprint = "fingerprint-a",
+            totalAmount = 1_000L,
+        )
+
+        SaleCommitIdempotencySchema.requireCompatible(
+            existing = existing,
+            cartFingerprint = "fingerprint-a",
+            totalAmount = 1_000L,
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            SaleCommitIdempotencySchema.requireCompatible(
+                existing = existing,
+                cartFingerprint = "fingerprint-b",
+                totalAmount = 1_000L,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            SaleCommitIdempotencySchema.requireCompatible(
+                existing = existing,
+                cartFingerprint = "fingerprint-a",
+                totalAmount = 1_001L,
+            )
+        }
     }
 }
