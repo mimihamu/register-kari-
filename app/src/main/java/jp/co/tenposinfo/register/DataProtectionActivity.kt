@@ -112,7 +112,7 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                         manager.exportBackup(fileName, output, actor)
                     } ?: error("保存先を開けません")
                 }
-                withContext(Dispatchers.IO) { metadataStore.markExported(result.fileName) }
+                withContext(Dispatchers.IO) { metadataStore.registerExport(result) }
                 "外部保存完了: ${result.fileName} / ${result.bytesWritten} bytes"
             }
         }
@@ -122,9 +122,11 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
             runTask {
                 val actor = OperatorSessionRegistry.current(appContext)?.name ?: "責任者"
                 val imported = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.use { input ->
+                    val record = context.contentResolver.openInputStream(uri)?.use { input ->
                         manager.importBackup(input, actor)
                     } ?: error("取込ファイルを開けません")
+                    metadataStore.registerManualBackup(manager.verifyBackup(record.fileName))
+                    record
                 }
                 selected = imported.fileName
                 "外部バックアップ取込完了: ${imported.fileName}"
@@ -193,7 +195,17 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                         Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = { runTask { report = withContext(Dispatchers.IO) { manager.diagnose() }; if (report?.healthy == true) "DB整合性は正常です" else "DB整合性エラーがあります" } }, enabled = !busy, colors = ButtonDefaults.buttonColors(containerColor = DpBlue)) { Text("再診断") }
-                            Button(onClick = { runTask { val actor = OperatorSessionRegistry.current(appContext)?.name ?: "責任者"; val backup = withContext(Dispatchers.IO) { manager.createBackup(actor) }; "手動バックアップ作成: ${backup.fileName}" } }, enabled = !busy && current?.healthy == true, colors = ButtonDefaults.buttonColors(containerColor = DpGreen)) { Text("通常バックアップ") }
+                            Button(onClick = {
+                                runTask {
+                                    val actor = OperatorSessionRegistry.current(appContext)?.name ?: "責任者"
+                                    val backup = withContext(Dispatchers.IO) {
+                                        val record = manager.createBackup(actor)
+                                        metadataStore.registerManualBackup(manager.verifyBackup(record.fileName))
+                                        record
+                                    }
+                                    "手動バックアップ作成: ${backup.fileName}"
+                                }
+                            }, enabled = !busy && current?.healthy == true, colors = ButtonDefaults.buttonColors(containerColor = DpGreen)) { Text("通常バックアップ") }
                         }
                         Spacer(Modifier.height(6.dp))
                         OutlinedButton(
