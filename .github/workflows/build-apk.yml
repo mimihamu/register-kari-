@@ -1,4 +1,4 @@
-name: Apply v0.27 settlement history
+name: Validate v0.27 settlement history
 
 on:
   pull_request:
@@ -7,69 +7,58 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply-v027:
+  validate-v027:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'develop/v0.27'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 35
 
     steps:
-      - name: Checkout v0.27
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: develop/v0.27
-          fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
-      - name: Narrow applicator target
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle 9.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Verify v0.27 sources
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path("tools/apply_v027.py")
-          lines = path.read_text().splitlines()
-          replacement = "text = replace_once(text, 'data class SettlementRecord(\\n    val id: Long,\\n    val businessSessionId: Long,\\n    val businessDate: String,\\n    val type: SettlementReportType,\\n    val salesGross: Long,\\n    val reversalGross: Long,\\n    val netSales: Long,\\n    val expectedCash: Long,\\n    val actualCash: Long,\\n    val variance: Long,\\n    val transactionCount: Int,\\n    val reversalCount: Int,\\n    val pendingPrints: Int,\\n    val heldTickets: Int,\\n    val operatorName: String,\\n    val createdAt: Long,\\n)', 'data class SettlementRecord(\\n    val id: Long,\\n    val businessSessionId: Long,\\n    val businessDate: String,\\n    val type: SettlementReportType,\\n    val salesGross: Long,\\n    val reversalGross: Long,\\n    val netSales: Long,\\n    val expectedCash: Long,\\n    val actualCash: Long,\\n    val variance: Long,\\n    val transactionCount: Int,\\n    val reversalCount: Int,\\n    val pendingPrints: Int,\\n    val heldTickets: Int,\\n    val operatorName: String,\\n    val createdAt: Long,\\n    val openingCash: Long = 0L,\\n    val cashIn: Long = 0L,\\n    val cashOut: Long = 0L,\\n    val snapshotVersion: Int = 0,\\n)', 'settlement record snapshot fields')"
-          found = False
-          for index, line in enumerate(lines):
-              if "settlement record snapshot fields" in line:
-                  lines[index] = replacement
-                  found = True
-                  break
-          if not found:
-              raise RuntimeError("settlement record replacement line not found")
-          path.write_text("\n".join(lines) + "\n")
-          PY
-          python3 -m py_compile tools/apply_v027.py
-
-      - name: Apply v0.27 sources
-        run: |
-          set -euo pipefail
-          if grep -q 'versionName = "0.27.0-dev.1"' app/build.gradle.kts; then
-            echo "v0.27 already applied"
-            exit 0
-          fi
-          python3 tools/apply_v027.py
-          git diff --check
           grep -q 'versionCode = 57' app/build.gradle.kts
           grep -q 'versionName = "0.27.0-dev.1"' app/build.gradle.kts
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryPolicyV027.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V027SettlementHistoryReprintTest.kt
+          test -s docs/V0.27_SETTLEMENT_HISTORY_REPRINT.md
+          test -s docs/V0.27_RELEASE_NOTES.md
           grep -q 'OperationsScreen.SETTLEMENT_HISTORY' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
           grep -q 'SettlementSnapshotSchemaV027.savePaymentTotals' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
           grep -q 'SETTLEMENT_REPRINT' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
           grep -q 'fun reprintSettlement' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
+          grep -q 'AutomaticPrintScheduler.enqueueNow' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
+          git diff --check develop/v0.26...HEAD
 
-      - name: Commit v0.27 implementation
-        run: |
-          set -euo pipefail
-          if git diff --quiet -- app docs; then
-            echo "No implementation changes to commit"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app docs
-          git commit -m "feat: add settlement history and reprint"
-          git push origin HEAD:develop/v0.27
+      - name: Run cumulative unit tests
+        run: gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest
+
+      - name: Build debug APKs
+        run: gradle --no-daemon :app:assembleDebug :customer-display:assembleDebug
