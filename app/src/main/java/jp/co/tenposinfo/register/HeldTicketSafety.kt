@@ -33,13 +33,8 @@ internal object HeldTicketSafetyPolicy {
 }
 
 /**
- * 保留伝票呼出時のデータ消失を防ぐ。
- * 1. 現在の作業中伝票を先に保留保存
- * 2. 呼出対象を作業中カートへ保存
- * 3. 保存成功後にだけ呼出元を削除
- *
- * 全処理を単一DBトランザクションにできない旧構造でも、障害時は重複が残るだけで
- * 作業中伝票または呼出伝票の両方を失わない順序を採用する。
+ * 作業中伝票の退避、保留伝票の呼出、呼出元削除を同一SQLiteトランザクションで行う。
+ * 途中で例外・電源断・プロセス停止が発生した場合は、全変更をロールバックする。
  */
 internal class HeldTicketSafetyCoordinator(
     private val database: RegisterDatabase,
@@ -49,26 +44,53 @@ internal class HeldTicketSafetyCoordinator(
         currentCart: List<CartItem>,
         operatorName: String,
     ): HeldTicketLoadResult {
-        val selected = database.loadHeldTicket(ticket.id)
-        require(selected.isNotEmpty()) { "呼出対象の伝票が空か、既に削除されています" }
+        val db = database.writableDatabase
+        db.beginTransaction()
+        return try {
+            val selected = database.loadHeldTicket(ticket.id)
+            require(selected.isNotEmpty()) { "呼出対象の伝票が空か、既に削除されています" }
 
-        var parkedId: Long? = null
-        if (currentCart.isNotEmpty()) {
-            val parkedName = HeldTicketSafetyPolicy.parkedName(operatorName)
-            parkedId = database.holdCart(parkedName, operatorName, currentCart)
-        }
-
-        database.saveCart(selected)
-        database.deleteHeldTicket(ticket.id)
-        return HeldTicketLoadResult(
-            loadedItems = selected,
-            parkedTicketId = parkedId,
-            message = if (parkedId == null) {
-                "${ticket.name}を呼び出しました"
+            val parkedId = if (currentCart.isNotEmpty()) {
+                insertHeldTicket(
+                    name = HeldTicketSafetyPolicy.parkedName(operatorName),
+                    operatorName = operatorName,
+                    items = currentCart,
+                )
             } else {
-                "作業中伝票を退避して${ticket.name}を呼び出しました"
-            },
-        )
+                null
+            }
+
+            db.delete("cart_items", null, null)
+            selected.forEachIndexed { index, item ->
+                db.insertOrThrow(
+                    "cart_items",
+                    null,
+                    item.toDatabaseValues().apply { put("line_no", index + 1) },
+                )
+            }
+            LineTaxSnapshotStore.save(db, LineTaxSnapshotStore.SCOPE_CART, 0L, selected)
+
+            val deleted = db.delete("held_tickets", "id = ?", arrayOf(ticket.id.toString()))
+            require(deleted == 1) { "呼出対象の伝票を確定できませんでした" }
+            db.delete(
+                "line_tax_snapshots",
+                "scope = ? AND owner_id = ?",
+                arrayOf(LineTaxSnapshotStore.SCOPE_HELD, ticket.id.toString()),
+            )
+
+            db.setTransactionSuccessful()
+            HeldTicketLoadResult(
+                loadedItems = selected,
+                parkedTicketId = parkedId,
+                message = if (parkedId == null) {
+                    "${ticket.name}を呼び出しました"
+                } else {
+                    "作業中伝票を退避して${ticket.name}を呼び出しました"
+                },
+            )
+        } finally {
+            db.endTransaction()
+        }
     }
 
     fun rename(ticketId: Long, rawName: String, fallback: String): Boolean {
@@ -80,6 +102,43 @@ internal class HeldTicketSafetyCoordinator(
             arrayOf(ticketId.toString()),
         )
         return updated == 1
+    }
+
+    private fun insertHeldTicket(
+        name: String,
+        operatorName: String,
+        items: List<CartItem>,
+    ): Long {
+        val db = database.writableDatabase
+        val ticketId = db.insertOrThrow(
+            "held_tickets",
+            null,
+            ContentValues().apply {
+                put("name", name)
+                put("operator_name", operatorName)
+                put("created_at", System.currentTimeMillis())
+            },
+        )
+        items.forEach { item ->
+            db.insertOrThrow(
+                "held_ticket_items",
+                null,
+                item.toDatabaseValues().apply { put("ticket_id", ticketId) },
+            )
+        }
+        LineTaxSnapshotStore.save(db, LineTaxSnapshotStore.SCOPE_HELD, ticketId, items)
+        return ticketId
+    }
+
+    private fun CartItem.toDatabaseValues(): ContentValues = ContentValues().apply {
+        put("product_id", product.id)
+        put("product_name", product.name)
+        put("unit_price", unitPrice)
+        put("tax_category", product.taxCategory.name)
+        put("display_order", product.displayOrder)
+        put("quantity", quantity)
+        put("discount_amount", discountAmount)
+        put("note", note)
     }
 }
 
