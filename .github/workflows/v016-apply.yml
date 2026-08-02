@@ -41,6 +41,22 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
+      - name: Correct repeated operator-state replacements
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tools/apply_v016.py')
+          text = path.read_text(encoding='utf-8')
+          needle = "text = replace_once(text, '    var operator by remember { mutableStateOf(\"責任者\") }\\n', '', \"{} operator state\")"
+          replacement = "text = text.replace('    var operator by remember { mutableStateOf(\"責任者\") }\\n', '', 1)"
+          for label in ('settlement', 'cash', 'reversal'):
+              old = needle.format(label)
+              if old not in text:
+                  raise SystemExit(f'missing replacement target: {label}')
+              text = text.replace(old, replacement, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
       - name: Apply source changes
         run: python3 tools/apply_v016.py
 
