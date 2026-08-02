@@ -202,6 +202,13 @@ private fun CatalogMenuScreen(
                     modifier = Modifier.width(240.dp).height(46.dp),
                 ) { Text("任意税率・メニュー改定", fontWeight = FontWeight.Bold) }
             }
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                OutlinedButton(
+                    onClick = onDynamic,
+                    modifier = Modifier.width(240.dp).height(46.dp),
+                ) { Text("任意税率・メニュー改定", fontWeight = FontWeight.Bold) }
+            }
             if (message != null) {
                 Spacer(Modifier.height(12.dp))
                 Text(message, color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
