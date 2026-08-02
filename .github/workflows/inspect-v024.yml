@@ -1,0 +1,39 @@
+name: Inspect v0.24 sources
+
+on:
+  push:
+    branches:
+      - develop/v0.24
+    paths:
+      - .github/workflows/inspect-v024.yml
+
+permissions:
+  contents: read
+
+jobs:
+  package-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Package relevant sources
+        run: |
+          zip -r v024-source-inspection.zip \
+            app \
+            customer-display \
+            docs \
+            .github/workflows/build-apk.yml \
+            build.gradle.kts \
+            settings.gradle.kts \
+            gradle.properties \
+            gradle \
+            gradlew \
+            gradlew.bat
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v024-source-inspection
+          path: v024-source-inspection.zip
+          retention-days: 1
