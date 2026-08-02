@@ -12,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -595,23 +597,39 @@ private fun RegisterApp() {
 
 @Composable
 private fun Header(screenId: String, title: String) {
+    val responsive = rememberRegisterResponsiveMetrics()
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(62.dp)
+            .height(responsive.headerHeightDp.dp)
             .background(Navy)
-            .padding(horizontal = 20.dp),
+            .padding(horizontal = responsive.screenPaddingDp.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("つぐレジ", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(24.dp))
-        Text("$screenId  $title", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
         Text(
-            "営業日 ${LocalDate.now()}  ${LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))}",
+            "つぐレジ",
             color = Color.White,
-            fontSize = 14.sp,
+            fontSize = if (responsive.isCompact) 20.sp else 23.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
         )
+        Spacer(Modifier.width(if (responsive.isCompact) 12.dp else 24.dp))
+        Text(
+            "$screenId  $title",
+            modifier = Modifier.weight(1f),
+            color = Color.White,
+            fontSize = if (responsive.isCompact) 17.sp else 21.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
+        if (!responsive.isCompact) {
+            Text(
+                "営業日 ${LocalDate.now()}  ${LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))}",
+                color = Color.White,
+                fontSize = 14.sp,
+                maxLines = 1,
+            )
+        }
     }
 }
 
@@ -743,6 +761,7 @@ private fun SalesScreen(
 ) {
     val summary = TaxEngine.calculate(cart)
     var numericInput by remember { mutableStateOf("") }
+    val responsive = rememberRegisterResponsiveMetrics()
     Column(Modifier.fillMaxSize()) {
         Header("SCR-100", "販売画面")
         PrinterHealthBanner(printerHealth, onPrinterStatus)
@@ -750,12 +769,17 @@ private fun SalesScreen(
             Modifier.fillMaxWidth().height(48.dp).background(Color.White).padding(horizontal = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("店舗：サンプル居酒屋  |  担当：$operatorName", color = Navy, fontWeight = FontWeight.Medium)
+            Text(
+                if (responsive.isCompact) "担当：$operatorName" else "店舗：サンプル居酒屋  |  担当：$operatorName",
+                color = Navy,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+            )
             Spacer(Modifier.weight(1f))
             if (accessMessage != null) {
                 Text(accessMessage, color = Danger, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.width(12.dp))
-            } else {
+            } else if (!responsive.isCompact) {
                 Text("SQLite保存・オフライン販売", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
                 Spacer(Modifier.width(12.dp))
             }
@@ -770,8 +794,11 @@ private fun SalesScreen(
   OutlinedButton(onClick = onLogout, modifier = Modifier.height(40.dp)) { Text("担当者切替") }
         }
 
-        Row(Modifier.weight(1f).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            CardPanel(Modifier.weight(0.36f).fillMaxHeight()) {
+        Row(
+            Modifier.weight(1f).padding(responsive.screenPaddingDp.dp),
+            horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
+        ) {
+            CardPanel(Modifier.weight(responsive.salesListWeight).fillMaxHeight()) {
                 Text("注文一覧", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Navy)
                 Spacer(Modifier.height(8.dp))
                 LazyColumn(Modifier.weight(1f)) {
@@ -805,60 +832,93 @@ private fun SalesScreen(
                 }
             }
 
-            CardPanel(Modifier.weight(0.24f).fillMaxHeight()) {
-                Row(
-                    Modifier.fillMaxWidth().height(40.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("置数・機能", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Navy)
-                    Spacer(Modifier.width(8.dp))
-                    ValueBox(
-                        if (numericInput.isBlank()) "0" else numericInput,
-                        compact = true,
-                        modifier = Modifier.weight(1f),
+            CardPanel(Modifier.weight(responsive.salesKeypadWeight).fillMaxHeight()) {
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val keypad = RegisterResponsiveLayoutPolicy.keypadMetrics(
+                        availableHeightDp = maxHeight.value.toInt(),
+                        functionRows = 2,
                     )
-                }
-                Spacer(Modifier.height(4.dp))
-                NumberPad(
-                    onDigit = { if (numericInput.length < 5) numericInput += it },
-                    onClear = { numericInput = "" },
-                    bottomActionLabel = "数量",
-                    onBottomAction = {
-                        numericInput.toIntOrNull()?.let(onChangeQuantity)
-                        numericInput = ""
-                    },
-                    compact = true,
-                )
-                Spacer(Modifier.height(4.dp))
-                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        OutlinedButton(
-                            onClick = onRemove,
-                            modifier = Modifier.weight(1f).height(RegisterLayoutPolicy.COMPACT_FUNCTION_HEIGHT_DP.dp),
-                        ) { Text("訂正", fontSize = 12.sp) }
-                        OutlinedButton(
-                            onClick = { selectedIndex?.let(onEdit) },
-                            enabled = selectedIndex != null,
-                            modifier = Modifier.weight(1f).height(RegisterLayoutPolicy.COMPACT_FUNCTION_HEIGHT_DP.dp),
-                        ) { Text("行編集", fontSize = 12.sp) }
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        OutlinedButton(
-                            onClick = onDiscount,
-                            enabled = cart.isNotEmpty(),
-                            modifier = Modifier.weight(1f).height(RegisterLayoutPolicy.COMPACT_FUNCTION_HEIGHT_DP.dp),
-                        ) { Text("値引・割引", fontSize = 12.sp) }
-                        Button(
-                            onClick = onCancelTransaction,
-                            modifier = Modifier.weight(1f).height(RegisterLayoutPolicy.COMPACT_FUNCTION_HEIGHT_DP.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFBE9E7), contentColor = Danger),
-                        ) { Text("取引中止", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                    val keypadScroll = rememberScrollState()
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .then(
+                                if (keypad.scrollRequired) Modifier.verticalScroll(keypadScroll) else Modifier,
+                            ),
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().height(keypad.valueHeightDp.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "置数・機能",
+                                fontSize = if (responsive.isCompact) 16.sp else 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Navy,
+                                maxLines = 1,
+                            )
+                            Spacer(Modifier.width(keypad.gapDp.dp))
+                            ValueBox(
+                                if (numericInput.isBlank()) "0" else numericInput,
+                                compact = true,
+                                modifier = Modifier.weight(1f),
+                                heightDp = keypad.valueHeightDp,
+                            )
+                        }
+                        Spacer(Modifier.height(keypad.gapDp.dp))
+                        NumberPad(
+                            onDigit = { if (numericInput.length < 5) numericInput += it },
+                            onClear = { numericInput = "" },
+                            bottomActionLabel = "数量",
+                            onBottomAction = {
+                                numericInput.toIntOrNull()?.let(onChangeQuantity)
+                                numericInput = ""
+                            },
+                            compact = true,
+                            buttonHeightDp = keypad.keyHeightDp,
+                            rowGapDp = keypad.gapDp,
+                        )
+                        Spacer(Modifier.height(keypad.gapDp.dp))
+                        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(keypad.gapDp.dp),
+                            ) {
+                                OutlinedButton(
+                                    onClick = onRemove,
+                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                ) { Text("訂正", fontSize = 13.sp, maxLines = 1) }
+                                OutlinedButton(
+                                    onClick = { selectedIndex?.let(onEdit) },
+                                    enabled = selectedIndex != null,
+                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                ) { Text("行編集", fontSize = 13.sp, maxLines = 1) }
+                            }
+                            Spacer(Modifier.height(keypad.gapDp.dp))
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(keypad.gapDp.dp),
+                            ) {
+                                OutlinedButton(
+                                    onClick = onDiscount,
+                                    enabled = cart.isNotEmpty(),
+                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                ) { Text("値引・割引", fontSize = 13.sp, maxLines = 1) }
+                                Button(
+                                    onClick = onCancelTransaction,
+                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFFFBE9E7),
+                                        contentColor = Danger,
+                                    ),
+                                ) { Text("取引中止", fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
+                            }
+                        }
                     }
                 }
             }
 
-            CardPanel(Modifier.weight(0.40f).fillMaxHeight()) {
+            CardPanel(Modifier.weight(responsive.salesProductsWeight).fillMaxHeight()) {
                 val salesContext = LocalContext.current
                 val pages = products.map { it.pageNo }.distinct().sorted().ifEmpty { listOf(1) }
                 var currentPage by remember(products) { mutableStateOf(pages.first()) }
@@ -919,15 +979,23 @@ private fun SalesScreen(
         }
 
         Row(
-            Modifier.fillMaxWidth().height(76.dp).padding(horizontal = 12.dp, vertical = 7.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            Modifier
+                .fillMaxWidth()
+                .height(responsive.bottomBarHeightDp.dp)
+                .padding(horizontal = responsive.screenPaddingDp.dp, vertical = 7.dp),
+            horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
         ) {
-            OutlinedButton(onClick = onTickets, modifier = Modifier.width(130.dp).fillMaxHeight()) { Text("伝票一覧") }
-            OutlinedButton(onClick = onHold, enabled = cart.isNotEmpty(), modifier = Modifier.width(100.dp).fillMaxHeight()) { Text("保留") }
-            OutlinedButton(onClick = onSalesHistory, modifier = Modifier.width(120.dp).fillMaxHeight()) { Text("売上一覧") }
-            OutlinedButton(onClick = onPrinterStatus, modifier = Modifier.width(115.dp).fillMaxHeight()) { Text("プリンター") }
-            OutlinedButton(onClick = onPrintQueue, modifier = Modifier.width(120.dp).fillMaxHeight()) { Text("印刷管理") }
-            BlueButton("小計／会計  ${yen(summary.grossAmount)}", onPayment, Modifier.weight(1f).fillMaxHeight(), cart.isNotEmpty())
+            OutlinedButton(onClick = onTickets, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("伝票一覧", maxLines = 1) }
+            OutlinedButton(onClick = onHold, enabled = cart.isNotEmpty(), modifier = Modifier.weight(0.8f).fillMaxHeight()) { Text("保留", maxLines = 1) }
+            OutlinedButton(onClick = onSalesHistory, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("売上一覧", maxLines = 1) }
+            OutlinedButton(onClick = onPrinterStatus, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("プリンター", maxLines = 1) }
+            OutlinedButton(onClick = onPrintQueue, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("印刷管理", maxLines = 1) }
+            BlueButton(
+                "小計／会計  ${yen(summary.grossAmount)}",
+                onPayment,
+                Modifier.weight(if (responsive.isCompact) 2.2f else 2.8f).fillMaxHeight(),
+                cart.isNotEmpty(),
+            )
         }
     }
 }
@@ -1244,6 +1312,7 @@ private fun PaymentScreen(
     val mixed = TaxEngine.validateMixedTax(items, MixedTaxPolicy.ALLOW)
     val mixedBlocked = mixed.hasMixedTax && mixedPolicy == MixedTaxPolicy.BLOCK
     val mixedNeedsAcknowledgement = mixed.hasMixedTax && mixedPolicy == MixedTaxPolicy.WARN
+    val responsive = rememberRegisterResponsiveMetrics()
 
     fun add(method: PaymentMethod) {
         val amount = input.toLongOrNull()
@@ -1261,8 +1330,11 @@ private fun PaymentScreen(
 
     Column(Modifier.fillMaxSize()) {
         Header("SCR-300 / SCR-310", "会計・支払追加")
-        Row(Modifier.weight(1f).padding(18.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-            CardPanel(Modifier.weight(1f).fillMaxHeight()) {
+        Row(
+            Modifier.weight(1f).padding(responsive.screenPaddingDp.dp),
+            horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
+        ) {
+            CardPanel(Modifier.weight(responsive.paymentDetailWeight).fillMaxHeight()) {
                 Text("会計内訳", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = Navy)
                 Spacer(Modifier.height(10.dp))
                 LazyColumn(Modifier.weight(1f)) {
@@ -1304,63 +1376,98 @@ private fun PaymentScreen(
                     }
                 }
             }
-            CardPanel(Modifier.width(430.dp).fillMaxHeight()) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Column(Modifier.weight(1f)) {
-                        PaymentAmountRow("合計", yen(summary.grossAmount), emphasized = true)
-                        PaymentAmountRow("支払済", yen(state.paidAmount))
-                    }
-                    Column(Modifier.weight(1f)) {
-                        PaymentAmountRow("残額", yen(remaining), emphasized = true)
-                        PaymentAmountRow("お釣り", yen(state.changeAmount))
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
-                LazyColumn(Modifier.height(36.dp)) {
-                    itemsIndexed(state.allocations) { index, payment ->
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text("${payment.method.displayName} ${yen(payment.appliedAmount)}", Modifier.weight(1f))
-                            OutlinedButton(onClick = { onStateChange(PaymentEngine.removeAt(state, index)) }) { Text("取消") }
-                        }
-                    }
-                }
-                val visibleMessage = externalMessage ?: operationMessage
-                if (!visibleMessage.isNullOrBlank()) {
-                    Text(
-                        visibleMessage,
-                        color = if (completing) Color(0xFF2E7D32) else Danger,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 2,
+            CardPanel(Modifier.weight(responsive.paymentKeypadWeight).fillMaxHeight()) {
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val keypad = RegisterResponsiveLayoutPolicy.keypadMetrics(
+                        availableHeightDp = maxHeight.value.toInt(),
+                        functionRows = 1,
+                        reservedTopDp = if (responsive.isCompact) 104 else 126,
                     )
-                }
-                ValueBox(if (input.isBlank()) "残額全額" else input, compact = true)
-                Spacer(Modifier.height(4.dp))
-                NumberPad(
-                    onDigit = { if (input.length < 10) input += it },
-                    onClear = { input = "" },
-                    bottomActionLabel = "現金",
-                    onBottomAction = { add(PaymentMethod.CASH) },
-                    compact = true,
-                )
-                Spacer(Modifier.height(4.dp))
-                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = { add(PaymentMethod.CARD) },
-                            enabled = remaining > 0 && !completing,
-                            modifier = Modifier.weight(1f).height(RegisterLayoutPolicy.COMPACT_FUNCTION_HEIGHT_DP.dp),
-                        ) { Text("カード", fontSize = 12.sp) }
-                        OutlinedButton(
-                            onClick = { add(PaymentMethod.GIFT_CERTIFICATE) },
-                            enabled = remaining > 0 && !completing,
-                            modifier = Modifier.weight(1f).height(RegisterLayoutPolicy.COMPACT_FUNCTION_HEIGHT_DP.dp),
-                        ) { Text("商品券", fontSize = 12.sp) }
-                        OutlinedButton(
-                            onClick = { add(PaymentMethod.ACCOUNT_RECEIVABLE) },
-                            enabled = remaining > 0 && !completing,
-                            modifier = Modifier.weight(1f).height(RegisterLayoutPolicy.COMPACT_FUNCTION_HEIGHT_DP.dp),
-                        ) { Text("掛売", fontSize = 12.sp) }
+                    val keypadScroll = rememberScrollState()
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .then(
+                                if (keypad.scrollRequired) Modifier.verticalScroll(keypadScroll) else Modifier,
+                            ),
+                    ) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp)) {
+                            Column(Modifier.weight(1f)) {
+                                PaymentAmountRow("合計", yen(summary.grossAmount), emphasized = true)
+                                PaymentAmountRow("支払済", yen(state.paidAmount))
+                            }
+                            Column(Modifier.weight(1f)) {
+                                PaymentAmountRow("残額", yen(remaining), emphasized = true)
+                                PaymentAmountRow("お釣り", yen(state.changeAmount))
+                            }
+                        }
+                        Spacer(Modifier.height(keypad.gapDp.dp))
+                        LazyColumn(
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = keypad.allocationListMaxHeightDp.dp),
+                        ) {
+                            itemsIndexed(state.allocations) { index, payment ->
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        "${payment.method.displayName} ${yen(payment.appliedAmount)}",
+                                        Modifier.weight(1f),
+                                        maxLines = 1,
+                                    )
+                                    OutlinedButton(onClick = { onStateChange(PaymentEngine.removeAt(state, index)) }) {
+                                        Text("取消", maxLines = 1)
+                                    }
+                                }
+                            }
+                        }
+                        val visibleMessage = externalMessage ?: operationMessage
+                        if (!visibleMessage.isNullOrBlank()) {
+                            Text(
+                                visibleMessage,
+                                color = if (completing) Color(0xFF2E7D32) else Danger,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 2,
+                            )
+                        }
+                        ValueBox(
+                            if (input.isBlank()) "残額全額" else input,
+                            compact = true,
+                            heightDp = keypad.valueHeightDp,
+                        )
+                        Spacer(Modifier.height(keypad.gapDp.dp))
+                        NumberPad(
+                            onDigit = { if (input.length < 10) input += it },
+                            onClear = { input = "" },
+                            bottomActionLabel = "現金",
+                            onBottomAction = { add(PaymentMethod.CASH) },
+                            compact = true,
+                            buttonHeightDp = keypad.keyHeightDp,
+                            rowGapDp = keypad.gapDp,
+                        )
+                        Spacer(Modifier.height(keypad.gapDp.dp))
+                        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(keypad.gapDp.dp),
+                            ) {
+                                OutlinedButton(
+                                    onClick = { add(PaymentMethod.CARD) },
+                                    enabled = remaining > 0 && !completing,
+                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                ) { Text("カード", fontSize = 13.sp, maxLines = 1) }
+                                OutlinedButton(
+                                    onClick = { add(PaymentMethod.GIFT_CERTIFICATE) },
+                                    enabled = remaining > 0 && !completing,
+                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                ) { Text("商品券", fontSize = 13.sp, maxLines = 1) }
+                                OutlinedButton(
+                                    onClick = { add(PaymentMethod.ACCOUNT_RECEIVABLE) },
+                                    enabled = remaining > 0 && !completing,
+                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                ) { Text("掛売", fontSize = 13.sp, maxLines = 1) }
+                            }
+                        }
                     }
                 }
             }
@@ -1688,28 +1795,47 @@ private fun NumberPad(
     bottomActionLabel: String,
     onBottomAction: () -> Unit,
     compact: Boolean = false,
+    buttonHeightDp: Int? = null,
+    rowGapDp: Int? = null,
 ) {
-    val buttonHeight = if (compact) RegisterLayoutPolicy.COMPACT_KEY_HEIGHT_DP.dp else 48.dp
-    val rowGap = if (compact) RegisterLayoutPolicy.COMPACT_KEY_GAP_DP.dp else 6.dp
-    val columnGap = if (compact) 6.dp else 8.dp
+    val resolvedButtonHeightDp = buttonHeightDp
+        ?: if (compact) RegisterLayoutPolicy.COMPACT_KEY_HEIGHT_DP else 48
+    val resolvedRowGapDp = rowGapDp
+        ?: if (compact) RegisterLayoutPolicy.COMPACT_KEY_GAP_DP else 6
+    val buttonHeight = resolvedButtonHeightDp.dp
+    val rowGap = resolvedRowGapDp.dp
+    val columnGap = if (compact) resolvedRowGapDp.dp else 8.dp
+    val digitFontSize = when {
+        resolvedButtonHeightDp >= 72 -> 24.sp
+        resolvedButtonHeightDp >= 60 -> 21.sp
+        resolvedButtonHeightDp >= 48 -> 18.sp
+        else -> 16.sp
+    }
     val content: @Composable () -> Unit = {
-    for (rowStart in 1..9 step 3) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(columnGap)) {
-            for (digit in rowStart until rowStart + 3) {
-                OutlinedButton(onClick = { onDigit(digit.toString()) }, modifier = Modifier.weight(1f).height(buttonHeight)) {
-                    Text(digit.toString(), fontSize = if (compact) 16.sp else 18.sp, fontWeight = FontWeight.SemiBold)
+        for (rowStart in 1..9 step 3) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(columnGap)) {
+                for (digit in rowStart until rowStart + 3) {
+                    OutlinedButton(
+                        onClick = { onDigit(digit.toString()) },
+                        modifier = Modifier.weight(1f).height(buttonHeight),
+                    ) {
+                        Text(digit.toString(), fontSize = digitFontSize, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
+            Spacer(Modifier.height(rowGap))
         }
-        Spacer(Modifier.height(rowGap))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(columnGap)) {
+            OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f).height(buttonHeight)) {
+                Text("C", color = Danger, fontSize = digitFontSize)
+            }
+            OutlinedButton(onClick = { onDigit("0") }, modifier = Modifier.weight(1f).height(buttonHeight)) {
+                Text("0", fontSize = digitFontSize)
+            }
+            BlueButton(bottomActionLabel, onBottomAction, Modifier.weight(1f).height(buttonHeight))
+        }
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(columnGap)) {
-        OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f).height(buttonHeight)) { Text("C", color = Danger) }
-        OutlinedButton(onClick = { onDigit("0") }, modifier = Modifier.weight(1f).height(buttonHeight)) { Text("0") }
-        BlueButton(bottomActionLabel, onBottomAction, Modifier.weight(1f).height(buttonHeight))
-    }
-    }
-    if (compact) {
+    if (compact || buttonHeightDp != null) {
         CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) { content() }
     } else {
         content()
@@ -1717,27 +1843,44 @@ private fun NumberPad(
 }
 
 @Composable
-private fun ValueBox(value: String, compact: Boolean = false, modifier: Modifier = Modifier) {
+private fun ValueBox(
+    value: String,
+    compact: Boolean = false,
+    modifier: Modifier = Modifier,
+    heightDp: Int? = null,
+) {
+    val resolvedHeightDp = heightDp
+        ?: if (compact) RegisterLayoutPolicy.COMPACT_VALUE_HEIGHT_DP else 54
     Box(
         modifier
             .fillMaxWidth()
-            .height(if (compact) RegisterLayoutPolicy.COMPACT_VALUE_HEIGHT_DP.dp else 54.dp)
+            .height(resolvedHeightDp.dp)
             .background(PaleBlue, RoundedCornerShape(8.dp))
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.CenterEnd,
     ) {
-        Text(value, fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Navy)
+        Text(
+            value,
+            fontSize = if (resolvedHeightDp >= 60) 29.sp else 25.sp,
+            fontWeight = FontWeight.Bold,
+            color = Navy,
+            maxLines = 1,
+        )
     }
 }
 
 @Composable
 private fun CardPanel(modifier: Modifier = Modifier, content: @Composable Column.() -> Unit) {
+    val responsive = rememberRegisterResponsiveMetrics()
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = Color.White),
         border = BorderStroke(1.dp, Border),
     ) {
-        Column(Modifier.fillMaxSize().padding(16.dp), content = content)
+        Column(
+            Modifier.fillMaxSize().padding(responsive.cardPaddingDp.dp),
+            content = content,
+        )
     }
 }
 
@@ -1795,12 +1938,24 @@ private fun BottomActions(
     onConfirm: () -> Unit,
     confirmEnabled: Boolean = true,
 ) {
+    val responsive = rememberRegisterResponsiveMetrics()
     Row(
-        Modifier.fillMaxWidth().height(72.dp).padding(horizontal = 18.dp, vertical = 7.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        Modifier
+            .fillMaxWidth()
+            .height(responsive.bottomBarHeightDp.dp)
+            .padding(horizontal = responsive.screenPaddingDp.dp, vertical = 7.dp),
+        horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
     ) {
-        OutlinedButton(onClick = onBack, modifier = Modifier.width(190.dp).fillMaxHeight()) { Text("戻る") }
-        BlueButton(confirmLabel, onConfirm, Modifier.weight(1f).fillMaxHeight(), confirmEnabled)
+        OutlinedButton(
+            onClick = onBack,
+            modifier = Modifier.weight(if (responsive.isCompact) 0.28f else 0.20f).fillMaxHeight(),
+        ) { Text("戻る", maxLines = 1) }
+        BlueButton(
+            confirmLabel,
+            onConfirm,
+            Modifier.weight(1f).fillMaxHeight(),
+            confirmEnabled,
+        )
     }
 }
 
