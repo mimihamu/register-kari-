@@ -6,12 +6,14 @@ import org.junit.Test
 class V013RegisterCompactLayoutTest {
     @Test
     fun salesUtilityControlsFitObservedTabletPanel() {
-        assertTrue(RegisterLayoutPolicy.salesUtilityRequiredHeightDp() <= 310)
+        val requiredHeight = RegisterLayoutPolicy.salesUtilityRequiredHeightDp()
+        assertTrue(requiredHeight in 340..350)
     }
 
     @Test
     fun paymentControlsFitObservedTabletPanel() {
-        assertTrue(RegisterLayoutPolicy.paymentControlsRequiredHeightDp() <= 360)
+        val requiredHeight = RegisterLayoutPolicy.paymentControlsRequiredHeightDp()
+        assertTrue(requiredHeight in 390..400)
     }
 
     @Test

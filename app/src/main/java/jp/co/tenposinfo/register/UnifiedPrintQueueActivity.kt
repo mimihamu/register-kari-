@@ -64,6 +64,7 @@ private val UqSelected = Color(0xFFEAF3FA)
 class UnifiedPrintQueueActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
             MaterialTheme {
                 UnifiedPrintQueueApp(onClose = { finish() })
@@ -135,7 +136,7 @@ private fun UnifiedPrintQueueApp(onClose: () -> Unit) {
                 Modifier.fillMaxWidth().height(64.dp).background(UqNavy).padding(horizontal = 20.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("つぐレジ 開発版", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.width(24.dp))
                 Text("統合印刷キュー", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.weight(1f))

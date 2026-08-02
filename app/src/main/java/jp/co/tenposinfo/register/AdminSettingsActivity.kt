@@ -74,12 +74,7 @@ private val AsPaleYellow = Color(0xFFFFF4D9)
 class AdminSettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = android.graphics.Color.rgb(23, 63, 107)
-        window.navigationBarColor = android.graphics.Color.WHITE
-        WindowCompat.getInsetsController(window, window.decorView).apply {
-  isAppearanceLightStatusBars = false
-  isAppearanceLightNavigationBars = true
-        }
+        configureRegisterSystemBars(window)
         setContent {
             MaterialTheme {
                 AdminSettingsApp(onClose = { finish() })

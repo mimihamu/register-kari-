@@ -58,6 +58,7 @@ private val SyPaleYellow = Color(0xFFFFF4D9)
 class SyncSettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
             MaterialTheme {
                 SyncSettingsApp(onClose = { finish() })
@@ -228,7 +229,7 @@ private fun SyHeader(onClose: () -> Unit) {
         Modifier.fillMaxWidth().height(62.dp).background(SyNavy).padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("REGISTER", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+        Text("つぐレジ", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(22.dp))
         Text("SCR-760  売上ジャーナル・Google Drive同期基盤", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.weight(1f))

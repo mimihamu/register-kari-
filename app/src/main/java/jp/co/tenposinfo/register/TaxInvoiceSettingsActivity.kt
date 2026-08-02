@@ -45,6 +45,7 @@ private val TiBackground = Color(0xFFF4F7FA)
 class TaxInvoiceSettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
             MaterialTheme {
                 TaxInvoiceSettingsScreen(onClose = { finish() })

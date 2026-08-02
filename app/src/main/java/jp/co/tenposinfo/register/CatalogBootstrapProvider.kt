@@ -4,16 +4,9 @@ import android.app.Activity
 import android.app.Application
 import android.content.ContentProvider
 import android.content.ContentValues
-import android.content.Intent
 import android.database.Cursor
-import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
-import android.view.Gravity
-import android.view.View
-import android.view.ViewGroup
-import android.widget.Button
-import android.widget.FrameLayout
 
 /**
  * Applicationの既存実装を壊さず、商品マスターの初期化・販売プロファイル・改定予約を反映する。
@@ -41,20 +34,13 @@ class CatalogBootstrapProvider : ContentProvider() {
 private class CatalogLifecycleCallbacks : Application.ActivityLifecycleCallbacks {
     override fun onActivityResumed(activity: Activity) {
         when (activity) {
-            is MainActivity -> {
-                synchronizeAndRefresh(activity)
-            }
-            is CatalogSettingsActivity -> {
-                guardSettingsActivity(activity)
-                installDynamicCatalogButton(activity)
-            }
-            is DynamicCatalogSettingsActivity -> {
-                guardSettingsActivity(activity)
-                installRevisionEditorButton(activity)
-                installTaxInvoiceButton(activity)
-                installSyncButton(activity)
-            }
-            is MenuRevisionEditorActivity, is SyncSettingsActivity, is TaxInvoiceSettingsActivity -> guardSettingsActivity(activity)
+            is MainActivity -> synchronizeAndRefresh(activity)
+            is CatalogSettingsActivity,
+            is DynamicCatalogSettingsActivity,
+            is MenuRevisionEditorActivity,
+            is SyncSettingsActivity,
+            is TaxInvoiceSettingsActivity,
+            -> guardSettingsActivity(activity)
         }
     }
 
@@ -67,123 +53,6 @@ private class CatalogLifecycleCallbacks : Application.ActivityLifecycleCallbacks
             CatalogRuntimeState.saveToken(activity.applicationContext, token)
             activity.recreate()
         }
-    }
-
-    private fun installCatalogButton(activity: MainActivity) {
-        val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
-        val operator = OperatorSessionRegistry.current(activity.applicationContext)
-        val existing = content.findViewWithTag<View>(BUTTON_TAG)
-        val allowed = operator?.isManager == true && operator.allows(RegisterPermission.SETTINGS)
-        if (!allowed) {
-            if (existing != null) content.removeView(existing)
-            return
-        }
-        if (existing != null) return
-        val button = Button(activity).apply {
-            tag = BUTTON_TAG
-            text = "商品設定"
-            isAllCaps = false
-            textSize = 15f
-            setTextColor(Color.rgb(23, 63, 107))
-            setBackgroundColor(Color.WHITE)
-            elevation = dp(activity, 8).toFloat()
-            setOnClickListener { activity.startActivity(Intent(activity, CatalogSettingsActivity::class.java)) }
-        }
-        content.addView(
-            button,
-            FrameLayout.LayoutParams(dp(activity, 132), dp(activity, 48), Gravity.TOP or Gravity.END).apply {
-                topMargin = dp(activity, 68)
-                marginEnd = dp(activity, 282)
-            },
-        )
-    }
-
-    private fun installDynamicCatalogButton(activity: CatalogSettingsActivity) {
-        val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
-        if (content.findViewWithTag<View>(DYNAMIC_BUTTON_TAG) != null) return
-        val button = Button(activity).apply {
-            tag = DYNAMIC_BUTTON_TAG
-            text = "任意税率・改定"
-            isAllCaps = false
-            textSize = 14f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.rgb(25, 118, 185))
-            elevation = dp(activity, 10).toFloat()
-            setOnClickListener { activity.startActivity(Intent(activity, DynamicCatalogSettingsActivity::class.java)) }
-        }
-        content.addView(
-            button,
-            FrameLayout.LayoutParams(dp(activity, 176), dp(activity, 48), Gravity.TOP or Gravity.END).apply {
-                topMargin = dp(activity, 70)
-                marginEnd = dp(activity, 18)
-            },
-        )
-    }
-
-    private fun installRevisionEditorButton(activity: DynamicCatalogSettingsActivity) {
-        val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
-        if (content.findViewWithTag<View>(REVISION_EDITOR_BUTTON_TAG) != null) return
-        val button = Button(activity).apply {
-            tag = REVISION_EDITOR_BUTTON_TAG
-            text = "改定内容編集"
-            isAllCaps = false
-            textSize = 13f
-            setTextColor(Color.rgb(23, 63, 107))
-            setBackgroundColor(Color.WHITE)
-            elevation = dp(activity, 10).toFloat()
-            setOnClickListener { activity.startActivity(Intent(activity, MenuRevisionEditorActivity::class.java)) }
-        }
-        content.addView(
-            button,
-            FrameLayout.LayoutParams(dp(activity, 154), dp(activity, 48), Gravity.TOP or Gravity.END).apply {
-                topMargin = dp(activity, 70)
-                marginEnd = dp(activity, 196)
-            },
-        )
-    }
-
-    private fun installTaxInvoiceButton(activity: DynamicCatalogSettingsActivity) {
-        val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
-        if (content.findViewWithTag<View>(TAX_INVOICE_BUTTON_TAG) != null) return
-        val button = Button(activity).apply {
-            tag = TAX_INVOICE_BUTTON_TAG
-            text = "税・インボイス"
-            isAllCaps = false
-            textSize = 13f
-            setTextColor(Color.rgb(23, 63, 107))
-            setBackgroundColor(Color.WHITE)
-            elevation = dp(activity, 10).toFloat()
-            setOnClickListener { activity.startActivity(Intent(activity, TaxInvoiceSettingsActivity::class.java)) }
-        }
-        content.addView(
-            button,
-            FrameLayout.LayoutParams(dp(activity, 166), dp(activity, 48), Gravity.TOP or Gravity.END).apply {
-                topMargin = dp(activity, 70)
-                marginEnd = dp(activity, 370)
-            },
-        )
-    }
-
-    private fun installSyncButton(activity: DynamicCatalogSettingsActivity) {
-        val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
-        if (content.findViewWithTag<View>(SYNC_BUTTON_TAG) != null) return
-        val button = Button(activity).apply {
-            tag = SYNC_BUTTON_TAG
-            text = "同期基盤"
-            isAllCaps = false
-            textSize = 13f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.rgb(25, 118, 185))
-            elevation = dp(activity, 10).toFloat()
-            setOnClickListener { activity.startActivity(Intent(activity, SyncSettingsActivity::class.java)) }
-        }
-        content.addView(
-            button,
-            FrameLayout.LayoutParams(dp(activity, 160), dp(activity, 48), Gravity.TOP or Gravity.END).apply {
-                topMargin = dp(activity, 70)
-                marginEnd = dp(activity, 18)
-            },
-        )
     }
 
     private fun guardSettingsActivity(activity: Activity) {
@@ -202,16 +71,6 @@ private class CatalogLifecycleCallbacks : Application.ActivityLifecycleCallbacks
     override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) = Unit
     override fun onActivityDestroyed(activity: Activity) = Unit
 
-    private fun dp(activity: Activity, value: Int): Int =
-        (value * activity.resources.displayMetrics.density).toInt()
-
-    companion object {
-        private const val BUTTON_TAG = "register-catalog-settings"
-        private const val DYNAMIC_BUTTON_TAG = "register-dynamic-catalog-settings"
-        private const val REVISION_EDITOR_BUTTON_TAG = "register-revision-editor"
-        private const val TAX_INVOICE_BUTTON_TAG = "register-tax-invoice-settings"
-        private const val SYNC_BUTTON_TAG = "register-sync-foundation"
-    }
 }
 
 object CatalogRuntimeState {
