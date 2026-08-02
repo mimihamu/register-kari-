@@ -430,7 +430,7 @@ private fun OperatorMasterScreen(
                 Text("担当者ごとに許可する機能を選択します。", color = Color.DarkGray)
                 Spacer(Modifier.height(8.dp))
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    RegisterPermission.entries.forEach { permission ->
+                    RegisterPermissionCompatibilityV026.selectablePermissions.forEach { permission ->
                         Row(
                             Modifier.fillMaxWidth().clickable {
                                 permissions = if (permission in permissions) permissions - permission else permissions + permission

@@ -20,7 +20,9 @@ enum class RegisterPermission(val displayName: String) {
     HOLD_TICKET("保留伝票"),
     VIEW_SALES("売上確認"),
     CASH_MOVEMENT("入出金"),
-    SETTLEMENT("点検・精算"),
+    X_INSPECTION("X点検"),
+    Z_SETTLEMENT("Z精算"),
+    SETTLEMENT("点検・精算（旧互換）"),
     REVERSAL("返品・取消"),
     SETTINGS("各種設定"),
     AUDIT_LOG("監査ログ"),
@@ -73,7 +75,7 @@ object OperatorPermissionPolicy {
             RegisterPermission.VIEW_SALES,
         )
 
-        OperatorRole.MANAGER -> RegisterPermission.entries.toSet()
+        OperatorRole.MANAGER -> RegisterPermissionCompatibilityV026.selectablePermissions.toSet()
     }
 }
 
@@ -231,7 +233,9 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             }
 
             delete("operator_permissions", "operator_id = ?", arrayOf(operatorId.toString()))
-            val effectivePermissions = if (permissions.isEmpty()) OperatorPermissionPolicy.defaults(role) else permissions
+            val effectivePermissions = RegisterPermissionCompatibilityV026.normalizeForSave(
+                if (permissions.isEmpty()) OperatorPermissionPolicy.defaults(role) else permissions,
+            )
             effectivePermissions.forEach { permission ->
                 insertOrThrow(
                     "operator_permissions",
@@ -507,7 +511,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
                 runCatching { RegisterPermission.valueOf(cursor.getString(0)) }.getOrNull()?.let(permissions::add)
             }
         }
-        return permissions
+        return RegisterPermissionCompatibilityV026.expand(permissions)
     }
 
     private fun nextDisplayOrder(): Int = db.rawQuery(

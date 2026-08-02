@@ -624,6 +624,7 @@ class OperationsStore(context: Context) {
         type: SettlementReportType,
         actualCash: Long?,
         operatorName: String,
+        pendingPrintsAcknowledged: Boolean = false,
     ): Long {
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
         val now = System.currentTimeMillis()
@@ -643,6 +644,14 @@ class OperationsStore(context: Context) {
             val summary = summaryForSession(session.toWindow())
             if (type == SettlementReportType.Z_SETTLEMENT && summary.settled) {
                 throw IllegalStateException("この営業セッションは既にZ精算済みです")
+            }
+            if (type == SettlementReportType.Z_SETTLEMENT) {
+                val preflight = ZSettlementPreflightPolicy.evaluate(
+                    heldTickets = summary.heldTickets,
+                    pendingPrints = summary.pendingPrints,
+                    pendingPrintsAcknowledged = pendingPrintsAcknowledged,
+                )
+                check(preflight.mayProceed) { preflight.message ?: "Z精算前の確認に失敗しました" }
             }
             val actual = actualCash ?: summary.expectedCash
             require(actual >= 0) { "現金実査額は0円以上で入力してください" }
@@ -691,6 +700,15 @@ class OperationsStore(context: Context) {
                 operatorName = operatorName,
                 createdAt = now,
             )
+            if (type == SettlementReportType.Z_SETTLEMENT && summary.pendingPrints > 0) {
+                insertAudit(
+                    eventType = "Z_SETTLEMENT_PENDING_PRINTS_ACKNOWLEDGED",
+                    referenceId = id,
+                    detail = "未印刷データ ${summary.pendingPrints}件を確認し、責任者承認でZ精算を継続",
+                    operatorName = operatorName,
+                    createdAt = now,
+                )
+            }
             if (type == SettlementReportType.Z_SETTLEMENT) {
                 insertAudit(
                     eventType = "BUSINESS_CLOSE",

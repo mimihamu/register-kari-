@@ -8,6 +8,8 @@ enum class OperationsAction(
     val managerApprovalRequired: Boolean,
 ) {
     DAILY_SALES(RegisterPermission.VIEW_SALES, false),
+    X_INSPECTION(RegisterPermission.X_INSPECTION, false),
+    Z_SETTLEMENT(RegisterPermission.Z_SETTLEMENT, false),
     SETTLEMENT(RegisterPermission.SETTLEMENT, false),
     CASH_MOVEMENT(RegisterPermission.CASH_MOVEMENT, false),
     REVERSAL(RegisterPermission.REVERSAL, true),
@@ -42,7 +44,7 @@ class SecureOperationsCoordinator(
 
     fun startBusinessDay(businessDate: LocalDate, openingCash: Long): Long =
         executionGuard.runExclusive("BUSINESS_OPEN:$businessDate", "営業開始を処理中です") {
-            val operator = requireOperator(OperationsAction.SETTLEMENT)
+            val operator = requireOperator(OperationsAction.Z_SETTLEMENT)
             store.startBusinessDay(businessDate, openingCash, OperationsActorFormatter.direct(operator))
         }
 
@@ -55,22 +57,27 @@ class SecureOperationsCoordinator(
         type: SettlementReportType,
         actualCash: Long?,
         managerPin: String,
+        pendingPrintsAcknowledged: Boolean = false,
     ): Long {
         val session = store.activeBusinessSession()
             ?: throw IllegalStateException("営業中の営業日がありません")
         val businessDate = session.businessDate
         val persistentKey = OperationsIdempotencyPolicy.settlementKey(type, session.id)
         val executionKey = persistentKey ?: "X_INSPECTION:SESSION:${session.id}"
+        val action = when (type) {
+            SettlementReportType.X_INSPECTION -> OperationsAction.X_INSPECTION
+            SettlementReportType.Z_SETTLEMENT -> OperationsAction.Z_SETTLEMENT
+        }
         var backupActor = "責任者"
         val settlementId = executionGuard.runExclusive(executionKey, "点検・精算を処理中です") {
-            val operator = requireOperator(OperationsAction.SETTLEMENT)
-            val actor = if (OperationsAuthorizationPolicy.requiresManagerApproval(OperationsAction.SETTLEMENT, type)) {
+            val operator = requireOperator(action)
+            val actor = if (OperationsAuthorizationPolicy.requiresManagerApproval(action, type)) {
                 OperationsActorFormatter.approved(operator, requireManagerName(managerPin))
             } else {
                 OperationsActorFormatter.direct(operator)
             }
             backupActor = actor
-            store.recordSettlement(type, actualCash, actor)
+            store.recordSettlement(type, actualCash, actor, pendingPrintsAcknowledged)
         }
 
         if (AutoBackupTriggerPolicy.shouldEnqueue(type, settlementCommitted = true)) {

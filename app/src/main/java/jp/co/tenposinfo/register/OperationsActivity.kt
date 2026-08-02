@@ -28,6 +28,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -123,8 +124,15 @@ private fun OperationsApp(onClose: () -> Unit) {
         }
     }
 
-    fun executeSettlement(type: SettlementReportType, actualCash: Long?, pin: String) {
-        val result = runCatching { secureStore.recordSettlement(type, actualCash, pin) }
+    fun executeSettlement(
+        type: SettlementReportType,
+        actualCash: Long?,
+        pin: String,
+        pendingPrintsAcknowledged: Boolean,
+    ) {
+        val result = runCatching {
+            secureStore.recordSettlement(type, actualCash, pin, pendingPrintsAcknowledged)
+        }
         message = result.fold(
             onSuccess = {
                 if (type == SettlementReportType.Z_SETTLEMENT) {
@@ -151,15 +159,16 @@ private fun OperationsApp(onClose: () -> Unit) {
                 session = store.activeBusinessSession(),
                 summary = if (
                     operator.allows(RegisterPermission.VIEW_SALES) ||
-                    operator.allows(RegisterPermission.SETTLEMENT)
+                    operator.allows(RegisterPermission.X_INSPECTION) ||
+                    operator.allows(RegisterPermission.Z_SETTLEMENT)
                 ) store.dailySummary() else null,
                 operatorName = operator.name,
                 permissions = operator.permissions,
                 message = message,
-                onBusiness = { openScreen(RegisterPermission.SETTLEMENT, OperationsScreen.BUSINESS) },
+                onBusiness = { openScreen(RegisterPermission.Z_SETTLEMENT, OperationsScreen.BUSINESS) },
                 onDailySales = { openScreen(RegisterPermission.VIEW_SALES, OperationsScreen.DAILY_SALES) },
-                onXInspection = { openScreen(RegisterPermission.SETTLEMENT, OperationsScreen.X_INSPECTION) },
-                onZSettlement = { openScreen(RegisterPermission.SETTLEMENT, OperationsScreen.Z_SETTLEMENT) },
+                onXInspection = { openScreen(RegisterPermission.X_INSPECTION, OperationsScreen.X_INSPECTION) },
+                onZSettlement = { openScreen(RegisterPermission.Z_SETTLEMENT, OperationsScreen.Z_SETTLEMENT) },
                 onCashMovement = { openScreen(RegisterPermission.CASH_MOVEMENT, OperationsScreen.CASH_MOVEMENT) },
                 onReversal = { openScreen(RegisterPermission.REVERSAL, OperationsScreen.REVERSAL) },
                 onClose = onClose,
@@ -198,8 +207,13 @@ private fun OperationsApp(onClose: () -> Unit) {
                 history = store.recentSettlements(),
                 operatorName = operator.name,
                 revision = revision,
-                onExecute = { actualCash, pin ->
-                    executeSettlement(SettlementReportType.X_INSPECTION, actualCash, pin)
+                onExecute = { actualCash, pin, pendingPrintsAcknowledged ->
+                    executeSettlement(
+                        SettlementReportType.X_INSPECTION,
+                        actualCash,
+                        pin,
+                        pendingPrintsAcknowledged,
+                    )
                 },
                 message = message,
                 onBack = { screen = OperationsScreen.MENU },
@@ -214,8 +228,13 @@ private fun OperationsApp(onClose: () -> Unit) {
                 history = store.recentSettlements(),
                 operatorName = operator.name,
                 revision = revision,
-                onExecute = { actualCash, pin ->
-                    executeSettlement(SettlementReportType.Z_SETTLEMENT, actualCash, pin)
+                onExecute = { actualCash, pin, pendingPrintsAcknowledged ->
+                    executeSettlement(
+                        SettlementReportType.Z_SETTLEMENT,
+                        actualCash,
+                        pin,
+                        pendingPrintsAcknowledged,
+                    )
                 },
                 message = message,
                 onBack = { screen = OperationsScreen.MENU },
@@ -334,7 +353,7 @@ private fun OperationsMenuScreen(
                     "営業セッションを開始／Z精算で営業終了",
                     Color(0xFFE8EAF6),
                     Modifier.weight(0.82f),
-                    RegisterPermission.SETTLEMENT in permissions,
+                    RegisterPermission.Z_SETTLEMENT in permissions,
                     onBusiness,
                 )
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -351,7 +370,7 @@ private fun OperationsMenuScreen(
                         "SCR-500-X\n営業を継続したまま確認",
                         OpPaleGreen,
                         Modifier.weight(1f),
-                        RegisterPermission.SETTLEMENT in permissions,
+                        RegisterPermission.X_INSPECTION in permissions,
                         onXInspection,
                     )
                     MenuTile(
@@ -359,7 +378,7 @@ private fun OperationsMenuScreen(
                         "SCR-500-Z\n精算して営業終了",
                         Color(0xFFFFE8E8),
                         Modifier.weight(1f),
-                        RegisterPermission.SETTLEMENT in permissions,
+                        RegisterPermission.Z_SETTLEMENT in permissions,
                         onZSettlement,
                     )
                 }
@@ -601,18 +620,28 @@ private fun SettlementScreen(
     history: List<SettlementRecord>,
     operatorName: String,
     revision: Int,
-    onExecute: (Long?, String) -> Unit,
+    onExecute: (Long?, String, Boolean) -> Unit,
     message: String?,
     onBack: () -> Unit,
 ) {
     var actualCash by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
+    var pendingPrintsAcknowledged by remember { mutableStateOf(false) }
     var showZConfirmation by remember { mutableStateOf(false) }
     @Suppress("UNUSED_VARIABLE") val refresh = revision
     val isZSettlement = reportType == SettlementReportType.Z_SETTLEMENT
     val actual = actualCash.toLongOrNull()
     val previewActual = actual ?: summary.expectedCash
     val variance = OperationsMath.variance(previewActual, summary.expectedCash)
+    val zPreflight = if (isZSettlement) {
+        ZSettlementPreflightPolicy.evaluate(
+            heldTickets = summary.heldTickets,
+            pendingPrints = summary.pendingPrints,
+            pendingPrintsAcknowledged = pendingPrintsAcknowledged,
+        )
+    } else {
+        ZSettlementPreflightResult(true, summary.heldTickets, summary.pendingPrints, false, null)
+    }
 
     if (showZConfirmation) {
         AlertDialog(
@@ -623,6 +652,10 @@ private fun SettlementScreen(
                     Text("営業日 ${summary.businessDate} / セッションNo.${summary.businessSessionId}")
                     Text("純売上 ${opYen(summary.netSales)}")
                     Text("現金実査 ${opYen(previewActual)} / 過不足 ${signedYen(variance)}")
+                    Text("未会計伝票 ${summary.heldTickets}件 / 未印刷 ${summary.pendingPrints}件")
+                    if (summary.pendingPrints > 0) {
+                        Text("未印刷データを残したまま精算する責任者確認済み", color = OpDanger, fontWeight = FontWeight.Bold)
+                    }
                     Text("完了後、この営業セッションでは販売できません。", color = OpDanger, fontWeight = FontWeight.Bold)
                 }
             },
@@ -630,9 +663,9 @@ private fun SettlementScreen(
                 Button(
                     onClick = {
                         showZConfirmation = false
-                        onExecute(actual, pin)
+                        onExecute(actual, pin, pendingPrintsAcknowledged)
                     },
-                    enabled = pin.isNotBlank(),
+                    enabled = pin.isNotBlank() && zPreflight.mayProceed,
                     colors = ButtonDefaults.buttonColors(containerColor = OpDanger),
                 ) { Text("Z精算して営業終了") }
             },
@@ -645,7 +678,7 @@ private fun SettlementScreen(
     Column(Modifier.fillMaxSize()) {
         OpHeader(screenCode, title)
         Row(Modifier.weight(1f).padding(18.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            OpPanel(Modifier.width(390.dp).fillMaxHeight()) {
+            OpPanel(Modifier.width(410.dp).fillMaxHeight()) {
                 Text(if (isZSettlement) "Z精算" else "X点検", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = if (isZSettlement) OpDanger else OpNavy)
                 Spacer(Modifier.height(6.dp))
                 Text(
@@ -653,12 +686,12 @@ private fun SettlementScreen(
                     color = if (session == null) OpDanger else OpGreen,
                     fontWeight = FontWeight.Bold,
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(10.dp))
                 OpNumericField("現金実査額（空欄は理論額）", actualCash, { actualCash = it })
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(6.dp))
                 OpAuthenticatedOperator(operatorName)
                 if (isZSettlement) {
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
                     OutlinedTextField(
                         value = pin,
                         onValueChange = { pin = it.filter(Char::isDigit).take(8) },
@@ -667,8 +700,34 @@ private fun SettlementScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    if (summary.heldTickets > 0) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "未会計伝票が${summary.heldTickets}件あります。会計または伝票取消を完了するまでZ精算できません。",
+                            color = OpDanger,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    } else if (summary.pendingPrints > 0) {
+                        Spacer(Modifier.height(6.dp))
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                pendingPrintsAcknowledged = !pendingPrintsAcknowledged
+                            },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = pendingPrintsAcknowledged,
+                                onCheckedChange = { pendingPrintsAcknowledged = it },
+                            )
+                            Text(
+                                "未印刷データ${summary.pendingPrints}件を確認し、未印刷のまま精算する",
+                                color = OpDanger,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
                     if (isZSettlement) {
                         "Z精算は現在の営業セッションに対して1回だけ実行し、完了と同時に営業終了します。同じ営業日で再開する場合は新しい営業セッションになります。"
@@ -680,9 +739,9 @@ private fun SettlementScreen(
                 Spacer(Modifier.weight(1f))
                 Button(
                     onClick = {
-                        if (isZSettlement) showZConfirmation = true else onExecute(actual, "")
+                        if (isZSettlement) showZConfirmation = true else onExecute(actual, "", false)
                     },
-                    enabled = session != null && (!isZSettlement || !summary.settled),
+                    enabled = session != null && (!isZSettlement || (!summary.settled && summary.heldTickets == 0)),
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = if (isZSettlement) OpDanger else OpBlue),
                 ) {
@@ -690,11 +749,17 @@ private fun SettlementScreen(
                 }
                 if (message != null) {
                     Spacer(Modifier.height(8.dp))
-                    Text(message, color = if (message.contains("違い") || message.contains("既に") || message.contains("失敗")) OpDanger else OpGreen)
+                    Text(
+                        message,
+                        color = if (
+                            message.contains("違い") || message.contains("既に") ||
+                            message.contains("失敗") || message.contains("未会計") || message.contains("未印刷")
+                        ) OpDanger else OpGreen,
+                    )
                 }
             }
 
-            OpPanel(Modifier.width(360.dp).fillMaxHeight()) {
+            OpPanel(Modifier.width(350.dp).fillMaxHeight()) {
                 Text("プレビュー", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = OpNavy)
                 Spacer(Modifier.height(10.dp))
                 OpAmountRow("営業セッション", if (summary.businessSessionId > 0) "No.${summary.businessSessionId}" else "未開始")
@@ -707,13 +772,12 @@ private fun SettlementScreen(
                 OpAmountRow("過不足", signedYen(variance), emphasized = true)
                 OpAmountRow("未印刷", "${summary.pendingPrints}件")
                 OpAmountRow("未会計伝票", "${summary.heldTickets}件")
-                if (summary.pendingPrints > 0 || summary.heldTickets > 0) {
+                if (summary.heldTickets > 0) {
                     Spacer(Modifier.height(8.dp))
-                    Text(
-                        if (isZSettlement) "未処理項目があります。Z精算前に確認してください。" else "未処理項目があります。",
-                        color = OpDanger,
-                        fontWeight = FontWeight.Bold,
-                    )
+                    Text("未会計伝票があるためZ精算は禁止されています。", color = OpDanger, fontWeight = FontWeight.Bold)
+                } else if (summary.pendingPrints > 0) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("未印刷データがあります。責任者確認後に限りZ精算できます。", color = OpDanger, fontWeight = FontWeight.Bold)
                 }
             }
 

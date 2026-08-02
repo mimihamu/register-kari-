@@ -101,7 +101,7 @@ class OperatorAuthenticationStore(context: Context) : AutoCloseable {
                 runCatching { RegisterPermission.valueOf(cursor.getString(0)) }.getOrNull()?.let(result::add)
             }
         }
-        return result
+        return RegisterPermissionCompatibilityV026.expand(result)
     }
 
     private fun insertAudit(eventType: String, referenceId: Long, detail: String, operatorName: String) {
