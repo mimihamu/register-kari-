@@ -34,8 +34,8 @@ class V025InspectionSettlementNavigationTest {
 
     @Test
     fun cashMovementDoesNotUseSettlementReportType() {
-        val start = source.indexOf("OperationsScreen.CASH_MOVEMENT")
-        val end = source.indexOf("OperationsScreen.REVERSAL", start)
+        val start = source.indexOf("            OperationsScreen.CASH_MOVEMENT -> CashMovementScreen(")
+        val end = source.indexOf("            OperationsScreen.REVERSAL -> ReversalScreen(", start)
         val segment = source.substring(start, end)
         assertFalse(segment.contains("SettlementReportType"))
         assertTrue(segment.contains("type.displayName"))
