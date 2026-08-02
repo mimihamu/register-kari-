@@ -135,6 +135,7 @@ private fun AdminSettingsApp(onClose: () -> Unit) {
                     onCatalog = { context.startActivity(Intent(context, CatalogSettingsActivity::class.java)) },
                     onCustomerDisplay = { context.startActivity(Intent(context, CustomerDisplaySettingsActivity::class.java)) },
                     onPrinterTools = { context.startActivity(Intent(context, PrinterToolsHubActivity::class.java)) },
+                    onDataProtection = { context.startActivity(Intent(context, DataProtectionActivity::class.java)) },
                     onSecurity = { screen = AdminScreen.SECURITY },
                     onAudit = { screen = AdminScreen.AUDIT },
                     onLock = { unlocked = false },
@@ -192,7 +193,7 @@ private fun AdminUnlockScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(10.dp))
-            Text("初期責任者PIN：0000", color = Color.Gray)
+            Text("登録済みの責任者PINを入力してください", color = Color.Gray)
             if (message != null) {
                 Spacer(Modifier.height(10.dp))
                 Text(message.orEmpty(), color = AsDanger, fontWeight = FontWeight.Bold)
@@ -230,6 +231,7 @@ private fun AdminMenuScreen(
     onCatalog: () -> Unit,
     onCustomerDisplay: () -> Unit,
     onPrinterTools: () -> Unit,
+    onDataProtection: () -> Unit,
     onSecurity: () -> Unit,
     onAudit: () -> Unit,
     onLock: () -> Unit,
@@ -268,7 +270,8 @@ private fun AdminMenuScreen(
                 }
                 Row(Modifier.weight(0.72f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     AsMenuTile("責任者PIN", "責任者PINを安全に更新", AsPaleYellow, Modifier.weight(1f), onSecurity)
-                    Spacer(Modifier.weight(2f))
+                    AsMenuTile("データ保全", "整合性診断、バックアップ、復元", Color(0xFFE8F3EE), Modifier.weight(1f), onDataProtection)
+                    Spacer(Modifier.weight(1f))
                 }
             }
         }
