@@ -41,9 +41,7 @@ jobs:
           gradle-version: "9.5.0"
 
       - name: Apply business session changes
-        run: |
-          git apply --check tools/v018-business-session.patch
-          git apply tools/v018-business-session.patch
+        run: python3 tools/apply_v018.py
 
       - name: Verify business session integration
         run: |
