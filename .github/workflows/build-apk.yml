@@ -19,7 +19,7 @@ jobs:
           ref: develop/v0.24
           fetch-depth: 0
 
-      - name: Format cash movement result block
+      - name: Replace cash movement result block by boundaries
         shell: bash
         run: |
           set -euo pipefail
@@ -28,20 +28,24 @@ jobs:
 
           path = Path('app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt')
           text = path.read_text()
-          old = '''                    message = result.fold(
-              onSuccess = { "${type.displayName}を保存しました（No.$it）" },
-              onFailure = { it.message ?: "保存に失敗しました" },
-          )'''
-          new = '''                    message = result.fold(
+          screen_start = text.index('            OperationsScreen.CASH_MOVEMENT -> CashMovementScreen(')
+          screen_end = text.index('            OperationsScreen.REVERSAL -> ReversalScreen(', screen_start)
+          segment = text[screen_start:screen_end]
+          block_start = segment.index('                    message = result.fold(')
+          block_end = segment.index('                    if (result.isSuccess)', block_start)
+          replacement = '''                    message = result.fold(
                         onSuccess = { "${type.displayName}を保存しました（No.$it）" },
                         onFailure = { it.message ?: "保存に失敗しました" },
-                    )'''
-          count = text.count(old)
-          if count != 1:
-              raise SystemExit(f'format correction count={count}')
-          path.write_text(text.replace(old, new, 1))
+                    )
+'''
+          segment = segment[:block_start] + replacement + segment[block_end:]
+          updated = text[:screen_start] + segment + text[screen_end:]
+          if updated == text:
+              raise SystemExit('cash movement block was not changed')
+          path.write_text(updated)
           PY
           git diff --check
+          sed -n '202,214p' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
 
       - name: Commit formatting correction
         shell: bash
