@@ -88,11 +88,6 @@
             android:screenOrientation="landscape" />
 
         <activity
-            android:name=".AdvancedOperationsActivity"
-            android:exported="false"
-            android:screenOrientation="landscape" />
-
-        <activity
             android:name=".PrinterStatusActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
@@ -143,10 +138,10 @@
             android:exported="false"
             android:screenOrientation="landscape" />
 
-        <activity-alias
+        <activity
             android:name=".OperationsActivity"
             android:exported="false"
-            android:targetActivity=".AdvancedOperationsActivity" />
+            android:screenOrientation="landscape" />
 
         <activity
             android:name=".MainActivity"
