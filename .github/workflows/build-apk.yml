@@ -25,63 +25,61 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           base = Path('app/src/main/java/jp/co/tenposinfo/register')
 
           activity = base / 'OperationsActivity.kt'
           text = activity.read_text()
-          old = '''                    message = result.fold(
-                        onSuccess = {
-                            if (type == SettlementReportType.Z_SETTLEMENT) {
-                                "Z精算を保存し、営業を終了しました（No.$it）"
-                            } else {
-                                "X点検を保存しました（No.$it）"
-                            }
-                        },
-                        onFailure = { it.message ?: "保存に失敗しました" },
-                    )
-                    if (result.isSuccess) revision++
-                    activeOperator = OperatorSessionRegistry.current(appContext)
-                },
-                onBack = { screen = OperationsScreen.MENU },
-            )
-
-            OperationsScreen.REVERSAL -> ReversalScreen('''
-          new = '''                    message = result.fold(
+          start = text.index('            OperationsScreen.CASH_MOVEMENT -> CashMovementScreen(')
+          end = text.index('            OperationsScreen.REVERSAL -> ReversalScreen(', start)
+          segment = text[start:end]
+          pattern = re.compile(
+              r'''                    message = result\.fold\(\n'''
+              r'''                        onSuccess = \{\n'''
+              r'''                            if \(type == SettlementReportType\.Z_SETTLEMENT\) \{\n'''
+              r'''                                "Z精算を保存し、営業を終了しました（No\.\$it）"\n'''
+              r'''                            \} else \{\n'''
+              r'''                                "X点検を保存しました（No\.\$it）"\n'''
+              r'''                            \}\n'''
+              r'''                        \},\n'''
+              r'''                        onFailure = \{ it\.message \?: "保存に失敗しました" \},\n'''
+              r'''                    \)'''
+          )
+          replacement = '''                    message = result.fold(
                         onSuccess = { "${type.displayName}を保存しました（No.$it）" },
                         onFailure = { it.message ?: "保存に失敗しました" },
-                    )
-                    if (result.isSuccess) revision++
-                    activeOperator = OperatorSessionRegistry.current(appContext)
-                },
-                onBack = { screen = OperationsScreen.MENU },
-            )
-
-            OperationsScreen.REVERSAL -> ReversalScreen('''
-          if old in text:
-              text = text.replace(old, new, 1)
-          activity.write_text(text)
+                    )'''
+          segment, count = pattern.subn(replacement, segment)
+          if count != 1:
+              raise SystemExit(f'cash movement correction count={count}')
+          activity.write_text(text[:start] + segment + text[end:])
 
           operations = base / 'OperationsStore.kt'
           text = operations.read_text()
+          count_session = text.count('No.$sessionIdが見つかりません')
+          count_z = text.count('No.$idにより営業終了')
+          if count_session != 1 or count_z != 1:
+              raise SystemExit(f'operations interpolation counts session={count_session}, z={count_z}')
           text = text.replace('No.$sessionIdが見つかりません', 'No.${sessionId}が見つかりません')
           text = text.replace('No.$idにより営業終了', 'No.${id}により営業終了')
           operations.write_text(text)
 
           advanced = base / 'AdvancedOperationsStore.kt'
-          text = advanced.read_text().replace('No.$idにより営業終了', 'No.${id}により営業終了')
-          advanced.write_text(text)
+          text = advanced.read_text()
+          count_advanced = text.count('No.$idにより営業終了')
+          if count_advanced != 1:
+              raise SystemExit(f'advanced interpolation count={count_advanced}')
+          advanced.write_text(text.replace('No.$idにより営業終了', 'No.${id}により営業終了'))
           PY
           git diff --check
+          git diff --exit-code -- . ':!app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt' ':!app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt' ':!app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsStore.kt'
 
-      - name: Commit corrections when needed
+      - name: Commit corrections
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet; then
-            echo 'No source correction required.'
-            exit 0
-          fi
+          test -n "$(git status --short)"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt \
