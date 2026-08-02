@@ -1,0 +1,78 @@
+name: Apply v0.20 canonical operations routing
+
+on:
+  pull_request:
+    branches:
+      - develop/v0.19
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout v0.20
+        uses: actions/checkout@v4
+        with:
+          ref: develop/v0.20
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle 9.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Apply canonical route changes
+        run: python3 tools/apply_v020.py
+
+      - name: Verify routing source
+        run: |
+          grep -q 'versionCode = 50' app/build.gradle.kts
+          grep -q 'versionName = "0.20.0-dev.1"' app/build.gradle.kts
+          grep -q 'android:name=".OperationsActivity"' app/src/main/AndroidManifest.xml
+          ! grep -q '<activity-alias' app/src/main/AndroidManifest.xml
+          ! grep -q 'AdvancedOperationsActivity' app/src/main/AndroidManifest.xml
+          grep -q 'is OperationsActivity -> guardManagementActivity' app/src/main/java/jp/co/tenposinfo/register/RegisterApplication.kt
+          grep -q 'OperationsStore(activity.applicationContext)' app/src/main/java/jp/co/tenposinfo/register/RegisterApplication.kt
+          ! grep -q 'AdvancedOperationsStore.isBusinessOpen' app/src/main/java/jp/co/tenposinfo/register/RegisterApplication.kt
+          grep -q '@Deprecated' app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsActivity.kt
+          test -s app/src/main/java/jp/co/tenposinfo/register/OperationsRoutingPolicy.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V020OperationsRoutingTest.kt
+          test -s docs/V0.20_OPERATIONS_ROUTING.md
+
+      - name: Run unit tests
+        run: gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest
+
+      - name: Build debug APKs
+        run: gradle --no-daemon :app:assembleDebug :customer-display:assembleDebug
+
+      - name: Commit generated source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            app/src/main/java/jp/co/tenposinfo/register/RegisterApplication.kt \
+            app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsActivity.kt \
+            app/src/main/java/jp/co/tenposinfo/register/OperationsRoutingPolicy.kt \
+            app/src/test/java/jp/co/tenposinfo/register/V020OperationsRoutingTest.kt \
+            docs/V0.20_OPERATIONS_ROUTING.md
+          git commit -m "fix: route management to canonical OperationsActivity" || exit 0
+          git push origin HEAD:develop/v0.20
