@@ -2,7 +2,9 @@ package jp.co.tenposinfo.register
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -89,6 +91,39 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
         }
     }
 
+    var pendingExport by remember { mutableStateOf<String?>(null) }
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream"),
+    ) { uri ->
+        val fileName = pendingExport
+        pendingExport = null
+        if (uri != null && fileName != null) {
+            runTask {
+                val actor = OperatorSessionRegistry.current(context.applicationContext)?.name ?: "責任者"
+                val result = withContext(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri, "w")?.use { output ->
+                        manager.exportBackup(fileName, output, actor)
+                    } ?: error("保存先を開けません")
+                }
+                "外部保存完了: ${result.fileName} / ${result.bytesWritten} bytes"
+            }
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runTask {
+                val actor = OperatorSessionRegistry.current(context.applicationContext)?.name ?: "責任者"
+                val imported = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        manager.importBackup(input, actor)
+                    } ?: error("取込ファイルを開けません")
+                }
+                selected = imported.fileName
+                "外部バックアップ取込完了: ${imported.fileName}"
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         backups = withContext(Dispatchers.IO) { manager.listBackups() }
         report = withContext(Dispatchers.IO) { manager.diagnose() }
@@ -142,6 +177,23 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                         }
                         if (pending.staged) Text("復元予約済み: ${pending.backupFileName}\nアプリを完全終了して再起動すると適用します。", color = DpDanger, fontWeight = FontWeight.Bold)
                         pending.lastResult?.let { Text(it, color = Color.DarkGray, fontSize = 13.sp) }
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = {
+                                    val file = selected ?: return@Button
+                                    pendingExport = file
+                                    exportLauncher.launch(file)
+                                },
+                                enabled = !busy && selected != null,
+                                colors = ButtonDefaults.buttonColors(containerColor = DpBlue),
+                            ) { Text("外部へ保存") }
+                            OutlinedButton(
+                                onClick = { importLauncher.launch(arrayOf("application/octet-stream", "application/zip", "application/x-zip-compressed")) },
+                                enabled = !busy && !pending.staged,
+                            ) { Text("外部から取込") }
+                            Text("Google Drive・USB・端末フォルダを選択できます", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.align(Alignment.CenterVertically))
+                        }
                         Spacer(Modifier.height(8.dp))
                         OutlinedTextField(pin, { pin = it.filter(Char::isDigit).take(8) }, label = { Text("復元・取消用 責任者PIN") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth())
                         Spacer(Modifier.height(8.dp))

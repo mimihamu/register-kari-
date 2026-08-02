@@ -10,6 +10,8 @@ import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.InputStream
+import java.io.OutputStream
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -24,6 +26,7 @@ private const val DATABASE_NAME = "register.db"
 private const val MANIFEST_ENTRY = "manifest.properties"
 private const val DATABASE_ENTRY = "register.db"
 private const val MAX_BACKUP_DATABASE_BYTES = 512L * 1024L * 1024L
+private const val MAX_BACKUP_ARCHIVE_BYTES = 600L * 1024L * 1024L
 
 enum class IntegritySeverity {
     INFO,
@@ -130,6 +133,36 @@ object BackupFilePolicy {
     fun requireSafe(fileName: String): String {
         require(fileName.matches(safeName) && !fileName.contains("..")) { "バックアップ名が不正です" }
         return fileName
+    }
+}
+
+data class BackupExportResult(
+    val fileName: String,
+    val bytesWritten: Long,
+    val manifest: BackupManifest,
+)
+
+object BackupImportNamePolicy {
+    fun canonical(manifest: BackupManifest): String = BackupFilePolicy.requireSafe(
+        "TSUGUREGI_import_${manifest.createdAt}_${manifest.databaseSha256.take(16)}.tgbak",
+    )
+}
+
+object BackupTransferPolicy {
+    fun copyWithLimit(input: InputStream, output: OutputStream, maxBytes: Long): Long {
+        require(maxBytes > 0) { "最大サイズが不正です" }
+        val buffer = ByteArray(64 * 1024)
+        var total = 0L
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            if (read == 0) continue
+            total += read
+            require(total <= maxBytes) { "バックアップファイルが上限サイズを超えています" }
+            output.write(buffer, 0, read)
+        }
+        output.flush()
+        return total
     }
 }
 
@@ -244,9 +277,50 @@ class DataProtectionManager(context: Context) {
         }
     }
 
+    fun exportBackup(fileName: String, output: OutputStream, actorName: String): BackupExportResult {
+        val verification = verifyBackup(fileName)
+        val archive = File(backupDir, BackupFilePolicy.requireSafe(fileName))
+        val written = archive.inputStream().buffered().use { input ->
+            BackupTransferPolicy.copyWithLimit(input, output, MAX_BACKUP_ARCHIVE_BYTES)
+        }
+        require(written == archive.length()) { "バックアップの外部出力サイズが一致しません" }
+        recordAudit("DATA_BACKUP_EXPORTED", "${verification.fileName} / $written bytes", actorName)
+        return BackupExportResult(verification.fileName, written, verification.manifest)
+    }
+
+    fun importBackup(input: InputStream, actorName: String): BackupRecord {
+        val temporary = File(appContext.cacheDir, "backup-import-${UUID.randomUUID()}.tmp")
+        try {
+            temporary.outputStream().buffered().use { output ->
+                val copied = BackupTransferPolicy.copyWithLimit(input, output, MAX_BACKUP_ARCHIVE_BYTES)
+                require(copied > 0L) { "取込ファイルが空です" }
+            }
+            val verification = verifyArchive(temporary, "external-import.tgbak")
+            val targetName = BackupImportNamePolicy.canonical(verification.manifest)
+            val target = File(backupDir, targetName)
+            if (target.exists()) {
+                val existing = verifyArchive(target, target.name)
+                require(existing.manifest == verification.manifest) { "同名の異なるバックアップが存在します" }
+                recordAudit("DATA_BACKUP_IMPORTED", "$targetName / 既存バックアップと同一", actorName)
+                return BackupRecord(target.name, target.length(), existing.manifest.createdAt, true, existing.manifest.appVersion, existing.manifest.databaseUserVersion)
+            }
+            atomicReplace(temporary, target)
+            val committed = verifyBackup(target.name)
+            recordAudit("DATA_BACKUP_IMPORTED", "${target.name} / ${committed.manifest.databaseSha256}", actorName)
+            return BackupRecord(target.name, target.length(), committed.manifest.createdAt, true, committed.manifest.appVersion, committed.manifest.databaseUserVersion)
+        } finally {
+            temporary.delete()
+        }
+    }
+
     fun verifyBackup(fileName: String): BackupVerification {
         val archive = File(backupDir, BackupFilePolicy.requireSafe(fileName))
         require(archive.isFile) { "バックアップが見つかりません" }
+        return verifyArchive(archive, archive.name)
+    }
+
+    private fun verifyArchive(archive: File, displayName: String): BackupVerification {
+        require(archive.isFile && archive.length() in 1..MAX_BACKUP_ARCHIVE_BYTES) { "バックアップアーカイブのサイズが不正です" }
         val extractionDir = File(appContext.cacheDir, "verify-${UUID.randomUUID()}").apply { mkdirs() }
         try {
             val manifest = readManifest(archive)
@@ -259,7 +333,7 @@ class DataProtectionManager(context: Context) {
             require(manifest.databaseUserVersion <= currentUserVersion) { "このアプリより新しいDB版のバックアップは復元できません" }
             val report = inspectDatabaseFile(database)
             require(report.healthy) { "バックアップDBの整合性検査に失敗しました" }
-            return BackupVerification(archive.name, manifest, database.length(), report)
+            return BackupVerification(displayName, manifest, database.length(), report)
         } finally {
             extractionDir.deleteRecursively()
         }
