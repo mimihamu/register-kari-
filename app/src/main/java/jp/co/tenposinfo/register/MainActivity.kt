@@ -204,6 +204,7 @@ private fun RegisterApp() {
     var paymentMessage by remember { mutableStateOf<String?>(null) }
     var saleCommitInProgress by remember { mutableStateOf(false) }
     val heldTicketCoordinator = remember { HeldTicketSafetyCoordinator(database) }
+    val paymentDraftStore = remember { PaymentDraftStore(database) }
     val saleCommitGuard = remember { SaleCommitGuard() }
 
     fun replaceCart(items: List<CartItem>) {
@@ -211,6 +212,7 @@ private fun RegisterApp() {
         cart.addAll(items)
         selectedIndex = null
         database.saveCart(cart.toList())
+        paymentDraftStore.clear()
     }
 
     fun updateCartItem(index: Int, item: CartItem) {
@@ -325,8 +327,13 @@ private fun RegisterApp() {
                     }
                 },
                 onPayment = {
-                    paymentState = PaymentState()
-                    paymentMessage = null
+                    val draft = paymentDraftStore.load(cart.toList())
+                    paymentState = draft.state
+                    paymentMessage = if (draft.restored) {
+                        "前回中断した支払入力を復元しました"
+                    } else {
+                        null
+                    }
                     saleCommitInProgress = false
                     saleCommitGuard.resetForNewPayment()
                     CustomerDisplayRuntime.publish(
@@ -445,6 +452,7 @@ private fun RegisterApp() {
                 externalMessage = paymentMessage,
                 onStateChange = {
                     paymentState = it
+                    paymentDraftStore.save(cart.toList(), it)
                     CustomerDisplayRuntime.publish(
                         CustomerDisplaySnapshotFactory.accounting(
                             cart.toList(),
@@ -457,6 +465,7 @@ private fun RegisterApp() {
                     saleCommitGuard.resetForNewPayment()
                     saleCommitInProgress = false
                     paymentMessage = null
+                    paymentDraftStore.clear()
                     CustomerDisplayRuntime.publish(
                         CustomerDisplaySnapshotFactory.sales(
                             cart.toList(),
