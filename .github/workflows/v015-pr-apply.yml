@@ -47,32 +47,12 @@ jobs:
           python tools/apply_v015.py
           python - <<'PY'
           from pathlib import Path
-          import re
 
           tax = Path('app/src/test/java/jp/co/tenposinfo/register/V015TaxInvoicePolicyTest.kt')
           text = tax.read_text(encoding='utf-8')
-          marker = 'fun standardTaxCategoriesAndNonTaxableAreCalculatedAfterDiscount'
-          start = text.index(marker)
-          end = text.find('\n    @Test', start)
-          if end < 0:
-              end = len(text)
-          block = text[start:end]
-          block = re.sub(
-              r'assertEquals\([^,\n]+,\s*result\.grossTotal\)',
-              'assertEquals(4_750L, result.grossTotal)',
-              block,
-          )
-          block = re.sub(
-              r'assertEquals\([^,\n]+,\s*result\.taxTotal\)',
-              'assertEquals(350L, result.taxTotal)',
-              block,
-          )
-          block = re.sub(
-              r'assertEquals\([^,\n]+,\s*result\.netTotal\)',
-              'assertEquals(4_400L, result.netTotal)',
-              block,
-          )
-          text = text[:start] + block + text[end:]
+          text = text.replace('assertEquals(4_568L, summary.grossAmount)', 'assertEquals(4_750L, summary.grossAmount)')
+          text = text.replace('assertEquals(338L, summary.taxAmount)', 'assertEquals(350L, summary.taxAmount)')
+          text = text.replace('assertEquals(4_230L, summary.netAmount)', 'assertEquals(4_400L, summary.netAmount)')
           tax.write_text(text, encoding='utf-8')
 
           profile = Path('app/src/test/java/jp/co/tenposinfo/register/V015SalesProfileSnapshotTest.kt')
@@ -80,8 +60,8 @@ jobs:
           text = text.replace('assertEquals(1_100L, dinnerProduct.unitPrice)', 'assertEquals(1_000L, dinnerProduct.unitPrice)')
           profile.write_text(text, encoding='utf-8')
           PY
-          echo '--- V015TaxInvoicePolicyTest.kt ---'
-          nl -ba app/src/test/java/jp/co/tenposinfo/register/V015TaxInvoicePolicyTest.kt | sed -n '1,90p'
+          echo '--- corrected aggregate expectations ---'
+          sed -n '21,38p' app/src/test/java/jp/co/tenposinfo/register/V015TaxInvoicePolicyTest.kt
           rm -f .github/workflows/v015-pr-apply.yml
 
       - name: Set up JDK 17
