@@ -200,6 +200,11 @@ private fun RegisterApp() {
     var selectedSaleId by remember { mutableStateOf<Long?>(null) }
     var receiptPaper by remember { mutableStateOf(ReceiptPaper.MM80) }
     var queueMessage by remember { mutableStateOf<String?>(null) }
+    var ticketMessage by remember { mutableStateOf<String?>(null) }
+    var paymentMessage by remember { mutableStateOf<String?>(null) }
+    var saleCommitInProgress by remember { mutableStateOf(false) }
+    val heldTicketCoordinator = remember { HeldTicketSafetyCoordinator(database) }
+    val saleCommitGuard = remember { SaleCommitGuard() }
 
     fun replaceCart(items: List<CartItem>) {
         cart.clear()
@@ -312,13 +317,18 @@ private fun RegisterApp() {
                         accessMessage = "保留伝票の権限がありません"
                     } else if (cart.isNotEmpty()) {
                         accessMessage = null
-                        val sequence = database.listHeldTickets().size + 1
-                        database.holdCart("伝票$sequence", operatorName, cart.toList())
+                        val existing = database.listHeldTickets()
+                        val name = HeldTicketSafetyPolicy.defaultName(existing.map { it.name })
+                        database.holdCart(name, operatorName, cart.toList())
                         replaceCart(emptyList())
+                        ticketMessage = "$name として保留しました"
                     }
                 },
                 onPayment = {
                     paymentState = PaymentState()
+                    paymentMessage = null
+                    saleCommitInProgress = false
+                    saleCommitGuard.resetForNewPayment()
                     CustomerDisplayRuntime.publish(
                         CustomerDisplaySnapshotFactory.accounting(
                             cart.toList(),
@@ -396,13 +406,32 @@ private fun RegisterApp() {
 
             AppScreen.TICKETS -> TicketListScreen(
                 tickets = database.listHeldTickets(),
+                currentCartCount = cart.sumOf { it.quantity },
+                message = ticketMessage,
                 onLoad = { ticket ->
-                    replaceCart(database.loadHeldTicket(ticket.id))
-                    database.deleteHeldTicket(ticket.id)
-                    screen = AppScreen.SALES
+                    runCatching {
+                        heldTicketCoordinator.loadSafely(
+                            ticket = ticket,
+                            currentCart = cart.toList(),
+                            operatorName = operatorName,
+                        )
+                    }.onSuccess { result ->
+                        replaceCart(result.loadedItems)
+                        ticketMessage = result.message
+                        screen = AppScreen.SALES
+                    }.onFailure { error ->
+                        ticketMessage = error.message ?: "伝票を呼び出せませんでした"
+                    }
                 },
-                onDelete = {
-                    database.deleteHeldTicket(it.id)
+                onRename = { ticket, newName ->
+                    val renamed = heldTicketCoordinator.rename(ticket.id, newName, ticket.name)
+                    ticketMessage = if (renamed) "伝票名を変更しました" else "伝票名を変更できませんでした"
+                    screen = AppScreen.SALES
+                    screen = AppScreen.TICKETS
+                },
+                onDelete = { ticket ->
+                    database.deleteHeldTicket(ticket.id)
+                    ticketMessage = "${ticket.name}を削除しました"
                     screen = AppScreen.SALES
                     screen = AppScreen.TICKETS
                 },
@@ -412,6 +441,8 @@ private fun RegisterApp() {
             AppScreen.PAYMENT -> PaymentScreen(
                 items = cart,
                 state = paymentState,
+                completing = saleCommitInProgress,
+                externalMessage = paymentMessage,
                 onStateChange = {
                     paymentState = it
                     CustomerDisplayRuntime.publish(
@@ -423,6 +454,9 @@ private fun RegisterApp() {
                     )
                 },
                 onBack = {
+                    saleCommitGuard.resetForNewPayment()
+                    saleCommitInProgress = false
+                    paymentMessage = null
                     CustomerDisplayRuntime.publish(
                         CustomerDisplaySnapshotFactory.sales(
                             cart.toList(),
@@ -431,22 +465,36 @@ private fun RegisterApp() {
                     )
                     screen = AppScreen.SALES
                 },
-                onComplete = {
-                    val saleId = database.saveSale(operatorName, cart.toList(), paymentState, receiptPaper.widthMm)
-                    database.loadSaleDetail(saleId)?.let { detail ->
-                        CustomerDisplayRuntime.publish(
-                            CustomerDisplaySnapshotFactory.complete(
-                                detail,
-                                CustomerDisplaySettingsStore(context.applicationContext).load().storeName,
-                            ),
-                        )
+                onComplete = complete@{
+                    if (!saleCommitGuard.tryBegin()) {
+                        paymentMessage = "会計確定処理中です。完了まで操作しないでください"
+                        return@complete
                     }
-                    AutomaticPrintScheduler.enqueueNow(context.applicationContext)
-                    DriveOutboxScheduler.enqueueNow(context.applicationContext)
-                    lastSaleId = saleId
-                    selectedSaleId = saleId
-                    replaceCart(emptyList())
-                    screen = AppScreen.COMPLETE
+                    saleCommitInProgress = true
+                    paymentMessage = "会計を確定しています"
+                    runCatching {
+                        database.saveSale(operatorName, cart.toList(), paymentState, receiptPaper.widthMm)
+                    }.onSuccess { saleId ->
+                        database.loadSaleDetail(saleId)?.let { detail ->
+                            CustomerDisplayRuntime.publish(
+                                CustomerDisplaySnapshotFactory.complete(
+                                    detail,
+                                    CustomerDisplaySettingsStore(context.applicationContext).load().storeName,
+                                ),
+                            )
+                        }
+                        AutomaticPrintScheduler.enqueueNow(context.applicationContext)
+                        DriveOutboxScheduler.enqueueNow(context.applicationContext)
+                        lastSaleId = saleId
+                        selectedSaleId = saleId
+                        replaceCart(emptyList())
+                        paymentMessage = null
+                        screen = AppScreen.COMPLETE
+                    }.onFailure { error ->
+                        saleCommitGuard.releaseAfterFailure()
+                        saleCommitInProgress = false
+                        paymentMessage = error.message ?: "会計を確定できませんでした"
+                    }
                 },
             )
 
@@ -1020,28 +1068,133 @@ private fun DiscountScreen(
 @Composable
 private fun TicketListScreen(
     tickets: List<HeldTicket>,
+    currentCartCount: Int,
+    message: String?,
     onLoad: (HeldTicket) -> Unit,
+    onRename: (HeldTicket, String) -> Unit,
     onDelete: (HeldTicket) -> Unit,
     onBack: () -> Unit,
 ) {
+    var editingTicketId by remember { mutableStateOf<Long?>(null) }
+    var editingName by remember { mutableStateOf("") }
+    var pendingDeleteId by remember { mutableStateOf<Long?>(null) }
+
     Column(Modifier.fillMaxSize()) {
         Header("SCR-200", "伝票一覧")
-        CardPanel(Modifier.weight(1f).fillMaxWidth().padding(18.dp)) {
+        if (currentCartCount > 0) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = PaleYellow),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    "作業中の$currentCartCount 点は、別伝票を呼び出す前に自動で保留へ退避します。",
+                    modifier = Modifier.padding(12.dp),
+                    color = Navy,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+        if (!message.isNullOrBlank()) {
+            Text(
+                message,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 6.dp),
+                color = if (message.contains("できません")) Danger else Color(0xFF2E7D32),
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        CardPanel(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp)) {
             if (tickets.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("保留伝票はありません", fontSize = 24.sp, color = Color.Gray) }
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("保留伝票はありません", fontSize = 24.sp, color = Color.Gray)
+                }
             } else {
                 LazyColumn {
-                    itemsIndexed(tickets) { _, ticket ->
-                        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(ticket.name, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                                Text("担当 ${ticket.operatorName} / ${ticket.itemCount}点", color = Color.Gray)
+                    itemsIndexed(tickets, key = { _, ticket -> ticket.id }) { _, ticket ->
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 7.dp)
+                                .background(
+                                    if (pendingDeleteId == ticket.id) Color(0xFFFFEBEE) else Color.Transparent,
+                                    RoundedCornerShape(8.dp),
+                                )
+                                .padding(8.dp),
+                        ) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(ticket.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Navy)
+                                    Text(
+                                        "${formatDate(ticket.createdAt)} / 担当 ${ticket.operatorName} / ${ticket.itemCount}点",
+                                        color = Color.Gray,
+                                    )
+                                }
+                                Text(yen(ticket.totalAmount), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.width(10.dp))
+                                OutlinedButton(onClick = {
+                                    editingTicketId = ticket.id
+                                    editingName = ticket.name
+                                    pendingDeleteId = null
+                                }) { Text("名称変更") }
+                                Spacer(Modifier.width(8.dp))
+                                OutlinedButton(onClick = {
+                                    if (pendingDeleteId == ticket.id) {
+                                        pendingDeleteId = null
+                                        onDelete(ticket)
+                                    } else {
+                                        pendingDeleteId = ticket.id
+                                        editingTicketId = null
+                                    }
+                                }) {
+                                    Text(
+                                        if (pendingDeleteId == ticket.id) "削除確定" else "削除",
+                                        color = Danger,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                BlueButton(
+                                    if (currentCartCount > 0) "退避して呼出" else "呼出",
+                                    { onLoad(ticket) },
+                                    Modifier.width(if (currentCartCount > 0) 145.dp else 105.dp),
+                                )
                             }
-                            Text(yen(ticket.totalAmount), fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.width(12.dp))
-                            OutlinedButton(onClick = { onDelete(ticket) }) { Text("削除", color = Danger) }
-                            Spacer(Modifier.width(8.dp))
-                            BlueButton("呼出", { onLoad(ticket) }, Modifier.width(110.dp))
+                            if (pendingDeleteId == ticket.id) {
+                                Text(
+                                    "もう一度［削除確定］を押すと、この伝票を完全に削除します。",
+                                    color = Danger,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(top = 6.dp),
+                                )
+                            }
+                            if (editingTicketId == ticket.id) {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    OutlinedTextField(
+                                        value = editingName,
+                                        onValueChange = {
+                                            editingName = it.take(HeldTicketSafetyPolicy.MAX_NAME_LENGTH)
+                                        },
+                                        label = { Text("伝票名") },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    OutlinedButton(onClick = {
+                                        editingTicketId = null
+                                        editingName = ""
+                                    }) { Text("取消") }
+                                    BlueButton(
+                                        "保存",
+                                        {
+                                            onRename(ticket, editingName)
+                                            editingTicketId = null
+                                        },
+                                        Modifier.width(100.dp),
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -1055,6 +1208,8 @@ private fun TicketListScreen(
 private fun PaymentScreen(
     items: List<CartItem>,
     state: PaymentState,
+    completing: Boolean,
+    externalMessage: String?,
     onStateChange: (PaymentState) -> Unit,
     onBack: () -> Unit,
     onComplete: () -> Unit,
@@ -1062,15 +1217,21 @@ private fun PaymentScreen(
     val summary = TaxEngine.calculate(items)
     val remaining = state.remaining(summary.grossAmount)
     var input by remember { mutableStateOf("") }
+    var operationMessage by remember { mutableStateOf<String?>(null) }
     var acknowledgedMixedTax by remember { mutableStateOf(false) }
     val mixed = TaxEngine.validateMixedTax(items, MixedTaxPolicy.WARN)
 
     fun add(method: PaymentMethod) {
         val amount = input.toLongOrNull()
+        if (completing) return
         runCatching { PaymentEngine.addPayment(state, summary.grossAmount, method, amount) }
             .onSuccess {
                 onStateChange(it)
                 input = ""
+                operationMessage = null
+            }
+            .onFailure { error ->
+                operationMessage = error.message ?: "支払を追加できませんでした"
             }
     }
 
@@ -1122,6 +1283,16 @@ private fun PaymentScreen(
                         }
                     }
                 }
+                val visibleMessage = externalMessage ?: operationMessage
+                if (!visibleMessage.isNullOrBlank()) {
+                    Text(
+                        visibleMessage,
+                        color = if (completing) Color(0xFF2E7D32) else Danger,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                    )
+                }
                 ValueBox(if (input.isBlank()) "残額全額" else input, compact = true)
                 Spacer(Modifier.height(4.dp))
                 NumberPad(
@@ -1136,17 +1307,17 @@ private fun PaymentScreen(
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
                             onClick = { add(PaymentMethod.CARD) },
-                            enabled = remaining > 0,
+                            enabled = remaining > 0 && !completing,
                             modifier = Modifier.weight(1f).height(RegisterLayoutPolicy.COMPACT_FUNCTION_HEIGHT_DP.dp),
                         ) { Text("カード", fontSize = 12.sp) }
                         OutlinedButton(
                             onClick = { add(PaymentMethod.GIFT_CERTIFICATE) },
-                            enabled = remaining > 0,
+                            enabled = remaining > 0 && !completing,
                             modifier = Modifier.weight(1f).height(RegisterLayoutPolicy.COMPACT_FUNCTION_HEIGHT_DP.dp),
                         ) { Text("商品券", fontSize = 12.sp) }
                         OutlinedButton(
                             onClick = { add(PaymentMethod.ACCOUNT_RECEIVABLE) },
-                            enabled = remaining > 0,
+                            enabled = remaining > 0 && !completing,
                             modifier = Modifier.weight(1f).height(RegisterLayoutPolicy.COMPACT_FUNCTION_HEIGHT_DP.dp),
                         ) { Text("掛売", fontSize = 12.sp) }
                     }
@@ -1155,9 +1326,9 @@ private fun PaymentScreen(
         }
         BottomActions(
             onBack = onBack,
-            confirmLabel = "会計確定",
+            confirmLabel = if (completing) "会計確定中…" else "会計確定",
             onConfirm = onComplete,
-            confirmEnabled = remaining == 0L && !mixed.hasMixedTax,
+            confirmEnabled = remaining == 0L && !mixed.hasMixedTax && !completing,
         )
     }
 }
