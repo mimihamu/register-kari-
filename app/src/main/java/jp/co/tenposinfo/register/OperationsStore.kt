@@ -257,22 +257,34 @@ class OperationsStore(context: Context) {
     ): Long {
         require(reason.isNotBlank()) { "理由を入力してください" }
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
-        require(!isSaleReversed(originalSaleId)) { "この売上は既に返品または取消済みです" }
-
-        val sale = db.query(
-            "sales",
-            arrayOf("total_amount", "payment_method"),
-            "id = ?",
-            arrayOf(originalSaleId.toString()),
-            null,
-            null,
-            null,
-        ).use { cursor ->
-            if (!cursor.moveToFirst()) null else cursor.getLong(0) to cursor.getString(1)
-        } ?: throw IllegalArgumentException("元売上が見つかりません")
-
         val now = System.currentTimeMillis()
+        val operationKey = OperationsIdempotencyPolicy.reversalKey(originalSaleId)
+
         return db.transaction {
+            claimOperationKey(
+                operationKey = operationKey,
+                operationType = type.name,
+                duplicateMessage = "この売上は既に返品または取消済みです",
+                createdAt = now,
+            )
+            val alreadyReversed = rawQuery(
+                "SELECT COUNT(*) FROM reversal_transactions WHERE original_sale_id = ?",
+                arrayOf(originalSaleId.toString()),
+            ).use { cursor -> cursor.moveToFirst() && cursor.getLong(0) > 0 }
+            check(!alreadyReversed) { "この売上は既に返品または取消済みです" }
+
+            val sale = query(
+                "sales",
+                arrayOf("total_amount", "payment_method"),
+                "id = ?",
+                arrayOf(originalSaleId.toString()),
+                null,
+                null,
+                null,
+            ).use { cursor ->
+                if (!cursor.moveToFirst()) null else cursor.getLong(0) to cursor.getString(1)
+            } ?: throw IllegalArgumentException("元売上が見つかりません")
+
             val reversalId = insertOrThrow(
                 "reversal_transactions",
                 null,
@@ -329,6 +341,7 @@ class OperationsStore(context: Context) {
                 operatorName = operatorName,
                 createdAt = now,
             )
+            bindOperationKey(operationKey, reversalId)
             reversalId
         }
     }
@@ -388,16 +401,26 @@ class OperationsStore(context: Context) {
         date: LocalDate = LocalDate.now(),
     ): Long {
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
-        val summary = dailySummary(date)
-        if (type == SettlementReportType.Z_SETTLEMENT && summary.settled) {
-            throw IllegalStateException("この営業日は既にZ精算済みです")
-        }
-        val actual = actualCash ?: summary.expectedCash
-        require(actual >= 0) { "現金実査額は0円以上で入力してください" }
-        val variance = OperationsMath.variance(actual, summary.expectedCash)
         val now = System.currentTimeMillis()
+        val operationKey = OperationsIdempotencyPolicy.settlementKey(type, date)
 
         return db.transaction {
+            if (operationKey != null) {
+                claimOperationKey(
+                    operationKey = operationKey,
+                    operationType = type.name,
+                    duplicateMessage = "この営業日は既にZ精算済みです",
+                    createdAt = now,
+                )
+            }
+            val summary = dailySummary(date)
+            if (type == SettlementReportType.Z_SETTLEMENT && summary.settled) {
+                throw IllegalStateException("この営業日は既にZ精算済みです")
+            }
+            val actual = actualCash ?: summary.expectedCash
+            require(actual >= 0) { "現金実査額は0円以上で入力してください" }
+            val variance = OperationsMath.variance(actual, summary.expectedCash)
+
             val id = insertOrThrow(
                 "settlement_reports",
                 null,
@@ -425,6 +448,7 @@ class OperationsStore(context: Context) {
                 operatorName = operatorName,
                 createdAt = now,
             )
+            if (operationKey != null) bindOperationKey(operationKey, id)
             id
         }
     }
@@ -482,6 +506,36 @@ class OperationsStore(context: Context) {
 
     private fun longQuery(sql: String, args: Array<String> = emptyArray()): Long =
         db.rawQuery(sql, args).use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else 0L }
+
+    private fun SQLiteDatabase.claimOperationKey(
+        operationKey: String,
+        operationType: String,
+        duplicateMessage: String,
+        createdAt: Long,
+    ) {
+        val inserted = insertWithOnConflict(
+            "operation_commit_keys",
+            null,
+            ContentValues().apply {
+                put("operation_key", operationKey)
+                put("operation_type", operationType)
+                put("reference_id", 0L)
+                put("created_at", createdAt)
+            },
+            SQLiteDatabase.CONFLICT_IGNORE,
+        )
+        if (inserted == -1L) throw IllegalStateException(duplicateMessage)
+    }
+
+    private fun SQLiteDatabase.bindOperationKey(operationKey: String, referenceId: Long) {
+        val updated = update(
+            "operation_commit_keys",
+            ContentValues().apply { put("reference_id", referenceId) },
+            "operation_key = ?",
+            arrayOf(operationKey),
+        )
+        check(updated == 1) { "操作キーの確定に失敗しました" }
+    }
 
     private fun SQLiteDatabase.insertAudit(
         eventType: String,
@@ -558,6 +612,16 @@ class OperationsStore(context: Context) {
                 pending_prints INTEGER NOT NULL,
                 held_tickets INTEGER NOT NULL,
                 operator_name TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS operation_commit_keys (
+                operation_key TEXT PRIMARY KEY,
+                operation_type TEXT NOT NULL,
+                reference_id INTEGER NOT NULL,
                 created_at INTEGER NOT NULL
             )
             """.trimIndent(),
