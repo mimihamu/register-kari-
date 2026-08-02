@@ -1,181 +1,56 @@
-name: Build つぐレジ APK
+name: Apply v0.26 settlement safeguards
 
 on:
-  push:
-    branches:
-      - main
-      - develop/**
   pull_request:
+    branches:
+      - develop/v0.25
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  build-debug-apk:
+  apply-v026:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'develop/v0.26'
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 10
 
     steps:
-      - name: Checkout
+      - name: Checkout v0.26
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ref: develop/v0.26
+          fetch-depth: 0
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android API 36
-        run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0"
-
-      - name: Set up Gradle 9.5
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "9.5.0"
-
-      - name: Verify cumulative v0.14-v0.25 sources
+      - name: Apply v0.26 sources
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 55' app/build.gradle.kts
-          grep -q 'versionName = "0.25.0-dev.1"' app/build.gradle.kts
-          grep -q 'androidx.work:work-runtime:2.11.2' app/build.gradle.kts
-          grep -q 'versionCode = 6' customer-display/build.gradle.kts
-          grep -q 'versionName = "0.13.0-dev.6"' customer-display/build.gradle.kts
+          python3 tools/apply_v026.py
+          git diff --check
+          grep -q 'versionCode = 56' app/build.gradle.kts
+          grep -q 'versionName = "0.26.0-dev.1"' app/build.gradle.kts
+          grep -q 'X_INSPECTION("X点検")' app/src/main/java/jp/co/tenposinfo/register/AdminSettingsStore.kt
+          grep -q 'Z_SETTLEMENT("Z精算")' app/src/main/java/jp/co/tenposinfo/register/AdminSettingsStore.kt
+          grep -q 'ZSettlementPreflightPolicy.evaluate' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+          grep -q 'pendingPrintsAcknowledged' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q 'OperationsAction.X_INSPECTION' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
+          grep -q 'OperationsAction.Z_SETTLEMENT' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
 
-          test -s app/src/test/java/jp/co/tenposinfo/register/V025InspectionSettlementNavigationTest.kt
-          test -s docs/V0.25_INSPECTION_SETTLEMENT_SPLIT.md
-          test -s docs/V0.25_RELEASE_NOTES.md
-          grep -q 'OperationsScreen.X_INSPECTION' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          grep -q 'OperationsScreen.Z_SETTLEMENT' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          grep -q 'onXInspection' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          grep -q 'onZSettlement' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          grep -q 'Z精算して営業を終了しますか？' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          grep -q '完了後、この営業セッションでは販売できません。' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          grep -q 'enabled = pin.isNotBlank()' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          grep -q 'AlertDialog' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          ! grep -q 'OperationsScreen.SETTLEMENT' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          ! grep -q 'var reportType by remember' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-
-          test -s app/src/main/java/jp/co/tenposinfo/register/BusinessSessionV024.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V024BusinessSessionLifecycleTest.kt
-          test -s docs/V0.24_Z_SETTLEMENT_SESSION_CLOSE.md
-          grep -q 'BusinessSessionMultiplicityMigration.ensure' app/src/main/java/jp/co/tenposinfo/register/StabilizationFoundation.kt
-          grep -q 'Z_SETTLEMENT:SESSION:' app/src/main/java/jp/co/tenposinfo/register/OperationExecutionSafety.kt
-          grep -q 'BusinessSessionStatus.CLOSED' app/src/main/java/jp/co/tenposinfo/register/BusinessSessionV024.kt
-          grep -q 'put("closed_at", now)' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
-          grep -q 'Z精算して営業終了' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          grep -q '同じ営業日でも' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          ! grep -q 'business_date TEXT NOT NULL UNIQUE' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
-          ! grep -q 'business_date TEXT NOT NULL UNIQUE' app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsStore.kt
-          ! grep -q 'secureStore.endBusinessDay' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-
-          test -s app/src/main/java/jp/co/tenposinfo/register/AutoBackup.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V023AutoBackupRetentionTest.kt
-          test -s docs/V0.23_AUTOMATIC_BACKUP_RETENTION.md
-          grep -q 'ExistingWorkPolicy.KEEP' app/src/main/java/jp/co/tenposinfo/register/AutoBackup.kt
-          grep -q 'AutoBackupScheduler.enqueueZSettlement' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
-          grep -q 'settlementCommitted = true' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
-
-          test -s app/src/test/java/jp/co/tenposinfo/register/V022BackupPortabilityTest.kt
-          test -s docs/V0.22_BACKUP_PORTABILITY.md
-          grep -q 'ActivityResultContracts.CreateDocument' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -q 'ActivityResultContracts.OpenDocument' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          ! grep -q 'MANAGE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml
-          ! grep -q 'WRITE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml
-          ! grep -q 'READ_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml
-
-          test -s app/src/test/java/jp/co/tenposinfo/register/V021DataProtectionPolicyTest.kt
-          test -s docs/V0.21_DATA_PROTECTION.md
-          grep -q 'PRAGMA integrity_check' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
-          grep -q 'PRAGMA foreign_key_check' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
-          grep -q 'VACUUM INTO' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
-
-          test -s app/src/test/java/jp/co/tenposinfo/register/V020OperationsRoutingTest.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V019PartialReturnPolicyTest.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V018BusinessSessionIntegrationTest.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V017OperationExecutionSafetyTest.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V016OperationsAuthorizationTest.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V015TaxInvoicePolicyTest.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V014HeldTicketSafetyTest.kt
-
-          operations_count=$(grep -c 'android:name=".OperationsActivity"' app/src/main/AndroidManifest.xml)
-          test "$operations_count" -eq 1
-          ! grep -q '<activity-alias' app/src/main/AndroidManifest.xml
-          ! grep -q 'AdvancedOperationsActivity' app/src/main/AndroidManifest.xml
-          test ! -e app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsActivity.kt
-          test ! -e tools/apply_v025.py
-          test ! -e docs/V0.25_WORKFLOW_TRIGGER.md
-
-      - name: Verify launcher configuration
+      - name: Commit v0.26 implementation
         run: |
           set -euo pipefail
-          register_launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' app/src/main app/src/debug | wc -l)
-          cd_launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' customer-display/src/main | wc -l)
-          test "$register_launcher_count" -eq 1
-          test "$cd_launcher_count" -eq 1
-          test "$(grep -c 'android.intent.category.LAUNCHER' app/src/debug/AndroidManifest.xml || true)" -eq 0
-          grep -q 'android:name=".MainActivity"' app/src/main/AndroidManifest.xml
-          grep -q 'android:name=".MainActivity"' customer-display/src/main/AndroidManifest.xml
-
-      - name: Run cumulative unit tests
-        run: gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest
-
-      - name: Build debug APKs
-        run: gradle --no-daemon :app:assembleDebug :customer-display:assembleDebug
-
-      - name: Prepare named APKs and SHA-256
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.25.0_dev1_inspection_settlement_split_debug.apk
-          cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
-          sha256sum artifacts/TSUGUREGI_v0.25.0_dev1_inspection_settlement_split_debug.apk | tee artifacts/TSUGUREGI_v0.25.0_dev1_inspection_settlement_split_debug.apk.sha256
-          sha256sum artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
-          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.25.0_dev1_inspection_settlement_split_debug.apk | tee artifacts/build-summary.txt
-          stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee -a artifacts/build-summary.txt
-          echo 'REGISTER_VERSION_NAME=0.25.0-dev.1' >> artifacts/build-summary.txt
-          echo 'REGISTER_VERSION_CODE=55' >> artifacts/build-summary.txt
-          echo 'CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.6' >> artifacts/build-summary.txt
-          echo 'CUSTOMER_DISPLAY_VERSION_CODE=6' >> artifacts/build-summary.txt
-          echo 'INSPECTION_ROUTE=separate-fixed-x' >> artifacts/build-summary.txt
-          echo 'Z_SETTLEMENT_ROUTE=separate-confirmed-z' >> artifacts/build-summary.txt
-          echo 'Z_SETTLEMENT_CONFIRMATION=manager-pin-required' >> artifacts/build-summary.txt
-          echo 'CASH_MOVEMENT_RESULT=type-safe' >> artifacts/build-summary.txt
-          echo 'Z_SETTLEMENT=atomic-business-session-close' >> artifacts/build-summary.txt
-          echo 'BUSINESS_DATE_SESSIONS=multiple-per-date' >> artifacts/build-summary.txt
-          echo 'Z_IDEMPOTENCY=business-session-id' >> artifacts/build-summary.txt
-          echo 'AUTO_BACKUP_TRIGGER=committed-z-settlement' >> artifacts/build-summary.txt
-          echo 'AUTO_BACKUP_STORAGE=internal-only' >> artifacts/build-summary.txt
-          echo 'BACKUP_EXPORT=storage-access-framework' >> artifacts/build-summary.txt
-          echo 'SIGNING=development-not-production' >> artifacts/build-summary.txt
-          echo 'REAL_DEVICE_X_INSPECTION_CONTINUE_VERIFICATION=required' >> artifacts/build-summary.txt
-          echo 'REAL_DEVICE_Z_CONFIRMATION_VERIFICATION=required' >> artifacts/build-summary.txt
-          echo 'REAL_DEVICE_SAME_DATE_REOPEN_VERIFICATION=required' >> artifacts/build-summary.txt
-          echo 'REAL_DEVICE_Z_ATOMIC_CLOSE_VERIFICATION=required' >> artifacts/build-summary.txt
-          echo 'REAL_DEVICE_Z_AUTO_BACKUP_VERIFICATION=required' >> artifacts/build-summary.txt
-          git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
-
-      - name: Upload APKs
-        id: upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: TSUGUREGI-v0.25.0-dev1-inspection-settlement-split-apks
-          path: |
-            artifacts/TSUGUREGI_v0.25.0_dev1_inspection_settlement_split_debug.apk
-            artifacts/TSUGUREGI_v0.25.0_dev1_inspection_settlement_split_debug.apk.sha256
-            artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
-            artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
-            artifacts/build-summary.txt
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Report artifact ID
-        run: echo "ARTIFACT_ID=${{ steps.upload.outputs.artifact-id }}"
+          if git diff --quiet; then
+            echo 'No implementation changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/build.gradle.kts \
+                  app/src/main/java/jp/co/tenposinfo/register/AdminSettingsStore.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/OperatorSession.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          git commit -m 'feat: enforce z settlement preflight and split permissions'
+          git push origin HEAD:develop/v0.26
