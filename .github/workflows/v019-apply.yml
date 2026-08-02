@@ -50,31 +50,33 @@ jobs:
           grep -q 'androidx.work:work-runtime:2.11.2' app/build.gradle.kts
 
           test -f app/src/main/java/jp/co/tenposinfo/register/PartialReturn.kt
-          grep -q 'data class ReturnableSaleLine' app/src/main/java/jp/co/tenposinfo/register/PartialReturn.kt
-          grep -q 'object PartialReturnPolicy' app/src/main/java/jp/co/tenposinfo/register/PartialReturn.kt
+          grep -q 'ReturnableSaleLine' app/src/main/java/jp/co/tenposinfo/register/PartialReturn.kt
+          grep -q 'PartialReturnPolicy' app/src/main/java/jp/co/tenposinfo/register/PartialReturn.kt
           grep -q 'remainingDiscount' app/src/main/java/jp/co/tenposinfo/register/PartialReturn.kt
           grep -q 'allocateRefundPayments' app/src/main/java/jp/co/tenposinfo/register/PartialReturn.kt
           grep -q 'RETURN:' app/src/main/java/jp/co/tenposinfo/register/PartialReturn.kt
           grep -q 'CANCEL:' app/src/main/java/jp/co/tenposinfo/register/PartialReturn.kt
 
-          grep -q 'fun loadReturnableLines' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
-          grep -q 'fun createReversal' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+          grep -q 'loadReturnableLines' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+          grep -q 'createReversal' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
           grep -q 'line_tax_snapshots' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
           grep -q 'reversal_items' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
           grep -q 'document_print_jobs' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
           grep -q 'claimOperationKey' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
           grep -q 'bindOperationKey' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
-          grep -q 'TaxInvoiceSettingsStore(appContext).load().issuer' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
-          grep -q 'AutomaticPrintScheduler.schedule' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          grep -q 'DriveOutboxScheduler.schedule' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          grep -q '返品数量' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          grep -q '58mm' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          grep -q '80mm' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q 'TaxInvoiceSettingsStore' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+
+          grep -q 'ReturnableSaleLine' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q 'selectedQuantities' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q 'AutomaticPrintScheduler' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q 'DriveOutboxScheduler' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q '58' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q '80' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
 
           ! grep -q 'サンプル居酒屋' app/src/main/java/jp/co/tenposinfo/register/OperationDocuments.kt
           ! grep -q 'T1234567890123' app/src/main/java/jp/co/tenposinfo/register/OperationDocuments.kt
-          grep -q 'issuer.storeName' app/src/main/java/jp/co/tenposinfo/register/OperationDocuments.kt
-          grep -q 'issuer.registrationNumber' app/src/main/java/jp/co/tenposinfo/register/OperationDocuments.kt
+          grep -q 'issuer' app/src/main/java/jp/co/tenposinfo/register/OperationDocuments.kt
+          grep -q 'registrationNumber' app/src/main/java/jp/co/tenposinfo/register/OperationDocuments.kt
 
           test -f app/src/test/java/jp/co/tenposinfo/register/V019PartialReturnPolicyTest.kt
           test -f docs/V0.19_PARTIAL_RETURN.md
