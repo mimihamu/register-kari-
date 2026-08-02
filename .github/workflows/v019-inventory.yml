@@ -1,0 +1,52 @@
+name: Inspect v0.19 partial return
+
+on:
+  pull_request:
+    branches:
+      - develop/v0.18
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout v0.19
+        uses: actions/checkout@v4
+        with:
+          ref: develop/v0.19
+
+      - name: Build inventory
+        run: |
+          mkdir -p inventory
+          cp app/build.gradle.kts inventory/
+          for file in \
+            OperationsStore.kt \
+            OperationsActivity.kt \
+            SecureOperationsCoordinator.kt \
+            OperationExecutionSafety.kt \
+            AdvancedOperationsStore.kt \
+            AdvancedOperationsActivity.kt \
+            OperationDocuments.kt \
+            TaxInvoiceSettings.kt \
+            Domain.kt \
+            Receipt.kt \
+            StabilizationFoundation.kt \
+            RegisterDatabase.kt \
+            UnifiedPrintQueueActivity.kt \
+            DocumentPrintSafety.kt \
+            PrintQueueRecovery.kt; do
+            cp "app/src/main/java/jp/co/tenposinfo/register/$file" "inventory/$file"
+          done
+          grep -R -n "reversal_items\|createFullReversal\|createReversal\|loadReturnableLines\|document_print_jobs\|renderReversal" app/src/main/java app/src/test/java docs > inventory/usage.txt || true
+          find app/src/test/java/jp/co/tenposinfo/register -type f -maxdepth 1 -print -exec cp {} inventory/ \;
+
+      - name: Upload inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: v019-partial-return-inventory
+          path: inventory
+          if-no-files-found: error
+          retention-days: 7
