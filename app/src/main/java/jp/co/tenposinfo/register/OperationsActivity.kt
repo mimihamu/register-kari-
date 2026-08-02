@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
+import java.time.LocalDate
 import java.util.Date
 import java.util.Locale
 
@@ -75,6 +76,7 @@ class OperationsActivity : ComponentActivity() {
 
 private enum class OperationsScreen {
     MENU,
+    BUSINESS,
     DAILY_SALES,
     SETTLEMENT,
     CASH_MOVEMENT,
@@ -127,6 +129,7 @@ private fun OperationsApp(onClose: () -> Unit) {
 
         when (screen) {
             OperationsScreen.MENU -> OperationsMenuScreen(
+                session = store.activeBusinessSession(),
                 summary = if (
                     operator.allows(RegisterPermission.VIEW_SALES) ||
                     operator.allows(RegisterPermission.SETTLEMENT)
@@ -134,11 +137,40 @@ private fun OperationsApp(onClose: () -> Unit) {
                 operatorName = operator.name,
                 permissions = operator.permissions,
                 message = message,
+                onBusiness = { openScreen(RegisterPermission.SETTLEMENT, OperationsScreen.BUSINESS) },
                 onDailySales = { openScreen(RegisterPermission.VIEW_SALES, OperationsScreen.DAILY_SALES) },
                 onSettlement = { openScreen(RegisterPermission.SETTLEMENT, OperationsScreen.SETTLEMENT) },
                 onCashMovement = { openScreen(RegisterPermission.CASH_MOVEMENT, OperationsScreen.CASH_MOVEMENT) },
                 onReversal = { openScreen(RegisterPermission.REVERSAL, OperationsScreen.REVERSAL) },
                 onClose = onClose,
+            )
+
+            OperationsScreen.BUSINESS -> BusinessDayScreen(
+                session = store.activeBusinessSession(),
+                history = store.recentBusinessSessions(),
+                summary = store.dailySummary(),
+                operatorName = operator.name,
+                revision = revision,
+                message = message,
+                onStart = { date, openingCash ->
+                    val result = runCatching { secureStore.startBusinessDay(date, openingCash) }
+                    message = result.fold(
+                        onSuccess = { "営業を開始しました（No.$it）" },
+                        onFailure = { it.message ?: "営業開始に失敗しました" },
+                    )
+                    if (result.isSuccess) revision++
+                    activeOperator = OperatorSessionRegistry.current(appContext)
+                },
+                onCloseDay = { actualCash, pin ->
+                    val result = runCatching { secureStore.endBusinessDay(actualCash, pin) }
+                    message = result.fold(
+                        onSuccess = { "営業を終了しました（No.$it）" },
+                        onFailure = { it.message ?: "営業終了に失敗しました" },
+                    )
+                    if (result.isSuccess) revision++
+                    activeOperator = OperatorSessionRegistry.current(appContext)
+                },
+                onBack = { screen = OperationsScreen.MENU },
             )
 
             OperationsScreen.DAILY_SALES -> DailySalesScreen(
@@ -205,10 +237,12 @@ private fun OperationsApp(onClose: () -> Unit) {
 
 @Composable
 private fun OperationsMenuScreen(
+    session: BusinessSessionRecord?,
     summary: DailyOperationsSummary?,
     operatorName: String,
     permissions: Set<RegisterPermission>,
     message: String?,
+    onBusiness: () -> Unit,
     onDailySales: () -> Unit,
     onSettlement: () -> Unit,
     onCashMovement: () -> Unit,
@@ -222,7 +256,7 @@ private fun OperationsMenuScreen(
             horizontalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             OpPanel(Modifier.width(390.dp).fillMaxHeight()) {
-                Text("本日の状態", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = OpNavy)
+                Text("営業日の状態", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = OpNavy)
                 Spacer(Modifier.height(8.dp))
                 OpAuthenticatedOperator(operatorName)
                 Spacer(Modifier.height(8.dp))
@@ -232,6 +266,8 @@ private fun OperationsMenuScreen(
                     }
                 } else {
                     OpAmountRow("営業日", summary.businessDate)
+                    OpAmountRow("営業状態", session?.status?.displayName ?: "営業開始前")
+                    OpAmountRow("開始釣銭", opYen(summary.openingCash))
                     OpAmountRow("純売上", opYen(summary.netSales), emphasized = true)
                     OpAmountRow("取引件数", "${summary.transactionCount}件")
                     OpAmountRow("返品・取消", "${summary.reversalCount}件 / -${opYen(summary.reversalGross)}")
@@ -249,7 +285,15 @@ private fun OperationsMenuScreen(
                 }
             }
 
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                MenuTile(
+                    "営業開始・終了",
+                    "営業日と開始釣銭を登録／Z精算後に営業終了",
+                    Color(0xFFE8EAF6),
+                    Modifier.weight(0.82f),
+                    RegisterPermission.SETTLEMENT in permissions,
+                    onBusiness,
+                )
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     MenuTile(
                         "当日売上",
@@ -325,6 +369,138 @@ private fun MenuTile(
 }
 
 @Composable
+private fun BusinessDayScreen(
+    session: BusinessSessionRecord?,
+    history: List<BusinessSessionRecord>,
+    summary: DailyOperationsSummary,
+    operatorName: String,
+    revision: Int,
+    message: String?,
+    onStart: (LocalDate, Long) -> Unit,
+    onCloseDay: (Long, String) -> Unit,
+    onBack: () -> Unit,
+) {
+    var businessDate by remember { mutableStateOf(session?.businessDate ?: LocalDate.now().toString()) }
+    var openingCash by remember { mutableStateOf("") }
+    var actualCash by remember { mutableStateOf("") }
+    var pin by remember { mutableStateOf("") }
+    var validationMessage by remember { mutableStateOf<String?>(null) }
+    @Suppress("UNUSED_VARIABLE") val refresh = revision
+
+    Column(Modifier.fillMaxSize()) {
+        OpHeader("SCR-490", "営業開始・終了")
+        Row(Modifier.weight(1f).padding(18.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            OpPanel(Modifier.width(440.dp).fillMaxHeight()) {
+                Text("現在の営業日", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = OpNavy)
+                Spacer(Modifier.height(10.dp))
+                if (session == null) {
+                    Text("営業開始前です", color = OpDanger, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = businessDate,
+                        onValueChange = { businessDate = it.take(10); validationMessage = null },
+                        label = { Text("営業日（YYYY-MM-DD）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OpNumericField("開始釣銭", openingCash, { openingCash = it })
+                    Spacer(Modifier.height(8.dp))
+                    OpAuthenticatedOperator(operatorName)
+                    Spacer(Modifier.weight(1f))
+                    Button(
+                        onClick = {
+                            val date = runCatching { LocalDate.parse(businessDate) }.getOrNull()
+                            if (date == null) {
+                                validationMessage = "営業日はYYYY-MM-DD形式で入力してください"
+                            } else {
+                                validationMessage = null
+                                onStart(date, openingCash.toLongOrNull() ?: 0L)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = OpBlue),
+                    ) { Text("営業を開始", fontWeight = FontWeight.Bold) }
+                } else {
+                    OpAmountRow("営業日", session.businessDate)
+                    OpAmountRow("状態", session.status.displayName)
+                    OpAmountRow("開始釣銭", opYen(session.openingCash))
+                    OpAmountRow("開始時刻", opDateTime(session.openedAt))
+                    OpAmountRow("開始担当", session.openedBy)
+                    Spacer(Modifier.height(12.dp))
+                    if (session.status == BusinessSessionStatus.OPEN) {
+                        Text("営業中です。営業終了には先にZ精算を実行してください。", color = OpGreen, fontWeight = FontWeight.Bold)
+                    } else {
+                        Text("Z精算済みです。現金実査額を確認して営業終了してください。", color = OpDanger, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(10.dp))
+                        OpNumericField("営業終了時の現金実査額", actualCash, { actualCash = it })
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = pin,
+                            onValueChange = { pin = it.filter(Char::isDigit).take(8) },
+                            label = { Text("責任者PIN") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OpAuthenticatedOperator(operatorName)
+                        Spacer(Modifier.weight(1f))
+                        Button(
+                            onClick = { onCloseDay(actualCash.toLongOrNull() ?: summary.expectedCash, pin) },
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = OpDanger),
+                        ) { Text("営業を終了", fontWeight = FontWeight.Bold) }
+                    }
+                }
+                val shownMessage = validationMessage ?: message
+                if (shownMessage != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(shownMessage, color = if (shownMessage.contains("しました")) OpGreen else OpDanger)
+                }
+            }
+
+            OpPanel(Modifier.width(360.dp).fillMaxHeight()) {
+                Text("営業日集計", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = OpNavy)
+                Spacer(Modifier.height(10.dp))
+                OpAmountRow("営業日", summary.businessDate)
+                OpAmountRow("開始釣銭", opYen(summary.openingCash))
+                OpAmountRow("純売上", opYen(summary.netSales), emphasized = true)
+                OpAmountRow("入金", opYen(summary.cashIn))
+                OpAmountRow("出金", "-${opYen(summary.cashOut)}")
+                OpAmountRow("現金理論残高", opYen(summary.expectedCash), emphasized = true)
+                OpAmountRow("Z精算", if (summary.settled) "済" else "未")
+            }
+
+            OpPanel(Modifier.weight(1f).fillMaxHeight()) {
+                Text("営業日履歴", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = OpNavy)
+                Spacer(Modifier.height(8.dp))
+                if (history.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("履歴はありません", color = Color.Gray) }
+                } else {
+                    LazyColumn {
+                        itemsIndexed(history) { _, record ->
+                            Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                                Row(Modifier.fillMaxWidth()) {
+                                    Text(record.businessDate, fontWeight = FontWeight.Bold, color = OpNavy)
+                                    Spacer(Modifier.weight(1f))
+                                    Text(record.status.displayName, color = if (record.status == BusinessSessionStatus.CLOSED) OpGreen else OpDanger)
+                                }
+                                Text("開始 ${opDateTime(record.openedAt)} / ${record.openedBy}", color = Color.Gray)
+                                if (record.closedAt != null) {
+                                    Text("終了 ${opDateTime(record.closedAt)} / ${record.closedBy.orEmpty()}  差異 ${signedYen(record.closeVariance ?: 0L)}", color = Color.Gray)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        OpBottomBar("レジ管理へ戻る", onBack)
+    }
+}
+
+@Composable
 private fun DailySalesScreen(summary: DailyOperationsSummary, onBack: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         OpHeader("SCR-510", "当日売上簡易確認")
@@ -357,6 +533,7 @@ private fun DailySalesScreen(summary: DailyOperationsSummary, onBack: () -> Unit
                     }
                 }
                 Spacer(Modifier.height(10.dp))
+                OpAmountRow("開始釣銭", opYen(summary.openingCash))
                 OpAmountRow("入金", opYen(summary.cashIn))
                 OpAmountRow("出金", "-${opYen(summary.cashOut)}")
                 OpAmountRow("現金理論残高", opYen(summary.expectedCash), emphasized = true)

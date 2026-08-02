@@ -40,6 +40,24 @@ class SecureOperationsCoordinator(
     private val appContext = context.applicationContext
     private val executionGuard = OperationExecutionGuard()
 
+    fun startBusinessDay(businessDate: LocalDate, openingCash: Long): Long =
+        executionGuard.runExclusive("BUSINESS_OPEN:$businessDate", "営業開始を処理中です") {
+            val operator = requireOperator(OperationsAction.SETTLEMENT)
+            store.startBusinessDay(businessDate, openingCash, OperationsActorFormatter.direct(operator))
+        }
+
+    fun endBusinessDay(actualCash: Long, managerPin: String): Long {
+        val businessDate = store.activeBusinessSession()?.businessDate ?: LocalDate.now().toString()
+        return executionGuard.runExclusive("BUSINESS_CLOSE:$businessDate", "営業終了を処理中です") {
+            val operator = requireOperator(OperationsAction.SETTLEMENT)
+            val managerName = requireManagerName(managerPin)
+            store.endBusinessDay(
+                actualCash,
+                OperationsActorFormatter.approved(operator, managerName),
+            )
+        }
+    }
+
     fun recordCashMovement(type: CashMovementType, amount: Long, reason: String): Long {
         val operator = requireOperator(OperationsAction.CASH_MOVEMENT)
         return store.recordCashMovement(type, amount, reason, OperationsActorFormatter.direct(operator))
@@ -50,9 +68,14 @@ class SecureOperationsCoordinator(
         actualCash: Long?,
         managerPin: String,
     ): Long {
-        val date = LocalDate.now()
-        val persistentKey = OperationsIdempotencyPolicy.settlementKey(type, date)
-        val executionKey = persistentKey ?: "X_INSPECTION:$date"
+        val businessDate = store.activeBusinessSession()?.businessDate
+            ?: throw IllegalStateException("営業中の営業日がありません")
+        val persistentKey = if (type == SettlementReportType.Z_SETTLEMENT) {
+            "Z_SETTLEMENT:$businessDate"
+        } else {
+            null
+        }
+        val executionKey = persistentKey ?: "X_INSPECTION:$businessDate"
         return executionGuard.runExclusive(executionKey, "点検・精算を処理中です") {
             val operator = requireOperator(OperationsAction.SETTLEMENT)
             val actor = if (OperationsAuthorizationPolicy.requiresManagerApproval(OperationsAction.SETTLEMENT, type)) {
@@ -60,7 +83,7 @@ class SecureOperationsCoordinator(
             } else {
                 OperationsActorFormatter.direct(operator)
             }
-            store.recordSettlement(type, actualCash, actor, date)
+            store.recordSettlement(type, actualCash, actor)
         }
     }
 

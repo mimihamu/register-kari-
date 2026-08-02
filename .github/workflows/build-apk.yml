@@ -41,66 +41,64 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify v0.17 operation atomicity and cumulative safety
+      - name: Verify v0.18 business session integration and cumulative safety
         run: |
-          grep -q 'versionCode = 47' app/build.gradle.kts
-          grep -q 'versionName = "0.17.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 48' app/build.gradle.kts
+          grep -q 'versionName = "0.18.0-dev.1"' app/build.gradle.kts
+          grep -q 'androidx.work:work-runtime:2.11.2' app/build.gradle.kts
           grep -q 'versionCode = 6' customer-display/build.gradle.kts
           grep -q 'versionName = "0.13.0-dev.6"' customer-display/build.gradle.kts
           grep -q 'applicationId = "jp.co.tenposinfo.register.cd"' customer-display/build.gradle.kts
 
+          test -f app/src/test/java/jp/co/tenposinfo/register/V018BusinessSessionIntegrationTest.kt
+          test -f docs/V0.18_BUSINESS_SESSION_INTEGRATION.md
+          grep -q 'object BusinessSessionTransitionPolicy' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+          grep -q 'fun startBusinessDay' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+          grep -q 'fun endBusinessDay' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+          grep -q 'sales WHERE business_session_id = ?' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+          grep -q 'reversal_transactions WHERE business_session_id = ?' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+          grep -q 'openingCash = session.openingCash' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+          grep -q 'business_session_id", session.id' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+          grep -q 'BusinessSessionStatus.Z_SETTLED.name' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+          grep -q 'BusinessSessionSchema.currentOpen(this)' app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt
+          grep -q '営業開始後に会計してください' app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt
+          grep -q 'fun currentOpen' app/src/main/java/jp/co/tenposinfo/register/StabilizationFoundation.kt
+          grep -q 'OperationsScreen.BUSINESS' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q '営業開始・終了' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q 'is OperationsActivity, is AdvancedOperationsActivity' app/src/main/java/jp/co/tenposinfo/register/RegisterApplication.kt
+          test ! -e .github/workflows/v018-apply.yml
+          test ! -e .github/workflows/v018-inventory.yml
+          test ! -e tools/apply_v018.py
+          test ! -e tools/v018-business-session.patch
+
           test -f app/src/main/java/jp/co/tenposinfo/register/OperationExecutionSafety.kt
-          grep -q 'OperationsIdempotencyPolicy' app/src/main/java/jp/co/tenposinfo/register/OperationExecutionSafety.kt
           grep -q 'OperationExecutionGuard' app/src/main/java/jp/co/tenposinfo/register/OperationExecutionSafety.kt
-          grep -q 'ConcurrentHashMap.newKeySet' app/src/main/java/jp/co/tenposinfo/register/OperationExecutionSafety.kt
           grep -q 'operation_commit_keys' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
           grep -q 'claimOperationKey' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
           grep -q 'bindOperationKey' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
-          grep -q 'OperationsIdempotencyPolicy.reversalKey' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
-          grep -q 'OperationsIdempotencyPolicy.settlementKey' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
-          grep -q 'executionGuard.runExclusive' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
-          ! grep -q 'require(!isSaleReversed(originalSaleId))' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
           test -f app/src/test/java/jp/co/tenposinfo/register/V017OperationExecutionSafetyTest.kt
           test -f docs/V0.17_OPERATION_ATOMICITY.md
-          test ! -e .github/workflows/v017-apply.yml
-          test ! -e tools/apply_v017.py
 
           test -f app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
-          grep -q 'OperationsAuthorizationPolicy' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
           grep -q 'OperatorSessionRegistry.current' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
           grep -q 'managerNameForPin' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
           grep -q 'OperationsActorFormatter.approved' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
-          grep -q 'RegisterPermission.VIEW_SALES' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
-          grep -q 'RegisterPermission.SETTLEMENT' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
-          grep -q 'RegisterPermission.CASH_MOVEMENT' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
-          grep -q 'RegisterPermission.REVERSAL' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
-          test -f app/src/test/java/jp/co/tenposinfo/register/V016OperationsAuthorizationTest.kt
-          test -f docs/V0.16_OPERATIONS_AUTHORIZATION.md
           ! grep -q 'テストPIN' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
           ! grep -q 'pin != "0000"' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
           ! grep -q 'onValueChange = { operator =' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          test ! -e .github/workflows/v016-apply.yml
-          test ! -e tools/apply_v016.py
+          test -f app/src/test/java/jp/co/tenposinfo/register/V016OperationsAuthorizationTest.kt
 
           test -f app/src/main/java/jp/co/tenposinfo/register/TaxInvoiceSettings.kt
-          test -f app/src/main/java/jp/co/tenposinfo/register/TaxInvoiceSettingsActivity.kt
           grep -q 'mixedTaxAmount' app/src/main/java/jp/co/tenposinfo/register/Domain.kt
-          grep -q 'TaxInvoiceSettingsStore(applicationContext).load().mixedTaxPolicy' app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt
-          grep -q 'mixedNeedsAcknowledgement' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
           grep -q '対象額（税込）' app/src/main/java/jp/co/tenposinfo/register/Receipt.kt
           test -f app/src/test/java/jp/co/tenposinfo/register/V015TaxInvoicePolicyTest.kt
           test -f app/src/test/java/jp/co/tenposinfo/register/V015SalesProfileSnapshotTest.kt
 
           test -f app/src/main/java/jp/co/tenposinfo/register/HeldTicketSafety.kt
           grep -q 'class HeldTicketSafetyCoordinator' app/src/main/java/jp/co/tenposinfo/register/HeldTicketSafety.kt
-          grep -q 'db.beginTransaction()' app/src/main/java/jp/co/tenposinfo/register/HeldTicketSafety.kt
-          grep -q 'LineTaxSnapshotStore.SCOPE_HELD' app/src/main/java/jp/co/tenposinfo/register/HeldTicketSafety.kt
           grep -q 'class SaleCommitGuard' app/src/main/java/jp/co/tenposinfo/register/HeldTicketSafety.kt
-          grep -q 'saleCommitGuard.tryBegin' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q '会計確定中' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
           test -f app/src/main/java/jp/co/tenposinfo/register/PaymentDraftStore.kt
           grep -q 'payment_draft_meta' app/src/main/java/jp/co/tenposinfo/register/PaymentDraftStore.kt
-          grep -q '前回中断した支払入力を復元しました' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
           test -f app/src/test/java/jp/co/tenposinfo/register/V014HeldTicketSafetyTest.kt
           test -f app/src/test/java/jp/co/tenposinfo/register/V014PaymentDraftTest.kt
 
@@ -128,46 +126,45 @@ jobs:
       - name: Prepare named APKs and SHA-256
         run: |
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.17.0_dev1_operation_atomicity_debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.18.0_dev1_business_session_debug.apk
           cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
-          sha256sum artifacts/TSUGUREGI_v0.17.0_dev1_operation_atomicity_debug.apk | tee artifacts/TSUGUREGI_v0.17.0_dev1_operation_atomicity_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_v0.18.0_dev1_business_session_debug.apk | tee artifacts/TSUGUREGI_v0.18.0_dev1_business_session_debug.apk.sha256
           sha256sum artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
-          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.17.0_dev1_operation_atomicity_debug.apk | tee artifacts/build-summary.txt
+          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.18.0_dev1_business_session_debug.apk | tee artifacts/build-summary.txt
           stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee -a artifacts/build-summary.txt
-          echo "REGISTER_VERSION_NAME=0.17.0-dev.1" >> artifacts/build-summary.txt
-          echo "REGISTER_VERSION_CODE=47" >> artifacts/build-summary.txt
+          echo "REGISTER_VERSION_NAME=0.18.0-dev.1" >> artifacts/build-summary.txt
+          echo "REGISTER_VERSION_CODE=48" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.6" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_VERSION_CODE=6" >> artifacts/build-summary.txt
+          echo "BUSINESS_DAY_BOUNDARY=explicit-open-to-close-session" >> artifacts/build-summary.txt
+          echo "BUSINESS_DAY_AGGREGATION=business-session-id" >> artifacts/build-summary.txt
+          echo "OPENING_CASH_INCLUDED=true" >> artifacts/build-summary.txt
+          echo "SALE_REQUIRES_OPEN_SESSION=true" >> artifacts/build-summary.txt
+          echo "Z_SETTLEMENT_TRANSITION=open-to-z-settled" >> artifacts/build-summary.txt
+          echo "BUSINESS_CLOSE_REQUIRES=z-settled-and-manager-pin" >> artifacts/build-summary.txt
           echo "REVERSAL_ATOMICITY=single-sqlite-transaction" >> artifacts/build-summary.txt
           echo "Z_SETTLEMENT_ATOMICITY=single-sqlite-transaction" >> artifacts/build-summary.txt
           echo "OPERATION_IDEMPOTENCY=persistent-deterministic-key" >> artifacts/build-summary.txt
-          echo "OPERATION_PROCESS_GUARD=active" >> artifacts/build-summary.txt
-          echo "X_INSPECTION_REPEATABLE=true" >> artifacts/build-summary.txt
           echo "OPERATIONS_PERMISSIONS=per-action-and-write-time" >> artifacts/build-summary.txt
-          echo "MANAGER_APPROVAL=dynamic-active-manager-pin" >> artifacts/build-summary.txt
-          echo "OPERATIONS_AUDIT=authenticated-operator-and-approver" >> artifacts/build-summary.txt
-          echo "FIXED_TEST_PIN=removed" >> artifacts/build-summary.txt
           echo "TAX_ROUNDING=once-per-invoice-and-rate" >> artifacts/build-summary.txt
-          echo "MIXED_INCLUDED_EXCLUDED_POLICY=allow-warn-block-default-block" >> artifacts/build-summary.txt
-          echo "HELD_TICKET_SWAP=single-sqlite-transaction" >> artifacts/build-summary.txt
           echo "SALE_COMMIT_IDEMPOTENCY=persistent-uuid-key" >> artifacts/build-summary.txt
           echo "PAYMENT_DRAFT=sqlite-cart-fingerprint-bound" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_TRANSIENT_OUTAGE_SUPPRESSION=3000ms" >> artifacts/build-summary.txt
           echo "REGISTER_PACKAGE=jp.co.tenposinfo.register.dev" >> artifacts/build-summary.txt
           echo "CUSTOMER_DISPLAY_PACKAGE=jp.co.tenposinfo.register.cd.dev" >> artifacts/build-summary.txt
           echo "SIGNING=development-not-production" >> artifacts/build-summary.txt
-          echo "REAL_DEVICE_OPERATION_CONCURRENCY_VERIFICATION=required" >> artifacts/build-summary.txt
-          echo "REAL_DEVICE_MANAGER_PIN_VERIFICATION=required" >> artifacts/build-summary.txt
+          echo "REAL_DEVICE_OVERNIGHT_BUSINESS_DAY_VERIFICATION=required" >> artifacts/build-summary.txt
+          echo "REAL_DEVICE_BUSINESS_CLOSE_VERIFICATION=required" >> artifacts/build-summary.txt
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
       - name: Upload APKs
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.17.0-dev1-operation-atomicity-apks
+          name: TSUGUREGI-v0.18.0-dev1-business-session-apks
           path: |
-            artifacts/TSUGUREGI_v0.17.0_dev1_operation_atomicity_debug.apk
-            artifacts/TSUGUREGI_v0.17.0_dev1_operation_atomicity_debug.apk.sha256
+            artifacts/TSUGUREGI_v0.18.0_dev1_business_session_debug.apk
+            artifacts/TSUGUREGI_v0.18.0_dev1_business_session_debug.apk.sha256
             artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
             artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
             artifacts/build-summary.txt

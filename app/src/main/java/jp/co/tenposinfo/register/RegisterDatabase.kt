@@ -208,7 +208,6 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         SaleCommitIdempotencySchema.ensure(writableDatabase)
         SaleCommitIdempotencySchema.cleanup(writableDatabase)
         BusinessSessionSchema.ensure(writableDatabase)
-        val businessLink = BusinessSessionSchema.current(writableDatabase)
         val createdAt = System.currentTimeMillis()
         return writableDatabase.runInTransactionWithResult {
             if (normalizedCommitKey != null) {
@@ -228,6 +227,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     return@runInTransactionWithResult existing.saleId
                 }
             }
+            val businessLink = BusinessSessionSchema.currentOpen(this)
+                ?: throw IllegalStateException("営業開始後に会計してください")
             val saleId = insertOrThrow(
                 "sales",
                 null,
