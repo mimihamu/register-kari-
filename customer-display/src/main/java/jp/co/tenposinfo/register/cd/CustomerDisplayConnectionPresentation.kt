@@ -43,22 +43,28 @@ internal data class CustomerDisplayConnectionLogEntry(
 
 /**
  * 実機調査用の軽量リングバッファ。売上・商品名・トークンは記録しない。
+ * 同じ内容をLogcatの「TsuguRegiCD」タグへも出力する。
  */
 internal object CustomerDisplayConnectionEventLog {
     private const val MAX_ENTRIES = 100
+    private const val LOG_TAG = "TsuguRegiCD"
     private val lock = Any()
     private val entries = ArrayDeque<CustomerDisplayConnectionLogEntry>()
 
     fun record(type: CustomerDisplayConnectionEventType, message: String) {
+        val normalized = message.take(240)
         synchronized(lock) {
             entries.addLast(
                 CustomerDisplayConnectionLogEntry(
                     timestampMillis = System.currentTimeMillis(),
                     type = type,
-                    message = message.take(240),
+                    message = normalized,
                 ),
             )
             while (entries.size > MAX_ENTRIES) entries.removeFirst()
+        }
+        runCatching {
+            android.util.Log.i(LOG_TAG, "${type.name}: $normalized")
         }
     }
 
