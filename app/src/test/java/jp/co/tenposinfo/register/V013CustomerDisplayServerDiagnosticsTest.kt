@@ -26,7 +26,7 @@ class V013CustomerDisplayServerDiagnosticsTest {
         )
         val server = CustomerDisplayWebSocketServer(
             config = config,
-            latestPayload = { CustomerDisplaySnapshotFactory.standby("テスト店").toJson() },
+            latestPayload = { "{}" },
             onClientCountChanged = counts::offer,
         )
         server.start()
