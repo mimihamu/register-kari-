@@ -259,6 +259,14 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 businessDate = businessLink.businessDate,
                 folderName = DriveSyncSettingsStore.load(applicationContext).folderName,
             )
+            // 売上確定と作業中カート消去を同一トランザクションに含める。
+            // 確定直後にプロセスが停止しても、確定済み明細を未会計として復元しない。
+            delete("cart_items", null, null)
+            delete(
+                "line_tax_snapshots",
+                "scope = ? AND owner_id = ?",
+                arrayOf(LineTaxSnapshotStore.SCOPE_CART, "0"),
+            )
             saleId
         }
     }
