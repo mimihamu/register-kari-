@@ -202,6 +202,7 @@ private fun RegisterApp() {
     var queueMessage by remember { mutableStateOf<String?>(null) }
     var ticketMessage by remember { mutableStateOf<String?>(null) }
     var paymentMessage by remember { mutableStateOf<String?>(null) }
+    var paymentCommitKey by remember { mutableStateOf<String?>(null) }
     var saleCommitInProgress by remember { mutableStateOf(false) }
     val heldTicketCoordinator = remember { HeldTicketSafetyCoordinator(database) }
     val paymentDraftStore = remember { PaymentDraftStore(database) }
@@ -213,6 +214,7 @@ private fun RegisterApp() {
         selectedIndex = null
         database.saveCart(cart.toList())
         paymentDraftStore.clear()
+        paymentCommitKey = null
     }
 
     fun updateCartItem(index: Int, item: CartItem) {
@@ -327,8 +329,9 @@ private fun RegisterApp() {
                     }
                 },
                 onPayment = {
-                    val draft = paymentDraftStore.load(cart.toList())
+                    val draft = paymentDraftStore.loadOrCreate(cart.toList())
                     paymentState = draft.state
+                    paymentCommitKey = draft.commitKey
                     paymentMessage = if (draft.restored) {
                         "前回中断した支払入力を復元しました"
                     } else {
@@ -452,7 +455,9 @@ private fun RegisterApp() {
                 externalMessage = paymentMessage,
                 onStateChange = {
                     paymentState = it
-                    paymentDraftStore.save(cart.toList(), it)
+                    val commitKey = paymentCommitKey
+                        ?: PaymentCommitKey.newKey().also { generated -> paymentCommitKey = generated }
+                    paymentDraftStore.save(cart.toList(), it, commitKey)
                     CustomerDisplayRuntime.publish(
                         CustomerDisplaySnapshotFactory.accounting(
                             cart.toList(),
@@ -466,6 +471,7 @@ private fun RegisterApp() {
                     saleCommitInProgress = false
                     paymentMessage = null
                     paymentDraftStore.clear()
+                    paymentCommitKey = null
                     CustomerDisplayRuntime.publish(
                         CustomerDisplaySnapshotFactory.sales(
                             cart.toList(),
@@ -482,7 +488,17 @@ private fun RegisterApp() {
                     saleCommitInProgress = true
                     paymentMessage = "会計を確定しています"
                     runCatching {
-                        database.saveSale(operatorName, cart.toList(), paymentState, receiptPaper.widthMm)
+                        val commitKey = paymentCommitKey
+                            ?: paymentDraftStore.loadOrCreate(cart.toList()).commitKey
+                            ?: error("会計キーを作成できませんでした")
+                        paymentCommitKey = commitKey
+                        database.saveSale(
+                            operatorName = operatorName,
+                            items = cart.toList(),
+                            paymentState = paymentState,
+                            paperWidthMm = receiptPaper.widthMm,
+                            commitKey = commitKey,
+                        )
                     }.onSuccess { saleId ->
                         database.loadSaleDetail(saleId)?.let { detail ->
                             CustomerDisplayRuntime.publish(

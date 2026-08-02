@@ -193,15 +193,40 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         items: List<CartItem>,
         paymentState: PaymentState,
         paperWidthMm: Int = 80,
+        commitKey: String? = null,
     ): Long {
         require(items.isNotEmpty()) { "Cannot save an empty sale" }
         TaxEngine.validateMixedTax(items, MixedTaxPolicy.BLOCK)
         val summary = TaxEngine.calculate(items)
         require(paymentState.remaining(summary.grossAmount) == 0L) { "Payment is incomplete" }
+        val normalizedCommitKey = commitKey?.trim()?.takeIf { it.isNotEmpty() }
+        if (normalizedCommitKey != null) {
+            require(PaymentCommitKey.isValid(normalizedCommitKey)) { "Invalid sale commit key" }
+        }
+        val cartFingerprint = PaymentDraftFingerprint.of(items)
+        SaleCommitIdempotencySchema.ensure(writableDatabase)
+        SaleCommitIdempotencySchema.cleanup(writableDatabase)
         BusinessSessionSchema.ensure(writableDatabase)
         val businessLink = BusinessSessionSchema.current(writableDatabase)
         val createdAt = System.currentTimeMillis()
         return writableDatabase.runInTransactionWithResult {
+            if (normalizedCommitKey != null) {
+                val existing = SaleCommitIdempotencySchema.find(this, normalizedCommitKey)
+                if (existing != null) {
+                    SaleCommitIdempotencySchema.requireCompatible(
+                        existing = existing,
+                        cartFingerprint = cartFingerprint,
+                        totalAmount = summary.grossAmount,
+                    )
+                    delete("cart_items", null, null)
+                    delete(
+                        "line_tax_snapshots",
+                        "scope = ? AND owner_id = ?",
+                        arrayOf(LineTaxSnapshotStore.SCOPE_CART, "0"),
+                    )
+                    return@runInTransactionWithResult existing.saleId
+                }
+            }
             val saleId = insertOrThrow(
                 "sales",
                 null,
@@ -259,6 +284,16 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 businessDate = businessLink.businessDate,
                 folderName = DriveSyncSettingsStore.load(applicationContext).folderName,
             )
+            if (normalizedCommitKey != null) {
+                SaleCommitIdempotencySchema.record(
+                    db = this,
+                    commitKey = normalizedCommitKey,
+                    saleId = saleId,
+                    cartFingerprint = cartFingerprint,
+                    totalAmount = summary.grossAmount,
+                    createdAt = createdAt,
+                )
+            }
             // 売上確定と作業中カート消去を同一トランザクションに含める。
             // 確定直後にプロセスが停止しても、確定済み明細を未会計として復元しない。
             delete("cart_items", null, null)
