@@ -1,0 +1,922 @@
+--- a/app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
++++ b/app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+@@ -4,7 +4,6 @@
+ import android.content.Context
+ import android.database.sqlite.SQLiteDatabase
+ import java.time.LocalDate
+-import java.time.ZoneId
+ 
+ enum class CashMovementType(val displayName: String, val sign: Long) {
+     IN("入金", 1),
+@@ -34,6 +33,7 @@
+     val transactionCount: Int,
+     val reversalCount: Int,
+     val paymentTotals: List<PaymentTotal>,
++    val openingCash: Long,
+     val cashIn: Long,
+     val cashOut: Long,
+     val expectedCash: Long,
+@@ -84,11 +84,21 @@
+         cashSalesAfterRefunds: Long,
+         cashIn: Long,
+         cashOut: Long,
+-    ): Long = cashSalesAfterRefunds + cashIn - cashOut
++        openingCash: Long = 0L,
++    ): Long = openingCash + cashSalesAfterRefunds + cashIn - cashOut
+ 
+     fun variance(actualCash: Long, expectedCash: Long): Long = actualCash - expectedCash
+ }
+ 
++
++object BusinessSessionTransitionPolicy {
++    fun mayStart(date: LocalDate, today: LocalDate = LocalDate.now()): Boolean =
++        !date.isAfter(today) && !date.isBefore(today.minusDays(1))
++
++    fun mayOperate(status: BusinessSessionStatus?): Boolean = status == BusinessSessionStatus.OPEN
++    fun mayClose(status: BusinessSessionStatus?): Boolean = status == BusinessSessionStatus.Z_SETTLED
++}
++
+ /**
+  * 既存の売上テーブルは更新せず、入出金・返品取消・点検精算を追記専用で保存する。
+  * 返品・取消は元売上を上書きせず、反対取引と反対支払を別テーブルへ記録する。
+@@ -103,23 +113,113 @@
+ 
+     fun close() = baseDatabase.close()
+ 
+-    fun dailySummary(date: LocalDate = LocalDate.now()): DailyOperationsSummary {
+-        val (from, to) = dayBounds(date)
++    fun activeBusinessSession(): BusinessSessionRecord? = queryActiveSession(db)
++
++    fun recentBusinessSessions(limit: Int = 30): List<BusinessSessionRecord> = db.query(
++        "business_sessions",
++        SESSION_COLUMNS,
++        null,
++        null,
++        null,
++        null,
++        "opened_at DESC",
++        limit.coerceIn(1, 100).toString(),
++    ).use { cursor ->
++        val result = mutableListOf<BusinessSessionRecord>()
++        while (cursor.moveToNext()) result += cursor.toBusinessSessionRecord()
++        result
++    }
++
++    fun startBusinessDay(businessDate: LocalDate, openingCash: Long, operatorName: String): Long {
++        require(BusinessSessionTransitionPolicy.mayStart(businessDate)) { "営業日は本日または前日を指定してください" }
++        require(openingCash >= 0) { "開始釣銭は0円以上で入力してください" }
++        require(operatorName.isNotBlank()) { "担当者を入力してください" }
++        val now = System.currentTimeMillis()
++        return db.transaction {
++            check(queryActiveSession(this) == null) { "営業中または終了待ちの営業日があります" }
++            val id = insertWithOnConflict(
++                "business_sessions",
++                null,
++                ContentValues().apply {
++                    put("business_date", businessDate.toString())
++                    put("status", BusinessSessionStatus.OPEN.name)
++                    put("opening_cash", openingCash)
++                    put("opened_by", operatorName.trim())
++                    put("opened_at", now)
++                },
++                SQLiteDatabase.CONFLICT_IGNORE,
++            )
++            check(id != -1L) { "この営業日は既に開始済みです" }
++            insertAudit(
++                eventType = "BUSINESS_OPEN",
++                referenceId = id,
++                detail = "営業日 $businessDate / 開始釣銭 ${openingCash}円",
++                operatorName = operatorName,
++                createdAt = now,
++            )
++            id
++        }
++    }
++
++    fun endBusinessDay(actualCash: Long, operatorName: String): Long {
++        require(actualCash >= 0) { "現金実査額は0円以上で入力してください" }
++        require(operatorName.isNotBlank()) { "担当者を入力してください" }
++        val now = System.currentTimeMillis()
++        return db.transaction {
++            val session = queryActiveSession(this) ?: error("営業中の営業日がありません")
++            check(BusinessSessionTransitionPolicy.mayClose(session.status)) { "営業終了前にZ精算を実行してください" }
++            val summary = dailySummary(LocalDate.parse(session.businessDate))
++            val variance = OperationsMath.variance(actualCash, summary.expectedCash)
++            val updated = update(
++                "business_sessions",
++                ContentValues().apply {
++                    put("status", BusinessSessionStatus.CLOSED.name)
++                    put("closed_by", operatorName.trim())
++                    put("closed_at", now)
++                    put("closing_actual", actualCash)
++                    put("close_variance", variance)
++                },
++                "id = ? AND status = ?",
++                arrayOf(session.id.toString(), BusinessSessionStatus.Z_SETTLED.name),
++            )
++            check(updated == 1) { "営業終了状態が更新されました。画面を更新してください" }
++            insertAudit(
++                eventType = "BUSINESS_CLOSE",
++                referenceId = session.id,
++                detail = "営業日 ${session.businessDate} / 現金実査 ${actualCash}円 / 過不足 ${variance}円",
++                operatorName = operatorName,
++                createdAt = now,
++            )
++            session.id
++        }
++    }
++
++    fun dailySummary(date: LocalDate? = null): DailyOperationsSummary {
++        BusinessSessionSchema.ensure(db)
++        val session = if (date == null) {
++            queryActiveSession(db)?.toWindow()
++                ?: BusinessSessionSchema.sessionForDate(db, LocalDate.now())
++                ?: BusinessSessionDisplayFallback.forDate(LocalDate.now())
++        } else {
++            BusinessSessionSchema.sessionForDate(db, date)
++                ?: BusinessSessionDisplayFallback.forDate(date)
++        } ?: error("営業日を特定できません")
++        val sessionId = session.id
+         val salesGross = longQuery(
+-            "SELECT COALESCE(SUM(total_amount), 0) FROM sales WHERE created_at >= ? AND created_at < ?",
+-            arrayOf(from.toString(), to.toString()),
++            "SELECT COALESCE(SUM(total_amount), 0) FROM sales WHERE business_session_id = ?",
++            arrayOf(sessionId.toString()),
+         )
+         val transactionCount = longQuery(
+-            "SELECT COUNT(*) FROM sales WHERE created_at >= ? AND created_at < ?",
+-            arrayOf(from.toString(), to.toString()),
++            "SELECT COUNT(*) FROM sales WHERE business_session_id = ?",
++            arrayOf(sessionId.toString()),
+         ).toInt()
+         val reversalGross = longQuery(
+-            "SELECT COALESCE(SUM(gross_amount), 0) FROM reversal_transactions WHERE created_at >= ? AND created_at < ?",
+-            arrayOf(from.toString(), to.toString()),
++            "SELECT COALESCE(SUM(gross_amount), 0) FROM reversal_transactions WHERE business_session_id = ?",
++            arrayOf(sessionId.toString()),
+         )
+         val reversalCount = longQuery(
+-            "SELECT COUNT(*) FROM reversal_transactions WHERE created_at >= ? AND created_at < ?",
+-            arrayOf(from.toString(), to.toString()),
++            "SELECT COUNT(*) FROM reversal_transactions WHERE business_session_id = ?",
++            arrayOf(sessionId.toString()),
+         ).toInt()
+ 
+         val paymentMap = linkedMapOf<String, Long>()
+@@ -129,11 +229,11 @@
+             SELECT p.payment_method, COALESCE(SUM(p.applied_amount), 0)
+             FROM sale_payments p
+             INNER JOIN sales s ON s.id = p.sale_id
+-            WHERE s.created_at >= ? AND s.created_at < ?
++            WHERE s.business_session_id = ?
+             GROUP BY p.payment_method
+             ORDER BY p.payment_method
+             """.trimIndent(),
+-            arrayOf(from.toString(), to.toString()),
++            arrayOf(sessionId.toString()),
+         ).use { cursor ->
+-            while (cursor.moveToNext()) {
+-                paymentMap[cursor.getString(0)] = cursor.getLong(1)
+-            }
++            while (cursor.moveToNext()) paymentMap[cursor.getString(0)] = cursor.getLong(1)
+         }
+         db.rawQuery(
+             """
+@@ -141,11 +241,11 @@
+             SELECT p.payment_method, COALESCE(SUM(p.amount), 0)
+             FROM reversal_payments p
+             INNER JOIN reversal_transactions r ON r.id = p.reversal_id
+-            WHERE r.created_at >= ? AND r.created_at < ?
++            WHERE r.business_session_id = ?
+             GROUP BY p.payment_method
+             ORDER BY p.payment_method
+             """.trimIndent(),
+-            arrayOf(from.toString(), to.toString()),
++            arrayOf(sessionId.toString()),
+         ).use { cursor ->
+             while (cursor.moveToNext()) {
+                 val method = cursor.getString(0)
+@@ -154,12 +254,13 @@
+             }
+         }
+ 
+-        val cashIn = movementTotal(CashMovementType.IN, from, to)
+-        val cashOut = movementTotal(CashMovementType.OUT, from, to)
++        val cashIn = movementTotal(CashMovementType.IN, sessionId)
++        val cashOut = movementTotal(CashMovementType.OUT, sessionId)
+         val expectedCash = OperationsMath.expectedCash(
+             cashSalesAfterRefunds = paymentMap[PaymentMethod.CASH.name] ?: 0L,
+             cashIn = cashIn,
+             cashOut = cashOut,
++            openingCash = session.openingCash,
+         )
+         val pendingPrints = longQuery(
+             "SELECT COUNT(*) FROM print_jobs WHERE status <> ?",
+@@ -167,14 +268,13 @@
+         ).toInt()
+         val heldTickets = longQuery("SELECT COUNT(*) FROM held_tickets").toInt()
+-        val businessDate = date.toString()
+         val settled = longQuery(
+-            "SELECT COUNT(*) FROM settlement_reports WHERE business_date = ? AND report_type = ?",
+-            arrayOf(businessDate, SettlementReportType.Z_SETTLEMENT.name),
++            "SELECT COUNT(*) FROM settlement_reports WHERE business_session_id = ? AND report_type = ?",
++            arrayOf(sessionId.toString(), SettlementReportType.Z_SETTLEMENT.name),
+         ) > 0
+ 
+         return DailyOperationsSummary(
+-            businessDate = businessDate,
++            businessDate = session.businessDate,
+             salesGross = salesGross,
+             reversalGross = reversalGross,
+             netSales = salesGross - reversalGross,
+             transactionCount = transactionCount,
+             reversalCount = reversalCount,
+             paymentTotals = paymentMap.map { PaymentTotal(it.key, it.value) },
++            openingCash = session.openingCash,
+             cashIn = cashIn,
+             cashOut = cashOut,
+             expectedCash = expectedCash,
+@@ -200,6 +300,8 @@
+         val now = System.currentTimeMillis()
+         return db.transaction {
++            val session = queryActiveSession(this) ?: error("営業開始後に入出金を登録してください")
++            check(BusinessSessionTransitionPolicy.mayOperate(session.status)) { "Z精算後は入出金できません" }
+             val id = insertOrThrow(
+                 "cash_movements",
+                 null,
+@@ -209,6 +311,8 @@
+                     put("reason", reason.trim())
+                     put("operator_name", operatorName.trim())
++                    put("business_session_id", session.id)
++                    put("business_date", session.businessDate)
+                     put("created_at", now)
+                 },
+             )
+@@ -266,6 +370,8 @@
+         val operationKey = OperationsIdempotencyPolicy.reversalKey(originalSaleId)
+ 
+         return db.transaction {
++            val session = queryActiveSession(this) ?: error("営業開始後に返品・取消を実行してください")
++            check(BusinessSessionTransitionPolicy.mayOperate(session.status)) { "Z精算後は返品・取消できません" }
+             claimOperationKey(
+                 operationKey = operationKey,
+                 operationType = type.name,
+@@ -303,6 +409,8 @@
+                     put("reason", reason.trim())
+                     put("operator_name", operatorName.trim())
++                    put("business_session_id", session.id)
++                    put("business_date", session.businessDate)
+                     put("created_at", now)
+                 },
+             )
+@@ -400,18 +508,18 @@
+         type: SettlementReportType,
+         actualCash: Long?,
+         operatorName: String,
+-        date: LocalDate = LocalDate.now(),
+     ): Long {
+         require(operatorName.isNotBlank()) { "担当者を入力してください" }
+         val now = System.currentTimeMillis()
+-        val operationKey = OperationsIdempotencyPolicy.settlementKey(type, date)
+ 
+         return db.transaction {
++            val session = queryActiveSession(this) ?: error("営業開始後に点検・精算を実行してください")
++            check(BusinessSessionTransitionPolicy.mayOperate(session.status)) { "この営業日はZ精算済みです" }
++            val operationKey = OperationsIdempotencyPolicy.settlementKey(type, LocalDate.parse(session.businessDate))
+             if (operationKey != null) {
+                 claimOperationKey(
+                     operationKey = operationKey,
+@@ -421,7 +529,7 @@
+                     createdAt = now,
+                 )
+             }
+-            val summary = dailySummary(date)
++            val summary = dailySummary(LocalDate.parse(session.businessDate))
+             if (type == SettlementReportType.Z_SETTLEMENT && summary.settled) {
+                 throw IllegalStateException("この営業日は既にZ精算済みです")
+             }
+@@ -433,6 +541,7 @@
+                 "settlement_reports",
+                 null,
+                 ContentValues().apply {
++                    put("business_session_id", session.id)
+                     put("business_date", summary.businessDate)
+                     put("report_type", type.name)
+@@ -462,6 +571,17 @@
+                 createdAt = now,
+             )
+             if (operationKey != null) bindOperationKey(operationKey, id)
++            if (type == SettlementReportType.Z_SETTLEMENT) {
++                val updated = update(
++                    "business_sessions",
++                    ContentValues().apply { put("status", BusinessSessionStatus.Z_SETTLED.name) },
++                    "id = ? AND status = ?",
++                    arrayOf(session.id.toString(), BusinessSessionStatus.OPEN.name),
++                )
++                check(updated == 1) { "営業状態が更新されました。画面を更新してください" }
++            }
+             id
+         }
+     }
+@@ -504,17 +624,39 @@
+-    private fun movementTotal(type: CashMovementType, from: Long, to: Long): Long = longQuery(
+-        "SELECT COALESCE(SUM(amount), 0) FROM cash_movements WHERE movement_type = ? AND created_at >= ? AND created_at < ?",
+-        arrayOf(type.name, from.toString(), to.toString()),
++    private fun movementTotal(type: CashMovementType, sessionId: Long): Long = longQuery(
++        "SELECT COALESCE(SUM(amount), 0) FROM cash_movements WHERE movement_type = ? AND business_session_id = ?",
++        arrayOf(type.name, sessionId.toString()),
+     )
+ 
+-    private fun dayBounds(date: LocalDate): Pair<Long, Long> {
+-        val zone = ZoneId.systemDefault()
+-        val from = date.atStartOfDay(zone).toInstant().toEpochMilli()
+-        val to = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+-        return from to to
+-    }
++    private fun queryActiveSession(database: SQLiteDatabase): BusinessSessionRecord? = database.query(
++        "business_sessions",
++        SESSION_COLUMNS,
++        "status IN (?, ?)",
++        arrayOf(BusinessSessionStatus.OPEN.name, BusinessSessionStatus.Z_SETTLED.name),
++        null,
++        null,
++        "opened_at DESC",
++        "1",
++    ).use { cursor -> if (cursor.moveToFirst()) cursor.toBusinessSessionRecord() else null }
++
++    private fun android.database.Cursor.toBusinessSessionRecord() = BusinessSessionRecord(
++        id = getLong(0),
++        businessDate = getString(1),
++        status = BusinessSessionStatus.valueOf(getString(2)),
++        openingCash = getLong(3),
++        openedBy = getString(4),
++        openedAt = getLong(5),
++        closedBy = if (isNull(6)) null else getString(6),
++        closedAt = if (isNull(7)) null else getLong(7),
++        closingActual = if (isNull(8)) null else getLong(8),
++        closeVariance = if (isNull(9)) null else getLong(9),
++    )
++
++    private fun BusinessSessionRecord.toWindow() = BusinessSessionWindow(
++        id = id,
++        businessDate = businessDate,
++        openedAt = openedAt,
++        closedAt = closedAt,
++        openingCash = openingCash,
++    )
+ 
+     private fun longQuery(sql: String, args: Array<String> = emptyArray()): Long =
+         db.rawQuery(sql, args).use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else 0L }
+@@ -588,6 +730,8 @@
+                 reason TEXT NOT NULL,
+                 operator_name TEXT NOT NULL,
++                business_session_id INTEGER,
++                business_date TEXT,
+                 created_at INTEGER NOT NULL
+             )
+@@ -602,6 +746,8 @@
+                 reason TEXT NOT NULL,
+                 operator_name TEXT NOT NULL,
++                business_session_id INTEGER,
++                business_date TEXT,
+                 created_at INTEGER NOT NULL,
+                 FOREIGN KEY(original_sale_id) REFERENCES sales(id)
+@@ -625,6 +771,7 @@
+             """
+             CREATE TABLE IF NOT EXISTS settlement_reports (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
++                business_session_id INTEGER,
+                 business_date TEXT NOT NULL,
+@@ -661,8 +808,20 @@
+             """.trimIndent(),
+         )
+-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_cash_movements_created ON cash_movements(created_at)")
++        BusinessSessionSchema.ensure(db)
++        db.execSQL("CREATE INDEX IF NOT EXISTS idx_business_sessions_status ON business_sessions(status, opened_at)")
++        db.execSQL("CREATE INDEX IF NOT EXISTS idx_cash_movements_session ON cash_movements(business_session_id, movement_type)")
+         db.execSQL("CREATE INDEX IF NOT EXISTS idx_reversal_original_sale ON reversal_transactions(original_sale_id)")
+-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_reversal_created ON reversal_transactions(created_at)")
+-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_settlement_date ON settlement_reports(business_date, report_type)")
++        db.execSQL("CREATE INDEX IF NOT EXISTS idx_reversal_session ON reversal_transactions(business_session_id, created_at)")
++        db.execSQL("CREATE INDEX IF NOT EXISTS idx_settlement_session ON settlement_reports(business_session_id, report_type)")
++    }
++
++    companion object {
++        private val SESSION_COLUMNS = arrayOf(
++            "id", "business_date", "status", "opening_cash", "opened_by", "opened_at",
++            "closed_by", "closed_at", "closing_actual", "close_variance",
++        )
+     }
++
+ }
+ 
+ private inline fun <T> SQLiteDatabase.transaction(block: SQLiteDatabase.() -> T): T {
+--- a/app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
++++ b/app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
+@@ -40,6 +40,24 @@
+     private val appContext = context.applicationContext
+     private val executionGuard = OperationExecutionGuard()
+ 
++    fun startBusinessDay(businessDate: LocalDate, openingCash: Long): Long =
++        executionGuard.runExclusive("BUSINESS_OPEN:$businessDate", "営業開始を処理中です") {
++            val operator = requireOperator(OperationsAction.SETTLEMENT)
++            store.startBusinessDay(businessDate, openingCash, OperationsActorFormatter.direct(operator))
++        }
++
++    fun endBusinessDay(actualCash: Long, managerPin: String): Long {
++        val businessDate = store.activeBusinessSession()?.businessDate ?: LocalDate.now().toString()
++        return executionGuard.runExclusive("BUSINESS_CLOSE:$businessDate", "営業終了を処理中です") {
++            val operator = requireOperator(OperationsAction.SETTLEMENT)
++            val managerName = requireManagerName(managerPin)
++            store.endBusinessDay(
++                actualCash,
++                OperationsActorFormatter.approved(operator, managerName),
++            )
++        }
++    }
++
+     fun recordCashMovement(type: CashMovementType, amount: Long, reason: String): Long {
+         val operator = requireOperator(OperationsAction.CASH_MOVEMENT)
+         return store.recordCashMovement(type, amount, reason, OperationsActorFormatter.direct(operator))
+@@ -50,9 +68,14 @@
+         actualCash: Long?,
+         managerPin: String,
+     ): Long {
+-        val date = LocalDate.now()
+-        val persistentKey = OperationsIdempotencyPolicy.settlementKey(type, date)
+-        val executionKey = persistentKey ?: "X_INSPECTION:$date"
++        val businessDate = store.activeBusinessSession()?.businessDate
++            ?: throw IllegalStateException("営業中の営業日がありません")
++        val persistentKey = if (type == SettlementReportType.Z_SETTLEMENT) {
++            "Z_SETTLEMENT:$businessDate"
++        } else {
++            null
++        }
++        val executionKey = persistentKey ?: "X_INSPECTION:$businessDate"
+         return executionGuard.runExclusive(executionKey, "点検・精算を処理中です") {
+             val operator = requireOperator(OperationsAction.SETTLEMENT)
+             val actor = if (OperationsAuthorizationPolicy.requiresManagerApproval(OperationsAction.SETTLEMENT, type)) {
+@@ -60,7 +83,7 @@
+             } else {
+                 OperationsActorFormatter.direct(operator)
+             }
+-            store.recordSettlement(type, actualCash, actor, date)
++            store.recordSettlement(type, actualCash, actor)
+         }
+     }
+ 
+--- a/app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
++++ b/app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+@@ -49,6 +49,7 @@
+ import java.text.SimpleDateFormat
+ import java.util.Date
+ import java.util.Locale
++import java.time.LocalDate
+ 
+ private val OpNavy = Color(0xFF173F6B)
+ private val OpBlue = Color(0xFF1976B9)
+@@ -75,6 +76,7 @@
+ 
+ private enum class OperationsScreen {
+     MENU,
++    BUSINESS,
+     DAILY_SALES,
+     SETTLEMENT,
+     CASH_MOVEMENT,
+@@ -127,6 +129,7 @@
+ 
+         when (screen) {
+             OperationsScreen.MENU -> OperationsMenuScreen(
++                session = store.activeBusinessSession(),
+                 summary = if (
+                     operator.allows(RegisterPermission.VIEW_SALES) ||
+                     operator.allows(RegisterPermission.SETTLEMENT)
+@@ -134,6 +137,7 @@
+                 operatorName = operator.name,
+                 permissions = operator.permissions,
+                 message = message,
++                onBusiness = { openScreen(RegisterPermission.SETTLEMENT, OperationsScreen.BUSINESS) },
+                 onDailySales = { openScreen(RegisterPermission.VIEW_SALES, OperationsScreen.DAILY_SALES) },
+                 onSettlement = { openScreen(RegisterPermission.SETTLEMENT, OperationsScreen.SETTLEMENT) },
+                 onCashMovement = { openScreen(RegisterPermission.CASH_MOVEMENT, OperationsScreen.CASH_MOVEMENT) },
+@@ -141,6 +145,34 @@
+                 onClose = onClose,
+             )
+ 
++            OperationsScreen.BUSINESS -> BusinessDayScreen(
++                session = store.activeBusinessSession(),
++                history = store.recentBusinessSessions(),
++                summary = store.dailySummary(),
++                operatorName = operator.name,
++                revision = revision,
++                message = message,
++                onStart = { date, openingCash ->
++                    val result = runCatching { secureStore.startBusinessDay(date, openingCash) }
++                    message = result.fold(
++                        onSuccess = { "営業を開始しました（No.$it）" },
++                        onFailure = { it.message ?: "営業開始に失敗しました" },
++                    )
++                    if (result.isSuccess) revision++
++                    activeOperator = OperatorSessionRegistry.current(appContext)
++                },
++                onCloseDay = { actualCash, pin ->
++                    val result = runCatching { secureStore.endBusinessDay(actualCash, pin) }
++                    message = result.fold(
++                        onSuccess = { "営業を終了しました（No.$it）" },
++                        onFailure = { it.message ?: "営業終了に失敗しました" },
++                    )
++                    if (result.isSuccess) revision++
++                    activeOperator = OperatorSessionRegistry.current(appContext)
++                },
++                onBack = { screen = OperationsScreen.MENU },
++            )
++
+             OperationsScreen.DAILY_SALES -> DailySalesScreen(
+                 summary = store.dailySummary(),
+                 onBack = { screen = OperationsScreen.MENU },
+@@ -205,10 +237,12 @@
+ @Composable
+ private fun OperationsMenuScreen(
++    session: BusinessSessionRecord?,
+     summary: DailyOperationsSummary?,
+     operatorName: String,
+     permissions: Set<RegisterPermission>,
+     message: String?,
++    onBusiness: () -> Unit,
+     onDailySales: () -> Unit,
+     onSettlement: () -> Unit,
+     onCashMovement: () -> Unit,
+@@ -222,7 +256,7 @@
+             horizontalArrangement = Arrangement.spacedBy(18.dp),
+         ) {
+             OpPanel(Modifier.width(390.dp).fillMaxHeight()) {
+-                Text("本日の状態", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = OpNavy)
++                Text("営業日の状態", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = OpNavy)
+                 Spacer(Modifier.height(8.dp))
+                 OpAuthenticatedOperator(operatorName)
+                 Spacer(Modifier.height(8.dp))
+@@ -232,6 +266,8 @@
+                     }
+                 } else {
+                     OpAmountRow("営業日", summary.businessDate)
++                    OpAmountRow("営業状態", session?.status?.displayName ?: "営業開始前")
++                    OpAmountRow("開始釣銭", opYen(summary.openingCash))
+                     OpAmountRow("純売上", opYen(summary.netSales), emphasized = true)
+                     OpAmountRow("取引件数", "${summary.transactionCount}件")
+                     OpAmountRow("返品・取消", "${summary.reversalCount}件 / -${opYen(summary.reversalGross)}")
+@@ -249,7 +285,15 @@
+                 }
+             }
+ 
+-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
++            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
++                MenuTile(
++                    "営業開始・終了",
++                    "営業日と開始釣銭を登録／Z精算後に営業終了",
++                    Color(0xFFE8EAF6),
++                    Modifier.weight(0.82f),
++                    RegisterPermission.SETTLEMENT in permissions,
++                    onBusiness,
++                )
+                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                     MenuTile(
+                         "当日売上",
+@@ -325,6 +369,138 @@
+     }
+ }
+ 
++@Composable
++private fun BusinessDayScreen(
++    session: BusinessSessionRecord?,
++    history: List<BusinessSessionRecord>,
++    summary: DailyOperationsSummary,
++    operatorName: String,
++    revision: Int,
++    message: String?,
++    onStart: (LocalDate, Long) -> Unit,
++    onCloseDay: (Long, String) -> Unit,
++    onBack: () -> Unit,
++) {
++    var businessDate by remember { mutableStateOf(session?.businessDate ?: LocalDate.now().toString()) }
++    var openingCash by remember { mutableStateOf("") }
++    var actualCash by remember { mutableStateOf("") }
++    var pin by remember { mutableStateOf("") }
++    var validationMessage by remember { mutableStateOf<String?>(null) }
++    @Suppress("UNUSED_VARIABLE") val refresh = revision
++
++    Column(Modifier.fillMaxSize()) {
++        OpHeader("SCR-490", "営業開始・終了")
++        Row(Modifier.weight(1f).padding(18.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
++            OpPanel(Modifier.width(440.dp).fillMaxHeight()) {
++                Text("現在の営業日", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = OpNavy)
++                Spacer(Modifier.height(10.dp))
++                OpAuthenticatedOperator(operatorName)
++                Spacer(Modifier.height(10.dp))
++                OpAmountRow("営業状態", session?.status?.displayName ?: "営業開始前")
++                OpAmountRow("営業日", session?.businessDate ?: businessDate)
++                OpAmountRow("開始釣銭", opYen(session?.openingCash ?: 0L))
++                OpAmountRow("現金理論残高", opYen(summary.expectedCash), emphasized = true)
++                OpAmountRow("Z精算", if (summary.settled) "実行済み" else "未実行")
++
++                Spacer(Modifier.height(18.dp))
++                when (session?.status) {
++                    null -> {
++                        OutlinedTextField(
++                            value = businessDate,
++                            onValueChange = { businessDate = it },
++                            label = { Text("営業日（YYYY-MM-DD）") },
++                            singleLine = true,
++                            modifier = Modifier.fillMaxWidth(),
++                        )
++                        Spacer(Modifier.height(8.dp))
++                        OutlinedTextField(
++                            value = openingCash,
++                            onValueChange = { openingCash = it.filter(Char::isDigit) },
++                            label = { Text("開始釣銭") },
++                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
++                            singleLine = true,
++                            modifier = Modifier.fillMaxWidth(),
++                        )
++                        Spacer(Modifier.height(12.dp))
++                        Button(
++                            onClick = {
++                                val date = runCatching { LocalDate.parse(businessDate) }.getOrNull()
++                                val cash = openingCash.toLongOrNull()
++                                when {
++                                    date == null -> validationMessage = "営業日はYYYY-MM-DD形式で入力してください"
++                                    cash == null -> validationMessage = "開始釣銭を入力してください"
++                                    else -> {
++                                        validationMessage = null
++                                        onStart(date, cash)
++                                    }
++                                }
++                            },
++                            modifier = Modifier.fillMaxWidth().height(52.dp),
++                            colors = ButtonDefaults.buttonColors(containerColor = OpBlue),
++                        ) { Text("営業開始", fontSize = 18.sp) }
++                    }
++
++                    BusinessSessionStatus.OPEN -> {
++                        Text("営業中です。販売・入出金・返品取消・点検精算はこの営業日に集計されます。")
++                        Spacer(Modifier.height(10.dp))
++                        Text("営業終了するには、先に点検・精算画面でZ精算を実行してください。", color = OpDanger)
++                    }
++
++                    BusinessSessionStatus.Z_SETTLED -> {
++                        Text("Z精算済みです。現金実査額と責任者PINを入力して営業終了してください。")
++                        Spacer(Modifier.height(8.dp))
++                        OutlinedTextField(
++                            value = actualCash,
++                            onValueChange = { actualCash = it.filter(Char::isDigit) },
++                            label = { Text("現金実査額") },
++                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
++                            singleLine = true,
++                            modifier = Modifier.fillMaxWidth(),
++                        )
++                        Spacer(Modifier.height(8.dp))
++                        OutlinedTextField(
++                            value = pin,
++                            onValueChange = { pin = it.filter(Char::isDigit) },
++                            label = { Text("責任者PIN") },
++                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
++                            singleLine = true,
++                            modifier = Modifier.fillMaxWidth(),
++                        )
++                        Spacer(Modifier.height(12.dp))
++                        Button(
++                            onClick = {
++                                val cash = actualCash.toLongOrNull()
++                                if (cash == null) validationMessage = "現金実査額を入力してください"
++                                else {
++                                    validationMessage = null
++                                    onCloseDay(cash, pin)
++                                }
++                            },
++                            modifier = Modifier.fillMaxWidth().height(52.dp),
++                            colors = ButtonDefaults.buttonColors(containerColor = OpDanger),
++                        ) { Text("営業終了", fontSize = 18.sp) }
++                    }
++
++                    BusinessSessionStatus.CLOSED -> Unit
++                }
++
++                (validationMessage ?: message)?.let {
++                    Spacer(Modifier.height(10.dp))
++                    Text(it, color = if (it.contains("しました")) OpGreen else OpDanger)
++                }
++            }
++
++            OpPanel(Modifier.weight(1f).fillMaxHeight()) {
++                Text("営業日履歴", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = OpNavy)
++                Spacer(Modifier.height(10.dp))
++                if (history.isEmpty()) {
++                    Text("営業日履歴はありません", color = Color.Gray)
++                } else {
++                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
++                        itemsIndexed(history) { _, record ->
++                            Card(colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, OpBorder)) {
++                                Column(Modifier.fillMaxWidth().padding(12.dp)) {
++                                    Text("${record.businessDate}  ${record.status.displayName}", fontWeight = FontWeight.Bold, color = OpNavy)
++                                    Text("開始釣銭 ${opYen(record.openingCash)} / 開始 ${opDateTime(record.openedAt)} / ${record.openedBy}", color = Color.Gray)
++                                    if (record.closedAt != null) {
++                                        Text("終了 ${opDateTime(record.closedAt)} / ${record.closedBy.orEmpty()}  差異 ${signedYen(record.closeVariance ?: 0L)}", color = Color.Gray)
++                                    }
++                                }
++                            }
++                        }
++                    }
++                }
++            }
++        }
++        OpBottomBar("レジ管理へ戻る", onBack)
++    }
++}
++
+ @Composable
+ private fun DailySalesScreen(summary: DailyOperationsSummary, onBack: () -> Unit) {
+     Column(Modifier.fillMaxSize()) {
+@@ -492,6 +668,7 @@
+                     }
+                 }
+                 Spacer(Modifier.height(10.dp))
++                OpAmountRow("開始釣銭", opYen(summary.openingCash))
+                 OpAmountRow("入金", opYen(summary.cashIn))
+                 OpAmountRow("出金", "-${opYen(summary.cashOut)}")
+                 OpAmountRow("現金理論残高", opYen(summary.expectedCash), emphasized = true)
+--- a/app/src/main/java/jp/co/tenposinfo/register/StabilizationFoundation.kt
++++ b/app/src/main/java/jp/co/tenposinfo/register/StabilizationFoundation.kt
+@@ -116,6 +116,17 @@
+         }
+     }
+ 
++    fun currentOpen(db: SQLiteDatabase): BusinessSessionLink? {
++        ensure(db)
++        if (!SchemaMigration.tableExists(db, "business_sessions")) return null
++        return db.rawQuery(
++            "SELECT id, business_date FROM business_sessions WHERE status = 'OPEN' ORDER BY opened_at DESC LIMIT 1",
++            null,
++        ).use { cursor ->
++            if (cursor.moveToFirst()) BusinessSessionLink(cursor.getLong(0), cursor.getString(1)) else null
++        }
++    }
++
+     fun sessionForDate(db: SQLiteDatabase, date: LocalDate): BusinessSessionWindow? {
+         ensure(db)
+         if (!SchemaMigration.tableExists(db, "business_sessions")) return BusinessSessionDisplayFallback.forDate(date)
+@@ -141,18 +152,31 @@
+         db.execSQL(
+             """
+             UPDATE $table
+-            SET business_session_id = (
+-                    SELECT bs.id FROM business_sessions bs
+-                    WHERE bs.opened_at <= $table.created_at
+-                      AND (bs.closed_at IS NULL OR $table.created_at <= bs.closed_at)
+-                    ORDER BY bs.opened_at DESC LIMIT 1
++            SET business_session_id = COALESCE(
++                    (
++                        SELECT bs.id FROM business_sessions bs
++                        WHERE $table.business_date IS NOT NULL
++                          AND bs.business_date = $table.business_date
++                        ORDER BY bs.opened_at DESC LIMIT 1
++                    ),
++                    (
++                        SELECT bs.id FROM business_sessions bs
++                        WHERE bs.opened_at <= $table.created_at
++                          AND (bs.closed_at IS NULL OR $table.created_at <= bs.closed_at)
++                        ORDER BY bs.opened_at DESC LIMIT 1
++                    )
+                 ),
+-                business_date = (
+-                    SELECT bs.business_date FROM business_sessions bs
+-                    WHERE bs.opened_at <= $table.created_at
+-                      AND (bs.closed_at IS NULL OR $table.created_at <= bs.closed_at)
+-                    ORDER BY bs.opened_at DESC LIMIT 1
++                business_date = COALESCE(
++                    $table.business_date,
++                    (
++                        SELECT bs.business_date FROM business_sessions bs
++                        WHERE bs.opened_at <= $table.created_at
++                          AND (bs.closed_at IS NULL OR $table.created_at <= bs.closed_at)
++                        ORDER BY bs.opened_at DESC LIMIT 1
++                    )
+                 )
+             WHERE business_session_id IS NULL
+             """.trimIndent(),
+--- a/app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt
++++ b/app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt
+@@ -208,8 +208,6 @@
+         SaleCommitIdempotencySchema.ensure(writableDatabase)
+         SaleCommitIdempotencySchema.cleanup(writableDatabase)
+         BusinessSessionSchema.ensure(writableDatabase)
+-        val businessLink = BusinessSessionSchema.current(writableDatabase)
+         val createdAt = System.currentTimeMillis()
+         return writableDatabase.runInTransactionWithResult {
+             if (normalizedCommitKey != null) {
+@@ -228,6 +226,8 @@
+                     return@runInTransactionWithResult existing.saleId
+                 }
+             }
++            val businessLink = BusinessSessionSchema.currentOpen(this)
++                ?: throw IllegalStateException("営業開始後に会計してください")
+             val saleId = insertOrThrow(
+                 "sales",
+                 null,
+--- a/app/src/main/java/jp/co/tenposinfo/register/RegisterApplication.kt
++++ b/app/src/main/java/jp/co/tenposinfo/register/RegisterApplication.kt
+@@ -28,7 +28,7 @@
+     override fun onActivityResumed(activity: Activity) {
+         when (activity) {
+             is MainActivity -> updateMainActivity(activity)
+-            is AdvancedOperationsActivity -> guardManagementActivity(activity)
++            is OperationsActivity, is AdvancedOperationsActivity -> guardManagementActivity(activity)
+             is AdminSettingsActivity -> guardSettingsActivity(activity)
+         }
+     }
+--- /dev/null
++++ b/app/src/test/java/jp/co/tenposinfo/register/V018BusinessSessionIntegrationTest.kt
+@@ -0,0 +1,50 @@
++package jp.co.tenposinfo.register
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++import java.time.LocalDate
++
++class V018BusinessSessionIntegrationTest {
++    @Test
++    fun openingCashIsIncludedInExpectedCash() {
++        assertEquals(
++            63_000L,
++            OperationsMath.expectedCash(
++                cashSalesAfterRefunds = 12_000L,
++                cashIn = 3_000L,
++                cashOut = 2_000L,
++                openingCash = 50_000L,
++            ),
++        )
++    }
++
++    @Test
++    fun businessDateMayBeTodayOrPreviousDayOnly() {
++        val today = LocalDate.of(2026, 8, 2)
++        assertTrue(BusinessSessionTransitionPolicy.mayStart(today, today))
++        assertTrue(BusinessSessionTransitionPolicy.mayStart(today.minusDays(1), today))
++        assertFalse(BusinessSessionTransitionPolicy.mayStart(today.plusDays(1), today))
++        assertFalse(BusinessSessionTransitionPolicy.mayStart(today.minusDays(2), today))
++    }
++
++    @Test
++    fun onlyOpenSessionMayAcceptOperations() {
++        assertTrue(BusinessSessionTransitionPolicy.mayOperate(BusinessSessionStatus.OPEN))
++        assertFalse(BusinessSessionTransitionPolicy.mayOperate(BusinessSessionStatus.Z_SETTLED))
++        assertFalse(BusinessSessionTransitionPolicy.mayOperate(BusinessSessionStatus.CLOSED))
++        assertFalse(BusinessSessionTransitionPolicy.mayOperate(null))
++    }
++
++    @Test
++    fun onlyZSettledSessionMayClose() {
++        assertFalse(BusinessSessionTransitionPolicy.mayClose(BusinessSessionStatus.OPEN))
++        assertTrue(BusinessSessionTransitionPolicy.mayClose(BusinessSessionStatus.Z_SETTLED))
++        assertFalse(BusinessSessionTransitionPolicy.mayClose(BusinessSessionStatus.CLOSED))
++        assertFalse(BusinessSessionTransitionPolicy.mayClose(null))
++    }
++}
+--- /dev/null
++++ b/docs/V0.18_BUSINESS_SESSION_INTEGRATION.md
+@@ -0,0 +1,35 @@
++# つぐレジ v0.18 営業日セッション統合
++
++## 目的
++
++v0.11.1で導入済みの`business_sessions`、`business_session_id`、`business_date`を、現在の正式なレジ管理画面へ再接続する。
++暦日0時区切りの集計を廃止し、深夜営業でも営業開始からZ精算・営業終了までを同一営業日として扱う。
++
++## 営業日の状態遷移
++
++1. 営業開始前
++2. `OPEN`：販売、入出金、返品・取消、X点検、Z精算が可能
++3. `Z_SETTLED`：販売、入出金、返品・取消、再Z精算を禁止。責任者承認で営業終了のみ可能
++4. `CLOSED`：終了済み。次の営業日を開始可能
++
++## 集計基準
++
++- 売上：`sales.business_session_id`
++- 返品・取消：`reversal_transactions.business_session_id`
++- 入出金：`cash_movements.business_session_id`
++- 支払：売上・返品の営業セッションへ結合
++- X点検・Z精算：`settlement_reports.business_session_id`
++- 現金理論残高：開始釣銭 + 現金売上 - 現金返金 + 入金 - 出金
++
++## 書込時検証
++
++- UI表示だけでなくSQLiteトランザクション内で最新営業状態を再取得する。
++- Z精算と営業終了の間、販売・入出金・返品取消を拒否する。
++- Z精算は営業日単位の永続操作キーを維持する。
++- 営業開始・終了は同一プロセス内の連打ガードを使用する。
++- 営業終了は有効な責任者PINを処理直前に再検証する。
++
++## 既存データ
++
++`BusinessSessionSchema.ensure()`を使用し、既存の売上、入出金、返品取消、精算へ営業セッション列を追加する。
++既存データは、保存済み`business_date`と一致する営業セッションを最優先で関連付け、営業日がないデータのみ開始・終了時刻範囲から補完する。営業セッションに安全に対応付けられないデータは推測で別営業日へ混入させない。
