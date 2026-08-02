@@ -73,6 +73,26 @@ class CustomerDisplayStateReducerTest {
     }
 
     @Test
+    fun lowerSequenceFromFirstIdentifiedServerIsAcceptedAfterLegacyServer() {
+        val legacy = CustomerDisplayUiState(
+            connected = false,
+            snapshot = snapshot(50_000, CustomerDisplayMode.COMPLETE, serverInstanceId = null),
+            statusMessage = "再接続中",
+        )
+        val upgradedRegister = snapshot(
+            sequence = 3,
+            mode = CustomerDisplayMode.STANDBY,
+            serverInstanceId = "identified-server",
+        )
+
+        val updated = CustomerDisplayStateReducer.received(legacy, upgradedRegister)
+
+        assertEquals(3L, updated.snapshot.sequence)
+        assertEquals("identified-server", updated.snapshot.serverInstanceId)
+        assertEquals(CustomerDisplayMode.STANDBY, updated.snapshot.mode)
+    }
+
+    @Test
     fun legacySnapshotWithoutInstanceStillUsesSequenceProtection() {
         val current = CustomerDisplayUiState(
             connected = true,
