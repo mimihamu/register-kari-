@@ -6,6 +6,11 @@ on:
       - develop/v0.24
     paths:
       - .github/workflows/inspect-v024.yml
+  pull_request:
+    branches:
+      - develop/v0.23
+    paths:
+      - .github/workflows/inspect-v024.yml
 
 permissions:
   contents: read
