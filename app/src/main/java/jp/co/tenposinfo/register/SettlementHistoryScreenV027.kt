@@ -96,7 +96,7 @@ internal fun SettlementHistoryScreenV027(
             Modifier.weight(1f).padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            HistoryPanel(Modifier.width(270.dp).fillMaxHeight()) {
+            HistoryPanel(Modifier.width(220.dp).fillMaxHeight()) {
                 Text("営業セッション", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = HistoryNavy)
                 Spacer(Modifier.height(8.dp))
                 HistoryChoice(
@@ -109,7 +109,10 @@ internal fun SettlementHistoryScreenV027(
                     },
                 )
                 Spacer(Modifier.height(6.dp))
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     items(sessions, key = { it.id }) { session ->
                         HistoryChoice(
                             label = buildString {
@@ -128,7 +131,7 @@ internal fun SettlementHistoryScreenV027(
                 }
             }
 
-            HistoryPanel(Modifier.width(370.dp).fillMaxHeight()) {
+            HistoryPanel(Modifier.width(310.dp).fillMaxHeight()) {
                 Text("点検・精算履歴", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = HistoryNavy)
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -159,7 +162,10 @@ internal fun SettlementHistoryScreenV027(
                         Text("該当する履歴はありません", color = Color.Gray)
                     }
                 } else {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(7.dp),
+                    ) {
                         items(filtered, key = { it.id }) { record ->
                             Card(
                                 modifier = Modifier.fillMaxWidth().clickable {
@@ -202,7 +208,7 @@ internal fun SettlementHistoryScreenV027(
                 }
             }
 
-            HistoryPanel(Modifier.width(390.dp).fillMaxHeight()) {
+            HistoryPanel(Modifier.width(300.dp).fillMaxHeight()) {
                 Text("保存内容", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = HistoryNavy)
                 Spacer(Modifier.height(8.dp))
                 if (selected == null) {
