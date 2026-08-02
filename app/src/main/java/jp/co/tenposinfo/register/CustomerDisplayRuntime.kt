@@ -16,6 +16,10 @@ object CustomerDisplayRuntime {
     private var latestSnapshot: CustomerDisplaySnapshot = CustomerDisplaySnapshotFactory.standby(CustomerDisplaySettingsStore.DEFAULT_STORE_NAME)
     @Volatile
     private var lastError: String? = null
+    @Volatile
+    private var connectedClients: Int = 0
+    @Volatile
+    private var lastClientCountChangedAt: Long = 0L
     private var server: CustomerDisplayWebSocketServer? = null
     private var poller: CustomerDisplayPoller? = null
 
@@ -32,12 +36,17 @@ object CustomerDisplayRuntime {
             currentConfig = config
             latestSnapshot = latestSnapshot.copy(storeName = config.storeName)
             lastError = null
+            connectedClients = 0
             if (!config.enabled) return
 
             val newServer = CustomerDisplayWebSocketServer(
                 config = config,
                 latestPayload = { latestSnapshot.toJson() },
                 onError = { message -> lastError = message },
+                onClientCountChanged = { count ->
+                    connectedClients = count
+                    lastClientCountChangedAt = System.currentTimeMillis()
+                },
             )
             server = newServer
             newServer.start()
@@ -66,10 +75,12 @@ object CustomerDisplayRuntime {
     fun status(): CustomerDisplayRuntimeStatus = CustomerDisplayRuntimeStatus(
         enabled = currentConfig?.enabled == true,
         running = server != null,
-        connectedClients = null,
+        connectedClients = connectedClients,
+        lastClientCountChangedAt = lastClientCountChangedAt,
         lastError = lastError,
         latestMode = latestSnapshot.mode,
         latestSequence = latestSnapshot.sequence,
+        port = currentConfig?.port,
     )
 
     private fun stopLocked() {
@@ -77,16 +88,20 @@ object CustomerDisplayRuntime {
         poller = null
         server?.stop()
         server = null
+        connectedClients = 0
+        lastClientCountChangedAt = System.currentTimeMillis()
     }
 }
 
 data class CustomerDisplayRuntimeStatus(
     val enabled: Boolean,
     val running: Boolean,
-    val connectedClients: Int?,
+    val connectedClients: Int,
+    val lastClientCountChangedAt: Long,
     val lastError: String?,
     val latestMode: CustomerDisplayMode,
     val latestSequence: Long,
+    val port: Int?,
 )
 
 internal class CustomerDisplayPoller(
