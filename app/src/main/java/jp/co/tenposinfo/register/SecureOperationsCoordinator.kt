@@ -1,6 +1,7 @@
 package jp.co.tenposinfo.register
 
 import android.content.Context
+import java.time.LocalDate
 
 enum class OperationsAction(
     val permission: RegisterPermission,
@@ -30,12 +31,14 @@ object OperationsActorFormatter {
 /**
  * 管理操作の書込直前に、現在のログインセッション・個別権限・責任者PINを再検証する。
  * UI表示だけの権限制御に依存せず、停止済み担当者や失効セッションからの書込を拒否する。
+ * 同一プロセス内の連打はOperationExecutionGuardで拒否し、永続的な重複はDB操作キーで拒否する。
  */
 class SecureOperationsCoordinator(
     context: Context,
     private val store: OperationsStore,
 ) {
     private val appContext = context.applicationContext
+    private val executionGuard = OperationExecutionGuard()
 
     fun recordCashMovement(type: CashMovementType, amount: Long, reason: String): Long {
         val operator = requireOperator(OperationsAction.CASH_MOVEMENT)
@@ -47,13 +50,18 @@ class SecureOperationsCoordinator(
         actualCash: Long?,
         managerPin: String,
     ): Long {
-        val operator = requireOperator(OperationsAction.SETTLEMENT)
-        val actor = if (OperationsAuthorizationPolicy.requiresManagerApproval(OperationsAction.SETTLEMENT, type)) {
-            OperationsActorFormatter.approved(operator, requireManagerName(managerPin))
-        } else {
-            OperationsActorFormatter.direct(operator)
+        val date = LocalDate.now()
+        val persistentKey = OperationsIdempotencyPolicy.settlementKey(type, date)
+        val executionKey = persistentKey ?: "X_INSPECTION:$date"
+        return executionGuard.runExclusive(executionKey, "点検・精算を処理中です") {
+            val operator = requireOperator(OperationsAction.SETTLEMENT)
+            val actor = if (OperationsAuthorizationPolicy.requiresManagerApproval(OperationsAction.SETTLEMENT, type)) {
+                OperationsActorFormatter.approved(operator, requireManagerName(managerPin))
+            } else {
+                OperationsActorFormatter.direct(operator)
+            }
+            store.recordSettlement(type, actualCash, actor, date)
         }
-        return store.recordSettlement(type, actualCash, actor)
     }
 
     fun createFullReversal(
@@ -62,14 +70,17 @@ class SecureOperationsCoordinator(
         reason: String,
         managerPin: String,
     ): Long {
-        val operator = requireOperator(OperationsAction.REVERSAL)
-        val managerName = requireManagerName(managerPin)
-        return store.createFullReversal(
-            originalSaleId,
-            type,
-            reason,
-            OperationsActorFormatter.approved(operator, managerName),
-        )
+        val executionKey = OperationsIdempotencyPolicy.reversalKey(originalSaleId)
+        return executionGuard.runExclusive(executionKey, "返品・取消を処理中です") {
+            val operator = requireOperator(OperationsAction.REVERSAL)
+            val managerName = requireManagerName(managerPin)
+            store.createFullReversal(
+                originalSaleId,
+                type,
+                reason,
+                OperationsActorFormatter.approved(operator, managerName),
+            )
+        }
     }
 
     private fun requireOperator(action: OperationsAction): AuthenticatedOperator {
