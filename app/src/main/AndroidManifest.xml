@@ -3,6 +3,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
@@ -38,10 +40,10 @@
             android:initOrder="130" />
 
         <provider
-            android:name=".PrinterToolsAdminOverlayProvider"
-            android:authorities="${applicationId}.printer-tools-admin-overlay"
+            android:name=".CustomerDisplayBootstrapProvider"
+            android:authorities="${applicationId}.customer-display-bootstrap"
             android:exported="false"
-            android:initOrder="140" />
+            android:initOrder="135" />
 
         <provider
             android:name=".PrinterSoakTestRecoveryBootstrapProvider"
@@ -72,6 +74,12 @@
         <activity
             android:name=".AdminSettingsActivity"
             android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".CustomerDisplaySettingsActivity"
+            android:exported="false"
+            android:label="つぐレジ CD 接続設定"
             android:screenOrientation="landscape" />
 
         <activity

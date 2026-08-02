@@ -12,16 +12,16 @@ developmentKeystore.parentFile.mkdirs()
 developmentKeystore.writeBytes(Base64.getMimeDecoder().decode(developmentKeystoreSource.readText()))
 
 android {
-    namespace = "jp.co.tenposinfo.register"
+    namespace = "jp.co.tenposinfo.register.cd"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "jp.co.tenposinfo.register"
+        applicationId = "jp.co.tenposinfo.register.cd"
         minSdk = 26
         targetSdk = 36
-        versionCode = 43
+        versionCode = 6
         versionName = "0.13.0-dev.6"
-        manifestPlaceholders["appLabel"] = "つぐレジ"
+        manifestPlaceholders["appLabel"] = "つぐレジ CD"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -38,7 +38,7 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = ".dev"
-            manifestPlaceholders["appLabel"] = "つぐレジ 開発版"
+            manifestPlaceholders["appLabel"] = "つぐレジ CD 開発版"
             signingConfig = signingConfigs.getByName("development")
         }
         release {
@@ -70,7 +70,6 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
-    implementation("androidx.work:work-runtime:2.11.2")
 
     implementation("androidx.compose.ui:ui:1.11.4")
     implementation("androidx.compose.ui:ui-tooling-preview:1.11.4")

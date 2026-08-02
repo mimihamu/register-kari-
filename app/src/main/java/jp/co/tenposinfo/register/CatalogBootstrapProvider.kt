@@ -42,7 +42,6 @@ private class CatalogLifecycleCallbacks : Application.ActivityLifecycleCallbacks
         when (activity) {
             is MainActivity -> {
                 synchronizeAndRefresh(activity)
-                installCatalogButton(activity)
             }
             is CatalogSettingsActivity -> {
                 guardSettingsActivity(activity)

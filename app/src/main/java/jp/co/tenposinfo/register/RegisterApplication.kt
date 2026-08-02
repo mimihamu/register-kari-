@@ -37,7 +37,6 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
         val operator = OperatorSessionRegistry.current(activity.applicationContext)
         if (operator != null) OperatorSessionRegistry.touch(activity.applicationContext)
-        updateActionButtons(activity, content, operator)
         updateSalesPermissionGate(activity, content, operator)
         updateBusinessDayGate(activity, content, operator)
         AutomaticPrintScheduler.enqueueNow(activity.applicationContext)
