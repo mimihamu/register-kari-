@@ -59,7 +59,15 @@ jobs:
           test -s docs/V0.20_OPERATIONS_ROUTING.md
 
       - name: Run unit tests
-        run: gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest
+        run: |
+          set +e
+          gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo '===== JUnit failure reports ====='
+            find app/build/test-results customer-display/build/test-results -type f -name '*.xml' -print -exec cat {} \; 2>/dev/null || true
+            exit "$status"
+          fi
 
       - name: Build debug APKs
         run: gradle --no-daemon :app:assembleDebug :customer-display:assembleDebug
