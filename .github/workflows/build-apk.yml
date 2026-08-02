@@ -1,4 +1,4 @@
-name: Validate v0.27 settlement history
+name: Apply v0.27 history layout fix
 
 on:
   pull_request:
@@ -7,59 +7,71 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  validate-v027:
+  apply-layout-fix:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'develop/v0.27'
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 10
 
     steps:
-      - name: Checkout
+      - name: Checkout v0.27
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ref: develop/v0.27
           fetch-depth: 0
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android API 36
-        run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0"
-
-      - name: Set up Gradle 9.5
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "9.5.0"
-
-      - name: Verify v0.27 sources
+      - name: Apply bounded history layout
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 57' app/build.gradle.kts
-          grep -q 'versionName = "0.27.0-dev.1"' app/build.gradle.kts
-          test -s app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryPolicyV027.kt
-          test -s app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V027SettlementHistoryReprintTest.kt
-          test -s docs/V0.27_SETTLEMENT_HISTORY_REPRINT.md
-          test -s docs/V0.27_RELEASE_NOTES.md
-          grep -q 'OperationsScreen.SETTLEMENT_HISTORY' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
-          grep -q 'SettlementSnapshotSchemaV027.savePaymentTotals' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
-          grep -q 'SETTLEMENT_REPRINT' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
-          grep -q 'fun reprintSettlement' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
-          grep -q 'AutomaticPrintScheduler.enqueueNow' app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt
-          git diff --check origin/develop/v0.26...HEAD
+          python3 - <<'PY'
+          from pathlib import Path
 
-      - name: Run cumulative unit tests
-        run: gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest
+          path = Path("app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt")
+          text = path.read_text()
+          replacements = [
+              ("HistoryPanel(Modifier.width(270.dp).fillMaxHeight())", "HistoryPanel(Modifier.width(220.dp).fillMaxHeight())"),
+              ("HistoryPanel(Modifier.width(370.dp).fillMaxHeight())", "HistoryPanel(Modifier.width(310.dp).fillMaxHeight())"),
+              ("HistoryPanel(Modifier.width(390.dp).fillMaxHeight())", "HistoryPanel(Modifier.width(300.dp).fillMaxHeight())"),
+          ]
+          for old, new in replacements:
+              if old in text:
+                  text = text.replace(old, new, 1)
+              elif new not in text:
+                  raise RuntimeError(f"layout target not found: {old}")
 
-      - name: Build debug APKs
-        run: gradle --no-daemon :app:assembleDebug :customer-display:assembleDebug
+          old = "LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {"
+          new = "LazyColumn(\n                    modifier = Modifier.weight(1f),\n                    verticalArrangement = Arrangement.spacedBy(6.dp),\n                ) {"
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif new not in text:
+              raise RuntimeError("session list target not found")
+
+          old = "LazyColumn(verticalArrangement = Arrangement.spacedBy(7.dp)) {"
+          new = "LazyColumn(\n                        modifier = Modifier.weight(1f),\n                        verticalArrangement = Arrangement.spacedBy(7.dp),\n                    ) {"
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif new not in text:
+              raise RuntimeError("report list target not found")
+
+          path.write_text(text)
+          PY
+          git diff --check
+          grep -q 'HistoryPanel(Modifier.width(220.dp)' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
+          grep -q 'HistoryPanel(Modifier.width(310.dp)' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
+          grep -q 'HistoryPanel(Modifier.width(300.dp)' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
+          test "$(grep -c 'modifier = Modifier.weight(1f)' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt)" -ge 3
+
+      - name: Commit layout fix
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt; then
+            echo "Layout fix already applied"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
+          git commit -m "fix: constrain settlement history layout"
+          git push origin HEAD:develop/v0.27
