@@ -84,11 +84,21 @@ private enum class OperationsScreen {
 @Composable
 private fun OperationsApp(onClose: () -> Unit) {
     val context = LocalContext.current
-    val store = remember { OperationsStore(context.applicationContext) }
-    val registerDatabase = remember { RegisterDatabase(context.applicationContext) }
+    val appContext = context.applicationContext
+    val store = remember { OperationsStore(appContext) }
+    val secureStore = remember { SecureOperationsCoordinator(appContext, store) }
+    val registerDatabase = remember { RegisterDatabase(appContext) }
     var screen by remember { mutableStateOf(OperationsScreen.MENU) }
     var revision by remember { mutableStateOf(0) }
     var message by remember { mutableStateOf<String?>(null) }
+    var activeOperator by remember { mutableStateOf(OperatorSessionRegistry.current(appContext)) }
+
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(5_000L)
+            activeOperator = OperatorSessionRegistry.current(appContext)
+        }
+    }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -97,15 +107,37 @@ private fun OperationsApp(onClose: () -> Unit) {
         }
     }
 
+    fun openScreen(permission: RegisterPermission, destination: OperationsScreen) {
+        val current = OperatorSessionRegistry.current(appContext)
+        activeOperator = current
+        if (current?.allows(permission) == true) {
+            message = null
+            screen = destination
+        } else {
+            message = "${permission.displayName}の権限がありません"
+        }
+    }
+
+    val operator = activeOperator
     Surface(Modifier.fillMaxSize(), color = OpBackground) {
+        if (operator == null) {
+            OperationsAccessDeniedScreen(onClose)
+            return@Surface
+        }
+
         when (screen) {
             OperationsScreen.MENU -> OperationsMenuScreen(
-                summary = store.dailySummary(),
+                summary = if (
+                    operator.allows(RegisterPermission.VIEW_SALES) ||
+                    operator.allows(RegisterPermission.SETTLEMENT)
+                ) store.dailySummary() else null,
+                operatorName = operator.name,
+                permissions = operator.permissions,
                 message = message,
-                onDailySales = { screen = OperationsScreen.DAILY_SALES },
-                onSettlement = { screen = OperationsScreen.SETTLEMENT },
-                onCashMovement = { screen = OperationsScreen.CASH_MOVEMENT },
-                onReversal = { screen = OperationsScreen.REVERSAL },
+                onDailySales = { openScreen(RegisterPermission.VIEW_SALES, OperationsScreen.DAILY_SALES) },
+                onSettlement = { openScreen(RegisterPermission.SETTLEMENT, OperationsScreen.SETTLEMENT) },
+                onCashMovement = { openScreen(RegisterPermission.CASH_MOVEMENT, OperationsScreen.CASH_MOVEMENT) },
+                onReversal = { openScreen(RegisterPermission.REVERSAL, OperationsScreen.REVERSAL) },
                 onClose = onClose,
             )
 
@@ -117,19 +149,16 @@ private fun OperationsApp(onClose: () -> Unit) {
             OperationsScreen.SETTLEMENT -> SettlementScreen(
                 summary = store.dailySummary(),
                 history = store.recentSettlements(),
+                operatorName = operator.name,
                 revision = revision,
-                onExecute = { type, actualCash, operator, pin ->
-                    val result = runCatching {
-                        if (type == SettlementReportType.Z_SETTLEMENT && pin != "0000") {
-                            error("責任者PINが違います（テストPIN：0000）")
-                        }
-                        store.recordSettlement(type, actualCash, operator)
-                    }
+                onExecute = { type, actualCash, pin ->
+                    val result = runCatching { secureStore.recordSettlement(type, actualCash, pin) }
                     message = result.fold(
                         onSuccess = { "${type.displayName}を保存しました（No.$it）" },
                         onFailure = { it.message ?: "保存に失敗しました" },
                     )
                     if (result.isSuccess) revision++
+                    activeOperator = OperatorSessionRegistry.current(appContext)
                 },
                 message = message,
                 onBack = { screen = OperationsScreen.MENU },
@@ -137,15 +166,17 @@ private fun OperationsApp(onClose: () -> Unit) {
 
             OperationsScreen.CASH_MOVEMENT -> CashMovementScreen(
                 records = store.recentCashMovements(),
+                operatorName = operator.name,
                 revision = revision,
                 message = message,
-                onSave = { type, amount, reason, operator ->
-                    val result = runCatching { store.recordCashMovement(type, amount, reason, operator) }
+                onSave = { type, amount, reason ->
+                    val result = runCatching { secureStore.recordCashMovement(type, amount, reason) }
                     message = result.fold(
                         onSuccess = { "${type.displayName}を保存しました（No.$it）" },
                         onFailure = { it.message ?: "保存に失敗しました" },
                     )
                     if (result.isSuccess) revision++
+                    activeOperator = OperatorSessionRegistry.current(appContext)
                 },
                 onBack = { screen = OperationsScreen.MENU },
             )
@@ -154,18 +185,17 @@ private fun OperationsApp(onClose: () -> Unit) {
                 sales = registerDatabase.listSales(200),
                 reversedSaleIds = store.reversedSaleIds(),
                 reversals = store.recentReversals(),
+                operatorName = operator.name,
                 revision = revision,
                 message = message,
-                onExecute = { saleId, type, reason, operator, pin ->
-                    val result = runCatching {
-                        if (pin != "0000") error("責任者PINが違います（テストPIN：0000）")
-                        store.createFullReversal(saleId, type, reason, operator)
-                    }
+                onExecute = { saleId, type, reason, pin ->
+                    val result = runCatching { secureStore.createFullReversal(saleId, type, reason, pin) }
                     message = result.fold(
                         onSuccess = { "${type.displayName}を反対取引として保存しました（No.$it）" },
                         onFailure = { it.message ?: "処理に失敗しました" },
                     )
                     if (result.isSuccess) revision++
+                    activeOperator = OperatorSessionRegistry.current(appContext)
                 },
                 onBack = { screen = OperationsScreen.MENU },
             )
@@ -175,7 +205,9 @@ private fun OperationsApp(onClose: () -> Unit) {
 
 @Composable
 private fun OperationsMenuScreen(
-    summary: DailyOperationsSummary,
+    summary: DailyOperationsSummary?,
+    operatorName: String,
+    permissions: Set<RegisterPermission>,
     message: String?,
     onDailySales: () -> Unit,
     onSettlement: () -> Unit,
@@ -191,29 +223,68 @@ private fun OperationsMenuScreen(
         ) {
             OpPanel(Modifier.width(390.dp).fillMaxHeight()) {
                 Text("本日の状態", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = OpNavy)
-                Spacer(Modifier.height(16.dp))
-                OpAmountRow("営業日", summary.businessDate)
-                OpAmountRow("純売上", opYen(summary.netSales), emphasized = true)
-                OpAmountRow("取引件数", "${summary.transactionCount}件")
-                OpAmountRow("返品・取消", "${summary.reversalCount}件 / -${opYen(summary.reversalGross)}")
-                OpAmountRow("現金理論残高", opYen(summary.expectedCash))
-                OpAmountRow("未印刷", "${summary.pendingPrints}件")
-                OpAmountRow("未会計伝票", "${summary.heldTickets}件")
-                OpAmountRow("精算状態", if (summary.settled) "Z精算済み" else "未精算")
+                Spacer(Modifier.height(8.dp))
+                OpAuthenticatedOperator(operatorName)
+                Spacer(Modifier.height(8.dp))
+                if (summary == null) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("売上集計の表示権限がありません", color = Color.Gray)
+                    }
+                } else {
+                    OpAmountRow("営業日", summary.businessDate)
+                    OpAmountRow("純売上", opYen(summary.netSales), emphasized = true)
+                    OpAmountRow("取引件数", "${summary.transactionCount}件")
+                    OpAmountRow("返品・取消", "${summary.reversalCount}件 / -${opYen(summary.reversalGross)}")
+                    OpAmountRow("現金理論残高", opYen(summary.expectedCash))
+                    OpAmountRow("未印刷", "${summary.pendingPrints}件")
+                    OpAmountRow("未会計伝票", "${summary.heldTickets}件")
+                    OpAmountRow("精算状態", if (summary.settled) "Z精算済み" else "未精算")
+                }
                 if (message != null) {
                     Spacer(Modifier.height(14.dp))
-                    Text(message, color = if (message.contains("失敗") || message.contains("違い")) OpDanger else OpGreen)
+                    Text(
+                        message,
+                        color = if (message.contains("失敗") || message.contains("違い") || message.contains("権限")) OpDanger else OpGreen,
+                    )
                 }
             }
 
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    MenuTile("当日売上", "SCR-510\n売上・支払・現金を確認", OpPaleBlue, Modifier.weight(1f), onDailySales)
-                    MenuTile("点検・精算", "SCR-500\nX点検／Z精算／現金実査", OpPaleGreen, Modifier.weight(1f), onSettlement)
+                    MenuTile(
+                        "当日売上",
+                        "SCR-510\n売上・支払・現金を確認",
+                        OpPaleBlue,
+                        Modifier.weight(1f),
+                        RegisterPermission.VIEW_SALES in permissions,
+                        onDailySales,
+                    )
+                    MenuTile(
+                        "点検・精算",
+                        "SCR-500\nX点検／Z精算／現金実査",
+                        OpPaleGreen,
+                        Modifier.weight(1f),
+                        RegisterPermission.SETTLEMENT in permissions,
+                        onSettlement,
+                    )
                 }
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    MenuTile("入出金", "入金・出金を理由付きで記録", OpPaleYellow, Modifier.weight(1f), onCashMovement)
-                    MenuTile("返品・取消", "元売上を残して反対取引を作成", Color(0xFFFCE8E6), Modifier.weight(1f), onReversal)
+                    MenuTile(
+                        "入出金",
+                        "入金・出金を理由付きで記録",
+                        OpPaleYellow,
+                        Modifier.weight(1f),
+                        RegisterPermission.CASH_MOVEMENT in permissions,
+                        onCashMovement,
+                    )
+                    MenuTile(
+                        "返品・取消",
+                        "元売上を残して反対取引を作成",
+                        Color(0xFFFCE8E6),
+                        Modifier.weight(1f),
+                        RegisterPermission.REVERSAL in permissions,
+                        onReversal,
+                    )
                 }
             }
         }
@@ -227,11 +298,12 @@ private fun MenuTile(
     description: String,
     background: Color,
     modifier: Modifier,
+    enabled: Boolean,
     onClick: () -> Unit,
 ) {
     Card(
-        modifier = modifier.fillMaxHeight().clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = background),
+        modifier = modifier.fillMaxHeight().clickable(enabled = enabled, onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = if (enabled) background else Color(0xFFE8ECEF)),
         border = BorderStroke(1.dp, OpBorder),
         shape = RoundedCornerShape(12.dp),
     ) {
@@ -240,9 +312,14 @@ private fun MenuTile(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(title, fontSize = 27.sp, fontWeight = FontWeight.Bold, color = OpNavy)
+            Text(title, fontSize = 27.sp, fontWeight = FontWeight.Bold, color = if (enabled) OpNavy else Color.Gray)
             Spacer(Modifier.height(12.dp))
-            Text(description, textAlign = TextAlign.Center, color = Color.DarkGray, lineHeight = 22.sp)
+            Text(
+                if (enabled) description else "$description\n権限なし",
+                textAlign = TextAlign.Center,
+                color = if (enabled) Color.DarkGray else Color.Gray,
+                lineHeight = 22.sp,
+            )
         }
     }
 }
@@ -296,14 +373,14 @@ private fun DailySalesScreen(summary: DailyOperationsSummary, onBack: () -> Unit
 private fun SettlementScreen(
     summary: DailyOperationsSummary,
     history: List<SettlementRecord>,
+    operatorName: String,
     revision: Int,
-    onExecute: (SettlementReportType, Long?, String, String) -> Unit,
+    onExecute: (SettlementReportType, Long?, String) -> Unit,
     message: String?,
     onBack: () -> Unit,
 ) {
     var reportType by remember { mutableStateOf(SettlementReportType.X_INSPECTION) }
     var actualCash by remember { mutableStateOf("") }
-    var operator by remember { mutableStateOf("責任者") }
     var pin by remember { mutableStateOf("") }
     @Suppress("UNUSED_VARIABLE") val refresh = revision
     val actual = actualCash.toLongOrNull()
@@ -327,19 +404,13 @@ private fun SettlementScreen(
                 Spacer(Modifier.height(12.dp))
                 OpNumericField("現金実査額（空欄は理論額）", actualCash, { actualCash = it })
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = operator,
-                    onValueChange = { operator = it.take(30) },
-                    label = { Text("担当者") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                OpAuthenticatedOperator(operatorName)
                 if (reportType == SettlementReportType.Z_SETTLEMENT) {
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = pin,
                         onValueChange = { pin = it.filter(Char::isDigit).take(8) },
-                        label = { Text("責任者PIN（テスト：0000）") },
+                        label = { Text("責任者PIN") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
@@ -356,7 +427,7 @@ private fun SettlementScreen(
                 )
                 Spacer(Modifier.weight(1f))
                 Button(
-                    onClick = { onExecute(reportType, actual, operator, pin) },
+                    onClick = { onExecute(reportType, actual, pin) },
                     enabled = reportType != SettlementReportType.Z_SETTLEMENT || !summary.settled,
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = if (reportType == SettlementReportType.Z_SETTLEMENT) OpDanger else OpBlue),
@@ -414,15 +485,15 @@ private fun SettlementScreen(
 @Composable
 private fun CashMovementScreen(
     records: List<CashMovementRecord>,
+    operatorName: String,
     revision: Int,
     message: String?,
-    onSave: (CashMovementType, Long, String, String) -> Unit,
+    onSave: (CashMovementType, Long, String) -> Unit,
     onBack: () -> Unit,
 ) {
     var type by remember { mutableStateOf(CashMovementType.IN) }
     var amount by remember { mutableStateOf("") }
     var reason by remember { mutableStateOf("") }
-    var operator by remember { mutableStateOf("責任者") }
     @Suppress("UNUSED_VARIABLE") val refresh = revision
 
     Column(Modifier.fillMaxSize()) {
@@ -445,17 +516,11 @@ private fun CashMovementScreen(
                     modifier = Modifier.fillMaxWidth().height(110.dp),
                 )
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = operator,
-                    onValueChange = { operator = it.take(30) },
-                    label = { Text("担当者") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                OpAuthenticatedOperator(operatorName)
                 Spacer(Modifier.weight(1f))
                 Button(
                     onClick = {
-                        onSave(type, amount.toLongOrNull() ?: 0, reason, operator)
+                        onSave(type, amount.toLongOrNull() ?: 0, reason)
                         amount = ""
                         reason = ""
                     },
@@ -503,15 +568,15 @@ private fun ReversalScreen(
     sales: List<SaleSummaryRecord>,
     reversedSaleIds: Set<Long>,
     reversals: List<ReversalRecord>,
+    operatorName: String,
     revision: Int,
     message: String?,
-    onExecute: (Long, ReversalType, String, String, String) -> Unit,
+    onExecute: (Long, ReversalType, String, String) -> Unit,
     onBack: () -> Unit,
 ) {
     var selectedSaleId by remember { mutableStateOf<Long?>(null) }
     var type by remember { mutableStateOf(ReversalType.RETURN) }
     var reason by remember { mutableStateOf("") }
-    var operator by remember { mutableStateOf("責任者") }
     var pin by remember { mutableStateOf("") }
     @Suppress("UNUSED_VARIABLE") val refresh = revision
     val selected = sales.firstOrNull { it.id == selectedSaleId }
@@ -569,18 +634,12 @@ private fun ReversalScreen(
                     modifier = Modifier.fillMaxWidth().height(90.dp),
                 )
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = operator,
-                    onValueChange = { operator = it.take(30) },
-                    label = { Text("担当者") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                OpAuthenticatedOperator(operatorName)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = pin,
                     onValueChange = { pin = it.filter(Char::isDigit).take(8) },
-                    label = { Text("責任者PIN（テスト：0000）") },
+                    label = { Text("責任者PIN") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -590,7 +649,7 @@ private fun ReversalScreen(
                 Spacer(Modifier.height(8.dp))
                 Button(
                     onClick = {
-                        selectedSaleId?.let { onExecute(it, type, reason, operator, pin) }
+                        selectedSaleId?.let { onExecute(it, type, reason, pin) }
                         reason = ""
                         pin = ""
                         selectedSaleId = null
@@ -632,12 +691,39 @@ private fun ReversalScreen(
 }
 
 @Composable
+private fun OperationsAccessDeniedScreen(onClose: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("管理画面を利用できません", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = OpDanger)
+        Spacer(Modifier.height(12.dp))
+        Text("ログインセッションが失効したか、担当者が停止・権限変更されています。")
+        Spacer(Modifier.height(24.dp))
+        Button(onClick = onClose) { Text("販売画面へ戻る") }
+    }
+}
+
+@Composable
+private fun OpAuthenticatedOperator(operatorName: String) {
+    Row(
+        Modifier.fillMaxWidth().background(OpPaleBlue, RoundedCornerShape(8.dp)).padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("操作担当", color = Color.DarkGray)
+        Spacer(Modifier.weight(1f))
+        Text(operatorName, fontWeight = FontWeight.Bold, color = OpNavy)
+    }
+}
+
+@Composable
 private fun OpHeader(screenId: String, title: String) {
     Row(
         Modifier.fillMaxWidth().height(62.dp).background(OpNavy).padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("REGISTER", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+        Text("つぐレジ", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(24.dp))
         Text("$screenId  $title", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.weight(1f))
