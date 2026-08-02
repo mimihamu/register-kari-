@@ -16,6 +16,12 @@
         android:usesCleartextTraffic="true">
 
         <provider
+            android:name=".DataRestoreBootstrapProvider"
+            android:authorities="${applicationId}.data-restore-bootstrap"
+            android:exported="false"
+            android:initOrder="10" />
+
+        <provider
             android:name=".CatalogBootstrapProvider"
             android:authorities="${applicationId}.catalog-bootstrap"
             android:exported="false"
@@ -135,6 +141,11 @@
 
         <activity
             android:name=".UnifiedPrintQueueActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".DataProtectionActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
 

@@ -29,7 +29,7 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         when (activity) {
             is MainActivity -> updateMainActivity(activity)
             is OperationsActivity -> guardManagementActivity(activity)
-            is AdminSettingsActivity -> guardSettingsActivity(activity)
+            is AdminSettingsActivity, is DataProtectionActivity -> guardSettingsActivity(activity)
         }
     }
 
