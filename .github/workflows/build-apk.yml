@@ -1,4 +1,4 @@
-name: Correct v0.24 compilation issues
+name: Correct v0.24 cash movement compilation issue
 
 on:
   pull_request:
@@ -19,7 +19,7 @@ jobs:
           ref: develop/v0.24
           fetch-depth: 0
 
-      - name: Correct source substitutions
+      - name: Correct cash movement result message
         shell: bash
         run: |
           set -euo pipefail
@@ -27,10 +27,8 @@ jobs:
           from pathlib import Path
           import re
 
-          base = Path('app/src/main/java/jp/co/tenposinfo/register')
-
-          activity = base / 'OperationsActivity.kt'
-          text = activity.read_text()
+          path = Path('app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt')
+          text = path.read_text()
           start = text.index('            OperationsScreen.CASH_MOVEMENT -> CashMovementScreen(')
           end = text.index('            OperationsScreen.REVERSAL -> ReversalScreen(', start)
           segment = text[start:end]
@@ -53,37 +51,17 @@ jobs:
           segment, count = pattern.subn(replacement, segment)
           if count != 1:
               raise SystemExit(f'cash movement correction count={count}')
-          activity.write_text(text[:start] + segment + text[end:])
-
-          operations = base / 'OperationsStore.kt'
-          text = operations.read_text()
-          count_session = text.count('No.$sessionIdが見つかりません')
-          count_z = text.count('No.$idにより営業終了')
-          if count_session != 1 or count_z != 1:
-              raise SystemExit(f'operations interpolation counts session={count_session}, z={count_z}')
-          text = text.replace('No.$sessionIdが見つかりません', 'No.${sessionId}が見つかりません')
-          text = text.replace('No.$idにより営業終了', 'No.${id}により営業終了')
-          operations.write_text(text)
-
-          advanced = base / 'AdvancedOperationsStore.kt'
-          text = advanced.read_text()
-          count_advanced = text.count('No.$idにより営業終了')
-          if count_advanced != 1:
-              raise SystemExit(f'advanced interpolation count={count_advanced}')
-          advanced.write_text(text.replace('No.$idにより営業終了', 'No.${id}により営業終了'))
+          path.write_text(text[:start] + segment + text[end:])
           PY
           git diff --check
-          git diff --exit-code -- . ':!app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt' ':!app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt' ':!app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsStore.kt'
+          grep -q 'onSuccess = { "${type.displayName}を保存しました（No.$it）" }' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
 
-      - name: Commit corrections
+      - name: Commit correction
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$(git status --short)"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt \
-                  app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt \
-                  app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsStore.kt
-          git commit -m 'fix: correct v0.24 settlement source substitutions'
+          git add app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          git commit -m 'fix: restore cash movement result message'
           git push origin HEAD:develop/v0.24
