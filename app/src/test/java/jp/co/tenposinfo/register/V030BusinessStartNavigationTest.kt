@@ -1,6 +1,7 @@
 package jp.co.tenposinfo.register
 
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -9,26 +10,70 @@ class V030BusinessStartNavigationTest {
     private fun source(name: String) = File("src/main/java/jp/co/tenposinfo/register/$name").readText()
 
     @Test
-    fun businessStartGateUsesZSettlementPermission() {
-        val application = source("RegisterApplication.kt")
-        val block = application
-            .substringAfter("private fun updateBusinessDayGate")
-            .substringBefore("private fun isCanonicalBusinessSessionOpen")
+    fun caseA_salesAndZSettlementShowsBusinessStartNavigation() {
+        val permissions = setOf(RegisterPermission.SALES, RegisterPermission.Z_SETTLEMENT)
 
-        assertTrue(block.contains("operator.allows(RegisterPermission.Z_SETTLEMENT)"))
-        assertTrue(block.contains("operator.allows(RegisterPermission.SETTLEMENT)"))
-        assertTrue(block.contains("営業開始・状態画面へ"))
-        assertFalse(block.contains("if (operator.allows(RegisterPermission.SETTLEMENT)) {"))
+        assertTrue(BusinessStartNavigationPolicyV030.canOpenBusinessStart(permissions))
+        assertTrue(OperationsAccessPolicyV030.canEnter(permissions))
     }
 
     @Test
-    fun managementRoutesRecognizeSplitInspectionAndSettlementPermissions() {
-        val application = source("RegisterApplication.kt")
+    fun caseB_xInspectionOnlyDoesNotShowBusinessStartNavigation() {
+        val permissions = setOf(RegisterPermission.SALES, RegisterPermission.X_INSPECTION)
 
-        assertTrue(application.countOccurrences("it == RegisterPermission.X_INSPECTION") >= 3)
-        assertTrue(application.countOccurrences("it == RegisterPermission.Z_SETTLEMENT") >= 3)
+        assertFalse(BusinessStartNavigationPolicyV030.canOpenBusinessStart(permissions))
+        assertTrue(OperationsAccessPolicyV030.canEnter(permissions))
     }
 
-    private fun String.countOccurrences(value: String): Int =
-        windowed(value.length, 1).count { it == value }
+    @Test
+    fun caseC_settingsWithoutZSettlementDoesNotShowBusinessStartNavigation() {
+        val permissions = setOf(RegisterPermission.SALES, RegisterPermission.SETTINGS)
+
+        assertFalse(BusinessStartNavigationPolicyV030.canOpenBusinessStart(permissions))
+        assertFalse(OperationsAccessPolicyV030.canEnter(permissions))
+    }
+
+    @Test
+    fun caseD_legacySettlementIsExpandedBeforeUiPolicyEvaluation() {
+        val expanded = RegisterPermissionCompatibilityV026.expand(
+            setOf(RegisterPermission.SALES, RegisterPermission.SETTLEMENT),
+        )
+
+        assertTrue(RegisterPermission.X_INSPECTION in expanded)
+        assertTrue(RegisterPermission.Z_SETTLEMENT in expanded)
+        assertTrue(BusinessStartNavigationPolicyV030.canOpenBusinessStart(expanded))
+    }
+
+    @Test
+    fun managementPolicyIncludesSplitInspectionAndSettlementPermissions() {
+        assertTrue(ManagementNavigationPolicyV030.canOpenManagement(setOf(RegisterPermission.X_INSPECTION)))
+        assertTrue(ManagementNavigationPolicyV030.canOpenManagement(setOf(RegisterPermission.Z_SETTLEMENT)))
+        assertTrue(ManagementNavigationPolicyV030.canOpenManagement(setOf(RegisterPermission.VIEW_SALES)))
+        assertFalse(ManagementNavigationPolicyV030.canOpenManagement(setOf(RegisterPermission.SETTINGS)))
+    }
+
+    @Test
+    fun businessStartIntentContractUsesExplicitValue() {
+        assertTrue(
+            OperationsNavigationContractV030.requestsBusinessStart(
+                OperationsNavigationContractV030.OPEN_BUSINESS_START,
+            ),
+        )
+        assertFalse(OperationsNavigationContractV030.requestsBusinessStart(null))
+        assertEquals(
+            "OPEN_BUSINESS_START",
+            OperationsNavigationContractV030.OPEN_BUSINESS_START,
+        )
+    }
+
+    @Test
+    fun registerApplicationDoesNotUseLegacySettlementForNewUiOrAccessChecks() {
+        val application = source("RegisterApplication.kt")
+
+        assertFalse(application.contains("RegisterPermission.SETTLEMENT"))
+        assertTrue(application.contains("BusinessStartNavigationPolicyV030.canOpenBusinessStart"))
+        assertTrue(application.contains("ManagementNavigationPolicyV030.canOpenManagement"))
+        assertTrue(application.contains("OperationsAccessPolicyV030.canEnter"))
+        assertTrue(application.contains("OperationsNavigationContractV030.OPEN_BUSINESS_START"))
+    }
 }
