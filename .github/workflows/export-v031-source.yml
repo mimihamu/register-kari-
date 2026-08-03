@@ -6,6 +6,9 @@ on:
       - develop/v0.31
     paths:
       - .github/workflows/export-v031-source.yml
+  pull_request:
+    branches:
+      - develop/v0.30
   workflow_dispatch:
 
 permissions:
