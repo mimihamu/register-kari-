@@ -1,0 +1,100 @@
+name: Apply v0.30 responsive routing
+
+on:
+  push:
+    branches:
+      - develop/v0.30
+    paths:
+      - .github/workflows/apply-v030-responsive-routing.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-routing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v0.30
+          fetch-depth: 0
+
+      - name: Patch existing navigation entry points
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, before: str, after: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(before)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one match, found {count}")
+              file.write_text(text.replace(before, after, 1))
+
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt',
+              'onCatalog = { context.startActivity(Intent(context, CatalogSettingsActivity::class.java)) },',
+              'onCatalog = { context.startActivity(Intent(context, CatalogHubActivityV030::class.java)) },',
+          )
+
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/CatalogSettingsActivity.kt',
+              '    var screen by remember { mutableStateOf(CatalogScreen.MENU) }',
+              '''    val initialScreen = remember {
+              when ((context as? ComponentActivity)?.intent?.getStringExtra(CatalogNavigationContractV030.EXTRA_INITIAL_SCREEN)) {
+                  CatalogNavigationContractV030.PRODUCTS -> CatalogScreen.PRODUCTS
+                  CatalogNavigationContractV030.DEPARTMENTS -> CatalogScreen.DEPARTMENTS
+                  CatalogNavigationContractV030.GROUPS -> CatalogScreen.GROUPS
+                  CatalogNavigationContractV030.LAYOUT -> CatalogScreen.LAYOUT
+                  CatalogNavigationContractV030.TAXES -> CatalogScreen.TAXES
+                  CatalogNavigationContractV030.PROFILES -> CatalogScreen.PROFILES
+                  else -> CatalogScreen.MENU
+              }
+          }
+          var screen by remember { mutableStateOf(initialScreen) }''',
+          )
+
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/CatalogSettingsActivity.kt',
+              'onDynamic = { context.startActivity(Intent(context, DynamicCatalogSettingsActivity::class.java)) },',
+              'onDynamic = { context.startActivity(Intent(context, DynamicCatalogHubActivityV030::class.java)) },',
+          )
+
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/DynamicCatalogSettingsActivity.kt',
+              '    var screen by remember { mutableStateOf(DynamicCatalogScreen.MENU) }',
+              '''    val initialScreen = remember {
+              when ((context as? ComponentActivity)?.intent?.getStringExtra(DynamicCatalogNavigationContractV030.EXTRA_INITIAL_SCREEN)) {
+                  DynamicCatalogNavigationContractV030.TAX_RULES -> DynamicCatalogScreen.TAX_RULES
+                  DynamicCatalogNavigationContractV030.ASSIGNMENTS -> DynamicCatalogScreen.ASSIGNMENTS
+                  DynamicCatalogNavigationContractV030.REVISIONS -> DynamicCatalogScreen.REVISIONS
+                  else -> DynamicCatalogScreen.MENU
+              }
+          }
+          var screen by remember { mutableStateOf(initialScreen) }''',
+          )
+
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/BusinessStartActivityV030.kt',
+              '''                    onOpenOperations = {
+                          startActivity(Intent(this, OperationsActivity::class.java))
+                          finish()
+                      },''',
+              '''                    onOpenOperations = {
+                          startActivity(Intent(this, OperationsHubActivityV030::class.java))
+                          finish()
+                      },''',
+          )
+          PY
+
+      - name: Commit routing changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/CatalogSettingsActivity.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/DynamicCatalogSettingsActivity.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/BusinessStartActivityV030.kt
+          git commit -m "feat: route SCR-200 and SCR-270 through responsive hubs"
+          git push origin HEAD:develop/v0.30
