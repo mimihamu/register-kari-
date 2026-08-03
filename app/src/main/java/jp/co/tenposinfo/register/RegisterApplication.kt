@@ -28,6 +28,7 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
     override fun onActivityResumed(activity: Activity) {
         when (activity) {
             is MainActivity -> updateMainActivity(activity)
+            is BusinessStartActivityV030 -> guardBusinessStartActivity(activity)
             is OperationsActivity -> guardManagementActivity(activity)
             is AdminSettingsActivity, is DataProtectionActivity -> guardSettingsActivity(activity)
         }
@@ -197,10 +198,10 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
     }
 
     private fun operationsIntent(activity: Activity, initialScreen: String? = null): Intent =
-        Intent(activity, OperationsActivity::class.java).apply {
-            if (initialScreen != null) {
-                putExtra(OperationsNavigationContractV030.EXTRA_INITIAL_SCREEN, initialScreen)
-            }
+        if (OperationsNavigationContractV030.requestsBusinessStart(initialScreen)) {
+            Intent(activity, BusinessStartActivityV030::class.java)
+        } else {
+            Intent(activity, OperationsActivity::class.java)
         }
 
     private fun isCanonicalBusinessSessionOpen(activity: Activity): Boolean {
@@ -210,6 +211,18 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         } finally {
             store.close()
         }
+    }
+
+    private fun guardBusinessStartActivity(activity: Activity) {
+        val operator = OperatorSessionRegistry.current(activity.applicationContext)
+        val allowed = operator?.let {
+            OperationsAccessPolicyV030.canOpenBusinessStart(it.permissions)
+        } == true
+        if (allowed) {
+            OperatorSessionRegistry.touch(activity.applicationContext)
+            return
+        }
+        installActivityGate(activity, "営業開始・状態画面にはZ精算権限が必要です")
     }
 
     private fun guardManagementActivity(activity: Activity) {
