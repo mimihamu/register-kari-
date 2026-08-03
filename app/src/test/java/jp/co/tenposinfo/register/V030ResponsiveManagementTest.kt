@@ -32,8 +32,11 @@ class V030ResponsiveManagementTest {
     @Test
     fun registerManagementEntryRoutesToResponsiveHub() {
         val application = source("RegisterApplication.kt")
+        val main = source("MainActivity.kt")
 
         assertTrue(application.contains("OperationsHubActivityV030::class.java"))
+        assertTrue(main.contains("OperationsHubActivityV030::class.java"))
+        assertTrue(main.contains("ManagementNavigationPolicyV030::canOpenManagement"))
         assertTrue(application.contains("BusinessStartActivityV030::class.java"))
         assertTrue(application.contains("SettlementActivityV030"))
         assertTrue(application.contains("SettlementHistoryActivityV030"))

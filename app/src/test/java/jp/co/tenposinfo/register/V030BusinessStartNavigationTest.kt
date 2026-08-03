@@ -76,4 +76,26 @@ class V030BusinessStartNavigationTest {
         assertTrue(application.contains("OperationsAccessPolicyV030.canEnter"))
         assertTrue(application.contains("OperationsNavigationContractV030.OPEN_BUSINESS_START"))
     }
+    @Test
+    fun legacySettlementIsOnlyReferencedByCompatibilityMigration() {
+        val sourceRoot = File("src/main/java/jp/co/tenposinfo/register")
+        val references = sourceRoot.listFiles()
+            .orEmpty()
+            .filter { it.extension == "kt" && it.readText().contains("RegisterPermission.SETTLEMENT") }
+            .map(File::getName)
+            .sorted()
+
+        assertEquals(listOf("SettlementPreflightV026.kt"), references)
+        assertFalse(source("SecureOperationsCoordinator.kt").contains("OperationsAction.SETTLEMENT"))
+    }
+
+    @Test
+    fun salesScreenManagementEntryUsesSharedPolicyAndResponsiveHub() {
+        val main = source("MainActivity.kt")
+
+        assertTrue(main.contains("ManagementNavigationPolicyV030::canOpenManagement"))
+        assertTrue(main.contains("OperationsHubActivityV030::class.java"))
+        assertFalse(main.contains("RegisterPermission.SETTLEMENT"))
+    }
+
 }

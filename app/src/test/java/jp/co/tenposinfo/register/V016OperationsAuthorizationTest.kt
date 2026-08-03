@@ -20,7 +20,8 @@ class V016OperationsAuthorizationTest {
 
         assertTrue(OperationsAuthorizationPolicy.canAccess(cashier, OperationsAction.CASH_MOVEMENT))
         assertFalse(OperationsAuthorizationPolicy.canAccess(cashier, OperationsAction.DAILY_SALES))
-        assertFalse(OperationsAuthorizationPolicy.canAccess(cashier, OperationsAction.SETTLEMENT))
+        assertFalse(OperationsAuthorizationPolicy.canAccess(cashier, OperationsAction.X_INSPECTION))
+        assertFalse(OperationsAuthorizationPolicy.canAccess(cashier, OperationsAction.Z_SETTLEMENT))
         assertFalse(OperationsAuthorizationPolicy.canAccess(cashier, OperationsAction.REVERSAL))
     }
 
@@ -35,13 +36,13 @@ class V016OperationsAuthorizationTest {
     fun zSettlementAndReversalRequireManagerApproval() {
         assertFalse(
             OperationsAuthorizationPolicy.requiresManagerApproval(
-                OperationsAction.SETTLEMENT,
+                OperationsAction.X_INSPECTION,
                 SettlementReportType.X_INSPECTION,
             ),
         )
         assertTrue(
             OperationsAuthorizationPolicy.requiresManagerApproval(
-                OperationsAction.SETTLEMENT,
+                OperationsAction.Z_SETTLEMENT,
                 SettlementReportType.Z_SETTLEMENT,
             ),
         )
