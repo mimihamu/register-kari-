@@ -365,14 +365,11 @@ private fun RegisterApp() {
                     context.startActivity(Intent(context, PrinterStatusActivity::class.java))
                 },
                 canOpenSettings = currentOperator?.isManager == true && currentOperator?.allows(RegisterPermission.SETTINGS) == true,
-                canOpenManagement = currentOperator?.permissions?.any {
-                    it == RegisterPermission.VIEW_SALES ||
-                        it == RegisterPermission.CASH_MOVEMENT ||
-                        it == RegisterPermission.SETTLEMENT ||
-                        it == RegisterPermission.REVERSAL
-                } == true,
+                canOpenManagement = currentOperator?.permissions?.let(
+                    ManagementNavigationPolicyV030::canOpenManagement,
+                ) == true,
                 onOpenSettings = { context.startActivity(Intent(context, AdminSettingsActivity::class.java)) },
-                onOpenManagement = { context.startActivity(Intent(context, OperationsActivity::class.java)) },
+                onOpenManagement = { context.startActivity(Intent(context, OperationsHubActivityV030::class.java)) },
                 accessMessage = accessMessage,
                 onLogout = {
                     OperatorSessionRegistry.logout(context.applicationContext)

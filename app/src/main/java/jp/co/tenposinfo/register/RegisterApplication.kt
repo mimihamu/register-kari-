@@ -28,6 +28,10 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
     override fun onActivityResumed(activity: Activity) {
         when (activity) {
             is MainActivity -> updateMainActivity(activity)
+            is BusinessStartActivityV030 -> guardBusinessStartActivity(activity)
+            is OperationsHubActivityV030,
+            is SettlementActivityV030,
+            is SettlementHistoryActivityV030,
             is OperationsActivity -> guardManagementActivity(activity)
             is AdminSettingsActivity, is DataProtectionActivity -> guardSettingsActivity(activity)
         }
@@ -47,11 +51,8 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         content: ViewGroup,
         operator: AuthenticatedOperator?,
     ) {
-        val managementAllowed = operator?.permissions?.any {
-            it == RegisterPermission.VIEW_SALES ||
-                it == RegisterPermission.CASH_MOVEMENT ||
-                it == RegisterPermission.SETTLEMENT ||
-                it == RegisterPermission.REVERSAL
+        val managementAllowed = operator?.let {
+            ManagementNavigationPolicyV030.canOpenManagement(it.permissions)
         } == true
         ensureActionButton(
             activity = activity,
@@ -62,7 +63,7 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
             topMargin = 68,
             endMargin = 12,
             filled = true,
-        ) { activity.startActivity(Intent(activity, OperationsActivity::class.java)) }
+        ) { activity.startActivity(operationsIntent(activity)) }
 
         ensureActionButton(
             activity = activity,
@@ -130,12 +131,8 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         if (existing != null) return
 
         val buttons = mutableListOf<Pair<String, () -> Unit>>()
-        if (operator.permissions.any {
-                it == RegisterPermission.VIEW_SALES || it == RegisterPermission.CASH_MOVEMENT ||
-                    it == RegisterPermission.SETTLEMENT || it == RegisterPermission.REVERSAL
-            }
-        ) {
-            buttons += "レジ管理を開く" to { activity.startActivity(Intent(activity, OperationsActivity::class.java)) }
+        if (ManagementNavigationPolicyV030.canOpenManagement(operator.permissions)) {
+            buttons += "レジ管理を開く" to { activity.startActivity(operationsIntent(activity)) }
         }
         if (operator.allows(RegisterPermission.SETTINGS)) {
             buttons += "各種設定を開く" to { activity.startActivity(Intent(activity, AdminSettingsActivity::class.java)) }
@@ -174,8 +171,15 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         if (existing != null) return
 
         val buttons = mutableListOf<Pair<String, () -> Unit>>()
-        if (operator.allows(RegisterPermission.SETTLEMENT)) {
-            buttons += "営業開始・状態画面へ" to { activity.startActivity(Intent(activity, OperationsActivity::class.java)) }
+        if (BusinessStartNavigationPolicyV030.canOpenBusinessStart(operator.permissions)) {
+            buttons += "営業開始・状態画面へ" to {
+                activity.startActivity(
+                    operationsIntent(
+                        activity = activity,
+                        initialScreen = OperationsNavigationContractV030.OPEN_BUSINESS_START,
+                    ),
+                )
+            }
         }
         if (operator.allows(RegisterPermission.SETTINGS)) {
             buttons += "各種設定" to { activity.startActivity(Intent(activity, AdminSettingsActivity::class.java)) }
@@ -196,6 +200,13 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         )
     }
 
+    private fun operationsIntent(activity: Activity, initialScreen: String? = null): Intent =
+        if (OperationsNavigationContractV030.requestsBusinessStart(initialScreen)) {
+            Intent(activity, BusinessStartActivityV030::class.java)
+        } else {
+            Intent(activity, OperationsHubActivityV030::class.java)
+        }
+
     private fun isCanonicalBusinessSessionOpen(activity: Activity): Boolean {
         val store = OperationsStore(activity.applicationContext)
         return try {
@@ -205,11 +216,22 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         }
     }
 
+    private fun guardBusinessStartActivity(activity: Activity) {
+        val operator = OperatorSessionRegistry.current(activity.applicationContext)
+        val allowed = operator?.let {
+            OperationsAccessPolicyV030.canOpenBusinessStart(it.permissions)
+        } == true
+        if (allowed) {
+            OperatorSessionRegistry.touch(activity.applicationContext)
+            return
+        }
+        installActivityGate(activity, "営業開始・状態画面にはZ精算権限が必要です")
+    }
+
     private fun guardManagementActivity(activity: Activity) {
         val operator = OperatorSessionRegistry.current(activity.applicationContext)
-        val allowed = operator?.permissions?.any {
-            it == RegisterPermission.VIEW_SALES || it == RegisterPermission.CASH_MOVEMENT ||
-                it == RegisterPermission.SETTLEMENT || it == RegisterPermission.REVERSAL
+        val allowed = operator?.let {
+            OperationsAccessPolicyV030.canEnter(it.permissions)
         } == true
         if (allowed) {
             OperatorSessionRegistry.touch(activity.applicationContext)

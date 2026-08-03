@@ -10,7 +10,6 @@ enum class OperationsAction(
     DAILY_SALES(RegisterPermission.VIEW_SALES, false),
     X_INSPECTION(RegisterPermission.X_INSPECTION, false),
     Z_SETTLEMENT(RegisterPermission.Z_SETTLEMENT, false),
-    SETTLEMENT(RegisterPermission.SETTLEMENT, false),
     CASH_MOVEMENT(RegisterPermission.CASH_MOVEMENT, false),
     REVERSAL(RegisterPermission.REVERSAL, true),
 }

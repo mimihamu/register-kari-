@@ -127,7 +127,7 @@ private fun AdminSettingsApp(onClose: () -> Unit) {
                     actorName = actorName,
                     onOperators = { screen = AdminScreen.OPERATORS },
                     onPrinter = { screen = AdminScreen.PRINTER },
-                    onCatalog = { context.startActivity(Intent(context, CatalogSettingsActivity::class.java)) },
+                    onCatalog = { context.startActivity(Intent(context, CatalogHubActivityV030::class.java)) },
                     onCustomerDisplay = { context.startActivity(Intent(context, CustomerDisplaySettingsActivity::class.java)) },
                     onPrinterTools = { context.startActivity(Intent(context, PrinterToolsHubActivity::class.java)) },
                     onDataProtection = { context.startActivity(Intent(context, DataProtectionActivity::class.java)) },

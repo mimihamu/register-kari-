@@ -88,7 +88,18 @@ private fun CatalogSettingsApp(onClose: () -> Unit) {
     val context = LocalContext.current
     val store = remember { CatalogMasterStore(context.applicationContext) }
     val actor = remember { OperatorSessionRegistry.current(context.applicationContext)?.name ?: "責任者" }
-    var screen by remember { mutableStateOf(CatalogScreen.MENU) }
+    val initialScreen = remember {
+    when ((context as? ComponentActivity)?.intent?.getStringExtra(CatalogNavigationContractV030.EXTRA_INITIAL_SCREEN)) {
+        CatalogNavigationContractV030.PRODUCTS -> CatalogScreen.PRODUCTS
+        CatalogNavigationContractV030.DEPARTMENTS -> CatalogScreen.DEPARTMENTS
+        CatalogNavigationContractV030.GROUPS -> CatalogScreen.GROUPS
+        CatalogNavigationContractV030.LAYOUT -> CatalogScreen.LAYOUT
+        CatalogNavigationContractV030.TAXES -> CatalogScreen.TAXES
+        CatalogNavigationContractV030.PROFILES -> CatalogScreen.PROFILES
+        else -> CatalogScreen.MENU
+    }
+}
+var screen by remember { mutableStateOf(initialScreen) }
     var refresh by remember { mutableIntStateOf(0) }
     var message by remember { mutableStateOf<String?>(null) }
 
@@ -113,7 +124,7 @@ private fun CatalogSettingsApp(onClose: () -> Unit) {
                 onLayout = { message = null; screen = CatalogScreen.LAYOUT },
                 onTaxes = { message = null; screen = CatalogScreen.TAXES },
                 onProfiles = { message = null; screen = CatalogScreen.PROFILES },
-                onDynamic = { context.startActivity(Intent(context, DynamicCatalogSettingsActivity::class.java)) },
+                onDynamic = { context.startActivity(Intent(context, DynamicCatalogHubActivityV030::class.java)) },
                 onClose = onClose,
             )
 
