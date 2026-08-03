@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout
+      - name: Checkout current v0.30
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
