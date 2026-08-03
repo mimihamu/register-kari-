@@ -53,9 +53,15 @@ jobs:
           test -s app/src/main/java/jp/co/tenposinfo/register/ResponsiveLayoutV029.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/OperationsNavigationPoliciesV030.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/BusinessStartActivityV030.kt
+          test -s app/src/main/java/jp/co/tenposinfo/register/OperationsHubActivityV030.kt
+          test -s app/src/main/java/jp/co/tenposinfo/register/SettlementActivityV030.kt
+          test -s app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryActivityV030.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V030BusinessStartNavigationTest.kt
-          test -s app/src/test/java/jp/co/tenposinfo/register/V029ResponsiveLayoutTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V030ResponsiveManagementTest.kt
           test -s docs/V0.30_BUSINESS_START_NAVIGATION_FIX.md
+          test -s docs/V0.30_RESPONSIVE_MANAGEMENT_REQUIREMENTS.md
+          test -s docs/V0.30_RELEASE_NOTES.md
+          test -s app/src/test/java/jp/co/tenposinfo/register/V029ResponsiveLayoutTest.kt
           test -s docs/V0.29_RESPONSIVE_LAYOUT_REQUIREMENTS.md
           test -s docs/V0.29_RELEASE_NOTES.md
           test -s app/src/main/java/jp/co/tenposinfo/register/RegisterUiChromeV028.kt
@@ -74,6 +80,9 @@ jobs:
           application = (root / 'RegisterApplication.kt').read_text()
           policies = (root / 'OperationsNavigationPoliciesV030.kt').read_text()
           business = (root / 'BusinessStartActivityV030.kt').read_text()
+          hub = (root / 'OperationsHubActivityV030.kt').read_text()
+          settlement = (root / 'SettlementActivityV030.kt').read_text()
+          history = (root / 'SettlementHistoryActivityV030.kt').read_text()
           manifest = Path('app/src/main/AndroidManifest.xml').read_text()
 
           assert 'TOP_BAR_ARGB: Long = 0xFF173F6B' in chrome
@@ -118,14 +127,32 @@ jobs:
           assert 'ManagementNavigationPolicyV030.canOpenManagement' in application
           assert 'OperationsAccessPolicyV030.canEnter' in application
           assert 'BusinessStartActivityV030::class.java' in application
+          assert 'OperationsHubActivityV030::class.java' in application
           assert 'RegisterPermission.Z_SETTLEMENT in permissions' in policies
-          assert 'BoxWithConstraints' in business
-          assert 'verticalScroll' in business
+
+          for source in (business, hub, settlement, history):
+              assert 'rememberRegisterResponsiveMetrics()' in source
+              assert 'BoxWithConstraints' in source
+              assert 'verticalScroll' in source
+              assert '0xFF173F6B' in source
+
           assert 'SecureOperationsCoordinator' in business
-          assert 'android:name=".BusinessStartActivityV030"' in manifest
+          assert 'secureStore.startBusinessDay' in business
+          assert 'secureStore.recordSettlement' in settlement
+          assert 'secureStore.reprintSettlement' in history
+          assert 'OperationsActivity::class.java' in hub
+
+          for activity in (
+              '.BusinessStartActivityV030',
+              '.OperationsHubActivityV030',
+              '.SettlementActivityV030',
+              '.SettlementHistoryActivityV030',
+          ):
+              assert f'android:name="{activity}"' in manifest
           PY
 
           for test_file in \
+            V030ResponsiveManagementTest.kt \
             V030BusinessStartNavigationTest.kt \
             V029ResponsiveLayoutTest.kt \
             V028UiStabilityTest.kt \
@@ -148,8 +175,14 @@ jobs:
 
           operations_count=$(grep -c 'android:name=".OperationsActivity"' app/src/main/AndroidManifest.xml)
           business_start_count=$(grep -c 'android:name=".BusinessStartActivityV030"' app/src/main/AndroidManifest.xml)
+          hub_count=$(grep -c 'android:name=".OperationsHubActivityV030"' app/src/main/AndroidManifest.xml)
+          settlement_count=$(grep -c 'android:name=".SettlementActivityV030"' app/src/main/AndroidManifest.xml)
+          history_count=$(grep -c 'android:name=".SettlementHistoryActivityV030"' app/src/main/AndroidManifest.xml)
           test "$operations_count" -eq 1
           test "$business_start_count" -eq 1
+          test "$hub_count" -eq 1
+          test "$settlement_count" -eq 1
+          test "$history_count" -eq 1
           ! grep -q '<activity-alias' app/src/main/AndroidManifest.xml
           test ! -e app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsActivity.kt
           test ! -e tools/apply_v029.py
@@ -188,10 +221,13 @@ jobs:
           echo 'CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.6' >> artifacts/build-summary.txt
           echo 'CUSTOMER_DISPLAY_VERSION_CODE=6' >> artifacts/build-summary.txt
           echo 'UI_TOP_BAR=fixed-navy' >> artifacts/build-summary.txt
-          echo 'UI_RESPONSIVE_POLICY=main-and-business-start' >> artifacts/build-summary.txt
+          echo 'UI_RESPONSIVE_POLICY=main-business-start-management-x-z-history' >> artifacts/build-summary.txt
           echo 'UI_KEYPAD_HEIGHT_DP=48-80-adaptive' >> artifacts/build-summary.txt
           echo 'UI_BUSINESS_START_DIRECT_ROUTE=enabled' >> artifacts/build-summary.txt
-          echo 'UI_BUSINESS_START_COMPACT_FALLBACK=vertical-scroll' >> artifacts/build-summary.txt
+          echo 'UI_MANAGEMENT_RESPONSIVE_HUB=enabled' >> artifacts/build-summary.txt
+          echo 'UI_X_Z_RESPONSIVE=enabled' >> artifacts/build-summary.txt
+          echo 'UI_SETTLEMENT_HISTORY_RESPONSIVE=enabled' >> artifacts/build-summary.txt
+          echo 'UI_COMPACT_FALLBACK=vertical-scroll' >> artifacts/build-summary.txt
           echo 'UI_SUPPORTED_PROFILES=800x480-to-1920x1080' >> artifacts/build-summary.txt
           echo 'LEGACY_SETTLEMENT_UI_REFERENCE=removed' >> artifacts/build-summary.txt
           echo 'SETTLEMENT_HISTORY=business-session' >> artifacts/build-summary.txt
@@ -200,6 +236,7 @@ jobs:
           echo 'AUTO_BACKUP_TRIGGER=committed-z-settlement' >> artifacts/build-summary.txt
           echo 'SIGNING=development-not-production' >> artifacts/build-summary.txt
           echo 'REAL_DEVICE_BUSINESS_START_NAVIGATION_VERIFICATION=required' >> artifacts/build-summary.txt
+          echo 'REAL_DEVICE_MANAGEMENT_RESPONSIVE_VERIFICATION=required' >> artifacts/build-summary.txt
           echo 'REAL_DEVICE_ALL_SCREEN_DISPLAY_SIZE_VERIFICATION=required' >> artifacts/build-summary.txt
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
