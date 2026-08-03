@@ -87,7 +87,15 @@ private fun DynamicCatalogSettingsApp(onClose: () -> Unit) {
     val context = LocalContext.current
     val store = remember { DynamicCatalogStore(context.applicationContext) }
     val actor = remember { OperatorSessionRegistry.current(context.applicationContext)?.name ?: "責任者" }
-    var screen by remember { mutableStateOf(DynamicCatalogScreen.MENU) }
+    val initialScreen = remember {
+    when ((context as? ComponentActivity)?.intent?.getStringExtra(DynamicCatalogNavigationContractV030.EXTRA_INITIAL_SCREEN)) {
+        DynamicCatalogNavigationContractV030.TAX_RULES -> DynamicCatalogScreen.TAX_RULES
+        DynamicCatalogNavigationContractV030.ASSIGNMENTS -> DynamicCatalogScreen.ASSIGNMENTS
+        DynamicCatalogNavigationContractV030.REVISIONS -> DynamicCatalogScreen.REVISIONS
+        else -> DynamicCatalogScreen.MENU
+    }
+}
+var screen by remember { mutableStateOf(initialScreen) }
     var refresh by remember { mutableIntStateOf(0) }
     var message by remember { mutableStateOf<String?>(null) }
 

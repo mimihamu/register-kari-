@@ -73,7 +73,7 @@ class BusinessStartActivityV030 : ComponentActivity() {
             MaterialTheme {
                 BusinessStartRouteV030(
                     onOpenOperations = {
-                        startActivity(Intent(this, OperationsActivity::class.java))
+                        startActivity(Intent(this, OperationsHubActivityV030::class.java))
                         finish()
                     },
                     onClose = { finish() },
