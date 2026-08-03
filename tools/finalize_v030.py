@@ -111,13 +111,6 @@ if old_responsive not in responsive:
     raise SystemExit("V030 responsive management test block was not found")
 responsive_path.write_text(responsive.replace(old_responsive, new_responsive, 1))
 
-final_workflow = ROOT / ".github/v030-final-build.yml"
-workflow_path = ROOT / ".github/workflows/build-apk.yml"
-if not final_workflow.is_file():
-    raise SystemExit("Final workflow payload is missing")
-workflow_path.write_text(final_workflow.read_text())
-final_workflow.unlink()
-
 source_root = ROOT / "app/src/main/java/jp/co/tenposinfo/register"
 legacy_sources = sorted(
     path.name
