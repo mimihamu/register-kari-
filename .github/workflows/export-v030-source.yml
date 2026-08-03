@@ -1,0 +1,37 @@
+name: Export v0.30 source workspace
+
+on:
+  push:
+    branches:
+      - develop/v0.30
+    paths:
+      - .github/workflows/export-v030-source.yml
+  pull_request:
+    branches:
+      - develop/v0.29
+    paths:
+      - .github/workflows/export-v030-source.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Pack source
+        run: |
+          git archive --format=zip --output=register-kari-v030-source.zip HEAD
+          git rev-parse HEAD > source-head.txt
+      - name: Upload source
+        uses: actions/upload-artifact@v4
+        with:
+          name: register-kari-v030-source
+          path: |
+            register-kari-v030-source.zip
+            source-head.txt
+          retention-days: 1
