@@ -73,7 +73,17 @@
             android:screenOrientation="landscape" />
 
         <activity
+            android:name=".DynamicCatalogHubActivityV030"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
             android:name=".DynamicCatalogSettingsActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".CatalogHubActivityV030"
             android:exported="false"
             android:screenOrientation="landscape" />
 
