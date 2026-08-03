@@ -150,6 +150,11 @@
             android:screenOrientation="landscape" />
 
         <activity
+            android:name=".BusinessStartActivityV030"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
             android:name=".OperationsActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
