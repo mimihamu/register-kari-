@@ -29,4 +29,4 @@ jobs:
           path: |
             register-kari-v031-source.zip
             source-head.txt
-          retention-days: 1
+          retention-days: 2
