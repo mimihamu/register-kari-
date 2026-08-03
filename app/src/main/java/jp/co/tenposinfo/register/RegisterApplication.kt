@@ -29,7 +29,11 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         when (activity) {
             is MainActivity -> updateMainActivity(activity)
             is BusinessStartActivityV030 -> guardBusinessStartActivity(activity)
-            is OperationsActivity -> guardManagementActivity(activity)
+            is OperationsHubActivityV030,
+            is SettlementActivityV030,
+            is SettlementHistoryActivityV030,
+            is OperationsActivity,
+            -> guardManagementActivity(activity)
             is AdminSettingsActivity, is DataProtectionActivity -> guardSettingsActivity(activity)
         }
     }
@@ -201,7 +205,7 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         if (OperationsNavigationContractV030.requestsBusinessStart(initialScreen)) {
             Intent(activity, BusinessStartActivityV030::class.java)
         } else {
-            Intent(activity, OperationsActivity::class.java)
+            Intent(activity, OperationsHubActivityV030::class.java)
         }
 
     private fun isCanonicalBusinessSessionOpen(activity: Activity): Boolean {
