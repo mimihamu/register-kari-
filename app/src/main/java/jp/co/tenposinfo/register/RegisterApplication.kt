@@ -50,6 +50,8 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         val managementAllowed = operator?.permissions?.any {
             it == RegisterPermission.VIEW_SALES ||
                 it == RegisterPermission.CASH_MOVEMENT ||
+                it == RegisterPermission.X_INSPECTION ||
+                it == RegisterPermission.Z_SETTLEMENT ||
                 it == RegisterPermission.SETTLEMENT ||
                 it == RegisterPermission.REVERSAL
         } == true
@@ -132,6 +134,7 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         val buttons = mutableListOf<Pair<String, () -> Unit>>()
         if (operator.permissions.any {
                 it == RegisterPermission.VIEW_SALES || it == RegisterPermission.CASH_MOVEMENT ||
+                    it == RegisterPermission.X_INSPECTION || it == RegisterPermission.Z_SETTLEMENT ||
                     it == RegisterPermission.SETTLEMENT || it == RegisterPermission.REVERSAL
             }
         ) {
@@ -174,7 +177,10 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         if (existing != null) return
 
         val buttons = mutableListOf<Pair<String, () -> Unit>>()
-        if (operator.allows(RegisterPermission.SETTLEMENT)) {
+        if (
+            operator.allows(RegisterPermission.Z_SETTLEMENT) ||
+            operator.allows(RegisterPermission.SETTLEMENT)
+        ) {
             buttons += "営業開始・状態画面へ" to { activity.startActivity(Intent(activity, OperationsActivity::class.java)) }
         }
         if (operator.allows(RegisterPermission.SETTINGS)) {
@@ -209,6 +215,7 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         val operator = OperatorSessionRegistry.current(activity.applicationContext)
         val allowed = operator?.permissions?.any {
             it == RegisterPermission.VIEW_SALES || it == RegisterPermission.CASH_MOVEMENT ||
+                it == RegisterPermission.X_INSPECTION || it == RegisterPermission.Z_SETTLEMENT ||
                 it == RegisterPermission.SETTLEMENT || it == RegisterPermission.REVERSAL
         } == true
         if (allowed) {
