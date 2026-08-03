@@ -32,8 +32,7 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
             is OperationsHubActivityV030,
             is SettlementActivityV030,
             is SettlementHistoryActivityV030,
-            is OperationsActivity,
-            -> guardManagementActivity(activity)
+            is OperationsActivity -> guardManagementActivity(activity)
             is AdminSettingsActivity, is DataProtectionActivity -> guardSettingsActivity(activity)
         }
     }
