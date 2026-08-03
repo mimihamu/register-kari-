@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - develop/v0.30
+  pull_request:
+    branches:
+      - develop/v0.29
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -16,132 +20,13 @@ jobs:
       - name: Checkout current v0.30
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
       - name: Apply final permission and regression fixes
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          root = Path('.')
-
-          main_path = root / 'app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt'
-          main = main_path.read_text()
-          old_main = '''                canOpenManagement = currentOperator?.permissions?.any {
-                              it == RegisterPermission.VIEW_SALES ||
-                                  it == RegisterPermission.CASH_MOVEMENT ||
-                                  it == RegisterPermission.SETTLEMENT ||
-                                  it == RegisterPermission.REVERSAL
-                          } == true,
-                          onOpenSettings = { context.startActivity(Intent(context, AdminSettingsActivity::class.java)) },
-                          onOpenManagement = { context.startActivity(Intent(context, OperationsActivity::class.java)) },
-          '''
-          new_main = '''                canOpenManagement = currentOperator?.permissions?.let(
-                              ManagementNavigationPolicyV030::canOpenManagement,
-                          ) == true,
-                          onOpenSettings = { context.startActivity(Intent(context, AdminSettingsActivity::class.java)) },
-                          onOpenManagement = { context.startActivity(Intent(context, OperationsHubActivityV030::class.java)) },
-          '''
-          if old_main not in main:
-              raise SystemExit('MainActivity legacy management block was not found')
-          main_path.write_text(main.replace(old_main, new_main, 1))
-
-          coordinator_path = root / 'app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt'
-          coordinator = coordinator_path.read_text()
-          legacy_action = '    SETTLEMENT(RegisterPermission.SETTLEMENT, false),\n'
-          if legacy_action not in coordinator:
-              raise SystemExit('SecureOperationsCoordinator legacy action was not found')
-          coordinator_path.write_text(coordinator.replace(legacy_action, '', 1))
-
-          v016_path = root / 'app/src/test/java/jp/co/tenposinfo/register/V016OperationsAuthorizationTest.kt'
-          v016 = v016_path.read_text()
-          v016 = v016.replace(
-              '        assertFalse(OperationsAuthorizationPolicy.canAccess(cashier, OperationsAction.SETTLEMENT))\n',
-              '        assertFalse(OperationsAuthorizationPolicy.canAccess(cashier, OperationsAction.X_INSPECTION))\n'
-              '        assertFalse(OperationsAuthorizationPolicy.canAccess(cashier, OperationsAction.Z_SETTLEMENT))\n',
-          )
-          v016 = v016.replace(
-              '                OperationsAction.SETTLEMENT,\n                SettlementReportType.X_INSPECTION,\n',
-              '                OperationsAction.X_INSPECTION,\n                SettlementReportType.X_INSPECTION,\n',
-          )
-          v016 = v016.replace(
-              '                OperationsAction.SETTLEMENT,\n                SettlementReportType.Z_SETTLEMENT,\n',
-              '                OperationsAction.Z_SETTLEMENT,\n                SettlementReportType.Z_SETTLEMENT,\n',
-          )
-          if 'OperationsAction.SETTLEMENT' in v016:
-              raise SystemExit('V016 still references the legacy action')
-          v016_path.write_text(v016)
-
-          v030_path = root / 'app/src/test/java/jp/co/tenposinfo/register/V030BusinessStartNavigationTest.kt'
-          v030 = v030_path.read_text()
-          addition = '''
-              @Test
-              fun legacySettlementIsOnlyReferencedByCompatibilityMigration() {
-                  val sourceRoot = File("src/main/java/jp/co/tenposinfo/register")
-                  val references = sourceRoot.listFiles()
-                      .orEmpty()
-                      .filter { it.extension == "kt" && it.readText().contains("RegisterPermission.SETTLEMENT") }
-                      .map(File::getName)
-                      .sorted()
-          
-                  assertEquals(listOf("SettlementPreflightV026.kt"), references)
-                  assertFalse(source("SecureOperationsCoordinator.kt").contains("OperationsAction.SETTLEMENT"))
-              }
-          
-              @Test
-              fun salesScreenManagementEntryUsesSharedPolicyAndResponsiveHub() {
-                  val main = source("MainActivity.kt")
-          
-                  assertTrue(main.contains("ManagementNavigationPolicyV030::canOpenManagement"))
-                  assertTrue(main.contains("OperationsHubActivityV030::class.java"))
-                  assertFalse(main.contains("RegisterPermission.SETTLEMENT"))
-              }
-          '''
-          if 'legacySettlementIsOnlyReferencedByCompatibilityMigration' not in v030:
-              closing = v030.rfind('\n}')
-              if closing < 0:
-                  raise SystemExit('V030 test class closing brace was not found')
-              v030 = v030[:closing] + addition + v030[closing:]
-          v030_path.write_text(v030)
-
-          responsive_path = root / 'app/src/test/java/jp/co/tenposinfo/register/V030ResponsiveManagementTest.kt'
-          responsive = responsive_path.read_text()
-          old_responsive = '''    fun registerManagementEntryRoutesToResponsiveHub() {
-                  val application = source("RegisterApplication.kt")
-          
-                  assertTrue(application.contains("OperationsHubActivityV030::class.java"))
-          '''
-          new_responsive = '''    fun registerManagementEntryRoutesToResponsiveHub() {
-                  val application = source("RegisterApplication.kt")
-                  val main = source("MainActivity.kt")
-          
-                  assertTrue(application.contains("OperationsHubActivityV030::class.java"))
-                  assertTrue(main.contains("OperationsHubActivityV030::class.java"))
-                  assertTrue(main.contains("ManagementNavigationPolicyV030::canOpenManagement"))
-          '''
-          if old_responsive not in responsive:
-              raise SystemExit('V030 responsive management test block was not found')
-          responsive_path.write_text(responsive.replace(old_responsive, new_responsive, 1))
-
-          final_workflow = root / '.github/v030-final-build.yml'
-          workflow_path = root / '.github/workflows/build-apk.yml'
-          if not final_workflow.is_file():
-              raise SystemExit('Final workflow payload is missing')
-          workflow_path.write_text(final_workflow.read_text())
-          final_workflow.unlink()
-
-          source_root = root / 'app/src/main/java/jp/co/tenposinfo/register'
-          legacy_sources = sorted(
-              p.name for p in source_root.glob('*.kt')
-              if 'RegisterPermission.SETTLEMENT' in p.read_text()
-          )
-          if legacy_sources != ['SettlementPreflightV026.kt']:
-              raise SystemExit(f'Unexpected legacy references: {legacy_sources}')
-          if 'OperationsAction.SETTLEMENT' in coordinator_path.read_text():
-              raise SystemExit('Legacy operations action remains')
-          PY
-
+          python3 tools/finalize_v030.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
