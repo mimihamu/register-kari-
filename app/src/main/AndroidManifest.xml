@@ -150,6 +150,21 @@
             android:screenOrientation="landscape" />
 
         <activity
+            android:name=".SettlementHistoryActivityV030"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".SettlementActivityV030"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".OperationsHubActivityV030"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
             android:name=".BusinessStartActivityV030"
             android:exported="false"
             android:screenOrientation="landscape" />
