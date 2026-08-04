@@ -28,11 +28,11 @@ jobs:
           cat tools/v033-payload.* | base64 --decode > /tmp/v033-payload.tar.gz
           echo "437216bdd839aa3da064cd308f8a71219404979aec622418c70775f8f0aac085  /tmp/v033-payload.tar.gz" | sha256sum --check
           tar -xzf /tmp/v033-payload.tar.gz
+          git checkout HEAD -- .github/workflows/build-apk.yml
           rm -f tools/v033-payload.*
-          rm -f .github/workflows/export-v033-source.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add app docs tools
           git diff --cached --check
           git commit -m "v0.33 定期バックアップ・保存世代設定・失敗通知"
           git push origin HEAD:develop/v0.33
