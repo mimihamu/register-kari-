@@ -512,6 +512,25 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
         if (cursor.moveToFirst()) cursor.getLong(0) else 0L
     }
 
+    fun recordOperationalAudit(
+        eventType: String,
+        referenceId: Long,
+        detail: String,
+        actor: String,
+    ) {
+        require(eventType.isNotBlank()) { "監査イベント種別が必要です" }
+        require(actor.isNotBlank()) { "監査担当者が必要です" }
+        db.inTransaction {
+            insertAudit(
+                eventType = eventType.trim().take(80),
+                referenceId = referenceId,
+                detail = detail.trim().take(1_000),
+                operatorName = actor.trim().take(100),
+                createdAt = System.currentTimeMillis(),
+            )
+        }
+    }
+
     private fun printerGateway(configuration: PrinterConfiguration) = TcpEscPosPrinterGateway(
         host = configuration.host.trim(),
         port = configuration.port,

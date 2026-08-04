@@ -11,6 +11,7 @@ object InterruptedPrintRecoveryPolicy {
 
     fun recoveredStatus(previous: PrintJobStatus): PrintJobStatus = when (previous) {
         PrintJobStatus.PRINTING -> PrintJobStatus.FAILED
+        PrintJobStatus.DISCARDED -> PrintJobStatus.DISCARDED
         else -> previous
     }
 }

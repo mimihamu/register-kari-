@@ -250,11 +250,11 @@ class OperationsStore(context: Context) {
         )
         val pendingPrints = (
             longQuery(
-                "SELECT COUNT(*) FROM print_jobs WHERE status <> ?",
-                arrayOf(PrintJobStatus.COMPLETED.name),
+                "SELECT COUNT(*) FROM print_jobs WHERE status NOT IN (?, ?)",
+                arrayOf(PrintJobStatus.COMPLETED.name, PrintJobStatus.DISCARDED.name),
             ) + longQuery(
-                "SELECT COUNT(*) FROM document_print_jobs WHERE status <> ?",
-                arrayOf(PrintJobStatus.COMPLETED.name),
+                "SELECT COUNT(*) FROM document_print_jobs WHERE status NOT IN (?, ?)",
+                arrayOf(PrintJobStatus.COMPLETED.name, PrintJobStatus.DISCARDED.name),
             )
         ).toInt()
         val heldTickets = longQuery("SELECT COUNT(*) FROM held_tickets").toInt()

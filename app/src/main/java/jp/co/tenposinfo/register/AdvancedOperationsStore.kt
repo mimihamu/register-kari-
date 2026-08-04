@@ -278,11 +278,11 @@ class AdvancedOperationsStore(context: Context) {
         val openingCash = session.openingCash
         val expectedCash = openingCash + (paymentMap[PaymentMethod.CASH.name] ?: 0L) + cashIn - cashOut
         val pendingPrints = longQuery(
-            "SELECT COUNT(*) FROM print_jobs WHERE status <> ?",
-            arrayOf(PrintJobStatus.COMPLETED.name),
+            "SELECT COUNT(*) FROM print_jobs WHERE status NOT IN (?, ?)",
+            arrayOf(PrintJobStatus.COMPLETED.name, PrintJobStatus.DISCARDED.name),
         ).toInt() + longQuery(
-            "SELECT COUNT(*) FROM document_print_jobs WHERE status <> ?",
-            arrayOf(PrintJobStatus.COMPLETED.name),
+            "SELECT COUNT(*) FROM document_print_jobs WHERE status NOT IN (?, ?)",
+            arrayOf(PrintJobStatus.COMPLETED.name, PrintJobStatus.DISCARDED.name),
         ).toInt()
         val heldTickets = longQuery("SELECT COUNT(*) FROM held_tickets").toInt()
         val settled = longQuery(
@@ -715,6 +715,11 @@ class AdvancedOperationsStore(context: Context) {
     }
 
     fun retryDocumentPrint(jobId: Long) {
+        val current = listDocumentPrintJobs(500).firstOrNull { it.id == jobId }
+            ?: throw IllegalArgumentException("業務帳票の印刷ジョブが見つかりません")
+        require(current.status != PrintJobStatus.COMPLETED) { "完了済みジョブは再送できません。再印字を登録してください" }
+        require(current.status != PrintJobStatus.DISCARDED) { "破棄済みジョブは再送できません" }
+        require(current.status != PrintJobStatus.PRINTING) { "印刷中のジョブは操作できません" }
         db.update(
             "document_print_jobs",
             ContentValues().apply {
@@ -725,6 +730,54 @@ class AdvancedOperationsStore(context: Context) {
             "id = ?",
             arrayOf(jobId.toString()),
         )
+    }
+
+    fun discardDocumentPrint(
+        jobId: Long,
+        reason: String,
+        auditDetail: String,
+        actor: String,
+    ) {
+        val current = listDocumentPrintJobs(500).firstOrNull { it.id == jobId }
+            ?: throw IllegalArgumentException("業務帳票の印刷ジョブが見つかりません")
+        require(current.status != PrintJobStatus.COMPLETED) { "完了済みジョブは破棄できません" }
+        require(current.status != PrintJobStatus.DISCARDED) { "このジョブは既に破棄済みです" }
+        require(current.status != PrintJobStatus.PRINTING) { "印刷中のジョブは破棄できません" }
+        require(reason.trim().length >= 4) { "破棄理由を4文字以上で入力してください" }
+        require(actor.isNotBlank()) { "監査担当者が必要です" }
+        db.beginTransaction()
+        try {
+            val updated = db.update(
+                "document_print_jobs",
+                ContentValues().apply {
+                    put("status", PrintJobStatus.DISCARDED.name)
+                    put("last_error", "破棄理由：${reason.trim()}".take(500))
+                    put("updated_at", System.currentTimeMillis())
+                },
+                "id = ? AND status NOT IN (?, ?, ?)",
+                arrayOf(
+                    jobId.toString(),
+                    PrintJobStatus.COMPLETED.name,
+                    PrintJobStatus.DISCARDED.name,
+                    PrintJobStatus.PRINTING.name,
+                ),
+            )
+            check(updated == 1) { "印刷ジョブの状態が変更されたため破棄できませんでした" }
+            db.insertOrThrow(
+                "operation_audit",
+                null,
+                ContentValues().apply {
+                    put("event_type", "PRINT_JOB_DISCARDED")
+                    put("reference_id", jobId)
+                    put("detail", auditDetail.trim().take(1_000))
+                    put("operator_name", actor.trim().take(100))
+                    put("created_at", System.currentTimeMillis())
+                },
+            )
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
     }
 
     fun processDocumentPrint(jobId: Long, gateway: PrinterGateway): Result<Unit> {
