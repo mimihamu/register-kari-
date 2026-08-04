@@ -1,43 +1,43 @@
 name: Apply v0.34 payload
 
 on:
-  push:
+  pull_request:
     branches:
-      - develop/v0.34
-    paths:
-      - tools/v034_apply.py.gz.b64.part00
-      - tools/v034_apply.py.gz.b64.part01
-      - .github/workflows/v034-apply.yml
+      - develop/v0.33
+    types:
+      - opened
+      - synchronize
+      - reopened
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.event.head_commit.message == 'chore: run v0.34 apply workflow'
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'develop/v0.34'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout exact commit
+      - name: Checkout v0.34 head
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
-      - name: Reconstruct and apply payload
+      - name: Apply and commit implementation
         shell: bash
         run: |
           set -euo pipefail
+          if test -s app/src/main/java/jp/co/tenposinfo/register/ExternalBackupSync.kt; then
+            echo "v0.34 implementation already applied"
+            exit 0
+          fi
           cat tools/v034_apply.py.gz.b64.part00 tools/v034_apply.py.gz.b64.part01 \
             | base64 --decode \
             | gzip --decompress \
             > /tmp/v034_apply.py
           python3 /tmp/v034_apply.py
           git diff --check
-
-      - name: Commit implementation
-        shell: bash
-        run: |
-          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app docs
@@ -45,5 +45,3 @@ jobs:
           git diff --cached --check
           git commit -m "feat: add automatic external backup mirroring"
           git push origin HEAD:develop/v0.34
-
-# Existing workflow trigger commit.
