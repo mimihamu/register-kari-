@@ -287,6 +287,17 @@ private fun AutoBackupSettingsScreen(onClose: () -> Unit) {
                             }
                         }
                     }
+
+                    Card(colors = CardDefaults.cardColors(containerColor = Color.White), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("外部自動保存", color = AbsNavy, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                            Text("Google Drive・USB・端末フォルダへ内部バックアップを自動複製します。外部保存に失敗しても内部バックアップとZ精算結果は維持します。")
+                            OutlinedButton(
+                                onClick = { context.startActivity(Intent(context, ExternalBackupSettingsActivity::class.java)) },
+                                modifier = Modifier.fillMaxWidth().height(50.dp),
+                            ) { Text("外部自動保存設定を開く", fontWeight = FontWeight.Bold) }
+                        }
+                    }
                 }
             }
 

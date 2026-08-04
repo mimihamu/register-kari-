@@ -87,21 +87,22 @@ class V034ExternalBackupMirrorTest {
     @Test
     fun sourceHooksAndManifestStayConnected() {
         val root = File("src/main/java/jp/co/tenposinfo/register")
+        val application = File(root, "RegisterApplication.kt").readText()
+        val autoBackup = File(root, "AutoBackup.kt").readText()
         val settings = File(root, "AutoBackupSettingsActivity.kt").readText()
         val mirror = File(root, "ExternalBackupSync.kt").readText()
+        val protection = File(root, "DataProtection.kt").readText()
         val manifest = File("src/main/AndroidManifest.xml").readText()
 
+        assertTrue(application.contains("ExternalBackupScheduler.apply(this)"))
+        assertTrue(application.contains("is ExternalBackupSettingsActivity"))
+        assertTrue(autoBackup.contains("ExternalBackupScheduler.enqueueNow"))
         assertTrue(settings.contains("ExternalBackupSettingsActivity::class.java"))
-        assertTrue(mirror.contains("class ExternalBackupBootstrapProvider"))
-        assertTrue(mirror.contains("ExternalBackupScheduler.apply(appContext)"))
-        assertTrue(mirror.contains("ExternalBackupFileObserverRegistry.start(appContext)"))
-        assertTrue(mirror.contains("backup-file:"))
         assertTrue(mirror.contains("ExistingWorkPolicy.APPEND_OR_REPLACE"))
         assertTrue(mirror.contains("archiveSha256"))
         assertTrue(mirror.contains(".partial"))
-        assertTrue(mirror.contains("BackupTransferPolicy.copyWithLimit"))
+        assertTrue(protection.contains("fun copyVerifiedBackup"))
         assertTrue(manifest.contains("android:name=\".ExternalBackupSettingsActivity\""))
-        assertTrue(manifest.contains("android:name=\".ExternalBackupBootstrapProvider\""))
         assertFalse(manifest.contains("<activity-alias"))
     }
 }
