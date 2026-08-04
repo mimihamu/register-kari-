@@ -117,7 +117,8 @@ data class DocumentPrintJobRecord(
 )
 
 class AdvancedOperationsStore(context: Context) {
-    private val baseDatabase = RegisterDatabase(context.applicationContext)
+    private val appContext = context.applicationContext
+    private val baseDatabase = RegisterDatabase(appContext)
     private val db: SQLiteDatabase = baseDatabase.writableDatabase
 
     init {
@@ -360,11 +361,11 @@ class AdvancedOperationsStore(context: Context) {
         type: SettlementReportType,
         actualCash: Long?,
         operatorName: String,
-        paperWidthMm: Int,
     ): SettlementSaveResult {
         val session = activeSession() ?: error("営業中の営業セッションがありません")
         require(session.status == BusinessSessionStatus.OPEN) { "この営業セッションは既に終了しています" }
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
+        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
         val summary = dailySummary(LocalDate.parse(session.businessDate))
         if (type == SettlementReportType.Z_SETTLEMENT && summary.settled) error("この営業セッションは既にZ精算済みです")
         val actual = actualCash ?: summary.expectedCash
@@ -539,12 +540,12 @@ class AdvancedOperationsStore(context: Context) {
         requestedQuantities: Map<Long, Int>,
         reason: String,
         operatorName: String,
-        paperWidthMm: Int,
     ): ReversalSaveResult {
         val session = activeSession() ?: error("営業開始後に返品・取消を実行してください")
         require(session.status == BusinessSessionStatus.OPEN) { "Z精算後は返品・取消できません" }
         require(reason.isNotBlank()) { "理由を入力してください" }
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
+        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
         val saleTotal = longQuery("SELECT COALESCE(total_amount, -1) FROM sales WHERE id = ?", arrayOf(originalSaleId.toString()))
         require(saleTotal >= 0) { "元売上が見つかりません" }
         val lines = loadReturnableLines(originalSaleId)

@@ -105,10 +105,11 @@ private fun SettlementHistoryRouteV030(onClose: () -> Unit) {
             permissions = current.permissions,
             operatorName = current.name,
             message = message,
+            printerPaperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext),
             previewLoader = store::previewSettlement,
-            onReprint = { record, paperWidth, managerPin ->
+            onReprint = { record, managerPin ->
                 val result = runCatching {
-                    secureStore.reprintSettlement(record.id, paperWidth, managerPin)
+                    secureStore.reprintSettlement(record.id, managerPin)
                 }
                 message = result.fold(
                     onSuccess = { "${record.type.displayName}票の再印字を受け付けました（印刷ジョブNo.$it）" },
@@ -129,8 +130,9 @@ private fun SettlementHistoryScreenV030(
     permissions: Set<RegisterPermission>,
     operatorName: String,
     message: String?,
-    previewLoader: (Long, Int) -> String,
-    onReprint: (SettlementRecord, Int, String) -> Unit,
+    printerPaperWidthMm: Int,
+    previewLoader: (Long) -> String,
+    onReprint: (SettlementRecord, String) -> Unit,
     onClose: () -> Unit,
 ) {
     val metrics = rememberRegisterResponsiveMetrics()
@@ -139,7 +141,6 @@ private fun SettlementHistoryScreenV030(
     }
     var selectedType by remember { mutableStateOf<SettlementReportType?>(null) }
     var selectedReportId by remember { mutableStateOf<Long?>(settlements.firstOrNull()?.id) }
-    var paperWidth by remember { mutableIntStateOf(80) }
     var managerPin by remember { mutableStateOf("") }
 
     val filtered = SettlementHistoryPolicyV027.filter(
@@ -195,11 +196,10 @@ private fun SettlementHistoryScreenV030(
                         modifier = Modifier.fillMaxWidth().heightIn(min = 420.dp),
                         selected = selected,
                         permissions = permissions,
-                        paperWidth = paperWidth,
+                        printerPaperWidthMm = printerPaperWidthMm,
                         managerPin = managerPin,
                         message = message,
                         previewLoader = previewLoader,
-                        onPaperWidthChanged = { paperWidth = it },
                         onManagerPinChanged = { managerPin = it.filter(Char::isDigit).take(8) },
                         onReprint = onReprint,
                     )
@@ -236,11 +236,10 @@ private fun SettlementHistoryScreenV030(
                         modifier = Modifier.weight(1.35f).fillMaxHeight(),
                         selected = selected,
                         permissions = permissions,
-                        paperWidth = paperWidth,
+                        printerPaperWidthMm = printerPaperWidthMm,
                         managerPin = managerPin,
                         message = message,
                         previewLoader = previewLoader,
-                        onPaperWidthChanged = { paperWidth = it },
                         onManagerPinChanged = { managerPin = it.filter(Char::isDigit).take(8) },
                         onReprint = onReprint,
                     )
@@ -373,13 +372,12 @@ private fun HistoryPreviewV030(
     modifier: Modifier,
     selected: SettlementRecord?,
     permissions: Set<RegisterPermission>,
-    paperWidth: Int,
+    printerPaperWidthMm: Int,
     managerPin: String,
     message: String?,
-    previewLoader: (Long, Int) -> String,
-    onPaperWidthChanged: (Int) -> Unit,
+    previewLoader: (Long) -> String,
     onManagerPinChanged: (String) -> Unit,
-    onReprint: (SettlementRecord, Int, String) -> Unit,
+    onReprint: (SettlementRecord, String) -> Unit,
 ) {
     HistoryPanelV030(modifier) {
         Text("印字プレビュー・再印字", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = HistoryNavyV030)
@@ -389,12 +387,13 @@ private fun HistoryPreviewV030(
                 Text("履歴を選択してください", color = Color.Gray)
             }
         } else {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HistoryChoiceButtonV030("58mm", paperWidth == 58, Modifier.weight(1f)) { onPaperWidthChanged(58) }
-                HistoryChoiceButtonV030("80mm", paperWidth == 80, Modifier.weight(1f)) { onPaperWidthChanged(80) }
-            }
+            Text(
+                "印字幅：プリンタ設定 ${printerPaperWidthMm}mm（再印字時は変更しません）",
+                color = Color.DarkGray,
+                fontWeight = FontWeight.SemiBold,
+            )
             Spacer(Modifier.height(8.dp))
-            val preview = runCatching { previewLoader(selected.id, paperWidth) }
+            val preview = runCatching { previewLoader(selected.id) }
                 .getOrElse { it.message ?: "印字内容を復元できません" }
             Box(
                 Modifier
@@ -436,7 +435,7 @@ private fun HistoryPreviewV030(
             )
             Spacer(Modifier.height(6.dp))
             Button(
-                onClick = { onReprint(selected, paperWidth, managerPin) },
+                onClick = { onReprint(selected, managerPin) },
                 enabled = SettlementHistoryPolicyV027.canReprint(
                     record = selected,
                     permissions = permissions,

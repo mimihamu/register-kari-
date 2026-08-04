@@ -195,7 +195,6 @@ private fun RegisterApp() {
     var paymentState by remember { mutableStateOf(PaymentState()) }
     var lastSaleId by remember { mutableStateOf<Long?>(null) }
     var selectedSaleId by remember { mutableStateOf<Long?>(null) }
-    var receiptPaper by remember { mutableStateOf(ReceiptPaper.MM80) }
     var queueMessage by remember { mutableStateOf<String?>(null) }
     var ticketMessage by remember { mutableStateOf<String?>(null) }
     var paymentMessage by remember { mutableStateOf<String?>(null) }
@@ -490,7 +489,6 @@ private fun RegisterApp() {
                             operatorName = operatorName,
                             items = cart.toList(),
                             paymentState = paymentState,
-                            paperWidthMm = receiptPaper.widthMm,
                             commitKey = commitKey,
                         )
                     }.onSuccess { saleId ->
@@ -558,10 +556,9 @@ private fun RegisterApp() {
                 } else {
                     ReceiptPreviewScreen(
                         detail = detail,
-                        paper = receiptPaper,
-                        onPaperChange = { receiptPaper = it },
+                        paper = PrinterPaperSettingPolicy.currentPaper(context.applicationContext),
                         onEnqueue = {
-                            database.enqueueReprint(detail.summary.id, receiptPaper.widthMm)
+                            database.enqueueReprint(detail.summary.id)
                             AutomaticPrintScheduler.enqueueNow(context.applicationContext)
                             queueMessage = "再印字をキューへ登録しました"
                         },
@@ -1604,7 +1601,6 @@ private fun SaleDetailScreen(
 private fun ReceiptPreviewScreen(
     detail: SaleDetailRecord,
     paper: ReceiptPaper,
-    onPaperChange: (ReceiptPaper) -> Unit,
     onEnqueue: () -> Unit,
     message: String?,
     onQueue: () -> Unit,
@@ -1617,11 +1613,11 @@ private fun ReceiptPreviewScreen(
         Row(Modifier.weight(1f).padding(18.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             CardPanel(Modifier.weight(1f).fillMaxHeight()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("用紙幅", fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.width(12.dp))
-                    ChoiceButton("58mm", paper == ReceiptPaper.MM58, true, Modifier.width(120.dp)) { onPaperChange(ReceiptPaper.MM58) }
-                    Spacer(Modifier.width(8.dp))
-                    ChoiceButton("80mm", paper == ReceiptPaper.MM80, true, Modifier.width(120.dp)) { onPaperChange(ReceiptPaper.MM80) }
+                    Text(
+                        "プリンタ設定 ${paper.widthMm}mm（印刷時は変更しません）",
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
                     Spacer(Modifier.weight(1f))
                     Text("構造化データから生成", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
                 }
@@ -1686,7 +1682,7 @@ private fun PrintQueueScreen(
                         Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("#${job.id}", Modifier.width(70.dp), fontWeight = FontWeight.Bold)
                             Text("売上 ${job.saleId}", Modifier.width(100.dp))
-                            Text("${job.paperWidthMm}mm", Modifier.width(70.dp))
+                            Text("設定 ${job.paperWidthMm}mm", Modifier.width(95.dp))
                             Text(job.status.name, Modifier.width(110.dp), color = statusColor(job.status), fontWeight = FontWeight.Bold)
                             Text("試行 ${job.attemptCount}", Modifier.width(80.dp))
                             Text(job.lastError ?: "", Modifier.weight(1f), color = Danger, maxLines = 2)

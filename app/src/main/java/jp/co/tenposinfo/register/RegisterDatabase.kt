@@ -192,11 +192,11 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         operatorName: String,
         items: List<CartItem>,
         paymentState: PaymentState,
-        paperWidthMm: Int = 80,
         commitKey: String? = null,
     ): Long {
         require(items.isNotEmpty()) { "Cannot save an empty sale" }
         val mixedTaxPolicy = TaxInvoiceSettingsStore(applicationContext).load().mixedTaxPolicy
+        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(applicationContext)
         TaxEngine.validateMixedTax(items, mixedTaxPolicy)
         val summary = TaxEngine.calculate(items)
         require(paymentState.remaining(summary.grossAmount) == 0L) { "Payment is incomplete" }
@@ -415,8 +415,9 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         return SaleDetailRecord(summary, snapshotItems, payments, TaxEngine.calculate(snapshotItems))
     }
 
-    fun enqueueReprint(saleId: Long, paperWidthMm: Int): Long {
+    fun enqueueReprint(saleId: Long): Long {
         require(loadSaleDetail(saleId) != null) { "Sale not found" }
+        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(applicationContext)
         val now = System.currentTimeMillis()
         return writableDatabase.insertOrThrow(
             "print_jobs",

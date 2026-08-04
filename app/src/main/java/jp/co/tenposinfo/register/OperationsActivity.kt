@@ -265,10 +265,11 @@ private fun OperationsApp(onClose: () -> Unit) {
                 permissions = operator.permissions,
                 revision = revision,
                 message = message,
+                printerPaperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext),
                 previewLoader = store::previewSettlement,
-                onReprint = { record, paperWidthMm, managerPin ->
+                onReprint = { record, managerPin ->
                     val result = runCatching {
-                        secureStore.reprintSettlement(record.id, paperWidthMm, managerPin)
+                        secureStore.reprintSettlement(record.id, managerPin)
                     }
                     message = result.fold(
                         onSuccess = {
@@ -306,8 +307,9 @@ private fun OperationsApp(onClose: () -> Unit) {
                 operatorName = operator.name,
                 revision = revision,
                 message = message,
+                printerPaperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext),
                 loadLines = store::loadReturnableLines,
-                onExecute = { saleId, type, quantities, reason, pin, paperWidth, requestId ->
+                onExecute = { saleId, type, quantities, reason, pin, requestId ->
                     val result = runCatching {
                         secureStore.createReversal(
                             saleId,
@@ -315,7 +317,6 @@ private fun OperationsApp(onClose: () -> Unit) {
                             quantities,
                             reason,
                             pin,
-                            paperWidth,
                             requestId,
                         )
                     }
@@ -948,8 +949,9 @@ private fun ReversalScreen(
     operatorName: String,
     revision: Int,
     message: String?,
+    printerPaperWidthMm: Int,
     loadLines: (Long) -> List<ReturnableSaleLine>,
-    onExecute: (Long, ReversalType, Map<Long, Int>, String, String, Int, String) -> PartialReversalResult?,
+    onExecute: (Long, ReversalType, Map<Long, Int>, String, String, String) -> PartialReversalResult?,
     onBack: () -> Unit,
 ) {
     var selectedSaleId by remember { mutableStateOf<Long?>(null) }
@@ -958,7 +960,6 @@ private fun ReversalScreen(
     var type by remember { mutableStateOf(ReversalType.RETURN) }
     var reason by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
-    var paperWidth by remember { mutableStateOf(80) }
     var requestId by remember { mutableStateOf(UUID.randomUUID().toString()) }
     var savedResult by remember { mutableStateOf<PartialReversalResult?>(null) }
     var localMessage by remember { mutableStateOf<String?>(null) }
@@ -1085,10 +1086,11 @@ private fun ReversalScreen(
                     }
                 }
                 Spacer(Modifier.height(7.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OpChoiceButton("58mm", paperWidth == 58, Modifier.weight(1f)) { paperWidth = 58 }
-                    OpChoiceButton("80mm", paperWidth == 80, Modifier.weight(1f)) { paperWidth = 80 }
-                }
+                Text(
+                    "印字幅：プリンタ設定 ${printerPaperWidthMm}mm（この画面では変更できません）",
+                    color = Color.DarkGray,
+                    fontSize = 13.sp,
+                )
                 Spacer(Modifier.height(7.dp))
                 OutlinedTextField(
                     value = reason,
@@ -1111,7 +1113,7 @@ private fun ReversalScreen(
                 Button(
                     onClick = {
                         val saleId = selectedSaleId ?: return@Button
-                        val result = onExecute(saleId, type, quantities, reason, pin, paperWidth, requestId)
+                        val result = onExecute(saleId, type, quantities, reason, pin, requestId)
                         if (result != null) {
                             savedResult = result
                             lines = loadLines(saleId)

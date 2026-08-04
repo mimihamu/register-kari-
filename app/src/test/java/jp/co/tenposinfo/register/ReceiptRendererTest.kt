@@ -45,7 +45,7 @@ class ReceiptRendererTest {
 
     @Test
     fun escPosPayloadStartsWithInitializeAndEndsWithCut() {
-        val payload = EscPosEncoder.encode(data, ReceiptPaper.MM80)
+        val payload = EscPosEncoder.encode(data, PrinterConfiguration(paperWidthMm = 80))
 
         assertArrayEquals(byteArrayOf(0x1B, 0x40), payload.copyOfRange(0, 2))
         assertArrayEquals(byteArrayOf(0x1D, 0x56, 0x42, 0x00), payload.copyOfRange(payload.size - 4, payload.size))
@@ -54,7 +54,7 @@ class ReceiptRendererTest {
     @Test
     fun memoryPrinterKeepsExactPayload() {
         val gateway = MemoryPrinterGateway()
-        val payload = EscPosEncoder.encode(data, ReceiptPaper.MM58)
+        val payload = EscPosEncoder.encode(data, PrinterConfiguration(paperWidthMm = 58))
 
         gateway.send(payload).getOrThrow()
 

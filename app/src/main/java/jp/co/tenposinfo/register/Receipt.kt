@@ -122,7 +122,8 @@ object ReceiptFactory {
 }
 
 /**
- * 58mm／80mmで共通の構造化データを使用し、表示幅だけを切り替える。
+ * 58mm／80mmで共通の構造化データを使用する。
+ * 実運用の幅はプリンター設定から決定し、各印刷操作では選択させない。
  */
 object ReceiptRenderer {
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss")
@@ -222,7 +223,6 @@ object ReceiptRenderer {
 object EscPosEncoder {
     fun encode(
         data: ReceiptData,
-        paper: ReceiptPaper,
         configuration: PrinterConfiguration = PrinterConfigurationRegistry.current() ?: PrinterConfiguration(),
     ): ByteArray {
         val openDrawer = configuration.drawerEnabled &&
@@ -230,7 +230,7 @@ object EscPosEncoder {
             !data.reprint &&
             data.payments.any { it.method == PaymentMethod.CASH }
         return PrinterCommandEncoder.encodeText(
-            text = ReceiptRenderer.render(data, paper),
+            text = ReceiptRenderer.render(data, PrinterPaperSettingPolicy.paper(configuration)),
             configuration = configuration,
             openDrawer = openDrawer,
             appendCut = true,
@@ -361,7 +361,10 @@ class PrintQueueProcessor(
         }
         database.markPrintStarted(job.id)
         val receipt = ReceiptFactory.fromSale(detail, reprint = detail.summary.printCount > 0)
-        val result = gateway.send(EscPosEncoder.encode(receipt, ReceiptPaper.fromWidth(job.paperWidthMm)))
+        val configuredSnapshot = (PrinterConfigurationRegistry.current() ?: PrinterConfiguration()).copy(
+            paperWidthMm = job.paperWidthMm,
+        )
+        val result = gateway.send(EscPosEncoder.encode(receipt, configuredSnapshot))
         result.onSuccess {
             database.markPrintCompleted(job.id)
         }.onFailure { error ->

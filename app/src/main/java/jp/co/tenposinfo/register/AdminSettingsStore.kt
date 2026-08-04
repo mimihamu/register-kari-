@@ -138,6 +138,28 @@ object PrinterConfigurationRegistry {
     }
 }
 
+/**
+ * 印字幅はプリンター設定だけで決定する。
+ * 会計、再印字、返品・取消、X点検、Z精算などの実行画面から幅を受け取らない。
+ */
+object PrinterPaperSettingPolicy {
+    fun normalizeWidthMm(widthMm: Int): Int = if (widthMm >= 80) 80 else 58
+
+    fun paper(configuration: PrinterConfiguration): ReceiptPaper =
+        ReceiptPaper.fromWidth(normalizeWidthMm(configuration.paperWidthMm))
+
+    fun currentConfiguration(context: Context): PrinterConfiguration =
+        PrinterConfigurationRegistry.current() ?: runCatching {
+            AdminSettingsStore(context.applicationContext).use { it.loadPrinterConfiguration() }
+        }.getOrElse { PrinterConfiguration() }
+
+    fun currentWidthMm(context: Context): Int =
+        normalizeWidthMm(currentConfiguration(context).paperWidthMm)
+
+    fun currentPaper(context: Context): ReceiptPaper =
+        paper(currentConfiguration(context))
+}
+
 class AdminSettingsStore(context: Context) : AutoCloseable {
     private val baseDatabase = RegisterDatabase(context.applicationContext)
     private val db: SQLiteDatabase = baseDatabase.writableDatabase
