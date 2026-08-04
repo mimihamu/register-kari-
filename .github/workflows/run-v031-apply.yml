@@ -1,4 +1,4 @@
-name: Run v0.31 printer width patch
+name: Run v0.31 printer width code patch
 
 on:
   pull_request:
@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 jobs:
-  apply-patch:
+  apply-code:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
@@ -19,19 +19,17 @@ jobs:
         with:
           fetch-depth: 0
           ref: develop/v0.31
-      - name: Apply staged patch
+      - name: Apply staged code and document patch
         shell: bash
         run: |
           set -euo pipefail
           awk '/^H4sI/{capture=1} capture{print} /^PAYLOAD$/{exit}' .github/workflows/apply-v031.yml | sed '$d' > /tmp/v031.patch.gz.b64
           base64 --decode /tmp/v031.patch.gz.b64 | gzip --decompress > /tmp/v031.patch
           patch -p1 < /tmp/v031.patch
-          rm -f .github/workflows/export-v031-source.yml
-          rm -f .github/workflows/apply-v031.yml
-          rm -f .github/workflows/run-v031-apply.yml
+          git restore .github/workflows/build-apk.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add app docs
           git diff --cached --check
           git commit -m "v0.31 印字幅をプリンタ設定へ一本化"
           git push origin HEAD:develop/v0.31
