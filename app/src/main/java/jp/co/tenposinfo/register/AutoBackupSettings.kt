@@ -56,10 +56,10 @@ object AutoBackupSettingsPolicy {
     fun validated(settings: AutoBackupSettings): AutoBackupSettings {
         require(settings.preferredHour in 0..23) { "実行時刻は0～23時で指定してください" }
         require(settings.zRetentionBusinessDays in MIN_Z_BACKUP_BUSINESS_DAYS..MAX_Z_BACKUP_BUSINESS_DAYS) {
-            "Z精算バックアップ保持営業日は$MIN_Z_BACKUP_BUSINESS_DAYS～$MAX_Z_BACKUP_BUSINESS_DAYS日で指定してください"
+            "Z精算バックアップ保持営業日は${MIN_Z_BACKUP_BUSINESS_DAYS}～${MAX_Z_BACKUP_BUSINESS_DAYS}日で指定してください"
         }
         require(settings.monthlyRetentionMonths in MIN_MONTHLY_BACKUP_MONTHS..MAX_MONTHLY_BACKUP_MONTHS) {
-            "定期バックアップ保持月数は$MIN_MONTHLY_BACKUP_MONTHS～$MAX_MONTHLY_BACKUP_MONTHSか月で指定してください"
+            "定期バックアップ保持月数は${MIN_MONTHLY_BACKUP_MONTHS}～${MAX_MONTHLY_BACKUP_MONTHS}か月で指定してください"
         }
         return settings
     }
