@@ -239,7 +239,7 @@ private fun RegisterApp() {
             AppScreen.DIAGNOSTIC -> DiagnosticScreen(
                 restoredCount = cart.sumOf { it.quantity },
                 pendingPrints = database.listPrintJobs().count {
-                    it.status == PrintJobStatus.PENDING || it.status == PrintJobStatus.RETRY
+                    it.status != PrintJobStatus.COMPLETED && it.status != PrintJobStatus.DISCARDED
                 },
                 onComplete = { screen = AppScreen.LOGIN },
             )
@@ -1767,6 +1767,7 @@ private fun statusColor(status: PrintJobStatus): Color = when (status) {
     PrintJobStatus.RETRY -> Color(0xFFEF6C00)
     PrintJobStatus.PRINTING -> Blue
     PrintJobStatus.PENDING -> Navy
+    PrintJobStatus.DISCARDED -> Color.Gray
 }
 
 @Composable

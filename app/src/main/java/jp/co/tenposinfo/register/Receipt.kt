@@ -37,6 +37,7 @@ enum class PrintJobStatus {
     COMPLETED,
     RETRY,
     FAILED,
+    DISCARDED,
 }
 
 data class PrintJobRecord(
