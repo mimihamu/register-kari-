@@ -105,7 +105,7 @@ jobs:
           assert 'fun enqueueReprint(saleId: Long): Long' in database
           assert 'PrinterPaperSettingPolicy.currentWidthMm(applicationContext)' in database
           assert 'fun previewSettlement(reportId: Long): String' in operations_store
-          assert 'fun reprintSettlement(reportId: Long, operatorName: String): OperationDocumentJob' in operations_store
+          assert re.search(r'fun\s+reprintSettlement\s*\(\s*reportId: Long,\s*operatorName: String,?\s*\): Long', operations_store, re.S)
           assert 'PrinterPaperSettingPolicy.currentPaper(appContext)' in operations_store
           assert 'PrinterPaperSettingPolicy.currentWidthMm(appContext)' in advanced
           assert 'paperWidthMm: Int' not in coordinator
