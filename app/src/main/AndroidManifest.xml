@@ -155,6 +155,11 @@
             android:screenOrientation="landscape" />
 
         <activity
+            android:name=".AutoBackupSettingsActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
             android:name=".DataProtectionActivity"
             android:exported="false"
             android:screenOrientation="landscape" />

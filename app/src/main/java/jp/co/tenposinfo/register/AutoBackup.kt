@@ -69,7 +69,8 @@ data class AutoBackupRuntimeStatus(
     val lastReason: BackupCreationReason? = null,
     val lastError: String? = null,
     val lastRetentionResult: String? = null,
-    val nextCondition: String = "Z精算が正常に確定した後",
+    val nextScheduledAt: Long? = null,
+    val nextCondition: String = "Z精算確定後＋設定した定期時刻",
 )
 
 data class BackupRetentionEntry(
@@ -248,6 +249,7 @@ class AutoBackupStatusStore(context: Context) {
         lastReason = preferences.getString("last_reason", null)?.let { runCatching { BackupCreationReason.valueOf(it) }.getOrNull() },
         lastError = preferences.getString("last_error", null),
         lastRetentionResult = preferences.getString("last_retention_result", null),
+        nextScheduledAt = preferences.getLong("next_scheduled_at", 0L).takeIf { it > 0L },
     )
 
     fun requested(reason: BackupCreationReason, at: Long = System.currentTimeMillis()) {
@@ -272,6 +274,13 @@ class AutoBackupStatusStore(context: Context) {
 
     fun retention(result: String) {
         preferences.edit().putString("last_retention_result", result).apply()
+    }
+
+    fun scheduled(nextScheduledAt: Long?) {
+        preferences.edit().apply {
+            if (nextScheduledAt == null) remove("next_scheduled_at")
+            else putLong("next_scheduled_at", nextScheduledAt)
+        }.apply()
     }
 }
 
@@ -312,7 +321,12 @@ class AutoBackupRetentionManager(context: Context) {
                 pendingRestore = backup.fileName == pendingName,
             )
         }
-        val plan = AutoBackupRetentionPolicy.selectDeletionCandidates(entries).sorted()
+        val settings = AutoBackupSettingsStore(appContext).load()
+        val plan = AutoBackupRetentionPolicy.selectDeletionCandidates(
+            entries = entries,
+            zBusinessDays = settings.zRetentionBusinessDays,
+            monthlyMonths = settings.monthlyRetentionMonths,
+        ).sorted()
         AutoBackupAudit.record(appContext, "DATA_BACKUP_RETENTION_STARTED", "削除候補 ${plan.size}件", actorName)
         val deleted = mutableListOf<String>()
         val failed = linkedMapOf<String, String>()
@@ -372,6 +386,14 @@ object AutoBackupScheduler {
         )
     }
 
+    internal fun periodicInputData(): Data = inputData(
+        reason = BackupCreationReason.PERIODIC,
+        businessDate = null,
+        businessSessionId = null,
+        settlementId = null,
+        actorName = "システム（定期）",
+    )
+
     private fun enqueue(
         context: Context,
         uniqueName: String,
@@ -382,13 +404,7 @@ object AutoBackupScheduler {
         actorName: String,
     ) {
         val appContext = context.applicationContext
-        val input = Data.Builder()
-            .putString(KEY_REASON, reason.name)
-            .putString(KEY_BUSINESS_DATE, businessDate)
-            .putLong(KEY_BUSINESS_SESSION_ID, businessSessionId ?: 0L)
-            .putLong(KEY_SETTLEMENT_ID, settlementId ?: 0L)
-            .putString(KEY_ACTOR_NAME, actorName)
-            .build()
+        val input = inputData(reason, businessDate, businessSessionId, settlementId, actorName)
         val request = OneTimeWorkRequestBuilder<AutoBackupWorker>()
             .setInputData(input)
             .addTag("tsuguregi-auto-backup")
@@ -403,6 +419,20 @@ object AutoBackupScheduler {
         )
         WorkManager.getInstance(appContext).enqueueUniqueWork(uniqueName, ExistingWorkPolicy.KEEP, request)
     }
+
+    private fun inputData(
+        reason: BackupCreationReason,
+        businessDate: String?,
+        businessSessionId: Long?,
+        settlementId: Long?,
+        actorName: String,
+    ): Data = Data.Builder()
+        .putString(KEY_REASON, reason.name)
+        .putString(KEY_BUSINESS_DATE, businessDate)
+        .putLong(KEY_BUSINESS_SESSION_ID, businessSessionId ?: 0L)
+        .putLong(KEY_SETTLEMENT_ID, settlementId ?: 0L)
+        .putString(KEY_ACTOR_NAME, actorName)
+        .build()
 
     internal fun reason(data: Data): BackupCreationReason =
         BackupCreationReason.valueOf(data.getString(KEY_REASON) ?: error("バックアップ作成理由がありません"))
@@ -434,6 +464,17 @@ class AutoBackupWorker(
         val actorName = AutoBackupScheduler.actorName(inputData)
         val statusStore = AutoBackupStatusStore(appContext)
         val metadataStore = AutoBackupMetadataStore(appContext)
+        if (reason == BackupCreationReason.PERIODIC) {
+            statusStore.requested(reason)
+            runCatching {
+                AutoBackupAudit.record(
+                    appContext,
+                    "DATA_BACKUP_AUTO_REQUESTED",
+                    "PERIODIC / scheduled worker execution",
+                    actorName,
+                )
+            }
+        }
 
         try {
             cleanupStaleTemporaryFiles(appContext)
@@ -452,6 +493,15 @@ class AutoBackupWorker(
                 val message = "空き容量不足: DB=$databaseBytes bytes / available=${availableBytes(appContext)} bytes"
                 statusStore.completed(reason, AutoBackupResultState.SKIPPED_LOW_STORAGE, message)
                 AutoBackupAudit.record(appContext, "DATA_BACKUP_SKIPPED_LOW_STORAGE", message, actorName, settlementId ?: 0L)
+                AutoBackupFailureNotificationCoordinator.apply(
+                    appContext,
+                    reason,
+                    AutoBackupResultState.SKIPPED_LOW_STORAGE,
+                    message,
+                )
+                if (reason == BackupCreationReason.PERIODIC) {
+                    statusStore.scheduled(AutoBackupPeriodicScheduler.estimatedNextAfterExecution(appContext))
+                }
                 return Result.success()
             }
 
@@ -482,6 +532,15 @@ class AutoBackupWorker(
                 settlementId ?: 0L,
             )
             statusStore.completed(reason, AutoBackupResultState.CREATED)
+            AutoBackupFailureNotificationCoordinator.apply(
+                appContext,
+                reason,
+                AutoBackupResultState.CREATED,
+                null,
+            )
+            if (reason == BackupCreationReason.PERIODIC) {
+                statusStore.scheduled(AutoBackupPeriodicScheduler.estimatedNextAfterExecution(appContext))
+            }
             val retention = AutoBackupRetentionManager(appContext).apply(actorName)
             statusStore.retention(retention.summary())
             cleanupStaleTemporaryFiles(appContext)
@@ -489,6 +548,15 @@ class AutoBackupWorker(
         } catch (error: Throwable) {
             val detail = error.message ?: error.javaClass.simpleName
             statusStore.completed(reason, AutoBackupResultState.FAILED, detail)
+            AutoBackupFailureNotificationCoordinator.apply(
+                appContext,
+                reason,
+                AutoBackupResultState.FAILED,
+                detail,
+            )
+            if (reason == BackupCreationReason.PERIODIC) {
+                statusStore.scheduled(AutoBackupPeriodicScheduler.estimatedNextAfterExecution(appContext))
+            }
             runCatching {
                 AutoBackupAudit.record(appContext, "DATA_BACKUP_AUTO_FAILED", "${reason.name} / $detail", actorName, settlementId ?: 0L)
             }

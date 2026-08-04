@@ -1,5 +1,6 @@
 package jp.co.tenposinfo.register
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -31,6 +32,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +43,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -73,12 +78,15 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
     val appContext = context.applicationContext
     val manager = remember { DataProtectionManager(appContext) }
     val autoStatusStore = remember { AutoBackupStatusStore(appContext) }
+    val autoSettingsStore = remember { AutoBackupSettingsStore(appContext) }
     val metadataStore = remember { AutoBackupMetadataStore(appContext) }
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     var report by remember { mutableStateOf<DataProtectionReport?>(null) }
     var backups by remember { mutableStateOf<List<BackupRecord>>(emptyList()) }
     var metadataByFile by remember { mutableStateOf<Map<String, AutoBackupMetadata>>(emptyMap()) }
     var autoStatus by remember { mutableStateOf(autoStatusStore.load()) }
+    var autoSettings by remember { mutableStateOf(autoSettingsStore.load()) }
     var selected by remember { mutableStateOf<String?>(null) }
     var pending by remember { mutableStateOf(manager.pendingRestoreStatus()) }
     var pin by remember { mutableStateOf("") }
@@ -93,6 +101,7 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
             backups = withContext(Dispatchers.IO) { manager.listBackups() }
             metadataByFile = withContext(Dispatchers.IO) { metadataStore.readAll() }
             autoStatus = autoStatusStore.load()
+            autoSettings = autoSettingsStore.load()
             pending = manager.pendingRestoreStatus()
             busy = false
         }
@@ -138,13 +147,25 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
         backups = withContext(Dispatchers.IO) { manager.listBackups() }
         metadataByFile = withContext(Dispatchers.IO) { metadataStore.readAll() }
         autoStatus = autoStatusStore.load()
+        autoSettings = autoSettingsStore.load()
         report = withContext(Dispatchers.IO) { manager.diagnose() }
         message = if (report?.healthy == true) "DB整合性は正常です" else "DB整合性エラーを確認してください"
     }
 
-    val deletionCandidates = remember(backups, metadataByFile, pending) {
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                autoStatus = autoStatusStore.load()
+                autoSettings = autoSettingsStore.load()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val deletionCandidates = remember(backups, metadataByFile, pending, autoSettings) {
         AutoBackupRetentionPolicy.selectDeletionCandidates(
-            backups.map { backup ->
+            entries = backups.map { backup ->
                 val metadata = metadataByFile[backup.fileName]
                 BackupRetentionEntry(
                     fileName = backup.fileName,
@@ -156,6 +177,8 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                     pendingRestore = pending.backupFileName == backup.fileName,
                 )
             },
+            zBusinessDays = autoSettings.zRetentionBusinessDays,
+            monthlyMonths = autoSettings.monthlyRetentionMonths,
         )
     }
 
@@ -187,8 +210,15 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                         } else Spacer(Modifier.weight(1f))
 
                         Text("自動バックアップ", fontWeight = FontWeight.Bold, color = DpNavy)
-                        Text("状態: ${if (autoStatus.enabled) "有効" else "無効"} / 最終結果: ${autoStatus.lastResult.displayName}", color = if (autoStatus.lastResult == AutoBackupResultState.FAILED || autoStatus.lastResult == AutoBackupResultState.SKIPPED_LOW_STORAGE) DpDanger else DpGreen)
-                        Text("最終実行: ${autoStatus.lastCompletedAt?.let(::formatTime) ?: "未実行"} / 条件: ${autoStatus.nextCondition}", fontSize = 13.sp)
+                        Text(
+                            "Z精算後: 常時有効 / 定期: ${if (autoSettings.periodicEnabled) "${autoSettings.cadence.displayName} ${autoSettings.preferredHour}時台" else "OFF"}",
+                            color = DpNavy,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text("最終結果: ${autoStatus.lastResult.displayName}", color = if (autoStatus.lastResult == AutoBackupResultState.FAILED || autoStatus.lastResult == AutoBackupResultState.SKIPPED_LOW_STORAGE) DpDanger else DpGreen)
+                        Text("最終実行: ${autoStatus.lastCompletedAt?.let(::formatTime) ?: "未実行"}", fontSize = 13.sp)
+                        Text("次回定期予定: ${autoStatus.nextScheduledAt?.let(::formatTime) ?: if (autoSettings.periodicEnabled) "再登録待ち" else "OFF"}", fontSize = 13.sp)
+                        Text("保持: Z精算 ${autoSettings.zRetentionBusinessDays}営業日 / 定期 ${autoSettings.monthlyRetentionMonths}か月", fontSize = 13.sp)
                         autoStatus.lastReason?.let { Text("作成理由: ${it.displayName}", fontSize = 13.sp) }
                         autoStatus.lastRetentionResult?.let { Text("自動整理: $it", fontSize = 13.sp) }
                         autoStatus.lastError?.let { Text("エラー詳細: $it", color = DpDanger, fontSize = 13.sp) }
@@ -219,6 +249,12 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                             enabled = !busy && current?.healthy == true,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("自動バックアップを今すぐ実行") }
+                        Spacer(Modifier.height(6.dp))
+                        OutlinedButton(
+                            onClick = { context.startActivity(Intent(context, AutoBackupSettingsActivity::class.java)) },
+                            enabled = !busy,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("定期・保存世代・失敗通知を設定") }
                     }
                 }
                 Card(Modifier.weight(1f).fillMaxHeight(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {

@@ -22,6 +22,7 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         super.onCreate()
         PrinterConfigurationRegistry.reload(this)
         AutomaticPrintScheduler.schedule(this)
+        AutoBackupPeriodicScheduler.apply(this)
         registerActivityLifecycleCallbacks(this)
     }
 
@@ -33,7 +34,9 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
             is SettlementActivityV030,
             is SettlementHistoryActivityV030,
             is OperationsActivity -> guardManagementActivity(activity)
-            is AdminSettingsActivity, is DataProtectionActivity -> guardSettingsActivity(activity)
+            is AdminSettingsActivity,
+            is DataProtectionActivity,
+            is AutoBackupSettingsActivity -> guardSettingsActivity(activity)
         }
     }
 
