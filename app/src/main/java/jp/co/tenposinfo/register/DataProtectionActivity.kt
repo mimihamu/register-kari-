@@ -255,6 +255,12 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                             enabled = !busy,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("定期・保存世代・失敗通知を設定") }
+                        Spacer(Modifier.height(6.dp))
+                        OutlinedButton(
+                            onClick = { context.startActivity(Intent(context, ExternalBackupSettingsActivity::class.java)) },
+                            enabled = !busy,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Google Drive・USBへの外部自動保存を設定") }
                     }
                 }
                 Card(Modifier.weight(1f).fillMaxHeight(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {

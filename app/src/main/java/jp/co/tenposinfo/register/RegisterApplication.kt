@@ -23,6 +23,7 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         PrinterConfigurationRegistry.reload(this)
         AutomaticPrintScheduler.schedule(this)
         AutoBackupPeriodicScheduler.apply(this)
+        ExternalBackupScheduler.apply(this)
         registerActivityLifecycleCallbacks(this)
     }
 
@@ -36,7 +37,8 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
             is OperationsActivity -> guardManagementActivity(activity)
             is AdminSettingsActivity,
             is DataProtectionActivity,
-            is AutoBackupSettingsActivity -> guardSettingsActivity(activity)
+            is AutoBackupSettingsActivity,
+            is ExternalBackupSettingsActivity -> guardSettingsActivity(activity)
         }
     }
 

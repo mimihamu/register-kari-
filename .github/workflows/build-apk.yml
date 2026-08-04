@@ -14,7 +14,7 @@ permissions:
 jobs:
   build-debug-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
 
     steps:
       - name: Checkout
@@ -42,30 +42,35 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.33 sources
+      - name: Verify cumulative v0.14-v0.34 sources
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 63' app/build.gradle.kts
-          grep -q 'versionName = "0.33.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 64' app/build.gradle.kts
+          grep -q 'versionName = "0.34.0-dev.1"' app/build.gradle.kts
           grep -q 'versionCode = 6' customer-display/build.gradle.kts
           grep -q 'versionName = "0.13.0-dev.6"' customer-display/build.gradle.kts
 
           for file in \
+            app/src/main/java/jp/co/tenposinfo/register/ExternalBackupSync.kt \
+            app/src/main/java/jp/co/tenposinfo/register/ExternalBackupSettingsActivity.kt \
             app/src/main/java/jp/co/tenposinfo/register/AutoBackup.kt \
             app/src/main/java/jp/co/tenposinfo/register/AutoBackupSettings.kt \
             app/src/main/java/jp/co/tenposinfo/register/AutoBackupNotification.kt \
             app/src/main/java/jp/co/tenposinfo/register/AutoBackupSettingsActivity.kt \
+            app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt \
             app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt \
+            app/src/main/java/jp/co/tenposinfo/register/RegisterApplication.kt \
             app/src/main/java/jp/co/tenposinfo/register/UnifiedPrintQueue.kt \
             app/src/main/java/jp/co/tenposinfo/register/UnifiedPrintQueueActivity.kt \
             app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt \
             app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsStore.kt \
+            app/src/test/java/jp/co/tenposinfo/register/V034ExternalBackupMirrorTest.kt \
             app/src/test/java/jp/co/tenposinfo/register/V033PeriodicBackupSettingsTest.kt \
             app/src/test/java/jp/co/tenposinfo/register/V032PrintQueueOperationsTest.kt \
             app/src/test/java/jp/co/tenposinfo/register/V031PrinterPaperSettingTest.kt \
-            docs/V0.33_PERIODIC_BACKUP_NOTIFICATIONS.md \
-            docs/V0.33_RELEASE_NOTES.md; do
+            docs/V0.34_EXTERNAL_BACKUP_MIRROR.md \
+            docs/V0.34_RELEASE_NOTES.md; do
             test -s "$file"
           done
 
@@ -73,11 +78,14 @@ jobs:
           from pathlib import Path
 
           root = Path('app/src/main/java/jp/co/tenposinfo/register')
+          mirror = (root / 'ExternalBackupSync.kt').read_text()
+          external_ui = (root / 'ExternalBackupSettingsActivity.kt').read_text()
           settings = (root / 'AutoBackupSettings.kt').read_text()
           worker = (root / 'AutoBackup.kt').read_text()
           notification = (root / 'AutoBackupNotification.kt').read_text()
           settings_ui = (root / 'AutoBackupSettingsActivity.kt').read_text()
-          protection = (root / 'DataProtectionActivity.kt').read_text()
+          data_protection = (root / 'DataProtection.kt').read_text()
+          protection_ui = (root / 'DataProtectionActivity.kt').read_text()
           application = (root / 'RegisterApplication.kt').read_text()
           queue = (root / 'UnifiedPrintQueue.kt').read_text()
           queue_ui = (root / 'UnifiedPrintQueueActivity.kt').read_text()
@@ -86,7 +94,35 @@ jobs:
           printer = (root / 'AdminSettingsStore.kt').read_text()
           manifest = Path('app/src/main/AndroidManifest.xml').read_text()
 
-          # v0.33 periodic backup operation.
+          # v0.34 external automatic mirror.
+          for token in (
+              'data class ExternalBackupSettings',
+              'persistedUriPermissions',
+              'PeriodicWorkRequestBuilder<ExternalBackupMirrorWorker>',
+              '15,',
+              'ExistingPeriodicWorkPolicy.KEEP',
+              'ExistingPeriodicWorkPolicy.UPDATE',
+              'ExistingWorkPolicy.APPEND_OR_REPLACE',
+              'ExternalBackupFileNamePolicy',
+              '.partial',
+              'archiveSha256',
+              'DATA_BACKUP_EXTERNAL_AUTO_EXPORTED',
+              'DATA_BACKUP_EXTERNAL_AUTO_FAILED',
+              'external_backup_failures',
+          ):
+              assert token in mirror, token
+          assert 'ActivityResultContracts.OpenDocumentTree' in external_ui
+          assert 'takePersistableUriPermission' in external_ui
+          assert 'releasePersistableUriPermission' in external_ui
+          assert 'ExternalBackupScheduler.apply(this)' in application
+          assert 'is ExternalBackupSettingsActivity' in application
+          assert 'ExternalBackupScheduler.enqueueNow' in worker
+          assert 'ExternalBackupSettingsActivity::class.java' in settings_ui
+          assert 'ExternalBackupSettingsActivity::class.java' in protection_ui
+          assert 'fun copyVerifiedBackup' in data_protection
+          assert 'android:name=".ExternalBackupSettingsActivity"' in manifest
+
+          # v0.33 periodic internal backup remains cumulative.
           for token in (
               'enum class PeriodicBackupCadence',
               'DAILY',
@@ -95,7 +131,6 @@ jobs:
               'preferredHour',
               'zRetentionBusinessDays',
               'monthlyRetentionMonths',
-              'failureNotificationsEnabled',
               'PeriodicWorkRequestBuilder<AutoBackupWorker>',
               'ExistingPeriodicWorkPolicy.KEEP',
               'ExistingPeriodicWorkPolicy.UPDATE',
@@ -104,17 +139,9 @@ jobs:
           ):
               assert token in settings, token
           assert 'BackupCreationReason.PERIODIC' in worker
-          assert 'AutoBackupSettingsStore' in worker
-          assert 'nextScheduledAt' in worker
           assert 'AutoBackupFailureNotificationPolicy' in notification
-          assert 'SKIPPED_LOW_STORAGE' in notification
-          assert 'FAILED' in notification
-          assert 'POST_NOTIFICATIONS' in settings_ui
           assert 'DATA_BACKUP_SETTINGS_UPDATED' in settings_ui
-          assert '定期・保存世代・失敗通知を設定' in protection
-          assert '次回定期予定' in protection
           assert 'AutoBackupPeriodicScheduler.apply(this)' in application
-          assert 'android:name=".AutoBackupSettingsActivity"' in manifest
 
           # v0.32 print queue safety remains cumulative.
           assert 'DISCARDED' in queue
@@ -123,15 +150,16 @@ jobs:
           assert 'PRINT_JOB_DISCARDED' in database
           assert 'PRINT_JOB_DISCARDED' in advanced
 
-          # v0.31 paper width source remains printer settings only.
+          # v0.31 paper width remains printer-settings-only.
           assert 'object PrinterPaperSettingPolicy' in printer
           assert 'currentWidthMm' in printer
 
-          # Temporary transfer files must not survive the final branch.
-          assert not list(Path('tools').glob('v033-payload.*'))
+          # Temporary transfer files/workflows must not survive the final branch.
+          assert not list(Path('tools').glob('v034*'))
+          assert not Path('.github/workflows/v034-apply.yml').exists()
           PY
 
-          test "$(grep -c 'android:name=".AutoBackupSettingsActivity"' app/src/main/AndroidManifest.xml)" -eq 1
+          test "$(grep -c 'android:name=".ExternalBackupSettingsActivity"' app/src/main/AndroidManifest.xml)" -eq 1
           ! grep -q '<activity-alias' app/src/main/AndroidManifest.xml
 
       - name: Verify launcher configuration
@@ -159,28 +187,32 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.33.0_dev1_periodic_backup_notifications_debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.34.0_dev1_external_backup_mirror_debug.apk
           cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
-          sha256sum artifacts/TSUGUREGI_v0.33.0_dev1_periodic_backup_notifications_debug.apk | tee artifacts/TSUGUREGI_v0.33.0_dev1_periodic_backup_notifications_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_v0.34.0_dev1_external_backup_mirror_debug.apk | tee artifacts/TSUGUREGI_v0.34.0_dev1_external_backup_mirror_debug.apk.sha256
           sha256sum artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
-          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.33.0_dev1_periodic_backup_notifications_debug.apk | tee artifacts/build-summary.txt
+          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.34.0_dev1_external_backup_mirror_debug.apk | tee artifacts/build-summary.txt
           stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.33.0-dev.1
-          REGISTER_VERSION_CODE=63
+          REGISTER_VERSION_NAME=0.34.0-dev.1
+          REGISTER_VERSION_CODE=64
           CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.6
           CUSTOMER_DISPLAY_VERSION_CODE=6
-          AUTO_BACKUP_TRIGGER=committed-z-settlement-and-periodic
-          AUTO_BACKUP_PERIODIC_CADENCE=daily-or-seven-days
-          AUTO_BACKUP_PREFERRED_HOUR=configurable-0-to-23
-          AUTO_BACKUP_RETENTION=configurable-z-business-days-and-monthly-months
-          AUTO_BACKUP_FAILURE_NOTIFICATION=failed-or-low-storage
+          EXTERNAL_BACKUP_DESTINATION=android-document-tree
+          EXTERNAL_BACKUP_TARGETS=google-drive-usb-device-folder
+          EXTERNAL_BACKUP_TRIGGER=backup-created-and-periodic-scan
+          EXTERNAL_BACKUP_PERIODIC_SCAN_MINUTES=15
+          EXTERNAL_BACKUP_INTERNAL_SOURCE_OF_TRUTH=true
+          EXTERNAL_BACKUP_PARTIAL_COMMIT=true
+          EXTERNAL_BACKUP_ARCHIVE_SHA256_VERIFY=true
+          GOOGLE_DRIVE_REST_API=not-implemented
+          GOOGLE_OAUTH=not-implemented
           AUTO_BACKUP_Z_SETTLEMENT_ALWAYS_ENABLED=true
           PRINT_PAPER_WIDTH_SOURCE=printer-settings-only
           PRINT_TIME_PAPER_WIDTH_SELECTION=disabled
           PRINT_QUEUE_DISCARD=manager-pin-reason-audit
           SIGNING=development-not-production
-          REAL_DEVICE_PERIODIC_BACKUP_AND_NOTIFICATION_VERIFICATION=required
+          REAL_DEVICE_EXTERNAL_BACKUP_VERIFICATION=required
           EOF
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
@@ -188,10 +220,10 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.33.0-dev1-periodic-backup-notifications-apks
+          name: TSUGUREGI-v0.34.0-dev1-external-backup-mirror-apks
           path: |
-            artifacts/TSUGUREGI_v0.33.0_dev1_periodic_backup_notifications_debug.apk
-            artifacts/TSUGUREGI_v0.33.0_dev1_periodic_backup_notifications_debug.apk.sha256
+            artifacts/TSUGUREGI_v0.34.0_dev1_external_backup_mirror_debug.apk
+            artifacts/TSUGUREGI_v0.34.0_dev1_external_backup_mirror_debug.apk.sha256
             artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
             artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
             artifacts/build-summary.txt

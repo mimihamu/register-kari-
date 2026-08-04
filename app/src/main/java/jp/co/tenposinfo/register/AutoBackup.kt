@@ -531,6 +531,7 @@ class AutoBackupWorker(
                 actorName,
                 settlementId ?: 0L,
             )
+            ExternalBackupScheduler.enqueueNow(appContext, "backup-created:${backup.fileName}")
             statusStore.completed(reason, AutoBackupResultState.CREATED)
             AutoBackupFailureNotificationCoordinator.apply(
                 appContext,

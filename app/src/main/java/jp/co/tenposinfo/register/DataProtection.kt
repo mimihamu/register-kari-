@@ -277,15 +277,20 @@ class DataProtectionManager(context: Context) {
         }
     }
 
-    fun exportBackup(fileName: String, output: OutputStream, actorName: String): BackupExportResult {
+    fun copyVerifiedBackup(fileName: String, output: OutputStream): BackupExportResult {
         val verification = verifyBackup(fileName)
         val archive = File(backupDir, BackupFilePolicy.requireSafe(fileName))
         val written = archive.inputStream().buffered().use { input ->
             BackupTransferPolicy.copyWithLimit(input, output, MAX_BACKUP_ARCHIVE_BYTES)
         }
         require(written == archive.length()) { "バックアップの外部出力サイズが一致しません" }
-        recordAudit("DATA_BACKUP_EXPORTED", "${verification.fileName} / $written bytes", actorName)
         return BackupExportResult(verification.fileName, written, verification.manifest)
+    }
+
+    fun exportBackup(fileName: String, output: OutputStream, actorName: String): BackupExportResult {
+        val result = copyVerifiedBackup(fileName, output)
+        recordAudit("DATA_BACKUP_EXPORTED", "${result.fileName} / ${result.bytesWritten} bytes", actorName)
+        return result
     }
 
     fun importBackup(input: InputStream, actorName: String): BackupRecord {
