@@ -24,6 +24,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Payload files are removed in the resulting implementation commit.
           cat tools/v032-payload.* | base64 --decode | gzip --decompress > /tmp/v032.patch
           patch -p1 < /tmp/v032.patch
           rm -f tools/v032-payload.*
