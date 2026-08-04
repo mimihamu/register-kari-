@@ -1,0 +1,38 @@
+name: Export v0.33 source
+
+on:
+  pull_request:
+    branches:
+      - develop/v0.32
+    paths:
+      - .github/workflows/export-v033-source.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-source:
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'develop/v0.33')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout v0.33
+        uses: actions/checkout@v4
+        with:
+          ref: develop/v0.33
+          fetch-depth: 1
+      - name: Package source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf source-export
+          mkdir -p source-export
+          rsync -a --exclude='.git' --exclude='source-export' ./ source-export/
+          tar -czf TSUGUREGI-v0.33-source.tar.gz -C source-export .
+      - name: Upload source
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSUGUREGI-v0.33-source
+          path: TSUGUREGI-v0.33-source.tar.gz
+          if-no-files-found: error
+          retention-days: 3
