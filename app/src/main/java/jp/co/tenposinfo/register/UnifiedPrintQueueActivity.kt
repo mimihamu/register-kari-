@@ -237,7 +237,7 @@ private fun UnifiedPrintQueueApp(onClose: () -> Unit) {
                                         Text(job.status.name, color = queueJobColor(job.status), fontWeight = FontWeight.Bold)
                                     }
                                     Text(
-                                        "Job.${job.sourceId} / 参照No.${job.referenceId} / ${job.paperWidthMm}mm / ${queueDate(job.createdAt)}",
+                                        "Job.${job.sourceId} / 参照No.${job.referenceId} / 設定${job.paperWidthMm}mm / ${queueDate(job.createdAt)}",
                                         color = Color.Gray,
                                         fontSize = 13.sp,
                                     )

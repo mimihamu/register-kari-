@@ -194,8 +194,7 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
         val receipt = ReceiptFactory.fromSale(detail, reprint = detail.summary.printCount > 0)
         val payload = EscPosEncoder.encode(
             data = receipt,
-            paper = ReceiptPaper.fromWidth(sourceJob.paperWidthMm),
-            configuration = configuration,
+            configuration = configuration.copy(paperWidthMm = sourceJob.paperWidthMm),
         )
         val result = gateway.send(payload)
         result.onSuccess {

@@ -415,7 +415,6 @@ class OperationsStore(context: Context) {
         requestedQuantities: Map<Long, Int>,
         reason: String,
         operatorName: String,
-        paperWidthMm: Int,
         requestId: String,
     ): PartialReversalResult {
         require(reason.isNotBlank()) { "理由を入力してください" }
@@ -423,6 +422,7 @@ class OperationsStore(context: Context) {
         val now = System.currentTimeMillis()
         val operationKey = OperationsIdempotencyPolicy.reversalRequestKey(type, originalSaleId, requestId)
         val issuer = TaxInvoiceSettingsStore(appContext).load().issuer
+        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
         var savedResult: PartialReversalResult? = null
 
         db.transaction {
@@ -568,7 +568,6 @@ class OperationsStore(context: Context) {
             requestedQuantities = requested,
             reason = reason,
             operatorName = operatorName,
-            paperWidthMm = 80,
             requestId = "FULL-${type.name}",
         ).reversalId
     }
@@ -631,6 +630,7 @@ class OperationsStore(context: Context) {
         pendingPrintsAcknowledged: Boolean = false,
     ): Long {
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
+        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
         val now = System.currentTimeMillis()
 
         return db.transaction {
@@ -687,7 +687,6 @@ class OperationsStore(context: Context) {
                 },
             )
             SettlementSnapshotSchemaV027.savePaymentTotals(this, id, summary.paymentTotals)
-            val paperWidthMm = PrinterConfigurationRegistry.current()?.paperWidthMm ?: 80
             val document = SettlementDocumentData(
                 reportId = id,
                 businessDate = summary.businessDate,
@@ -798,10 +797,10 @@ class OperationsStore(context: Context) {
         "1",
     ).use { cursor -> if (cursor.moveToFirst()) cursor.toSettlementRecordV027() else null }
 
-    fun previewSettlement(reportId: Long, paperWidthMm: Int): String {
+    fun previewSettlement(reportId: Long): String {
         val record = settlementById(reportId)
             ?: throw IllegalArgumentException("点検・精算履歴No.${reportId}が見つかりません")
-        val paper = ReceiptPaper.fromWidth(paperWidthMm)
+        val paper = PrinterPaperSettingPolicy.currentPaper(appContext)
         val document = settlementDocumentData(record)
         if (document != null) return OperationDocumentRenderer.renderSettlement(document, paper)
         return SettlementSnapshotSchemaV027.originalPayload(db, reportId)
@@ -812,11 +811,10 @@ class OperationsStore(context: Context) {
 
     fun reprintSettlement(
         reportId: Long,
-        paperWidthMm: Int,
         operatorName: String,
     ): Long {
         require(operatorName.isNotBlank()) { "再印字担当者を入力してください" }
-        val normalizedWidth = if (paperWidthMm >= 80) 80 else 58
+        val normalizedWidth = PrinterPaperSettingPolicy.currentWidthMm(appContext)
         val now = System.currentTimeMillis()
         return db.transaction {
             val record = settlementById(reportId)

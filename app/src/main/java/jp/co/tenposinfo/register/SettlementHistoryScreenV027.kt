@@ -63,8 +63,9 @@ internal fun SettlementHistoryScreenV027(
     permissions: Set<RegisterPermission>,
     revision: Int,
     message: String?,
-    previewLoader: (Long, Int) -> String,
-    onReprint: (SettlementRecord, Int, String) -> Unit,
+    printerPaperWidthMm: Int,
+    previewLoader: (Long) -> String,
+    onReprint: (SettlementRecord, String) -> Unit,
     onBack: () -> Unit,
 ) {
     var selectedSessionId by remember {
@@ -72,7 +73,6 @@ internal fun SettlementHistoryScreenV027(
     }
     var selectedType by remember { mutableStateOf<SettlementReportType?>(null) }
     var selectedReportId by remember { mutableStateOf<Long?>(settlements.firstOrNull()?.id) }
-    var paperWidthMm by remember { mutableStateOf(80) }
     var managerPin by remember { mutableStateOf("") }
     @Suppress("UNUSED_VARIABLE") val refresh = revision
 
@@ -254,12 +254,13 @@ internal fun SettlementHistoryScreenV027(
                         Text("履歴を選択してください", color = Color.Gray)
                     }
                 } else {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        HistoryFilterButton("58mm", paperWidthMm == 58, Modifier.weight(1f)) { paperWidthMm = 58 }
-                        HistoryFilterButton("80mm", paperWidthMm == 80, Modifier.weight(1f)) { paperWidthMm = 80 }
-                    }
+                    Text(
+                        "印字幅：プリンタ設定 ${printerPaperWidthMm}mm（再印字時は変更しません）",
+                        color = Color.DarkGray,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                     Spacer(Modifier.height(8.dp))
-                    val preview = runCatching { previewLoader(selected.id, paperWidthMm) }
+                    val preview = runCatching { previewLoader(selected.id) }
                         .getOrElse { it.message ?: "印字内容を復元できません" }
                     Box(
                         Modifier.weight(1f).fillMaxWidth()
@@ -299,7 +300,7 @@ internal fun SettlementHistoryScreenV027(
                     )
                     Spacer(Modifier.height(6.dp))
                     Button(
-                        onClick = { onReprint(selected, paperWidthMm, managerPin) },
+                        onClick = { onReprint(selected, managerPin) },
                         enabled = SettlementHistoryPolicyV027.canReprint(
                             record = selected,
                             permissions = permissions,

@@ -112,7 +112,6 @@ class SecureOperationsCoordinator(
 
     fun reprintSettlement(
         reportId: Long,
-        paperWidthMm: Int,
         managerPin: String,
     ): Long {
         val record = store.settlementById(reportId)
@@ -131,7 +130,7 @@ class SecureOperationsCoordinator(
             } else {
                 OperationsActorFormatter.direct(operator)
             }
-            val jobId = store.reprintSettlement(reportId, paperWidthMm, actor)
+            val jobId = store.reprintSettlement(reportId, actor)
             runCatching { AutomaticPrintScheduler.enqueueNow(appContext) }
             jobId
         }
@@ -143,7 +142,6 @@ class SecureOperationsCoordinator(
         requestedQuantities: Map<Long, Int>,
         reason: String,
         managerPin: String,
-        paperWidthMm: Int,
         requestId: String,
     ): PartialReversalResult {
         val executionKey = OperationsIdempotencyPolicy.reversalKey(originalSaleId)
@@ -156,7 +154,6 @@ class SecureOperationsCoordinator(
                 requestedQuantities = requestedQuantities,
                 reason = reason,
                 operatorName = OperationsActorFormatter.approved(operator, managerName),
-                paperWidthMm = paperWidthMm,
                 requestId = requestId,
             )
         }
@@ -175,7 +172,6 @@ class SecureOperationsCoordinator(
         } else emptyMap(),
         reason = reason,
         managerPin = managerPin,
-        paperWidthMm = 80,
         requestId = "FULL-${type.name}",
     ).reversalId
 

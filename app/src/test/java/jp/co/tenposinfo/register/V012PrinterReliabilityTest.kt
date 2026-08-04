@@ -78,8 +78,10 @@ class V012PrinterReliabilityTest {
     }
 
     @Test
-    fun receiptPaperWidthSelectionRemainsCompatible() {
-        assertEquals(ReceiptPaper.MM58, ReceiptPaper.fromWidth(58))
-        assertEquals(ReceiptPaper.MM80, ReceiptPaper.fromWidth(80))
+    fun printerSettingControlsReceiptPaperWidth() {
+        assertEquals(58, PrinterPaperSettingPolicy.normalizeWidthMm(58))
+        assertEquals(80, PrinterPaperSettingPolicy.normalizeWidthMm(80))
+        assertEquals(ReceiptPaper.MM58, PrinterPaperSettingPolicy.paper(PrinterConfiguration(paperWidthMm = 58)))
+        assertEquals(ReceiptPaper.MM80, PrinterPaperSettingPolicy.paper(PrinterConfiguration(paperWidthMm = 80)))
     }
 }
