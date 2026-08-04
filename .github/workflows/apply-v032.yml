@@ -1,0 +1,35 @@
+name: Apply v0.32 print queue operations
+
+on:
+  pull_request:
+    branches:
+      - develop/v0.31
+    paths:
+      - .github/workflows/apply-v032.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-code:
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'develop/v0.32')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: develop/v0.32
+      - name: Apply v0.32 implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat tools/v032-payload.* | base64 --decode | gzip --decompress > /tmp/v032.patch
+          patch -p1 < /tmp/v032.patch
+          rm -f tools/v032-payload.*
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app docs tools
+          git diff --cached --check
+          git commit -m "v0.32 統合印刷キュー業務運用"
+          git push origin HEAD:develop/v0.32
