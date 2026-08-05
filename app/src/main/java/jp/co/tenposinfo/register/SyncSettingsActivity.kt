@@ -134,11 +134,11 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                             Spacer(Modifier.height(10.dp))
                             Button(
                                 onClick = {
-                                    context.startActivity(Intent(context, GoogleDriveAccountActivity::class.java))
+                                    context.startActivity(Intent(context, GoogleDriveSetupGuideActivity::class.java))
                                 },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = SyBlue),
-                            ) { Text("Googleアカウント・直接送信") }
+                            ) { Text("Google Drive初期設定・アカウント") }
                             Spacer(Modifier.height(10.dp))
                             OutlinedButton(
                                 onClick = {

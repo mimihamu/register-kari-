@@ -270,7 +270,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
                             GoogleDriveAccountStatus.VERIFICATION_FAILED
                         },
                         message = if (apiDisabled) {
-                            "Google CloudでGoogle Drive APIを有効にしてください"
+                            "Google Drive APIが無効です。同期設定の初期設定ガイドを確認してください"
                         } else {
                             "Drive接続確認に失敗しました：${error.message ?: error.javaClass.simpleName}"
                         },
@@ -307,7 +307,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
         state.value = state.value.copy(
             status = status,
             message = if (status == GoogleDriveAccountStatus.CLOUD_CONFIGURATION_REQUIRED) {
-                "Google CloudにapplicationIdと署名SHA-1を登録してください"
+                "Google Cloud設定が必要です。同期設定の初期設定ガイドを確認してください"
             } else {
                 "Googleアカウント認可に失敗しました：${error.message ?: error.javaClass.simpleName}"
             },

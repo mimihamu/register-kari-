@@ -83,8 +83,8 @@ class V043DriveConnectionTest {
         assertTrue(screen.contains("フォルダ方式は互換用"))
         assertTrue(screen.contains("DriveConnectionPolicy.shouldAutoImport"))
 
-        assertTrue(registerBuild.contains("versionCode = 75"))
-        assertTrue(registerBuild.contains("versionName = \"0.45.0-dev.1\""))
+        assertTrue(registerBuild.contains("versionCode = 76"))
+        assertTrue(registerBuild.contains("versionName = \"0.46.0-dev.1\""))
         assertTrue(plusBuild.contains("versionCode = 7"))
         assertTrue(plusBuild.contains("versionName = \"0.7.0-dev.1\""))
         assertTrue(workflow.contains(":management-app:testDebugUnitTest"))
