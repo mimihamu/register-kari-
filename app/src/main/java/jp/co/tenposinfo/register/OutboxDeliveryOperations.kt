@@ -323,18 +323,19 @@ class OutboxDeliveryOperationsStore(context: Context) {
                     "以前の送信先テストファイルを削除できません"
                 }
             }
-            documentUri = OutboxExternalDocumentProvider.createFile(appContext, parent, fileName)
-            val written = appContext.contentResolver.openOutputStream(documentUri, "w")?.use { output ->
+            val createdUri = OutboxExternalDocumentProvider.createFile(appContext, parent, fileName)
+            documentUri = createdUri
+            val written = appContext.contentResolver.openOutputStream(createdUri, "w")?.use { output ->
                 output.write(payload)
                 output.flush()
                 payload.size.toLong()
             } ?: throw FileNotFoundException("送信先テストファイルを開けません")
             require(written == payload.size.toLong()) { "送信先テストの書込サイズが一致しません" }
-            val externalBytes = appContext.contentResolver.openInputStream(documentUri)?.use { it.readBytes() }
+            val externalBytes = appContext.contentResolver.openInputStream(createdUri)?.use { it.readBytes() }
                 ?: throw FileNotFoundException("送信先テストファイルを再読込できません")
             require(externalBytes.contentEquals(payload)) { "送信先テストの読込内容が一致しません" }
             val digest = sha256(payload)
-            removed = OutboxExternalDocumentProvider.delete(appContext, documentUri)
+            removed = OutboxExternalDocumentProvider.delete(appContext, createdUri)
             require(removed) { "送信先テストは成功しましたが一時ファイルを削除できません" }
             OutboxDeliveryAudit.record(
                 appContext,
