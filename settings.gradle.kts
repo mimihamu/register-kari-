@@ -17,3 +17,4 @@ dependencyResolutionManagement {
 rootProject.name = "つぐレジ"
 include(":app")
 include(":customer-display")
+include(":management-app")
