@@ -61,6 +61,8 @@ class V045GoogleDriveDirectSyncTest {
             "GoogleDriveDirectSyncWorker",
             "GoogleDriveDirectSyncScheduler",
             "enqueueStartup",
+            "最終同期",
+            "yyyy/MM/dd HH:mm:ss",
         )) assertTrue(token, source.contains(token))
 
         assertTrue(database.contains("DATABASE_VERSION = 4"))
