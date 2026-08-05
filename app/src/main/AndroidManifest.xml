@@ -34,6 +34,12 @@
             android:initOrder="110" />
 
         <provider
+            android:name=".GoogleDriveDirectUploadBootstrapProvider"
+            android:authorities="${applicationId}.google-drive-direct-upload-bootstrap"
+            android:exported="false"
+            android:initOrder="115" />
+
+        <provider
             android:name=".DocumentPrintSafetyBootstrapProvider"
             android:authorities="${applicationId}.document-print-safety-bootstrap"
             android:exported="false"
