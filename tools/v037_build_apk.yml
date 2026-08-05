@@ -46,7 +46,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 77' app/build.gradle.kts
+          grep -q 'versionCode = 67' app/build.gradle.kts
           grep -q 'versionName = "0.37.0-dev.1"' app/build.gradle.kts
           grep -q 'versionCode = 7' customer-display/build.gradle.kts
           grep -q 'versionName = "0.14.0-dev.1"' customer-display/build.gradle.kts
