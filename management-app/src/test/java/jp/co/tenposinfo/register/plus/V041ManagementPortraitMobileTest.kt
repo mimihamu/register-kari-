@@ -35,7 +35,7 @@ class V041ManagementPortraitMobileTest {
         assertTrue(manifest.contains("android:screenOrientation=\"sensorPortrait\""))
         assertFalse(manifest.contains("android:screenOrientation=\"landscape\""))
         assertTrue(registerManifest.contains("android:screenOrientation=\"landscape\""))
-        assertTrue(activity.contains("TsuguRegiPlusMobileScreen"))
+        assertTrue(activity.contains("TsuguRegiPlusFolderSyncScreen"))
 
         for (token in listOf(
             "NavigationBar",
@@ -52,13 +52,13 @@ class V041ManagementPortraitMobileTest {
         )) assertTrue(mobileScreen.contains(token))
         assertFalse(mobileScreen.contains("verticalScroll(rememberScrollState())"))
 
-        assertTrue(registerBuild.contains("versionCode = 71"))
-        assertTrue(registerBuild.contains("versionName = \"0.41.0-dev.1\""))
-        assertTrue(plusBuild.contains("versionCode = 3"))
-        assertTrue(plusBuild.contains("versionName = \"0.3.0-dev.1\""))
+        assertTrue(registerBuild.contains("versionCode = 72"))
+        assertTrue(registerBuild.contains("versionName = \"0.42.0-dev.1\""))
+        assertTrue(plusBuild.contains("versionCode = 4"))
+        assertTrue(plusBuild.contains("versionName = \"0.4.0-dev.1\""))
         assertTrue(workflow.contains("Verify portrait management configuration"))
         assertTrue(workflow.contains("V041ManagementPortraitMobileTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.3.0_dev1_mobile_portrait_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.4.0_dev1"))
         assertTrue(docs.contains("sensorPortrait"))
         assertTrue(docs.contains("売上・取引・取込"))
         assertTrue(notes.contains("スマホ縦画面"))
