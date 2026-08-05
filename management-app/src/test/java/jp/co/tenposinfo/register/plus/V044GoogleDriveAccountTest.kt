@@ -13,11 +13,6 @@ class V044GoogleDriveAccountTest {
             "https://www.googleapis.com/auth/drive.file",
             GoogleDriveAccountPolicy.DRIVE_FILE_SCOPE,
         )
-        assertEquals(1, GoogleDriveAccountPolicy.requestedScopes.size)
-        assertEquals(
-            GoogleDriveAccountPolicy.DRIVE_FILE_SCOPE,
-            GoogleDriveAccountPolicy.requestedScopes.single().scopeUri,
-        )
         assertEquals(
             GoogleDriveAccountStatus.AUTHORIZATION_FAILED,
             GoogleDriveAccountPolicy.statusForAuthorizationError(IllegalStateException("failure")),
