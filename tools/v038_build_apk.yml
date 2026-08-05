@@ -328,8 +328,8 @@ jobs:
           stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.38.0_dev1_outbox_operations_debug.apk | tee artifacts/build-summary.txt
           stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.37.0-dev.1
-          REGISTER_VERSION_CODE=67
+          REGISTER_VERSION_NAME=0.38.0-dev.1
+          REGISTER_VERSION_CODE=68
           CUSTOMER_DISPLAY_VERSION_NAME=0.14.0-dev.1
           CUSTOMER_DISPLAY_VERSION_CODE=7
           CUSTOMER_DISPLAY_PRESENTATION_SYNC=websocket-schema-v1-optional-fields
@@ -338,6 +338,11 @@ jobs:
           CUSTOMER_DISPLAY_TRANSIENT_DISCONNECT_GRACE_MS=3000
           CUSTOMER_DISPLAY_TAX_SYMBOL=true
           CUSTOMER_DISPLAY_CANCEL_VISIBILITY=true
+          OUTBOX_OPERATIONS_DASHBOARD=true
+          OUTBOX_OPERATIONS_INDIVIDUAL_RETRY=true
+          OUTBOX_OPERATIONS_JSON_PREVIEW=true
+          OUTBOX_OPERATIONS_DESTINATION_TEST=true
+          OUTBOX_OPERATIONS_AUDIT_HISTORY=true
           SALES_JOURNAL_SCHEMA=jp.co.tenposinfo.tsuguregi.sales-journal
           SALES_JOURNAL_SCHEMA_VERSION=1
           SALES_JOURNAL_DUPLICATE_KEY=sha256-store-terminal-businessdate-event-eventid
