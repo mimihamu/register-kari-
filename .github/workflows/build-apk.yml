@@ -42,16 +42,16 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.42 sources
+      - name: Verify cumulative v0.14-v0.43 sources
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 72' app/build.gradle.kts
-          grep -q 'versionName = "0.42.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 73' app/build.gradle.kts
+          grep -q 'versionName = "0.43.0-dev.1"' app/build.gradle.kts
           grep -q 'versionCode = 7' customer-display/build.gradle.kts
           grep -q 'versionName = "0.14.0-dev.1"' customer-display/build.gradle.kts
-          grep -q 'versionCode = 4' management-app/build.gradle.kts
-          grep -q 'versionName = "0.4.0-dev.1"' management-app/build.gradle.kts
+          grep -q 'versionCode = 5' management-app/build.gradle.kts
+          grep -q 'versionName = "0.5.0-dev.1"' management-app/build.gradle.kts
           grep -q 'include(":management-app")' settings.gradle.kts
 
           for file in \
@@ -59,6 +59,7 @@ jobs:
             management-app/src/main/java/jp/co/tenposinfo/register/plus/MainActivity.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/ManagementMobileScreen.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/ManagementFolderSyncScreen.kt \
+            management-app/src/main/java/jp/co/tenposinfo/register/plus/DriveConnection.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/ImportFolderSource.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/FolderImportRepository.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/ManagementDatabase.kt \
@@ -69,8 +70,11 @@ jobs:
             management-app/src/test/java/jp/co/tenposinfo/register/plus/V040ManagementSalesReportingIntegrationTest.kt \
             management-app/src/test/java/jp/co/tenposinfo/register/plus/V041ManagementPortraitMobileTest.kt \
             management-app/src/test/java/jp/co/tenposinfo/register/plus/V042FolderImportTest.kt \
+            management-app/src/test/java/jp/co/tenposinfo/register/plus/V043DriveConnectionTest.kt \
             management-app/src/test/java/jp/co/tenposinfo/register/plus/SalesJournalImportContractTest.kt \
             management-app/src/test/java/jp/co/tenposinfo/register/plus/SalesReportCalculatorTest.kt \
+            docs/V0.43_GOOGLE_DRIVE_CONNECTION.md \
+            docs/V0.43_RELEASE_NOTES.md \
             docs/V0.42_TSUGUREGI_PLUS_FOLDER_IMPORT.md \
             docs/V0.42_RELEASE_NOTES.md \
             docs/V0.41_TSUGUREGI_PLUS_MOBILE_PORTRAIT.md \
@@ -99,6 +103,7 @@ jobs:
           folder_source = (plus / 'ImportFolderSource.kt').read_text()
           folder_repo = (plus / 'FolderImportRepository.kt').read_text()
           folder_ui = (plus / 'ManagementFolderSyncScreen.kt').read_text()
+          drive_connection = (plus / 'DriveConnection.kt').read_text()
           mobile_ui = (plus / 'ManagementMobileScreen.kt').read_text()
           database = (plus / 'ManagementDatabase.kt').read_text()
           journal_repo = (plus / 'SalesJournalImportRepository.kt').read_text()
@@ -118,7 +123,28 @@ jobs:
               assert token in folder_source, token
           for token in ('knownFingerprints', 'recordProcessedFiles', 'CONFLICT_REPLACE'):
               assert token in folder_repo, token
-          for token in ('差分取込', '全件再確認', '取込フォルダ未登録', 'OpenDocumentTree'):
+          for token in (
+              'DriveConnectionStatus',
+              'PERMISSION_MISSING',
+              'PROVIDER_UNAVAILABLE',
+              'READ_FAILED',
+              'persistedUriPermissions',
+              'resolveContentProvider',
+              'DocumentsContract.getTreeDocumentId',
+              'AUTO_IMPORT_COOLDOWN_MS',
+              'DriveSyncPreferences',
+          ):
+              assert token in drive_connection, token
+          for token in (
+              '差分取込',
+              '全件再確認',
+              '取込フォルダ未登録',
+              'OpenDocumentTree',
+              '接続診断',
+              '永続読取権限',
+              '起動時に差分取込',
+              'DriveConnectionPolicy.shouldAutoImport',
+          ):
               assert token in folder_ui, token
           for token in ('TsuguRegiPlusFolderSyncScreen', 'importRegisteredFolder', '差分はありませんでした'):
               assert token in activity, token
@@ -150,7 +176,7 @@ jobs:
           assert 'DISCARDED' in queue
           assert 'jp.co.tenposinfo.tsuguregi.sales-journal' in schema
 
-          for version in ('v042', 'v041', 'v040', 'v039', 'v038', 'v037', 'v036', 'v035'):
+          for version in ('v043', 'v042', 'v041', 'v040', 'v039', 'v038', 'v037', 'v036', 'v035'):
               assert not list(Path('tools').glob(f'{version}*'))
               assert not Path(f'.github/workflows/{version}-apply.yml').exists()
           PY
@@ -169,6 +195,9 @@ jobs:
           ! grep -q 'android:screenOrientation="landscape"' management-app/src/main/AndroidManifest.xml
           grep -q 'android:screenOrientation="landscape"' app/src/main/AndroidManifest.xml
           grep -q 'ActivityResultContracts.OpenDocumentTree' management-app/src/main/java/jp/co/tenposinfo/register/plus/ManagementFolderSyncScreen.kt
+          grep -q 'persistedUriPermissions' management-app/src/main/java/jp/co/tenposinfo/register/plus/DriveConnection.kt
+          grep -q 'resolveContentProvider' management-app/src/main/java/jp/co/tenposinfo/register/plus/DriveConnection.kt
+          grep -q '起動時に差分取込' management-app/src/main/java/jp/co/tenposinfo/register/plus/ManagementFolderSyncScreen.kt
 
       - name: Run cumulative unit tests
         run: gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest :management-app:testDebugUnitTest
@@ -184,36 +213,43 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.42.0_dev1_folder_import_debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.43.0_dev1_drive_connection_debug.apk
           cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
-          cp management-app/build/outputs/apk/debug/management-app-debug.apk artifacts/TSUGUREGI_PLUS_v0.4.0_dev1_folder_import_debug.apk
+          cp management-app/build/outputs/apk/debug/management-app-debug.apk artifacts/TSUGUREGI_PLUS_v0.5.0_dev1_drive_connection_debug.apk
 
-          sha256sum artifacts/TSUGUREGI_v0.42.0_dev1_folder_import_debug.apk | tee artifacts/TSUGUREGI_v0.42.0_dev1_folder_import_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_v0.43.0_dev1_drive_connection_debug.apk | tee artifacts/TSUGUREGI_v0.43.0_dev1_drive_connection_debug.apk.sha256
           sha256sum artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk | tee artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk.sha256
-          sha256sum artifacts/TSUGUREGI_PLUS_v0.4.0_dev1_folder_import_debug.apk | tee artifacts/TSUGUREGI_PLUS_v0.4.0_dev1_folder_import_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_PLUS_v0.5.0_dev1_drive_connection_debug.apk | tee artifacts/TSUGUREGI_PLUS_v0.5.0_dev1_drive_connection_debug.apk.sha256
 
-          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.42.0_dev1_folder_import_debug.apk | tee artifacts/build-summary.txt
+          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.43.0_dev1_drive_connection_debug.apk | tee artifacts/build-summary.txt
           stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk | tee -a artifacts/build-summary.txt
-          stat --printf='MANAGEMENT_APP_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_PLUS_v0.4.0_dev1_folder_import_debug.apk | tee -a artifacts/build-summary.txt
+          stat --printf='MANAGEMENT_APP_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_PLUS_v0.5.0_dev1_drive_connection_debug.apk | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.42.0-dev.1
-          REGISTER_VERSION_CODE=72
+          REGISTER_VERSION_NAME=0.43.0-dev.1
+          REGISTER_VERSION_CODE=73
           CUSTOMER_DISPLAY_VERSION_NAME=0.14.0-dev.1
           CUSTOMER_DISPLAY_VERSION_CODE=7
-          MANAGEMENT_APP_VERSION_NAME=0.4.0-dev.1
-          MANAGEMENT_APP_VERSION_CODE=4
+          MANAGEMENT_APP_VERSION_NAME=0.5.0-dev.1
+          MANAGEMENT_APP_VERSION_CODE=5
           MANAGEMENT_APP_APPLICATION_ID=jp.co.tenposinfo.register.plus
           MANAGEMENT_SCREEN_ORIENTATION=sensorPortrait
           MANAGEMENT_IMPORT_SOURCE=android-saf-files-and-persisted-document-tree
           MANAGEMENT_FOLDER_IMPORT_RECURSIVE=true
           MANAGEMENT_FOLDER_IMPORT_DIFF=content-sha256
           MANAGEMENT_FOLDER_IMPORT_FORCE_RESCAN=true
+          MANAGEMENT_DRIVE_CONNECTION_DIAGNOSTICS=true
+          MANAGEMENT_DRIVE_PROVIDER_RESOLUTION=content-provider-authority
+          MANAGEMENT_DRIVE_PERSISTED_PERMISSION_CHECK=true
+          MANAGEMENT_DRIVE_ROOT_READ_TEST=true
+          MANAGEMENT_AUTO_IMPORT_ON_LAUNCH=true
+          MANAGEMENT_AUTO_IMPORT_COOLDOWN_MS=600000
           MANAGEMENT_FOLDER_IMPORT_MAX_DEPTH=12
           MANAGEMENT_FOLDER_IMPORT_MAX_JSON=5000
           MANAGEMENT_IMPORT_MAX_DOCUMENT_BYTES=20971520
           MANAGEMENT_DATABASE=sqlite-open-helper-version-3
           MANAGEMENT_GOOGLE_DRIVE_REST_API=not-implemented
           SIGNING=development-not-production
+          REAL_DEVICE_GOOGLE_DRIVE_PROVIDER_VERIFICATION=required
           REAL_DEVICE_MANAGEMENT_FOLDER_IMPORT_VERIFICATION=required
           REAL_DEVICE_MANAGEMENT_PORTRAIT_VERIFICATION=required
           REAL_DEVICE_CUSTOMER_DISPLAY_VERIFICATION=required
@@ -224,14 +260,14 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.42.0-dev1-management-folder-import-apks
+          name: TSUGUREGI-v0.43.0-dev1-management-drive-connection-apks
           path: |
-            artifacts/TSUGUREGI_v0.42.0_dev1_folder_import_debug.apk
-            artifacts/TSUGUREGI_v0.42.0_dev1_folder_import_debug.apk.sha256
+            artifacts/TSUGUREGI_v0.43.0_dev1_drive_connection_debug.apk
+            artifacts/TSUGUREGI_v0.43.0_dev1_drive_connection_debug.apk.sha256
             artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
             artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk.sha256
-            artifacts/TSUGUREGI_PLUS_v0.4.0_dev1_folder_import_debug.apk
-            artifacts/TSUGUREGI_PLUS_v0.4.0_dev1_folder_import_debug.apk.sha256
+            artifacts/TSUGUREGI_PLUS_v0.5.0_dev1_drive_connection_debug.apk
+            artifacts/TSUGUREGI_PLUS_v0.5.0_dev1_drive_connection_debug.apk.sha256
             artifacts/build-summary.txt
           if-no-files-found: error
           retention-days: 30
