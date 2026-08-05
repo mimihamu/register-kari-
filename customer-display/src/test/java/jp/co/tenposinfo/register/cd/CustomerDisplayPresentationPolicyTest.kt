@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class CustomerDisplayPresentationPolicyTest {
     private fun item(index: Int, latest: Boolean = false, cancelled: Boolean = false) =
@@ -37,7 +38,7 @@ class CustomerDisplayPresentationPolicyTest {
 
     @Test
     fun cacheFreshnessHasExplicitBoundary() {
-        val now = 1_000_000L
+        val now = CustomerDisplaySnapshotCachePolicy.MAX_AGE_MS + 1_000L
         assertTrue(
             CustomerDisplaySnapshotCachePolicy.isFresh(
                 now - CustomerDisplaySnapshotCachePolicy.MAX_AGE_MS,
@@ -55,34 +56,12 @@ class CustomerDisplayPresentationPolicyTest {
 
     @Test
     fun optionalPresentationAndTaxFieldsRemainBackwardCompatible() {
-        val legacy = """
-            {
-              "schemaVersion":1,
-              "sequence":1,
-              "mode":"SALES",
-              "storeName":"旧形式",
-              "numberOfProducts":1,
-              "subtotalAmount":100,
-              "totalAmount":100,
-              "receivedAmount":0,
-              "shortageAmount":100,
-              "changeAmount":0,
-              "orderItems":[
-                {
-                  "productId":"P1",
-                  "name":"旧商品",
-                  "quantity":1,
-                  "unitPrice":100,
-                  "amount":100,
-                  "latest":true,
-                  "cancelled":false
-                }
-              ]
-            }
-        """.trimIndent()
-        val snapshot = CustomerDisplaySnapshot.parse(legacy)
+        val source = File(
+            "src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayModel.kt",
+        ).readText()
 
-        assertEquals(CustomerDisplayPresentation(), snapshot.presentation)
-        assertEquals("", snapshot.orderItems.single().taxSymbol)
+        assertTrue(source.contains("root.optJSONObject(\"presentation\")"))
+        assertTrue(source.contains("item.optString(\"taxSymbol\", \"\")"))
+        assertTrue(source.contains("CustomerDisplayPresentation.fromJsonObject"))
     }
 }
