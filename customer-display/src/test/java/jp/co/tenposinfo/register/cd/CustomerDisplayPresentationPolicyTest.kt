@@ -61,7 +61,7 @@ class CustomerDisplayPresentationPolicyTest {
         ).readText()
 
         assertTrue(source.contains("root.optJSONObject(\"presentation\")"))
-        assertTrue(source.contains("item.optString(\"taxSymbol\", \"\")"))
+        assertTrue(source.contains("taxSymbol = item.optString(\"taxSymbol\")"))
         assertTrue(source.contains("CustomerDisplayPresentation.fromJsonObject"))
     }
 }
