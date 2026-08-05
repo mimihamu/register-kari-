@@ -1,11 +1,10 @@
-name: Apply v0.38 source changes
+name: Fix v0.38 CI template
 
 on:
   push:
     branches:
       - develop/v0.38
     paths:
-      - tools/v038_apply.py
       - .github/workflows/v038-apply.yml
   workflow_dispatch:
 
@@ -19,7 +18,7 @@ concurrency:
 jobs:
   apply:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - name: Checkout v0.38
         uses: actions/checkout@v4
@@ -27,15 +26,21 @@ jobs:
           ref: develop/v0.38
           fetch-depth: 0
 
-      - name: Apply source integration and CI template
-        run: python3 tools/v038_apply.py
+      - name: Correct v0.38 build summary
+        run: |
+          set -euo pipefail
+          sed -i 's/REGISTER_VERSION_NAME=0.37.0-dev.1/REGISTER_VERSION_NAME=0.38.0-dev.1/' tools/v038_build_apk.yml
+          sed -i 's/REGISTER_VERSION_CODE=67/REGISTER_VERSION_CODE=68/' tools/v038_build_apk.yml
+          sed -i '/CUSTOMER_DISPLAY_CANCEL_VISIBILITY=true/a\          OUTBOX_OPERATIONS_DASHBOARD=true\n          OUTBOX_OPERATIONS_INDIVIDUAL_RETRY=true\n          OUTBOX_OPERATIONS_JSON_PREVIEW=true\n          OUTBOX_OPERATIONS_DESTINATION_TEST=true\n          OUTBOX_OPERATIONS_AUDIT_HISTORY=true' tools/v038_build_apk.yml
+          grep -q 'REGISTER_VERSION_NAME=0.38.0-dev.1' tools/v038_build_apk.yml
+          grep -q 'OUTBOX_OPERATIONS_DESTINATION_TEST=true' tools/v038_build_apk.yml
 
-      - name: Commit production changes and CI template
+      - name: Commit corrected CI template
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app docs tools/v038_build_apk.yml
+          git add tools/v038_build_apk.yml
           git diff --cached --check
-          git commit -m "feat: connect v0.38 outbox operations dashboard"
+          git commit -m "ci: complete v0.38 artifact metadata"
           git push origin HEAD:develop/v0.38
