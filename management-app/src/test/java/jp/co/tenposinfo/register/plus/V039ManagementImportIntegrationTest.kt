@@ -24,10 +24,10 @@ class V039ManagementImportIntegrationTest {
         val notes = File(root, "docs/V0.39_RELEASE_NOTES.md").readText()
 
         assertTrue(settings.contains("include(\":management-app\")"))
-        assertTrue(appBuild.contains("versionCode = 71"))
-        assertTrue(appBuild.contains("versionName = \"0.41.0-dev.1\""))
+        assertTrue(appBuild.contains("versionCode = 72"))
+        assertTrue(appBuild.contains("versionName = \"0.42.0-dev.1\""))
         assertTrue(plusBuild.contains("applicationId = \"jp.co.tenposinfo.register.plus\""))
-        assertTrue(plusBuild.contains("versionName = \"0.3.0-dev.1\""))
+        assertTrue(plusBuild.contains("versionName = \"0.4.0-dev.1\""))
         assertTrue(manifest.contains("android:name=\".MainActivity\""))
         assertTrue(manifest.contains("android.intent.category.LAUNCHER"))
 
@@ -45,7 +45,7 @@ class V039ManagementImportIntegrationTest {
         assertTrue(repository.contains("SQLiteDatabase.CONFLICT_IGNORE"))
         assertTrue(repository.contains("fun importDocuments"))
         assertTrue(repository.contains("fun recentRejections"))
-        assertTrue(activity.contains("TsuguRegiPlusMobileScreen"))
+        assertTrue(activity.contains("TsuguRegiPlusFolderSyncScreen"))
         assertTrue(mobileScreen.contains("ActivityResultContracts.OpenMultipleDocuments"))
         assertTrue(mobileScreen.contains("JSON取込"))
         assertTrue(mobileScreen.contains("重複"))
@@ -53,7 +53,7 @@ class V039ManagementImportIntegrationTest {
 
         assertTrue(workflow.contains(":management-app:testDebugUnitTest"))
         assertTrue(workflow.contains(":management-app:assembleDebug"))
-        assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.3.0_dev1"))
+        assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.4.0_dev1"))
         assertTrue(docs.contains("重複取込"))
         assertTrue(docs.contains("不正データ隔離"))
         assertTrue(notes.contains("つぐレジ＋"))
