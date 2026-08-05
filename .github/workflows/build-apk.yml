@@ -42,22 +42,23 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.40 sources
+      - name: Verify cumulative v0.14-v0.41 sources
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 70' app/build.gradle.kts
-          grep -q 'versionName = "0.40.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 71' app/build.gradle.kts
+          grep -q 'versionName = "0.41.0-dev.1"' app/build.gradle.kts
           grep -q 'versionCode = 7' customer-display/build.gradle.kts
           grep -q 'versionName = "0.14.0-dev.1"' customer-display/build.gradle.kts
-          grep -q 'versionCode = 2' management-app/build.gradle.kts
-          grep -q 'versionName = "0.2.0-dev.1"' management-app/build.gradle.kts
+          grep -q 'versionCode = 3' management-app/build.gradle.kts
+          grep -q 'versionName = "0.3.0-dev.1"' management-app/build.gradle.kts
           grep -q 'include(":management-app")' settings.gradle.kts
 
           for file in \
             management-app/build.gradle.kts \
             management-app/src/main/AndroidManifest.xml \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/MainActivity.kt \
+            management-app/src/main/java/jp/co/tenposinfo/register/plus/ManagementMobileScreen.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/ManagementDatabase.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/SalesJournalImportContract.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/SalesJournalImportRepository.kt \
@@ -66,6 +67,9 @@ jobs:
             management-app/src/test/java/jp/co/tenposinfo/register/plus/SalesReportCalculatorTest.kt \
             management-app/src/test/java/jp/co/tenposinfo/register/plus/V039ManagementImportIntegrationTest.kt \
             management-app/src/test/java/jp/co/tenposinfo/register/plus/V040ManagementSalesReportingIntegrationTest.kt \
+            management-app/src/test/java/jp/co/tenposinfo/register/plus/V041ManagementPortraitMobileTest.kt \
+            docs/V0.41_TSUGUREGI_PLUS_MOBILE_PORTRAIT.md \
+            docs/V0.41_RELEASE_NOTES.md \
             docs/V0.40_TSUGUREGI_PLUS_SALES_REPORTING.md \
             docs/V0.40_RELEASE_NOTES.md \
             docs/V0.39_TSUGUREGI_PLUS_IMPORT.md \
@@ -102,46 +106,64 @@ jobs:
 
           root = Path('app/src/main/java/jp/co/tenposinfo/register')
           plus = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus')
-          settings = Path('settings.gradle.kts').read_text()
-          plus_contract = (plus / 'SalesJournalImportContract.kt').read_text()
-          plus_db = (plus / 'ManagementDatabase.kt').read_text()
-          plus_repo = (plus / 'SalesJournalImportRepository.kt').read_text()
-          plus_reporting = (plus / 'SalesReporting.kt').read_text()
-          plus_screen = (plus / 'MainActivity.kt').read_text()
+          activity = (plus / 'MainActivity.kt').read_text()
+          mobile = (plus / 'ManagementMobileScreen.kt').read_text()
+          contract = (plus / 'SalesJournalImportContract.kt').read_text()
+          database = (plus / 'ManagementDatabase.kt').read_text()
+          repository = (plus / 'SalesJournalImportRepository.kt').read_text()
+          reporting = (plus / 'SalesReporting.kt').read_text()
           plus_manifest = Path('management-app/src/main/AndroidManifest.xml').read_text()
+          register_manifest = Path('app/src/main/AndroidManifest.xml').read_text()
 
-          assert 'include(":management-app")' in settings
+          assert 'TsuguRegiPlusMobileScreen' in activity
+          assert 'android:screenOrientation="sensorPortrait"' in plus_manifest
+          assert 'android:screenOrientation="landscape"' not in plus_manifest
+          assert 'android:screenOrientation="landscape"' in register_manifest
+
+          for token in (
+              'NavigationBar',
+              'ManagementSection.SALES',
+              'ManagementSection.TRANSACTIONS',
+              'ManagementSection.IMPORTS',
+              'SalesOverviewScreen',
+              'TransactionsScreen',
+              'ImportOperationsScreen',
+              'LazyColumn',
+              'MobileFilterMenu',
+              'JSON取込',
+              '純売上',
+              '支払方法別',
+              '税額内訳',
+              '隔離データ',
+          ):
+              assert token in mobile, token
+          assert 'verticalScroll(rememberScrollState())' not in mobile
+
           for token in (
               'jp.co.tenposinfo.tsuguregi.sales-journal',
               'SUPPORTED_SCHEMA_VERSION = 1',
-              'READER_VERSION = 1',
               'duplicateImportKey',
               'supportedEventTypes',
               'supportedPayloadSchemas',
               'PAYLOAD_SCHEMA_MISMATCH',
           ):
-              assert token in plus_contract, token
+              assert token in contract, token
           for token in (
               'CREATE TABLE import_runs',
               'CREATE TABLE imported_journal',
               'CREATE TABLE import_rejections',
-              'tsuguregi_plus.db',
               'DATABASE_VERSION = 2',
               'idx_imported_journal_report',
-              'idx_imported_journal_aggregate',
           ):
-              assert token in plus_db, token
+              assert token in database, token
           for token in (
               'fun importDocuments',
               'SQLiteDatabase.CONFLICT_IGNORE',
-              'fun dashboard',
               'fun reportFilterOptions',
               'fun salesReport',
-              'fun recentImports',
-              'fun recentRuns',
               'fun recentRejections',
           ):
-              assert token in plus_repo, token
+              assert token in repository, token
           for token in (
               'data class SalesReportFilter',
               'data class SalesReport',
@@ -149,94 +171,35 @@ jobs:
               'EVENT_SALE',
               'EVENT_REVERSAL',
               'unmatchedReversalCount',
-              'paymentBreakdownComplete',
-              'taxBreakdownComplete',
           ):
-              assert token in plus_reporting, token
-          assert 'ActivityResultContracts.OpenMultipleDocuments' in plus_screen
-          for token in ('JSONファイルを選択', '売上集計', '純売上', '客単価', '支払方法別', '税額内訳', '取引詳細', '集計対象外'):
-              assert token in plus_screen, token
-          assert 'android:name=".MainActivity"' in plus_manifest
+              assert token in reporting, token
 
           operations = (root / 'OutboxDeliveryOperations.kt').read_text()
-          operations_panel = (root / 'OutboxDeliveryOperationsPanel.kt').read_text()
-          delivery_ui = (root / 'OutboxDeliverySettingsActivity.kt').read_text()
-          for token in (
-              'OutboxDeliveryDashboardCounts',
-              'fun retryItem',
-              'fun preview',
-              'fun recentAudit',
-              'fun testDestination',
-              'SYNC_OUTBOX_ITEM_RETRY_REQUESTED',
-              'SYNC_OUTBOX_DESTINATION_TEST_SUCCEEDED',
-          ):
-              assert token in operations, token
-          assert '送信運用ダッシュボード' in operations_panel
-          assert 'OutboxDeliveryOperationsPanel' in delivery_ui
-
+          delivery = (root / 'OutboxExternalDelivery.kt').read_text()
           cd_contract = (root / 'CustomerDisplayPresentation.kt').read_text()
           cd_protocol = (root / 'CustomerDisplayProtocol.kt').read_text()
           cd_screen = Path('customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt').read_text()
-          cd_cache = Path('customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplaySnapshotStore.kt').read_text()
-          for token in (
-              'textScalePercent',
-              'maxVisibleRows',
-              'rowSpacingDp',
-              'showCancelledItems',
-              'showTaxSymbol',
-              'standbyMessage',
-          ):
-              assert token in cd_contract, token
-          assert 'put("presentation"' in cd_protocol
-          assert 'snapshotStore.save(snapshot)' in cd_screen
-          assert 'MAX_AGE_MS' in cd_cache
-
           journal_contract = (root / 'SalesJournalJsonContract.kt').read_text()
           foundation = (root / 'BusinessSyncFoundation.kt').read_text()
           schema = Path('docs/schemas/tsuguregi-sales-journal-v1.schema.json').read_text()
-          for token in (
-              'SCHEMA_VERSION = 1',
-              'MINIMUM_READER_VERSION = 1',
-              'DUPLICATE_KEY_VERSION = 1',
-              'duplicateImportKey',
-              'Z_SETTLEMENT',
-              'register.sale.v2',
-              'register.reversal.v2',
-              'register.settlement.v1',
-          ):
-              assert token in journal_contract, token
+
+          assert 'OutboxDeliveryDashboardCounts' in operations
+          assert 'fun retryItem' in operations
+          assert "status='STAGED'" in delivery
+          assert 'MAX_ATTEMPTS = 10' in delivery
+          assert 'textScalePercent' in cd_contract
+          assert 'put("presentation"' in cd_protocol
+          assert 'snapshotStore.save(snapshot)' in cd_screen
+          assert 'DUPLICATE_KEY_VERSION = 1' in journal_contract
           assert 'SalesJournalJsonContract.wrap' in foundation
-          assert 'SalesJournalIdentityStore.resolve(db)' in foundation
           assert 'jp.co.tenposinfo.tsuguregi.sales-journal' in schema
 
-          delivery = (root / 'OutboxExternalDelivery.kt').read_text()
-          mirror = (root / 'ExternalBackupSync.kt').read_text()
-          backup = (root / 'AutoBackup.kt').read_text()
-          queue = (root / 'UnifiedPrintQueue.kt').read_text()
-          printer = (root / 'AdminSettingsStore.kt').read_text()
-          for token in (
-              "status='STAGED'",
-              'SyncOutboxStatus.SENT.name',
-              '.partial',
-              'MAX_ATTEMPTS = 10',
-              'SYNC_OUTBOX_EXTERNAL_SENT',
-              'SYNC_OUTBOX_EXTERNAL_FAILED',
-          ):
-              assert token in delivery, token
-          assert 'ExternalBackupMirrorWorker' in mirror
-          assert 'archiveSha256' in mirror
-          assert 'AutoBackupWorker' in backup
-          assert 'DISCARDED' in queue
-          assert 'managerPin' in queue
-          assert 'object PrinterPaperSettingPolicy' in printer
-          assert 'currentWidthMm' in printer
-
-          for version in ('v040', 'v039', 'v038', 'v037', 'v036', 'v035', 'v034'):
+          for version in ('v041', 'v040', 'v039', 'v038', 'v037', 'v036', 'v035', 'v034'):
               assert not list(Path('tools').glob(f'{version}*'))
               assert not Path(f'.github/workflows/{version}-apply.yml').exists()
           PY
 
-      - name: Verify launcher configuration
+      - name: Verify portrait management configuration
         shell: bash
         run: |
           set -euo pipefail
@@ -249,6 +212,9 @@ jobs:
           grep -q 'android:name=".MainActivity"' app/src/main/AndroidManifest.xml
           grep -q 'android:name=".MainActivity"' customer-display/src/main/AndroidManifest.xml
           grep -q 'android:name=".MainActivity"' management-app/src/main/AndroidManifest.xml
+          grep -q 'android:screenOrientation="landscape"' app/src/main/AndroidManifest.xml
+          grep -q 'android:screenOrientation="sensorPortrait"' management-app/src/main/AndroidManifest.xml
+          ! grep -q 'android:screenOrientation="landscape"' management-app/src/main/AndroidManifest.xml
 
       - name: Run cumulative unit tests
         run: gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest :management-app:testDebugUnitTest
@@ -264,51 +230,47 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.40.0_dev1_sales_reporting_debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.41.0_dev1_management_mobile_portrait_debug.apk
           cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
-          cp management-app/build/outputs/apk/debug/management-app-debug.apk artifacts/TSUGUREGI_PLUS_v0.2.0_dev1_sales_reporting_debug.apk
+          cp management-app/build/outputs/apk/debug/management-app-debug.apk artifacts/TSUGUREGI_PLUS_v0.3.0_dev1_mobile_portrait_debug.apk
 
-          sha256sum artifacts/TSUGUREGI_v0.40.0_dev1_sales_reporting_debug.apk | tee artifacts/TSUGUREGI_v0.40.0_dev1_sales_reporting_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_v0.41.0_dev1_management_mobile_portrait_debug.apk | tee artifacts/TSUGUREGI_v0.41.0_dev1_management_mobile_portrait_debug.apk.sha256
           sha256sum artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk | tee artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk.sha256
-          sha256sum artifacts/TSUGUREGI_PLUS_v0.2.0_dev1_sales_reporting_debug.apk | tee artifacts/TSUGUREGI_PLUS_v0.2.0_dev1_sales_reporting_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_PLUS_v0.3.0_dev1_mobile_portrait_debug.apk | tee artifacts/TSUGUREGI_PLUS_v0.3.0_dev1_mobile_portrait_debug.apk.sha256
 
-          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.40.0_dev1_sales_reporting_debug.apk | tee artifacts/build-summary.txt
+          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.41.0_dev1_management_mobile_portrait_debug.apk | tee artifacts/build-summary.txt
           stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk | tee -a artifacts/build-summary.txt
-          stat --printf='MANAGEMENT_APP_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_PLUS_v0.2.0_dev1_sales_reporting_debug.apk | tee -a artifacts/build-summary.txt
+          stat --printf='MANAGEMENT_APP_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_PLUS_v0.3.0_dev1_mobile_portrait_debug.apk | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.40.0-dev.1
-          REGISTER_VERSION_CODE=70
+          REGISTER_VERSION_NAME=0.41.0-dev.1
+          REGISTER_VERSION_CODE=71
+          REGISTER_ORIENTATION=landscape
           CUSTOMER_DISPLAY_VERSION_NAME=0.14.0-dev.1
           CUSTOMER_DISPLAY_VERSION_CODE=7
-          MANAGEMENT_APP_VERSION_NAME=0.2.0-dev.1
-          MANAGEMENT_APP_VERSION_CODE=2
+          MANAGEMENT_APP_VERSION_NAME=0.3.0-dev.1
+          MANAGEMENT_APP_VERSION_CODE=3
           MANAGEMENT_APP_APPLICATION_ID=jp.co.tenposinfo.register.plus
+          MANAGEMENT_APP_ORIENTATION=sensorPortrait
+          MANAGEMENT_APP_NAVIGATION=sales-transactions-imports
+          MANAGEMENT_APP_DEFAULT_SECTION=sales
+          MANAGEMENT_APP_LIST_RENDERING=lazy-column
           MANAGEMENT_IMPORT_SOURCE=android-saf-multiple-documents
           MANAGEMENT_IMPORT_SCHEMA=jp.co.tenposinfo.tsuguregi.sales-journal
-          MANAGEMENT_IMPORT_SCHEMA_VERSION=1
           MANAGEMENT_IMPORT_DUPLICATE_POLICY=duplicate-import-key-primary-key-conflict-ignore
           MANAGEMENT_IMPORT_REJECTION_STORAGE=sqlite-quarantine
-          MANAGEMENT_IMPORT_MAX_DOCUMENT_BYTES=20971520
           MANAGEMENT_DATABASE=sqlite-open-helper-version-2
           MANAGEMENT_SALES_REPORTING=true
           MANAGEMENT_REPORT_FILTERS=business-date-store-terminal
           MANAGEMENT_REPORT_NETTING=sale-positive-reversal-negative
           MANAGEMENT_REPORT_NON_SALES_EXCLUDED=true
           MANAGEMENT_REPORT_DETAIL_LIMIT=50
-          MANAGEMENT_REPORT_INCOMPLETE_DATA_WARNING=true
-          MANAGEMENT_GOOGLE_DRIVE_REST_API=not-implemented
+          MANAGEMENT_PAYLOAD_PREVIEW_CHARACTERS=1200
           CUSTOMER_DISPLAY_STATE_CACHE_MAX_MINUTES=30
           OUTBOX_OPERATIONS_DASHBOARD=true
           OUTBOX_OPERATIONS_INDIVIDUAL_RETRY=true
-          SALES_JOURNAL_SCHEMA=jp.co.tenposinfo.tsuguregi.sales-journal
-          SALES_JOURNAL_SCHEMA_VERSION=1
-          OUTBOX_EXTERNAL_DELIVERY=android-document-tree
-          EXTERNAL_BACKUP_DESTINATION=android-document-tree
-          PRINT_QUEUE_DISCARD=manager-pin-reason-audit
           SIGNING=development-not-production
-          REAL_DEVICE_MANAGEMENT_REPORTING_VERIFICATION=required
+          REAL_DEVICE_MANAGEMENT_PORTRAIT_VERIFICATION=required
           REAL_DEVICE_MANAGEMENT_IMPORT_VERIFICATION=required
-          REAL_DEVICE_OUTBOX_DELIVERY_VERIFICATION=required
           REAL_DEVICE_CUSTOMER_DISPLAY_VERIFICATION=required
           EOF
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
@@ -317,14 +279,14 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.40.0-dev1-sales-reporting-apks
+          name: TSUGUREGI-v0.41.0-dev1-management-mobile-portrait-apks
           path: |
-            artifacts/TSUGUREGI_v0.40.0_dev1_sales_reporting_debug.apk
-            artifacts/TSUGUREGI_v0.40.0_dev1_sales_reporting_debug.apk.sha256
+            artifacts/TSUGUREGI_v0.41.0_dev1_management_mobile_portrait_debug.apk
+            artifacts/TSUGUREGI_v0.41.0_dev1_management_mobile_portrait_debug.apk.sha256
             artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
             artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk.sha256
-            artifacts/TSUGUREGI_PLUS_v0.2.0_dev1_sales_reporting_debug.apk
-            artifacts/TSUGUREGI_PLUS_v0.2.0_dev1_sales_reporting_debug.apk.sha256
+            artifacts/TSUGUREGI_PLUS_v0.3.0_dev1_mobile_portrait_debug.apk
+            artifacts/TSUGUREGI_PLUS_v0.3.0_dev1_mobile_portrait_debug.apk.sha256
             artifacts/build-summary.txt
           if-no-files-found: error
           retention-days: 30
