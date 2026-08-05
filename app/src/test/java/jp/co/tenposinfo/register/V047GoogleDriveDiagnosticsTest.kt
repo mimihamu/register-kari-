@@ -26,7 +26,7 @@ class V047GoogleDriveDiagnosticsTest {
             "GoogleApiAvailability.getInstance()",
             "GoogleApiAvailability.getInstance().getErrorString",
             "NetworkCapabilities.NET_CAPABILITY_VALIDATED",
-            "drive_api_uploads",
+            "GoogleDriveDirectUploadCoordinator.TABLE",
             "SELECT status, COUNT(*)",
             "Intent.ACTION_SEND",
             "診断ログを共有",
@@ -41,6 +41,7 @@ class V047GoogleDriveDiagnosticsTest {
         assertTrue(account.contains("診断・ログ"))
         assertTrue(account.contains("GoogleDriveDiagnosticLogStore"))
         assertTrue(upload.contains("GoogleDriveDiagnosticLogStore"))
+        assertTrue(upload.contains("const val TABLE = \"drive_api_uploads\""))
         assertTrue(manifest.contains("android:name=\".GoogleDriveDiagnosticsActivity\""))
         assertTrue(build.contains("versionCode = 77"))
         assertTrue(build.contains("versionName = \"0.47.0-dev.1\""))
