@@ -1,9 +1,9 @@
 name: v0.45 temporary source export
 
 on:
-  push:
+  pull_request:
     branches:
-      - develop/v0.45
+      - develop/v0.44
   workflow_dispatch:
 
 permissions:
@@ -13,8 +13,10 @@ jobs:
   export-source:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout v0.45 head
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Package source
         run: |
