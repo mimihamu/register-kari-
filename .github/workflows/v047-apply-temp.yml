@@ -24,15 +24,15 @@ jobs:
       - name: Apply source changes
         run: python3 tools/v047_apply.py
 
-      - name: Remove temporary files
+      - name: Keep workflow updates for connector
         run: |
+          git checkout -- .github/workflows/build-apk.yml
           rm tools/v047_apply.py
-          rm .github/workflows/v047-apply-temp.yml
 
-      - name: Commit and push
+      - name: Commit and push source
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app docs .github/workflows/build-apk.yml tools .github/workflows/v047-apply-temp.yml
+          git add app docs tools
           git commit -m "v0.47 connect Google Drive diagnostics"
           git push origin HEAD:develop/v0.47
