@@ -32,7 +32,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
-import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -229,7 +228,7 @@ internal class GoogleDriveDiagnosticRepository(private val context: Context) {
             sha256 = client.sha256,
             device = listOf(Build.MANUFACTURER, Build.MODEL).filter(String::isNotBlank).joinToString(" "),
             androidVersion = "${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}",
-            playServices = "${ConnectionResult.getStatusString(playServicesCode)} ($playServicesCode)",
+            playServices = "${GoogleApiAvailability.getInstance().getErrorString(playServicesCode)} ($playServicesCode)",
             network = networkSummary(),
             accountStatus = account.status.name,
             maskedAccount = GoogleDriveDiagnosticSanitizer.maskedEmail(account.email),

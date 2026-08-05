@@ -24,7 +24,7 @@ class V047GoogleDriveDiagnosticsTest {
             "GoogleDriveDiagnosticRepository",
             "GoogleDriveDiagnosticReport",
             "GoogleApiAvailability.getInstance()",
-            "ConnectionResult.getStatusString",
+            "GoogleApiAvailability.getInstance().getErrorString",
             "NetworkCapabilities.NET_CAPABILITY_VALIDATED",
             "drive_api_uploads",
             "SELECT status, COUNT(*)",
