@@ -1,8 +1,8 @@
-name: Apply v0.47 diagnostics
+name: Generate v0.47 build workflow
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [synchronize, reopened]
     branches:
       - develop/v0.46
   workflow_dispatch:
@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 jobs:
-  apply:
+  generate:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
@@ -21,18 +21,65 @@ jobs:
           ref: develop/v0.47
           fetch-depth: 0
 
-      - name: Apply source changes
-        run: python3 tools/v047_apply.py
-
-      - name: Keep workflow updates for connector
+      - name: Generate workflow file
+        shell: bash
         run: |
-          git checkout -- .github/workflows/build-apk.yml
-          rm tools/v047_apply.py
+          python3 - <<'PY'
+          from pathlib import Path
 
-      - name: Commit and push source
+          source = Path('.github/workflows/build-apk.yml').read_text()
+          source = source.replace('v0.14-v0.46', 'v0.14-v0.47')
+          source = source.replace('versionCode = 76', 'versionCode = 77')
+          source = source.replace('0.46.0-dev.1', '0.47.0-dev.1')
+          source = source.replace(
+              'TSUGUREGI_v0.46.0_dev1_drive_setup_guide_debug.apk',
+              'TSUGUREGI_v0.47.0_dev1_drive_diagnostics_debug.apk',
+          )
+          source = source.replace(
+              'TSUGUREGI-v0.46.0-dev1-drive-setup-guide-apks',
+              'TSUGUREGI-v0.47.0-dev1-drive-diagnostics-apks',
+          )
+          source = source.replace(
+              '            app/src/main/java/jp/co/tenposinfo/register/GoogleDriveSetupGuideActivity.kt \\\n',
+              '            app/src/main/java/jp/co/tenposinfo/register/GoogleDriveSetupGuideActivity.kt \\\n            app/src/main/java/jp/co/tenposinfo/register/GoogleDriveDiagnosticsActivity.kt \\\n',
+          )
+          source = source.replace(
+              '            app/src/test/java/jp/co/tenposinfo/register/V046GoogleDriveSetupGuideTest.kt \\\n',
+              '            app/src/test/java/jp/co/tenposinfo/register/V046GoogleDriveSetupGuideTest.kt \\\n            app/src/test/java/jp/co/tenposinfo/register/V047GoogleDriveDiagnosticsTest.kt \\\n',
+          )
+          source = source.replace(
+              '            docs/V0.46_GOOGLE_DRIVE_SETUP_GUIDE.md \\\n',
+              '            docs/V0.47_GOOGLE_DRIVE_DIAGNOSTICS.md \\\n            docs/V0.47_RELEASE_NOTES.md \\\n            docs/V0.46_GOOGLE_DRIVE_SETUP_GUIDE.md \\\n',
+          )
+          source = source.replace(
+              "          setup_guide = (root / 'GoogleDriveSetupGuideActivity.kt').read_text()\n",
+              "          setup_guide = (root / 'GoogleDriveSetupGuideActivity.kt').read_text()\n          diagnostics = (root / 'GoogleDriveDiagnosticsActivity.kt').read_text()\n",
+          )
+          source = source.replace(
+              "          assert 'GoogleDriveSetupGuideActivity' in pos_manifest\n",
+              "          for token in ('GoogleDriveDiagnosticLogStore', 'GoogleDriveDiagnosticRepository', 'GoogleDriveDiagnosticReport', 'Intent.ACTION_SEND', 'REDACTED_TOKEN', 'content://[REDACTED]'):\n              assert token in diagnostics, token\n          assert 'putString(\\\"access_token\\\"' not in diagnostics\n          assert 'putString(\\\"refresh_token\\\"' not in diagnostics\n\n          assert 'GoogleDriveSetupGuideActivity' in pos_manifest\n          assert 'GoogleDriveDiagnosticsActivity' in pos_manifest\n          assert 'GoogleDriveDiagnosticsActivity::class.java' in pos_account\n          assert 'GoogleDriveDiagnosticLogStore' in pos_drive\n",
+          )
+          source = source.replace(
+              "          for version in ('v046', 'v045'",
+              "          for version in ('v047', 'v046', 'v045'",
+          )
+          source = source.replace(
+              "          assert not Path('tools/v046_apply.py').exists()\n",
+              "          assert not Path('tools/v046_apply.py').exists()\n          assert not Path('.github/workflows/v047-apply-temp.yml').exists()\n          assert not Path('tools/v047_apply.py').exists()\n          assert not Path('tools/build-apk-v047.generated.yml').exists()\n",
+          )
+          source = source.replace(
+              '          GOOGLE_DRIVE_SETUP_GUIDE=true\n',
+              '          GOOGLE_DRIVE_SETUP_GUIDE=true\n          GOOGLE_DRIVE_DIAGNOSTICS=true\n          GOOGLE_DRIVE_DIAGNOSTIC_EVENT_LIMIT=100\n          GOOGLE_DRIVE_DIAGNOSTIC_TOKENS_INCLUDED=false\n          GOOGLE_DRIVE_DIAGNOSTIC_SALES_JSON_INCLUDED=false\n',
+          )
+          target = Path('tools/build-apk-v047.generated.yml')
+          target.write_text(source)
+          print(target)
+          PY
+
+      - name: Commit generated regular file
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app docs tools
-          git commit -m "v0.47 connect Google Drive diagnostics"
+          git add tools/build-apk-v047.generated.yml
+          git commit -m "v0.47 generate build workflow content"
           git push origin HEAD:develop/v0.47
