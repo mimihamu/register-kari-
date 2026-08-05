@@ -3,12 +3,13 @@ package jp.co.tenposinfo.register.cd
 import android.content.Context
 
 internal object CustomerDisplaySnapshotCachePolicy {
-    const val MAX_AGE_MS = 30 * 60 * 1_000L
+    const val MAX_AGE_MS = 30L * 60L * 1_000L
 
-    fun isFresh(savedAtMillis: Long, nowMillis: Long): Boolean =
-        savedAtMillis > 0L &&
-            nowMillis >= savedAtMillis &&
-            nowMillis - savedAtMillis <= MAX_AGE_MS
+    fun isFresh(savedAtMillis: Long, nowMillis: Long): Boolean {
+        if (savedAtMillis <= 0L || nowMillis < savedAtMillis) return false
+        val ageMillis = nowMillis - savedAtMillis
+        return ageMillis in 0L..MAX_AGE_MS
+    }
 }
 
 class CustomerDisplaySnapshotStore(context: Context) {
