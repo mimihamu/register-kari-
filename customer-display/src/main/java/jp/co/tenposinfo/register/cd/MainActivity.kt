@@ -301,7 +301,7 @@ private fun StandbyScreen(
             LogoBadge(snapshot.presentation, compact = layoutMode.compact)
             Text(
                 snapshot.storeName,
-                color = Accent,
+                color = snapshot.presentation.standbyAccentColor(),
                 fontSize = if (layoutMode.compact) 31.sp else 44.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
@@ -310,14 +310,14 @@ private fun StandbyScreen(
                 snapshot.presentation.standbyMessage.ifBlank {
                     snapshot.message ?: "いらっしゃいませ"
                 },
-                color = TextPrimary,
+                color = snapshot.presentation.standbyPrimaryColor(),
                 fontSize = if (layoutMode.compact) 25.sp else 34.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
             )
             Text(
                 "商品を登録するとこちらに表示されます",
-                color = TextSecondary,
+                color = snapshot.presentation.standbySecondaryColor(),
                 fontSize = if (layoutMode.compact) 14.sp else 18.sp,
                 textAlign = TextAlign.Center,
             )
