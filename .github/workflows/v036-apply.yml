@@ -7,6 +7,13 @@ on:
     paths:
       - tools/v036_apply.py
       - .github/workflows/v036-apply.yml
+  pull_request:
+    branches:
+      - develop/v0.35
+    types:
+      - opened
+      - reopened
+      - synchronize
   workflow_dispatch:
 
 permissions:
