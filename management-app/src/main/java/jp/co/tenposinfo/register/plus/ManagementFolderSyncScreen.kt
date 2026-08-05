@@ -1,5 +1,6 @@
 package jp.co.tenposinfo.register.plus
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -106,6 +107,9 @@ fun TsuguRegiPlusFolderSyncScreen(
             folderState = current.importFolder,
             connection = connection,
             importing = current.importing,
+            onOpenGoogleAccount = {
+                context.startActivity(Intent(context, GoogleDriveAccountActivity::class.java))
+            },
             onChooseFolder = { folderLauncher.launch(null) },
             onImportChanged = { onImportRegisteredFolder(false) },
             onForceRescan = { onImportRegisteredFolder(true) },
@@ -133,6 +137,7 @@ private fun ImportFolderBar(
     folderState: ImportFolderUiState,
     connection: DriveConnectionUiState,
     importing: Boolean,
+    onOpenGoogleAccount: () -> Unit,
     onChooseFolder: () -> Unit,
     onImportChanged: () -> Unit,
     onForceRescan: () -> Unit,
@@ -183,7 +188,7 @@ private fun ImportFolderBar(
                         onClick = onChooseFolder,
                         enabled = !importing && !folderState.scanning,
                     ) {
-                        Text("Drive／フォルダ登録")
+                        Text("フォルダ登録")
                     }
                 } else {
                     Button(
@@ -198,6 +203,14 @@ private fun ImportFolderBar(
                         Text(if (expanded) "閉じる" else "設定")
                     }
                 }
+            }
+
+            OutlinedButton(
+                onClick = onOpenGoogleAccount,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !importing && !folderState.scanning,
+            ) {
+                Text("Googleアカウント連携")
             }
 
             if (expanded && registration != null) {
@@ -294,7 +307,7 @@ private fun ConnectionSummary(connection: DriveConnectionUiState) {
         )
         if (connection.isGoogleDrive) {
             Text(
-                text = "Google Driveアプリにログインし、Drive内の『つぐレジ』フォルダを選択してください。",
+                text = "フォルダ方式は互換用です。本格連携は上の『Googleアカウント連携』から登録します。",
                 style = MaterialTheme.typography.labelSmall,
             )
         }
@@ -347,8 +360,8 @@ private fun connectionStatusText(
 ): String {
     if (folderState.scanning) return "登録フォルダを確認しています"
     return when (connection.status) {
-        DriveConnectionStatus.NOT_REGISTERED -> "Google Driveまたは端末フォルダを登録してください"
-        DriveConnectionStatus.CHECKING -> "接続を診断しています"
+        DriveConnectionStatus.NOT_REGISTERED -> "互換用フォルダ未登録"
+        DriveConnectionStatus.CHECKING -> "フォルダ接続を診断しています"
         DriveConnectionStatus.READY -> {
             val summary = folderState.lastSummary
             if (summary == null) {

@@ -128,6 +128,14 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                                 colors = ButtonDefaults.buttonColors(containerColor = SyBlue),
                             ) { Text("設定保存") }
                             Spacer(Modifier.height(10.dp))
+                            Button(
+                                onClick = {
+                                    context.startActivity(Intent(context, GoogleDriveAccountActivity::class.java))
+                                },
+                                modifier = Modifier.fillMaxWidth().height(50.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = SyBlue),
+                            ) { Text("Googleアカウント連携") }
+                            Spacer(Modifier.height(10.dp))
                             OutlinedButton(
                                 onClick = {
                                     val count = store.stagePending(500)
@@ -150,9 +158,9 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                             Spacer(Modifier.height(14.dp))
                             Card(colors = CardDefaults.cardColors(containerColor = SyPaleGreen)) {
                                 Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                                    Text("外部送信：Androidフォルダ連携", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                                    Text("Googleアカウント認可", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
                                     Text(
-                                        "v0.35は端末内JSONをGoogle Drive・USB・端末フォルダへ自動配送し、サイズとSHA-256確認後に送信済みへ確定します。Drive REST APIとOAuthは使用しません。",
+                                        "v0.44は端末上でGoogleアカウントを選択し、drive.file権限とDrive API接続を確認します。パスワードとアクセストークンは保存しません。従来のAndroidフォルダ配送は互換用として残します。",
                                         fontSize = 13.sp,
                                     )
                                 }
@@ -164,7 +172,7 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                                 },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = SyBlue),
-                            ) { Text("外部自動送信設定") }
+                            ) { Text("互換用フォルダ送信設定") }
                             Spacer(Modifier.height(12.dp))
                             Text("ローカル出力先", fontWeight = FontWeight.Bold, color = SyNavy)
                             Text(store.stagingRoot().absolutePath, fontSize = 12.sp, color = Color.DarkGray)

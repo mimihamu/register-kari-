@@ -78,10 +78,12 @@ class V035OutboxExternalDeliveryTest {
         assertTrue(foundation.contains("OutboxExternalDeliveryCoordinator"))
         assertTrue(foundation.contains("ExistingWorkPolicy.APPEND_OR_REPLACE"))
         assertTrue(syncUi.contains("OutboxDeliverySettingsActivity::class.java"))
+        assertTrue(syncUi.contains("GoogleDriveAccountActivity::class.java"))
         assertTrue(application.contains("is OutboxDeliverySettingsActivity"))
         assertTrue(manifest.contains("android:name=\".OutboxDeliverySettingsActivity\""))
-        assertTrue(build.contains("versionCode = 73"))
-        assertTrue(build.contains("versionName = \"0.43.0-dev.1\""))
+        assertTrue(manifest.contains("android:name=\".GoogleDriveAccountActivity\""))
+        assertTrue(build.contains("versionCode = 74"))
+        assertTrue(build.contains("versionName = \"0.44.0-dev.1\""))
         assertFalse(manifest.contains("<activity-alias"))
     }
 }
