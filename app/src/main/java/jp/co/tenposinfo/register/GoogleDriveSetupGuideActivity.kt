@@ -42,7 +42,7 @@ internal data class GoogleDriveAndroidClientInfo(
 
 internal object GoogleDriveAndroidClientInfoReader {
     fun read(context: Context): GoogleDriveAndroidClientInfo {
-        val signature = signatures(context).firstOrNull()?.toByteArray().orEmpty()
+        val signature = signatures(context).firstOrNull()?.toByteArray() ?: byteArrayOf()
         return GoogleDriveAndroidClientInfo(
             applicationId = context.packageName,
             sha1 = digest("SHA-1", signature),
