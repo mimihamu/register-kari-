@@ -1,0 +1,46 @@
+name: Apply v0.36 source changes
+
+on:
+  push:
+    branches:
+      - develop/v0.36
+    paths:
+      - tools/v036_apply.py
+      - .github/workflows/v036-apply.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: v036-source-apply
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout v0.36
+        uses: actions/checkout@v4
+        with:
+          ref: develop/v0.36
+          fetch-depth: 0
+
+      - name: Apply source and CI changes
+        run: python3 tools/v036_apply.py
+
+      - name: Remove temporary applicator
+        run: |
+          rm -f tools/v036_apply.py
+          rm -f .github/workflows/v036-apply.yml
+
+      - name: Commit final v0.36 source
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "feat: connect v0.36 sales journal contract"
+          git push origin HEAD:develop/v0.36
