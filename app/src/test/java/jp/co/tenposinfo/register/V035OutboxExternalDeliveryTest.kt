@@ -80,8 +80,8 @@ class V035OutboxExternalDeliveryTest {
         assertTrue(syncUi.contains("OutboxDeliverySettingsActivity::class.java"))
         assertTrue(application.contains("is OutboxDeliverySettingsActivity"))
         assertTrue(manifest.contains("android:name=\".OutboxDeliverySettingsActivity\""))
-        assertTrue(build.contains("versionCode = 70"))
-        assertTrue(build.contains("versionName = \"0.40.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 71"))
+        assertTrue(build.contains("versionName = \"0.41.0-dev.1\""))
         assertFalse(manifest.contains("<activity-alias"))
     }
 }
