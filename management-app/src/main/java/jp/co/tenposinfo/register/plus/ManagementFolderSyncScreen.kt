@@ -15,18 +15,26 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -45,14 +53,68 @@ fun TsuguRegiPlusFolderSyncScreen(
         ActivityResultContracts.OpenDocumentTree(),
         onRegisterImportFolder,
     )
+    val context = LocalContext.current
+    val inspector = remember(context) {
+        DriveConnectionInspector(context, context.contentResolver)
+    }
+    val syncPreferences = remember(context) { DriveSyncPreferences(context) }
+    var diagnosisRequest by remember { mutableIntStateOf(0) }
+    var connection by remember {
+        mutableStateOf(
+            DriveConnectionUiState(
+                autoImportOnLaunch = syncPreferences.autoImportOnLaunch(),
+            ),
+        )
+    }
     val current = state.value
+    val registration = current.importFolder.registration
+
+    LaunchedEffect(registration?.treeUri, diagnosisRequest) {
+        val autoImportEnabled = syncPreferences.autoImportOnLaunch()
+        if (registration == null) {
+            connection = DriveConnectionUiState(
+                autoImportOnLaunch = autoImportEnabled,
+            )
+            return@LaunchedEffect
+        }
+        connection = connection.copy(
+            status = DriveConnectionStatus.CHECKING,
+            detail = "登録フォルダの接続を確認しています",
+            autoImportOnLaunch = autoImportEnabled,
+        )
+        val inspected = withContext(Dispatchers.IO) {
+            inspector.inspect(registration)
+        }.copy(autoImportOnLaunch = autoImportEnabled)
+        connection = inspected
+
+        val now = System.currentTimeMillis()
+        if (
+            DriveConnectionPolicy.shouldAutoImport(
+                enabled = autoImportEnabled,
+                status = inspected.status,
+                lastStartedAt = syncPreferences.lastAutoImportStartedAt(),
+                now = now,
+            )
+        ) {
+            syncPreferences.markAutoImportStartedAt(now)
+            onImportRegisteredFolder(false)
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         ImportFolderBar(
             folderState = current.importFolder,
+            connection = connection,
             importing = current.importing,
             onChooseFolder = { folderLauncher.launch(null) },
             onImportChanged = { onImportRegisteredFolder(false) },
             onForceRescan = { onImportRegisteredFolder(true) },
+            onDiagnose = { diagnosisRequest += 1 },
+            onAutoImportChanged = { enabled ->
+                syncPreferences.setAutoImportOnLaunch(enabled)
+                connection = connection.copy(autoImportOnLaunch = enabled)
+                if (enabled) diagnosisRequest += 1
+            },
             onClearFolder = onClearImportFolder,
         )
         Box(modifier = Modifier.weight(1f)) {
@@ -69,10 +131,13 @@ fun TsuguRegiPlusFolderSyncScreen(
 @Composable
 private fun ImportFolderBar(
     folderState: ImportFolderUiState,
+    connection: DriveConnectionUiState,
     importing: Boolean,
     onChooseFolder: () -> Unit,
     onImportChanged: () -> Unit,
     onForceRescan: () -> Unit,
+    onDiagnose: () -> Unit,
+    onAutoImportChanged: (Boolean) -> Unit,
     onClearFolder: () -> Unit,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -92,6 +157,7 @@ private fun ImportFolderBar(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -105,10 +171,11 @@ private fun ImportFolderBar(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = folderStatusText(folderState),
+                        text = connectionStatusText(connection, folderState),
                         style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
+                        color = connectionStatusColor(connection.status),
                     )
                 }
                 if (registration == null) {
@@ -116,12 +183,14 @@ private fun ImportFolderBar(
                         onClick = onChooseFolder,
                         enabled = !importing && !folderState.scanning,
                     ) {
-                        Text("登録")
+                        Text("Drive／フォルダ登録")
                     }
                 } else {
                     Button(
                         onClick = onImportChanged,
-                        enabled = !importing && !folderState.scanning,
+                        enabled = !importing &&
+                            !folderState.scanning &&
+                            connection.status == DriveConnectionStatus.READY,
                     ) {
                         Text(if (folderState.scanning) "確認中…" else "差分取込")
                     }
@@ -132,24 +201,56 @@ private fun ImportFolderBar(
             }
 
             if (expanded && registration != null) {
+                ConnectionSummary(connection)
                 FolderSummary(folderState)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("起動時に差分取込", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "アプリを開いたとき、10分以上空いていれば自動確認します",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                    Switch(
+                        checked = connection.autoImportOnLaunch,
+                        onCheckedChange = onAutoImportChanged,
+                        enabled = !importing && !folderState.scanning,
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     OutlinedButton(
-                        onClick = onForceRescan,
+                        onClick = onDiagnose,
                         enabled = !importing && !folderState.scanning,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("接続診断")
+                    }
+                    OutlinedButton(
+                        onClick = onForceRescan,
+                        enabled = !importing &&
+                            !folderState.scanning &&
+                            connection.status == DriveConnectionStatus.READY,
                         modifier = Modifier.weight(1f),
                     ) {
                         Text("全件再確認")
                     }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     OutlinedButton(
                         onClick = onChooseFolder,
                         enabled = !importing && !folderState.scanning,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("変更")
+                        Text(if (connection.status == DriveConnectionStatus.READY) "フォルダ変更" else "再接続")
                     }
                     TextButton(
                         onClick = onClearFolder,
@@ -167,6 +268,41 @@ private fun ImportFolderBar(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun ConnectionSummary(connection: DriveConnectionUiState) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(
+            text = "提供元：${connection.providerName ?: "確認前"}",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            text = if (connection.persistedReadPermission) {
+                "永続読取権限：有効"
+            } else {
+                "永続読取権限：無効"
+            },
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            text = connection.detail,
+            style = MaterialTheme.typography.bodySmall,
+            color = connectionStatusColor(connection.status),
+        )
+        if (connection.isGoogleDrive) {
+            Text(
+                text = "Google Driveアプリにログインし、Drive内の『つぐレジ』フォルダを選択してください。",
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+        connection.checkedAt?.let {
+            Text(
+                text = "診断 ${formatFolderDateTime(it)}",
+                style = MaterialTheme.typography.labelSmall,
+            )
         }
     }
 }
@@ -205,10 +341,36 @@ private fun FolderSummary(folderState: ImportFolderUiState) {
     }
 }
 
-private fun folderStatusText(folderState: ImportFolderUiState): String {
+private fun connectionStatusText(
+    connection: DriveConnectionUiState,
+    folderState: ImportFolderUiState,
+): String {
     if (folderState.scanning) return "登録フォルダを確認しています"
-    val summary = folderState.lastSummary ?: return "登録すると変更分を一括取込できます"
-    return "最終確認 ${formatFolderDateTime(summary.scannedAt)}・変更${summary.changedJsonCount}件"
+    return when (connection.status) {
+        DriveConnectionStatus.NOT_REGISTERED -> "Google Driveまたは端末フォルダを登録してください"
+        DriveConnectionStatus.CHECKING -> "接続を診断しています"
+        DriveConnectionStatus.READY -> {
+            val summary = folderState.lastSummary
+            if (summary == null) {
+                "${connection.providerName ?: "フォルダ"} 接続済み"
+            } else {
+                "${connection.providerName ?: "フォルダ"} 接続済み・最終${formatFolderDateTime(summary.scannedAt)}"
+            }
+        }
+        DriveConnectionStatus.PERMISSION_MISSING -> "権限が失効しています。再接続してください"
+        DriveConnectionStatus.PROVIDER_UNAVAILABLE -> "提供元アプリを利用できません"
+        DriveConnectionStatus.READ_FAILED -> "フォルダを読み取れません。接続診断を実行してください"
+    }
+}
+
+@Composable
+private fun connectionStatusColor(status: DriveConnectionStatus) = when (status) {
+    DriveConnectionStatus.PERMISSION_MISSING,
+    DriveConnectionStatus.PROVIDER_UNAVAILABLE,
+    DriveConnectionStatus.READ_FAILED,
+    -> MaterialTheme.colorScheme.error
+
+    else -> MaterialTheme.colorScheme.onSecondaryContainer
 }
 
 private val folderDateTimeFormatter: DateTimeFormatter =
