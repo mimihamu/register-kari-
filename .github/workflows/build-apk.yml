@@ -42,19 +42,20 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.35 sources
+      - name: Verify cumulative v0.14-v0.36 sources
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 65' app/build.gradle.kts
-          grep -q 'versionName = "0.35.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 66' app/build.gradle.kts
+          grep -q 'versionName = "0.36.0-dev.1"' app/build.gradle.kts
           grep -q 'versionCode = 6' customer-display/build.gradle.kts
           grep -q 'versionName = "0.13.0-dev.6"' customer-display/build.gradle.kts
 
           for file in \
+            app/src/main/java/jp/co/tenposinfo/register/SalesJournalJsonContract.kt \
+            app/src/main/java/jp/co/tenposinfo/register/BusinessSyncFoundation.kt \
             app/src/main/java/jp/co/tenposinfo/register/OutboxExternalDelivery.kt \
             app/src/main/java/jp/co/tenposinfo/register/OutboxDeliverySettingsActivity.kt \
-            app/src/main/java/jp/co/tenposinfo/register/BusinessSyncFoundation.kt \
             app/src/main/java/jp/co/tenposinfo/register/SyncSettingsActivity.kt \
             app/src/main/java/jp/co/tenposinfo/register/ExternalBackupSync.kt \
             app/src/main/java/jp/co/tenposinfo/register/ExternalBackupSettingsActivity.kt \
@@ -69,11 +70,15 @@ jobs:
             app/src/main/java/jp/co/tenposinfo/register/UnifiedPrintQueueActivity.kt \
             app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt \
             app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsStore.kt \
+            app/src/test/java/jp/co/tenposinfo/register/V036SalesJournalJsonContractTest.kt \
             app/src/test/java/jp/co/tenposinfo/register/V035OutboxExternalDeliveryTest.kt \
             app/src/test/java/jp/co/tenposinfo/register/V034ExternalBackupMirrorTest.kt \
             app/src/test/java/jp/co/tenposinfo/register/V033PeriodicBackupSettingsTest.kt \
             app/src/test/java/jp/co/tenposinfo/register/V032PrintQueueOperationsTest.kt \
             app/src/test/java/jp/co/tenposinfo/register/V031PrinterPaperSettingTest.kt \
+            docs/V0.36_SALES_JOURNAL_JSON_CONTRACT.md \
+            docs/V0.36_RELEASE_NOTES.md \
+            docs/schemas/tsuguregi-sales-journal-v1.schema.json \
             docs/V0.35_OUTBOX_EXTERNAL_DELIVERY.md \
             docs/V0.35_RELEASE_NOTES.md \
             docs/V0.34_EXTERNAL_BACKUP_MIRROR.md \
@@ -85,9 +90,10 @@ jobs:
           from pathlib import Path
 
           root = Path('app/src/main/java/jp/co/tenposinfo/register')
+          contract = (root / 'SalesJournalJsonContract.kt').read_text()
+          foundation = (root / 'BusinessSyncFoundation.kt').read_text()
           delivery = (root / 'OutboxExternalDelivery.kt').read_text()
           delivery_ui = (root / 'OutboxDeliverySettingsActivity.kt').read_text()
-          foundation = (root / 'BusinessSyncFoundation.kt').read_text()
           sync_ui = (root / 'SyncSettingsActivity.kt').read_text()
           mirror = (root / 'ExternalBackupSync.kt').read_text()
           external_ui = (root / 'ExternalBackupSettingsActivity.kt').read_text()
@@ -104,8 +110,30 @@ jobs:
           advanced = (root / 'AdvancedOperationsStore.kt').read_text()
           printer = (root / 'AdminSettingsStore.kt').read_text()
           manifest = Path('app/src/main/AndroidManifest.xml').read_text()
+          schema = Path('docs/schemas/tsuguregi-sales-journal-v1.schema.json').read_text()
 
-          # v0.35 verified external Outbox delivery.
+          # v0.36 fixed sales-journal JSON contract.
+          for token in (
+              'SCHEMA_VERSION = 1',
+              'MINIMUM_READER_VERSION = 1',
+              'DUPLICATE_KEY_VERSION = 1',
+              'duplicateImportKey',
+              'storeId',
+              'terminalId',
+              'Z_SETTLEMENT',
+              'register.sale.v2',
+              'register.reversal.v2',
+              'register.settlement.v1',
+          ):
+              assert token in contract, token
+          assert 'SalesJournalJsonContract.wrap' in foundation
+          assert 'SalesJournalIdentityStore.resolve(db)' in foundation
+          assert 'jp.co.tenposinfo.tsuguregi.sales-journal' in schema
+          assert '"schemaVersion"' in schema
+          assert '"duplicateImportKey"' in schema
+          assert '"taxTotals"' in schema
+
+          # v0.35 verified external Outbox delivery remains cumulative.
           for token in (
               'data class OutboxDeliverySettings',
               "status='STAGED'",
@@ -134,7 +162,6 @@ jobs:
               'data class ExternalBackupSettings',
               'persistedUriPermissions',
               'PeriodicWorkRequestBuilder<ExternalBackupMirrorWorker>',
-              '15,',
               'ExistingPeriodicWorkPolicy.KEEP',
               'ExistingPeriodicWorkPolicy.UPDATE',
               'ExistingWorkPolicy.APPEND_OR_REPLACE',
@@ -178,18 +205,18 @@ jobs:
           assert 'DATA_BACKUP_SETTINGS_UPDATED' in settings_ui
           assert 'AutoBackupPeriodicScheduler.apply(this)' in application
 
-          # v0.32 print queue safety remains cumulative.
+          # v0.32 print queue and v0.31 paper width remain cumulative.
           assert 'DISCARDED' in queue
           assert 'managerPin' in queue
           assert 'discardReason' in queue_ui
           assert 'PRINT_JOB_DISCARDED' in database
           assert 'PRINT_JOB_DISCARDED' in advanced
-
-          # v0.31 paper width remains printer-settings-only.
           assert 'object PrinterPaperSettingPolicy' in printer
           assert 'currentWidthMm' in printer
 
           # Temporary transfer files/workflows must not survive the final branch.
+          assert not list(Path('tools').glob('v036*'))
+          assert not Path('.github/workflows/v036-apply.yml').exists()
           assert not list(Path('tools').glob('v035*'))
           assert not Path('.github/workflows/v035-apply.yml').exists()
           assert not list(Path('tools').glob('v034*'))
@@ -225,17 +252,22 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.35.0_dev1_outbox_external_delivery_debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.36.0_dev1_sales_journal_contract_debug.apk
           cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
-          sha256sum artifacts/TSUGUREGI_v0.35.0_dev1_outbox_external_delivery_debug.apk | tee artifacts/TSUGUREGI_v0.35.0_dev1_outbox_external_delivery_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_v0.36.0_dev1_sales_journal_contract_debug.apk | tee artifacts/TSUGUREGI_v0.36.0_dev1_sales_journal_contract_debug.apk.sha256
           sha256sum artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
-          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.35.0_dev1_outbox_external_delivery_debug.apk | tee artifacts/build-summary.txt
+          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.36.0_dev1_sales_journal_contract_debug.apk | tee artifacts/build-summary.txt
           stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.35.0-dev.1
-          REGISTER_VERSION_CODE=65
+          REGISTER_VERSION_NAME=0.36.0-dev.1
+          REGISTER_VERSION_CODE=66
           CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.6
           CUSTOMER_DISPLAY_VERSION_CODE=6
+          SALES_JOURNAL_SCHEMA=jp.co.tenposinfo.tsuguregi.sales-journal
+          SALES_JOURNAL_SCHEMA_VERSION=1
+          SALES_JOURNAL_DUPLICATE_KEY=sha256-store-terminal-businessdate-event-eventid
+          SALES_JOURNAL_LEGACY_PAYLOAD_COMPATIBLE=true
+          SALES_JOURNAL_IMPORTER_TARGET=tsuguregi-plus
           OUTBOX_EXTERNAL_DELIVERY=android-document-tree
           OUTBOX_STAGED_MEANING=local-json-ready
           OUTBOX_SENT_MEANING=external-size-and-sha256-verified
@@ -259,6 +291,7 @@ jobs:
           SIGNING=development-not-production
           REAL_DEVICE_EXTERNAL_BACKUP_VERIFICATION=required
           REAL_DEVICE_OUTBOX_DELIVERY_VERIFICATION=required
+          REAL_DEVICE_SALES_JOURNAL_IMPORT_VERIFICATION=required
           EOF
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
@@ -266,10 +299,10 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.35.0-dev1-outbox-external-delivery-apks
+          name: TSUGUREGI-v0.36.0-dev1-sales-journal-contract-apks
           path: |
-            artifacts/TSUGUREGI_v0.35.0_dev1_outbox_external_delivery_debug.apk
-            artifacts/TSUGUREGI_v0.35.0_dev1_outbox_external_delivery_debug.apk.sha256
+            artifacts/TSUGUREGI_v0.36.0_dev1_sales_journal_contract_debug.apk
+            artifacts/TSUGUREGI_v0.36.0_dev1_sales_journal_contract_debug.apk.sha256
             artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
             artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
             artifacts/build-summary.txt
