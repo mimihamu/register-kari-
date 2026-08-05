@@ -1,0 +1,41 @@
+name: Apply v0.37 source changes
+
+on:
+  push:
+    branches:
+      - develop/v0.37
+    paths:
+      - tools/v037_apply.py
+      - .github/workflows/v037-apply.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: v037-source-apply
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout v0.37
+        uses: actions/checkout@v4
+        with:
+          ref: develop/v0.37
+          fetch-depth: 0
+
+      - name: Apply source, tests and docs
+        run: python3 tools/v037_apply.py
+
+      - name: Commit production changes and CI template
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app customer-display docs tools/v037_build_apk.yml
+          git diff --cached --check
+          git commit -m "feat: complete v0.37 customer display presentation"
+          git push origin HEAD:develop/v0.37
