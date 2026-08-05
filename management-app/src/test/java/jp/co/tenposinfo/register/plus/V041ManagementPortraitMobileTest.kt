@@ -56,7 +56,7 @@ class V041ManagementPortraitMobileTest {
         assertTrue(registerBuild.contains("versionName = \"0.44.0-dev.1\""))
         assertTrue(plusBuild.contains("versionCode = 6"))
         assertTrue(plusBuild.contains("versionName = \"0.6.0-dev.1\""))
-        assertTrue(workflow.contains("Verify portrait management configuration"))
+        assertTrue(workflow.contains("Verify launcher and orientation configuration"))
         assertTrue(workflow.contains("V041ManagementPortraitMobileTest.kt"))
         assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.6.0_dev1"))
         assertTrue(docs.contains("sensorPortrait"))
