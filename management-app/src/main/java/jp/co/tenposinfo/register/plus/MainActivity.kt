@@ -24,15 +24,23 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -57,11 +65,25 @@ data class ManagementUiState(
         latestImportedAt = null,
         eventTypeCounts = emptyMap(),
     ),
+    val reportFilterOptions: SalesReportFilterOptions = SalesReportFilterOptions(),
+    val reportFilter: SalesReportFilter = SalesReportFilter(),
+    val reportFilterInitialized: Boolean = false,
+    val salesReport: SalesReport = SalesReport.empty(),
     val recentImports: List<ImportedJournalSummary> = emptyList(),
     val recentRuns: List<ImportRunSummary> = emptyList(),
     val recentRejections: List<ImportRejectionSummary> = emptyList(),
     val lastBatch: ImportBatchResult? = null,
     val message: String? = null,
+)
+
+private data class ManagementSnapshot(
+    val dashboard: ImportDashboard,
+    val reportFilterOptions: SalesReportFilterOptions,
+    val reportFilter: SalesReportFilter,
+    val salesReport: SalesReport,
+    val recentImports: List<ImportedJournalSummary>,
+    val recentRuns: List<ImportRunSummary>,
+    val recentRejections: List<ImportRejectionSummary>,
 )
 
 class MainActivity : ComponentActivity() {
@@ -78,6 +100,7 @@ class MainActivity : ComponentActivity() {
                         state = uiState,
                         onImport = ::importUris,
                         onRefresh = ::refresh,
+                        onReportFilterChanged = ::changeReportFilter,
                     )
                 }
             }
@@ -91,12 +114,41 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refresh() {
+        val current = uiState.value
+        loadSnapshot(
+            requestedFilter = current.reportFilter,
+            chooseLatestBusinessDate = !current.reportFilterInitialized,
+        )
+    }
+
+    private fun changeReportFilter(filter: SalesReportFilter) {
+        uiState.value = uiState.value.copy(
+            loading = true,
+            reportFilter = filter,
+            reportFilterInitialized = true,
+        )
+        loadSnapshot(
+            requestedFilter = filter,
+            chooseLatestBusinessDate = false,
+        )
+    }
+
+    private fun loadSnapshot(
+        requestedFilter: SalesReportFilter,
+        chooseLatestBusinessDate: Boolean,
+    ) {
         lifecycleScope.launch {
             uiState.value = uiState.value.copy(loading = true)
-            val snapshot = withContext(Dispatchers.IO) { loadSnapshot() }
+            val snapshot = withContext(Dispatchers.IO) {
+                buildSnapshot(requestedFilter, chooseLatestBusinessDate)
+            }
             uiState.value = uiState.value.copy(
                 loading = false,
                 dashboard = snapshot.dashboard,
+                reportFilterOptions = snapshot.reportFilterOptions,
+                reportFilter = snapshot.reportFilter,
+                reportFilterInitialized = true,
+                salesReport = snapshot.salesReport,
                 recentImports = snapshot.recentImports,
                 recentRuns = snapshot.recentRuns,
                 recentRejections = snapshot.recentRejections,
@@ -119,11 +171,21 @@ class MainActivity : ComponentActivity() {
                     repository.importDocuments(documents)
                 }
             }
-            val snapshot = withContext(Dispatchers.IO) { loadSnapshot() }
+            val currentFilter = uiState.value.reportFilter
+            val snapshot = withContext(Dispatchers.IO) {
+                buildSnapshot(
+                    requestedFilter = currentFilter,
+                    chooseLatestBusinessDate = false,
+                )
+            }
             uiState.value = uiState.value.copy(
                 loading = false,
                 importing = false,
                 dashboard = snapshot.dashboard,
+                reportFilterOptions = snapshot.reportFilterOptions,
+                reportFilter = snapshot.reportFilter,
+                reportFilterInitialized = true,
+                salesReport = snapshot.salesReport,
                 recentImports = snapshot.recentImports,
                 recentRuns = snapshot.recentRuns,
                 recentRejections = snapshot.recentRejections,
@@ -138,12 +200,39 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun loadSnapshot(): ManagementUiState = ManagementUiState(
-        loading = false,
-        dashboard = repository.dashboard(),
-        recentImports = repository.recentImports(),
-        recentRuns = repository.recentRuns(),
-        recentRejections = repository.recentRejections(),
+    private fun buildSnapshot(
+        requestedFilter: SalesReportFilter,
+        chooseLatestBusinessDate: Boolean,
+    ): ManagementSnapshot {
+        val options = repository.reportFilterOptions()
+        val normalized = normalizeFilter(requestedFilter, options)
+        val resolvedFilter = if (
+            chooseLatestBusinessDate &&
+            normalized.businessDate == null &&
+            options.businessDates.isNotEmpty()
+        ) {
+            normalized.copy(businessDate = options.businessDates.first())
+        } else {
+            normalized
+        }
+        return ManagementSnapshot(
+            dashboard = repository.dashboard(),
+            reportFilterOptions = options,
+            reportFilter = resolvedFilter,
+            salesReport = repository.salesReport(resolvedFilter),
+            recentImports = repository.recentImports(),
+            recentRuns = repository.recentRuns(),
+            recentRejections = repository.recentRejections(),
+        )
+    }
+
+    private fun normalizeFilter(
+        filter: SalesReportFilter,
+        options: SalesReportFilterOptions,
+    ): SalesReportFilter = filter.copy(
+        businessDate = filter.businessDate?.takeIf(options.businessDates::contains),
+        storeId = filter.storeId?.takeIf(options.storeIds::contains),
+        terminalId = filter.terminalId?.takeIf(options.terminalIds::contains),
     )
 
     private fun readDocument(uri: Uri): SalesJournalImportDocument {
@@ -208,6 +297,7 @@ private fun TsuguRegiPlusScreen(
     state: State<ManagementUiState>,
     onImport: (List<Uri>) -> Unit,
     onRefresh: () -> Unit,
+    onReportFilterChanged: (SalesReportFilter) -> Unit,
 ) {
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
@@ -234,7 +324,7 @@ private fun TsuguRegiPlusScreen(
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = "売上ジャーナル取込・重複確認・不正データ隔離",
+                    text = "売上ジャーナル取込・営業日集計・取消相殺・取引確認",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -283,6 +373,12 @@ private fun TsuguRegiPlusScreen(
             if (lastBatch != null) {
                 LastBatchSection(lastBatch)
             }
+            SalesReportSection(
+                options = current.reportFilterOptions,
+                filter = current.reportFilter,
+                report = current.salesReport,
+                onFilterChanged = onReportFilterChanged,
+            )
             EventCountSection(current.dashboard.eventTypeCounts)
 
             Row(
@@ -317,6 +413,240 @@ private fun DashboardSection(dashboard: ImportDashboard) {
             dashboard.latestImportedAt?.let(::formatDateTime) ?: "未取込",
             Modifier.weight(1.6f),
         )
+    }
+}
+
+@Composable
+private fun SalesReportSection(
+    options: SalesReportFilterOptions,
+    filter: SalesReportFilter,
+    report: SalesReport,
+    onFilterChanged: (SalesReportFilter) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("売上集計", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                FilterMenu(
+                    label = "営業日",
+                    selected = filter.businessDate,
+                    values = listOf(null) + options.businessDates,
+                    allLabel = "全営業日",
+                    onSelected = { onFilterChanged(filter.copy(businessDate = it)) },
+                )
+                FilterMenu(
+                    label = "店舗",
+                    selected = filter.storeId,
+                    values = listOf(null) + options.storeIds,
+                    allLabel = "全店舗",
+                    onSelected = { onFilterChanged(filter.copy(storeId = it)) },
+                )
+                FilterMenu(
+                    label = "端末",
+                    selected = filter.terminalId,
+                    values = listOf(null) + options.terminalIds,
+                    allLabel = "全端末",
+                    onSelected = { onFilterChanged(filter.copy(terminalId = it)) },
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                MetricCard("純売上", formatAmount(report.netSales), Modifier.weight(1.25f))
+                MetricCard("売上総額", formatAmount(report.grossSales), Modifier.weight(1f))
+                MetricCard("取消額", formatAmount(report.reversalAmount), Modifier.weight(1f))
+                MetricCard("有効取引", report.activeTransactionCount.toString(), Modifier.weight(0.8f))
+                MetricCard(
+                    "客単価",
+                    report.averageTicket?.let(::formatAmount) ?: "算出不可",
+                    Modifier.weight(1f),
+                )
+            }
+
+            ReportWarnings(report)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                BreakdownCard(
+                    title = "支払方法別",
+                    rows = report.paymentBreakdown,
+                    complete = report.paymentBreakdownComplete,
+                    modifier = Modifier.weight(1f),
+                )
+                BreakdownCard(
+                    title = "税額内訳",
+                    rows = report.taxBreakdown,
+                    complete = report.taxBreakdownComplete,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            TransactionDetailSection(report.details)
+        }
+    }
+}
+
+@Composable
+private fun FilterMenu(
+    label: String,
+    selected: String?,
+    values: List<String?>,
+    allLabel: String,
+    onSelected: (String?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        OutlinedButton(onClick = { expanded = true }) {
+            Text("$label：${selected ?: allLabel}")
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            values.distinct().forEach { value ->
+                DropdownMenuItem(
+                    text = { Text(value ?: allLabel) },
+                    onClick = {
+                        expanded = false
+                        onSelected(value)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReportWarnings(report: SalesReport) {
+    val warnings = buildList {
+        if (!report.totalsComplete) {
+            add("金額を取得できないSALE/REVERSALが${report.missingAmountCount}件あります。合計は参考値です。")
+        }
+        if (report.unmatchedReversalCount > 0) {
+            add("元売上に結び付かない取消が${report.unmatchedReversalCount}件あります。客単価は算出しません。")
+        }
+        if (report.ignoredEventCount > 0) {
+            add("点検・精算・入出金など${report.ignoredEventCount}件は売上集計から除外しています。")
+        }
+    }
+    if (warnings.isNotEmpty()) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        ) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                warnings.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BreakdownCard(
+    title: String,
+    rows: List<SalesAmountBreakdown>,
+    complete: Boolean,
+    modifier: Modifier,
+) {
+    Card(modifier = modifier) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(title, fontWeight = FontWeight.Bold)
+            if (rows.isEmpty()) {
+                Text("内訳データなし", style = MaterialTheme.typography.bodySmall)
+            } else {
+                rows.forEach { row ->
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Text(row.label, modifier = Modifier.weight(1f))
+                        Text(formatAmount(row.amount), fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+            if (!complete) {
+                Text(
+                    "現行JSONに内訳がない取引を含むため、表示分だけを集計しています。",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TransactionDetailSection(details: List<SalesReportDetail>) {
+    var expandedKey by remember(details) { mutableStateOf<String?>(null) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("取引詳細", fontWeight = FontWeight.Bold)
+        if (details.isEmpty()) {
+            Text("対象データはありません")
+        }
+        details.take(50).forEachIndexed { index, detail ->
+            if (index > 0) HorizontalDivider()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "${formatDateTime(detail.occurredAt)}  ${eventDisplayName(detail.eventType)}",
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "${detail.businessDate} / ${detail.storeId} / ${detail.terminalId} / #${detail.aggregateId}",
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    detail.signedAmount?.let(::formatAmount)
+                        ?: if (detail.eventType == SalesReportCalculator.EVENT_SALE || detail.eventType == SalesReportCalculator.EVENT_REVERSAL) {
+                            "金額なし"
+                        } else {
+                            "集計対象外"
+                        },
+                    fontWeight = FontWeight.Bold,
+                )
+                TextButton(
+                    onClick = {
+                        expandedKey = if (expandedKey == detail.duplicateImportKey) null else detail.duplicateImportKey
+                    },
+                ) {
+                    Text(if (expandedKey == detail.duplicateImportKey) "閉じる" else "詳細")
+                }
+            }
+            if (expandedKey == detail.duplicateImportKey) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("schema：${detail.payloadSchema}")
+                        Text("取込元：${detail.sourceName}")
+                        detail.originalSaleId?.let { Text("元売上ID：$it") }
+                        Text(
+                            text = detail.payloadJson.take(1_200),
+                            fontFamily = FontFamily.Monospace,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        if (detail.payloadJson.length > 1_200) {
+                            Text("※ payloadは先頭1,200文字まで表示")
+                        }
+                    }
+                }
+            }
+        }
+        if (details.size > 50) {
+            Text("※ 画面には新しい順で50件まで表示しています。", style = MaterialTheme.typography.labelSmall)
+        }
     }
 }
 
@@ -480,3 +810,15 @@ private fun formatDateTime(value: Long): String = Instant.ofEpochMilli(value)
 
 private fun formatAmount(value: Long): String =
     NumberFormat.getCurrencyInstance(Locale.JAPAN).format(value)
+
+private fun eventDisplayName(eventType: String): String = when (eventType) {
+    SalesReportCalculator.EVENT_SALE -> "売上"
+    SalesReportCalculator.EVENT_REVERSAL -> "取消"
+    "INSPECTION" -> "点検"
+    "Z_SETTLEMENT" -> "精算"
+    "CASH_MOVEMENT" -> "入出金"
+    "BUSINESS_OPEN" -> "営業開始"
+    "BUSINESS_STATE" -> "営業状態"
+    "MENU_REVISION" -> "メニュー改定"
+    else -> eventType
+}
