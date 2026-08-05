@@ -26,6 +26,8 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.security.MessageDigest
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
@@ -254,9 +256,10 @@ class GoogleDriveDirectSyncStatusStore(context: Context) {
     }
 
     fun complete(result: GoogleDriveDirectSyncResult) {
+        val completedAt = System.currentTimeMillis()
         preferences.edit()
             .putBoolean("running", false)
-            .putLong("completed_at", System.currentTimeMillis())
+            .putLong("completed_at", completedAt)
             .putInt("listed", result.listedCount)
             .putInt("downloaded", result.downloadedCount)
             .putInt("unchanged", result.unchangedCount)
@@ -266,18 +269,25 @@ class GoogleDriveDirectSyncStatusStore(context: Context) {
             .putInt("errors", result.errorCount)
             .putString(
                 "message",
-                "確認${result.listedCount}件／取得${result.downloadedCount}件／新規${result.importedCount}件／重複${result.duplicateCount}件／隔離${result.rejectedCount}件",
+                "最終同期 ${formatSyncTime(completedAt)}／確認${result.listedCount}件／取得${result.downloadedCount}件／新規${result.importedCount}件／重複${result.duplicateCount}件／隔離${result.rejectedCount}件",
             )
             .apply()
     }
 
     fun failed(message: String) {
+        val completedAt = System.currentTimeMillis()
         preferences.edit()
             .putBoolean("running", false)
-            .putLong("completed_at", System.currentTimeMillis())
-            .putString("message", message.take(500))
+            .putLong("completed_at", completedAt)
+            .putString(
+                "message",
+                "最終同期 ${formatSyncTime(completedAt)}（失敗）／${message.take(420)}",
+            )
             .apply()
     }
+
+    private fun formatSyncTime(value: Long): String =
+        SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.JAPAN).format(Date(value))
 }
 
 data class GoogleDriveDirectSyncResult(
