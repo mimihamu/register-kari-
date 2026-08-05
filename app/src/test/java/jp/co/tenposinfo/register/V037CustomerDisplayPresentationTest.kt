@@ -54,10 +54,12 @@ class V037CustomerDisplayPresentationTest {
         assertEquals(presentation, snapshot.presentation)
         assertEquals("内※", snapshot.orderItems.single().taxSymbol)
 
-        val protocol = File("src/main/java/jp/co/tenposinfo/register/CustomerDisplayProtocol.kt").readText()
+        val root = File("src/main/java/jp/co/tenposinfo/register")
+        val protocol = File(root, "CustomerDisplayProtocol.kt").readText()
+        val presentationSource = File(root, "CustomerDisplayPresentation.kt").readText()
         assertTrue(protocol.contains("put(\"presentation\""))
         assertTrue(protocol.contains("put(\"taxSymbol\""))
-        assertTrue(protocol.contains("put(\"showTaxSymbol\""))
+        assertTrue(presentationSource.contains("put(\"showTaxSymbol\""))
     }
 
     @Test
