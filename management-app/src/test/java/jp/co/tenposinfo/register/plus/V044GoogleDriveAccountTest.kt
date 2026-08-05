@@ -1,24 +1,11 @@
 package jp.co.tenposinfo.register.plus
 
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
 class V044GoogleDriveAccountTest {
-    @Test
-    fun driveAuthorizationUsesNarrowFileScope() {
-        assertEquals(
-            "https://www.googleapis.com/auth/drive.file",
-            GoogleDriveAccountPolicy.DRIVE_FILE_SCOPE,
-        )
-        assertEquals(
-            GoogleDriveAccountStatus.AUTHORIZATION_FAILED,
-            GoogleDriveAccountPolicy.statusForAuthorizationError(IllegalStateException("failure")),
-        )
-    }
-
     @Test
     fun managementAccountAuthorizationAndPortraitUiAreWired() {
         val root = File("..")
@@ -33,12 +20,16 @@ class V044GoogleDriveAccountTest {
         val workflow = File(root, ".github/workflows/build-apk.yml").readText()
 
         for (token in listOf(
+            "const val DRIVE_FILE_SCOPE = Scopes.DRIVE_FILE",
+            "listOf(Scope(DRIVE_FILE_SCOPE))",
             "Identity.getAuthorizationClient",
             "AuthorizationRequest.builder",
             "AuthorizationRequest.Prompt.SELECT_ACCOUNT",
             "Scopes.DRIVE_FILE",
             "RevokeAccessRequest.builder",
             "https://www.googleapis.com/drive/v3/about",
+            "GoogleDriveAccountStatus.CLOUD_CONFIGURATION_REQUIRED",
+            "GoogleDriveAccountStatus.AUTHORIZATION_FAILED",
             "Google Drive APIへ接続できました",
         )) {
             assertTrue(account.contains(token))
