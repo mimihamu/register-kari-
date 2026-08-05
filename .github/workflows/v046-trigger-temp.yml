@@ -1,0 +1,31 @@
+name: v0.46 temporary patch trigger
+
+on:
+  pull_request:
+    branches:
+      - develop/v0.45
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'develop/v0.46' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v0.46
+          fetch-depth: 0
+
+      - name: Apply repository changes
+        run: python3 tools/v046_apply.py
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app management-app docs .github/workflows/build-apk.yml
+          git commit -m "v0.46 connect Google Drive setup guide"
+          git push origin HEAD:develop/v0.46
