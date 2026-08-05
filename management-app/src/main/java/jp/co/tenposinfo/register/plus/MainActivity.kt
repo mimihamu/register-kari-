@@ -14,7 +14,6 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
 
 data class ManagementUiState(
     val loading: Boolean = true,
@@ -33,6 +32,7 @@ data class ManagementUiState(
     val recentImports: List<ImportedJournalSummary> = emptyList(),
     val recentRuns: List<ImportRunSummary> = emptyList(),
     val recentRejections: List<ImportRejectionSummary> = emptyList(),
+    val importFolder: ImportFolderUiState = ImportFolderUiState(),
     val lastBatch: ImportBatchResult? = null,
     val message: String? = null,
 )
@@ -47,21 +47,38 @@ private data class ManagementSnapshot(
     val recentRejections: List<ImportRejectionSummary>,
 )
 
+private data class FolderImportOperation(
+    val scan: ImportFolderScanResult,
+    val batch: ImportBatchResult?,
+)
+
 class MainActivity : ComponentActivity() {
     private val database by lazy { ManagementDatabase(this) }
     private val repository by lazy { SalesJournalImportRepository(database) }
+    private val folderRepository by lazy { FolderImportRepository(database) }
+    private val folderPreferences by lazy { ImportFolderPreferences(this) }
+    private val documentSource by lazy { SalesJournalDocumentSource(contentResolver) }
     private val uiState = mutableStateOf(ManagementUiState())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        uiState.value = uiState.value.copy(
+            importFolder = ImportFolderUiState(
+                registration = folderPreferences.registration(),
+                lastSummary = folderPreferences.lastSummary(),
+            ),
+        )
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    TsuguRegiPlusMobileScreen(
+                    TsuguRegiPlusFolderSyncScreen(
                         state = uiState,
                         onImport = ::importUris,
                         onRefresh = ::refresh,
                         onReportFilterChanged = ::changeReportFilter,
+                        onRegisterImportFolder = ::registerImportFolder,
+                        onImportRegisteredFolder = ::importRegisteredFolder,
+                        onClearImportFolder = ::clearImportFolder,
                     )
                 }
             }
@@ -125,13 +142,130 @@ class MainActivity : ComponentActivity() {
                 message = "${uris.size}件を読み込んでいます",
             )
             val documents = withContext(Dispatchers.IO) {
-                uris.map(::readDocument)
+                uris.map { uri ->
+                    documentSource.readSingle(
+                        uri = uri,
+                        fallbackName = queryDisplayName(uri)
+                            ?: uri.lastPathSegment
+                            ?: "名称不明.json",
+                    )
+                }
             }
             val result = runCatching {
                 withContext(Dispatchers.IO) {
                     repository.importDocuments(documents)
                 }
             }
+            applyImportResult(
+                result = result,
+                successMessage = { batch ->
+                    "取込完了：新規${batch.importedCount}件／重複${batch.duplicateCount}件／隔離${batch.rejectedCount}件"
+                },
+            )
+        }
+    }
+
+    private fun registerImportFolder(uri: Uri?) {
+        if (uri == null || uiState.value.importing) return
+        lifecycleScope.launch {
+            uiState.value = uiState.value.copy(
+                importFolder = uiState.value.importFolder.copy(
+                    scanning = true,
+                    errorMessage = null,
+                ),
+                message = "取込フォルダを登録しています",
+            )
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    documentSource.persistFolderPermission(uri)
+                    val registration = ImportFolderRegistration(
+                        treeUri = uri.toString(),
+                        displayName = documentSource.folderDisplayName(uri),
+                    )
+                    folderPreferences.saveRegistration(registration)
+                    registration
+                }
+            }
+            uiState.value = result.fold(
+                onSuccess = { registration ->
+                    uiState.value.copy(
+                        importFolder = ImportFolderUiState(
+                            registration = registration,
+                            lastSummary = folderPreferences.lastSummary(),
+                        ),
+                        message = "取込フォルダ「${registration.displayName}」を登録しました",
+                    )
+                },
+                onFailure = { error ->
+                    uiState.value.copy(
+                        importFolder = uiState.value.importFolder.copy(
+                            scanning = false,
+                            errorMessage = error.message ?: "フォルダを登録できませんでした",
+                        ),
+                        message = "取込フォルダを登録できませんでした",
+                    )
+                },
+            )
+        }
+    }
+
+    private fun clearImportFolder() {
+        val registration = uiState.value.importFolder.registration ?: return
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                documentSource.releaseFolderPermission(Uri.parse(registration.treeUri))
+                folderRepository.clearTreeHistory(registration.treeUri)
+                folderPreferences.clearRegistration()
+            }
+            uiState.value = uiState.value.copy(
+                importFolder = ImportFolderUiState(
+                    lastSummary = folderPreferences.lastSummary(),
+                ),
+                message = "取込フォルダの登録を解除しました",
+            )
+        }
+    }
+
+    private fun importRegisteredFolder(forceRescan: Boolean) {
+        val registration = uiState.value.importFolder.registration ?: return
+        if (uiState.value.importing || uiState.value.importFolder.scanning) return
+
+        lifecycleScope.launch {
+            uiState.value = uiState.value.copy(
+                importing = true,
+                importFolder = uiState.value.importFolder.copy(
+                    scanning = true,
+                    errorMessage = null,
+                ),
+                message = if (forceRescan) {
+                    "登録フォルダを全件再確認しています"
+                } else {
+                    "登録フォルダの変更分を確認しています"
+                },
+            )
+
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val known = folderRepository.knownFingerprints(registration.treeUri)
+                    val scan = documentSource.scanFolder(
+                        treeUri = Uri.parse(registration.treeUri),
+                        knownFingerprints = known,
+                        forceRescan = forceRescan,
+                    )
+                    val batch = if (scan.documents.isEmpty()) {
+                        null
+                    } else {
+                        repository.importDocuments(scan.documents)
+                    }
+                    folderRepository.recordProcessedFiles(
+                        treeUri = registration.treeUri,
+                        files = scan.processedFiles,
+                    )
+                    folderPreferences.saveLastSummary(scan.summary)
+                    FolderImportOperation(scan, batch)
+                }
+            }
+
             val currentFilter = uiState.value.reportFilter
             val snapshot = withContext(Dispatchers.IO) {
                 buildSnapshot(
@@ -139,26 +273,84 @@ class MainActivity : ComponentActivity() {
                     chooseLatestBusinessDate = false,
                 )
             }
-            uiState.value = uiState.value.copy(
-                loading = false,
-                importing = false,
-                dashboard = snapshot.dashboard,
-                reportFilterOptions = snapshot.reportFilterOptions,
-                reportFilter = snapshot.reportFilter,
-                reportFilterInitialized = true,
-                salesReport = snapshot.salesReport,
-                recentImports = snapshot.recentImports,
-                recentRuns = snapshot.recentRuns,
-                recentRejections = snapshot.recentRejections,
-                lastBatch = result.getOrNull(),
-                message = result.fold(
-                    onSuccess = {
-                        "取込完了：新規${it.importedCount}件／重複${it.duplicateCount}件／隔離${it.rejectedCount}件"
-                    },
-                    onFailure = { "取込処理に失敗しました：${it.message ?: it.javaClass.simpleName}" },
-                ),
+            uiState.value = result.fold(
+                onSuccess = { operation ->
+                    val batch = operation.batch
+                    uiState.value.copy(
+                        loading = false,
+                        importing = false,
+                        dashboard = snapshot.dashboard,
+                        reportFilterOptions = snapshot.reportFilterOptions,
+                        reportFilter = snapshot.reportFilter,
+                        reportFilterInitialized = true,
+                        salesReport = snapshot.salesReport,
+                        recentImports = snapshot.recentImports,
+                        recentRuns = snapshot.recentRuns,
+                        recentRejections = snapshot.recentRejections,
+                        importFolder = uiState.value.importFolder.copy(
+                            scanning = false,
+                            lastSummary = operation.scan.summary,
+                            errorMessage = null,
+                        ),
+                        lastBatch = batch ?: uiState.value.lastBatch,
+                        message = if (batch == null) {
+                            "差分はありませんでした（JSON ${operation.scan.summary.discoveredJsonCount}件確認）"
+                        } else {
+                            "フォルダ取込完了：変更${operation.scan.summary.changedJsonCount}件／新規${batch.importedCount}件／重複${batch.duplicateCount}件／隔離${batch.rejectedCount}件"
+                        },
+                    )
+                },
+                onFailure = { error ->
+                    uiState.value.copy(
+                        loading = false,
+                        importing = false,
+                        dashboard = snapshot.dashboard,
+                        reportFilterOptions = snapshot.reportFilterOptions,
+                        reportFilter = snapshot.reportFilter,
+                        reportFilterInitialized = true,
+                        salesReport = snapshot.salesReport,
+                        recentImports = snapshot.recentImports,
+                        recentRuns = snapshot.recentRuns,
+                        recentRejections = snapshot.recentRejections,
+                        importFolder = uiState.value.importFolder.copy(
+                            scanning = false,
+                            errorMessage = error.message ?: "フォルダ取込に失敗しました",
+                        ),
+                        message = "フォルダ取込に失敗しました：${error.message ?: error.javaClass.simpleName}",
+                    )
+                },
             )
         }
+    }
+
+    private suspend fun applyImportResult(
+        result: Result<ImportBatchResult>,
+        successMessage: (ImportBatchResult) -> String,
+    ) {
+        val currentFilter = uiState.value.reportFilter
+        val snapshot = withContext(Dispatchers.IO) {
+            buildSnapshot(
+                requestedFilter = currentFilter,
+                chooseLatestBusinessDate = false,
+            )
+        }
+        uiState.value = uiState.value.copy(
+            loading = false,
+            importing = false,
+            dashboard = snapshot.dashboard,
+            reportFilterOptions = snapshot.reportFilterOptions,
+            reportFilter = snapshot.reportFilter,
+            reportFilterInitialized = true,
+            salesReport = snapshot.salesReport,
+            recentImports = snapshot.recentImports,
+            recentRuns = snapshot.recentRuns,
+            recentRejections = snapshot.recentRejections,
+            lastBatch = result.getOrNull(),
+            message = result.fold(
+                onSuccess = successMessage,
+                onFailure = { "取込処理に失敗しました：${it.message ?: it.javaClass.simpleName}" },
+            ),
+        )
     }
 
     private fun buildSnapshot(
@@ -196,50 +388,6 @@ class MainActivity : ComponentActivity() {
         terminalId = filter.terminalId?.takeIf(options.terminalIds::contains),
     )
 
-    private fun readDocument(uri: Uri): SalesJournalImportDocument {
-        val sourceName = queryDisplayName(uri)
-            ?: uri.lastPathSegment
-            ?: "名称不明.json"
-        return try {
-            val bytes = contentResolver.openInputStream(uri)?.use { input ->
-                val output = ByteArrayOutputStream()
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                var total = 0L
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) break
-                    total += read
-                    if (total > SalesJournalImportContract.MAX_DOCUMENT_BYTES) {
-                        throw DocumentTooLargeException()
-                    }
-                    output.write(buffer, 0, read)
-                }
-                output.toByteArray()
-            } ?: error("入力ストリームを開けません")
-            SalesJournalImportDocument(
-                sourceName = sourceName,
-                sourceUri = uri.toString(),
-                rawJson = bytes.toString(Charsets.UTF_8),
-            )
-        } catch (_: DocumentTooLargeException) {
-            SalesJournalImportDocument(
-                sourceName = sourceName,
-                sourceUri = uri.toString(),
-                rawJson = null,
-                loadErrorCode = ImportRejectionCode.DOCUMENT_TOO_LARGE,
-                loadErrorMessage = "JSONファイルが20MiBを超えています",
-            )
-        } catch (error: Exception) {
-            SalesJournalImportDocument(
-                sourceName = sourceName,
-                sourceUri = uri.toString(),
-                rawJson = null,
-                loadErrorCode = ImportRejectionCode.READ_ERROR,
-                loadErrorMessage = error.message ?: "ファイルを読み込めませんでした",
-            )
-        }
-    }
-
     private fun queryDisplayName(uri: Uri): String? = contentResolver.query(
         uri,
         arrayOf(OpenableColumns.DISPLAY_NAME),
@@ -249,6 +397,4 @@ class MainActivity : ComponentActivity() {
     )?.use { cursor ->
         if (cursor.moveToFirst()) cursor.getString(0) else null
     }
-
-    private class DocumentTooLargeException : IllegalArgumentException()
 }
