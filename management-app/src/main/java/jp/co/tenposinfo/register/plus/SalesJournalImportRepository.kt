@@ -208,6 +208,68 @@ class SalesJournalImportRepository(
         )
     }
 
+    fun reportFilterOptions(): SalesReportFilterOptions {
+        val db = database.readableDatabase
+        return SalesReportFilterOptions(
+            businessDates = db.singleStrings(
+                "SELECT DISTINCT business_date FROM imported_journal ORDER BY business_date DESC",
+            ),
+            storeIds = db.singleStrings(
+                "SELECT DISTINCT store_id FROM imported_journal ORDER BY store_id",
+            ),
+            terminalIds = db.singleStrings(
+                "SELECT DISTINCT terminal_id FROM imported_journal ORDER BY terminal_id",
+            ),
+        )
+    }
+
+    fun salesReport(filter: SalesReportFilter): SalesReport {
+        val clauses = mutableListOf<String>()
+        val arguments = mutableListOf<String>()
+        filter.businessDate?.let {
+            clauses += "business_date=?"
+            arguments += it
+        }
+        filter.storeId?.let {
+            clauses += "store_id=?"
+            arguments += it
+        }
+        filter.terminalId?.let {
+            clauses += "terminal_id=?"
+            arguments += it
+        }
+        val where = if (clauses.isEmpty()) "" else "WHERE ${clauses.joinToString(" AND ")}"
+        val entries = mutableListOf<SalesJournalReportEntry>()
+        database.readableDatabase.rawQuery(
+            """
+            SELECT duplicate_import_key, event_type, store_id, terminal_id,
+                   business_date, aggregate_id, occurred_at, payload_schema,
+                   payload_json, total_amount, source_name
+            FROM imported_journal
+            $where
+            ORDER BY occurred_at DESC, imported_at DESC
+            """.trimIndent(),
+            arguments.toTypedArray(),
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                entries += SalesJournalReportEntry(
+                    duplicateImportKey = cursor.getString(0),
+                    eventType = cursor.getString(1),
+                    storeId = cursor.getString(2),
+                    terminalId = cursor.getString(3),
+                    businessDate = cursor.getString(4),
+                    aggregateId = cursor.getString(5),
+                    occurredAt = cursor.getLong(6),
+                    payloadSchema = cursor.getString(7),
+                    payloadJson = cursor.getString(8),
+                    totalAmount = if (cursor.isNull(9)) null else cursor.getLong(9),
+                    sourceName = cursor.getString(10),
+                )
+            }
+        }
+        return SalesReportCalculator.calculate(entries, filter)
+    }
+
     fun recentImports(limit: Int = 20): List<ImportedJournalSummary> {
         require(limit in 1..100)
         val rows = mutableListOf<ImportedJournalSummary>()
@@ -359,6 +421,12 @@ class SalesJournalImportRepository(
 
     private fun SQLiteDatabase.singleInt(sql: String): Int = rawQuery(sql, null).use { cursor ->
         if (cursor.moveToFirst()) cursor.getInt(0) else 0
+    }
+
+    private fun SQLiteDatabase.singleStrings(sql: String): List<String> = rawQuery(sql, null).use { cursor ->
+        buildList {
+            while (cursor.moveToNext()) add(cursor.getString(0))
+        }
     }
 
     companion object {
