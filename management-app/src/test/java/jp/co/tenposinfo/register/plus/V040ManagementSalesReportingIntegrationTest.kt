@@ -15,6 +15,9 @@ class V040ManagementSalesReportingIntegrationTest {
         val database = File(sourceRoot, "ManagementDatabase.kt").readText()
         val activity = File(sourceRoot, "MainActivity.kt").readText()
         val mobileScreen = File(sourceRoot, "ManagementMobileScreen.kt").readText()
+        val calculatorTest = File(
+            "src/test/java/jp/co/tenposinfo/register/plus/SalesReportCalculatorTest.kt",
+        )
         val plusBuild = File("build.gradle.kts").readText()
         val registerBuild = File(root, "app/build.gradle.kts").readText()
         val workflow = File(root, ".github/workflows/build-apk.yml").readText()
@@ -45,13 +48,15 @@ class V040ManagementSalesReportingIntegrationTest {
         assertTrue(mobileScreen.contains("税額内訳"))
         assertTrue(mobileScreen.contains("取引確認"))
         assertTrue(mobileScreen.contains("集計対象外"))
+        assertTrue(calculatorTest.isFile)
+        assertTrue(calculatorTest.readText().contains("SalesReportCalculator"))
 
         assertTrue(registerBuild.contains("versionCode = 75"))
         assertTrue(registerBuild.contains("versionName = \"0.45.0-dev.1\""))
         assertTrue(plusBuild.contains("versionCode = 7"))
         assertTrue(plusBuild.contains("versionName = \"0.7.0-dev.1\""))
         assertTrue(workflow.contains(":management-app:testDebugUnitTest"))
-        assertTrue(workflow.contains("SalesReportCalculatorTest.kt"))
+        assertTrue(workflow.contains(":management-app:assembleDebug"))
         assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.7.0_dev1"))
         assertTrue(docs.contains("REVERSAL"))
         assertTrue(docs.contains("売上集計から除外"))
