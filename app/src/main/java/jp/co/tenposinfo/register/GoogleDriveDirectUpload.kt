@@ -748,14 +748,31 @@ class GoogleDriveDirectUploadCoordinator(context: Context) {
 class GoogleDriveDirectUploadWorker(context: Context, parameters: WorkerParameters) :
     Worker(context, parameters) {
     override fun doWork(): Result {
-        if (GoogleDriveAccountStore(applicationContext).load().email == null) return Result.success()
+        val diagnosticLog = GoogleDriveDiagnosticLogStore(applicationContext)
+        if (GoogleDriveAccountStore(applicationContext).load().email == null) {
+            diagnosticLog.append("UPLOAD_WORKER", "SKIPPED", "Googleアカウント未登録")
+            return Result.success()
+        }
+        diagnosticLog.append("UPLOAD_WORKER", "STARTED", "Drive API直接送信開始")
         return runCatching {
             val token = GoogleDriveAccessTokenProvider.acquire(applicationContext)
             GoogleDriveDirectUploadCoordinator(applicationContext).process(token, 100)
         }.fold(
-            onSuccess = { if (it.retryRecommended) Result.retry() else Result.success() },
+            onSuccess = { runResult ->
+                diagnosticLog.append(
+                    "UPLOAD_WORKER",
+                    if (runResult.retryRecommended) "RETRY" else "SUCCESS",
+                    "送信=${runResult.uploadedCount},既存=${runResult.duplicateCount},再試行=${runResult.retryCount},永久失敗=${runResult.permanentFailureCount}",
+                )
+                if (runResult.retryRecommended) Result.retry() else Result.success()
+            },
             onFailure = { error ->
                 val category = GoogleDriveApiErrorPolicy.classify(error)
+                diagnosticLog.append(
+                    "UPLOAD_WORKER",
+                    category.name,
+                    error.message ?: error.javaClass.simpleName,
+                )
                 GoogleDriveDirectUploadStatusStore(applicationContext).failed(
                     "${GoogleDriveApiErrorPolicy.message(category)}：${error.message ?: error.javaClass.simpleName}",
                 )

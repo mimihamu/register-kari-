@@ -3,6 +3,7 @@ package jp.co.tenposinfo.register
 import android.accounts.Account
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -154,6 +155,7 @@ object GoogleDriveAboutApi {
 class GoogleDriveAccountActivity : ComponentActivity() {
     private val authorizationClient by lazy { Identity.getAuthorizationClient(this) }
     private val accountStore by lazy { GoogleDriveAccountStore(this) }
+    private val diagnosticLog by lazy { GoogleDriveDiagnosticLogStore(this) }
     private val state = mutableStateOf(GoogleDriveAccountState())
     private val uploadStatus = mutableStateOf(GoogleDriveDirectUploadStatus())
 
@@ -161,6 +163,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
         ActivityResultContracts.StartIntentSenderForResult(),
     ) { result ->
         if (result.resultCode != Activity.RESULT_OK || result.data == null) {
+            diagnosticLog.append("AUTHORIZATION", "CANCELLED", "Googleアカウント接続がキャンセルされました")
             state.value = state.value.copy(
                 status = GoogleDriveAccountStatus.AUTHORIZATION_FAILED,
                 message = "Googleアカウント接続がキャンセルされました",
@@ -188,6 +191,9 @@ class GoogleDriveAccountActivity : ComponentActivity() {
                         onVerify = { authorize(selectAccount = false) },
                         onUpload = ::uploadNow,
                         onRetry = ::retryFailed,
+                        onDiagnostics = {
+                            startActivity(Intent(this, GoogleDriveDiagnosticsActivity::class.java))
+                        },
                         onDisconnect = ::disconnect,
                         onClose = ::finish,
                     )
@@ -203,6 +209,11 @@ class GoogleDriveAccountActivity : ComponentActivity() {
     }
 
     private fun authorize(selectAccount: Boolean) {
+        diagnosticLog.append(
+            "AUTHORIZATION",
+            "STARTED",
+            if (selectAccount) "アカウント選択" else "接続確認",
+        )
         state.value = state.value.copy(
             status = GoogleDriveAccountStatus.CONNECTING,
             message = if (selectAccount) {
@@ -226,6 +237,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
 
     private fun consumeAuthorizationResult(result: AuthorizationResult) {
         if (result.hasResolution()) {
+            diagnosticLog.append("AUTHORIZATION", "RESOLUTION_REQUIRED", "Google同意画面を表示します")
             val pendingIntent = result.pendingIntent
             if (pendingIntent == null) {
                 handleAuthorizationFailure(IllegalStateException("認可画面を開始できません"))
@@ -249,6 +261,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
             }
             state.value = verified.fold(
                 onSuccess = { profile ->
+                    diagnosticLog.append("ABOUT_GET", "SUCCESS", "Drive API接続確認成功")
                     GoogleDriveAccountState(
                         status = GoogleDriveAccountStatus.CONNECTED,
                         email = profile.email,
@@ -263,6 +276,11 @@ class GoogleDriveAccountActivity : ComponentActivity() {
                         error.responseCode == 403 &&
                         (error.responseBody.contains("SERVICE_DISABLED") ||
                             error.responseBody.contains("accessNotConfigured"))
+                    diagnosticLog.append(
+                        "ABOUT_GET",
+                        if (apiDisabled) "API_DISABLED" else "FAILED",
+                        error.message ?: error.javaClass.simpleName,
+                    )
                     state.value.copy(
                         status = if (apiDisabled) {
                             GoogleDriveAccountStatus.DRIVE_API_DISABLED
@@ -281,6 +299,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
     }
 
     private fun uploadNow() {
+        diagnosticLog.append("MANUAL_UPLOAD", "REQUESTED", "アカウント画面から今すぐアップロード")
         JournalOutboxStore(applicationContext).use { it.stagePending(500) }
         GoogleDriveDirectUploadScheduler.enqueueNow(applicationContext)
         uploadStatus.value = uploadStatus.value.copy(
@@ -295,6 +314,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
                 GoogleDriveDirectUploadCoordinator(applicationContext).retryPermanentFailures()
             }
             GoogleDriveDirectUploadScheduler.enqueueNow(applicationContext)
+            diagnosticLog.append("RETRY_FAILED", "REQUESTED", "$count 件を再試行へ戻しました")
             uploadStatus.value = uploadStatus.value.copy(
                 running = count > 0,
                 lastMessage = "$count 件を再試行へ戻しました",
@@ -304,6 +324,11 @@ class GoogleDriveAccountActivity : ComponentActivity() {
 
     private fun handleAuthorizationFailure(error: Throwable) {
         val status = GoogleDriveAccountPolicy.statusForAuthorizationError(error)
+        diagnosticLog.append(
+            "AUTHORIZATION",
+            status.name,
+            error.message ?: error.javaClass.simpleName,
+        )
         state.value = state.value.copy(
             status = status,
             message = if (status == GoogleDriveAccountStatus.CLOUD_CONFIGURATION_REQUIRED) {
@@ -317,6 +342,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
     private fun disconnect() {
         val email = state.value.email ?: accountStore.load().email
         if (email.isNullOrBlank()) {
+            diagnosticLog.append("DISCONNECT", "LOCAL_CLEAR", "登録アカウントなし")
             accountStore.clear()
             state.value = GoogleDriveAccountState()
             return
@@ -331,6 +357,11 @@ class GoogleDriveAccountActivity : ComponentActivity() {
             .build()
         authorizationClient.revokeAccess(request)
             .addOnCompleteListener {
+                diagnosticLog.append(
+                    "DISCONNECT",
+                    if (it.isSuccessful) "SUCCESS" else "GOOGLE_RESULT_UNKNOWN",
+                    "ローカル売上データは削除していません",
+                )
                 accountStore.clear()
                 state.value = GoogleDriveAccountState(
                     message = if (it.isSuccessful) {
@@ -351,6 +382,7 @@ private fun GoogleDriveAccountScreen(
     onVerify: () -> Unit,
     onUpload: () -> Unit,
     onRetry: () -> Unit,
+    onDiagnostics: () -> Unit,
     onDisconnect: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -408,9 +440,14 @@ private fun GoogleDriveAccountScreen(
             ) { Text("連携解除") }
         }
 
+        OutlinedButton(
+            onClick = onDiagnostics,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+        ) { Text("診断・ログ") }
+
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("v0.45 直接同期仕様", fontWeight = FontWeight.Bold)
+                Text("v0.47 診断対応済み直接同期", fontWeight = FontWeight.Bold)
                 Text("Drive上には つぐレジ/stores/{storeId}/terminals/{terminalId}/journal/{businessDate}/{duplicateKey}.json を作成します。")
                 Text("フォルダとJSONはappProperties、親fileId、重複キー、SHA-256で識別します。")
                 Text("アクセストークンと更新トークンは保存しません。Driveは同期・バックアップ経路であり、SQLiteのローカル売上を原本として維持します。")
