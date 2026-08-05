@@ -42,16 +42,29 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.36 sources
+      - name: Verify cumulative v0.14-v0.37 sources
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 66' app/build.gradle.kts
-          grep -q 'versionName = "0.36.0-dev.1"' app/build.gradle.kts
-          grep -q 'versionCode = 6' customer-display/build.gradle.kts
-          grep -q 'versionName = "0.13.0-dev.6"' customer-display/build.gradle.kts
+          grep -q 'versionCode = 67' app/build.gradle.kts
+          grep -q 'versionName = "0.37.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 7' customer-display/build.gradle.kts
+          grep -q 'versionName = "0.14.0-dev.1"' customer-display/build.gradle.kts
 
           for file in \
+            app/src/main/java/jp/co/tenposinfo/register/CustomerDisplayPresentation.kt \
+            app/src/main/java/jp/co/tenposinfo/register/CustomerDisplayProtocol.kt \
+            app/src/main/java/jp/co/tenposinfo/register/CustomerDisplaySettingsStore.kt \
+            app/src/main/java/jp/co/tenposinfo/register/CustomerDisplaySettingsActivity.kt \
+            app/src/main/java/jp/co/tenposinfo/register/CustomerDisplayRuntime.kt \
+            customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayPresentation.kt \
+            customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplaySnapshotStore.kt \
+            customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayModel.kt \
+            customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt \
+            app/src/test/java/jp/co/tenposinfo/register/V037CustomerDisplayPresentationTest.kt \
+            customer-display/src/test/java/jp/co/tenposinfo/register/cd/CustomerDisplayPresentationPolicyTest.kt \
+            docs/V0.37_CUSTOMER_DISPLAY_PRESENTATION.md \
+            docs/V0.37_RELEASE_NOTES.md \
             app/src/main/java/jp/co/tenposinfo/register/SalesJournalJsonContract.kt \
             app/src/main/java/jp/co/tenposinfo/register/BusinessSyncFoundation.kt \
             app/src/main/java/jp/co/tenposinfo/register/OutboxExternalDelivery.kt \
@@ -111,6 +124,35 @@ jobs:
           printer = (root / 'AdminSettingsStore.kt').read_text()
           manifest = Path('app/src/main/AndroidManifest.xml').read_text()
           schema = Path('docs/schemas/tsuguregi-sales-journal-v1.schema.json').read_text()
+
+          # v0.37 customer-display presentation, synchronization and state restoration.
+          cd_presentation = (root / 'CustomerDisplayPresentation.kt').read_text()
+          cd_protocol = (root / 'CustomerDisplayProtocol.kt').read_text()
+          cd_settings = (root / 'CustomerDisplaySettingsStore.kt').read_text()
+          cd_settings_ui = (root / 'CustomerDisplaySettingsActivity.kt').read_text()
+          cd_runtime = (root / 'CustomerDisplayRuntime.kt').read_text()
+          cd_module = Path('customer-display/src/main/java/jp/co/tenposinfo/register/cd')
+          cd_model = (cd_module / 'CustomerDisplayModel.kt').read_text()
+          cd_screen = (cd_module / 'MainActivity.kt').read_text()
+          cd_cache = (cd_module / 'CustomerDisplaySnapshotStore.kt').read_text()
+          for token in (
+              'textScalePercent',
+              'maxVisibleRows',
+              'rowSpacingDp',
+              'showCancelledItems',
+              'showTaxSymbol',
+              'standbyMessage',
+          ):
+              assert token in cd_presentation, token
+          assert 'put("presentation"' in cd_protocol
+          assert 'taxSymbol = item.product.taxSymbol' in cd_protocol
+          assert 'presentation = CustomerDisplayPresentation' in cd_settings
+          assert '表示デザイン（つぐレジ CDへ自動同期）' in cd_settings_ui
+          assert 'config.presentation' in cd_runtime
+          assert 'root.optJSONObject("presentation")' in cd_model
+          assert 'CustomerDisplayPresentationPolicy.visibleItems' in cd_screen
+          assert 'snapshotStore.save(snapshot)' in cd_screen
+          assert 'MAX_AGE_MS' in cd_cache
 
           # v0.36 fixed sales-journal JSON contract.
           for token in (
@@ -215,6 +257,8 @@ jobs:
           assert 'currentWidthMm' in printer
 
           # Temporary transfer files/workflows must not survive the final branch.
+          assert not list(Path('tools').glob('v037*'))
+          assert not Path('.github/workflows/v037-apply.yml').exists()
           assert not list(Path('tools').glob('v036*'))
           assert not Path('.github/workflows/v036-apply.yml').exists()
           assert not list(Path('tools').glob('v035*'))
@@ -252,17 +296,23 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.36.0_dev1_sales_journal_contract_debug.apk
-          cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
-          sha256sum artifacts/TSUGUREGI_v0.36.0_dev1_sales_journal_contract_debug.apk | tee artifacts/TSUGUREGI_v0.36.0_dev1_sales_journal_contract_debug.apk.sha256
-          sha256sum artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
-          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.36.0_dev1_sales_journal_contract_debug.apk | tee artifacts/build-summary.txt
-          stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee -a artifacts/build-summary.txt
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.37.0_dev1_customer_display_presentation_debug.apk
+          cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
+          sha256sum artifacts/TSUGUREGI_v0.37.0_dev1_customer_display_presentation_debug.apk | tee artifacts/TSUGUREGI_v0.37.0_dev1_customer_display_presentation_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk | tee artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk.sha256
+          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.37.0_dev1_customer_display_presentation_debug.apk | tee artifacts/build-summary.txt
+          stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.36.0-dev.1
-          REGISTER_VERSION_CODE=66
-          CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.6
-          CUSTOMER_DISPLAY_VERSION_CODE=6
+          REGISTER_VERSION_NAME=0.37.0-dev.1
+          REGISTER_VERSION_CODE=67
+          CUSTOMER_DISPLAY_VERSION_NAME=0.14.0-dev.1
+          CUSTOMER_DISPLAY_VERSION_CODE=7
+          CUSTOMER_DISPLAY_PRESENTATION_SYNC=websocket-schema-v1-optional-fields
+          CUSTOMER_DISPLAY_THEMES=navy-light-warm
+          CUSTOMER_DISPLAY_STATE_CACHE_MAX_MINUTES=30
+          CUSTOMER_DISPLAY_TRANSIENT_DISCONNECT_GRACE_MS=3000
+          CUSTOMER_DISPLAY_TAX_SYMBOL=true
+          CUSTOMER_DISPLAY_CANCEL_VISIBILITY=true
           SALES_JOURNAL_SCHEMA=jp.co.tenposinfo.tsuguregi.sales-journal
           SALES_JOURNAL_SCHEMA_VERSION=1
           SALES_JOURNAL_DUPLICATE_KEY=sha256-store-terminal-businessdate-event-eventid
@@ -299,12 +349,12 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.36.0-dev1-sales-journal-contract-apks
+          name: TSUGUREGI-v0.37.0-dev1-customer-display-presentation-apks
           path: |
-            artifacts/TSUGUREGI_v0.36.0_dev1_sales_journal_contract_debug.apk
-            artifacts/TSUGUREGI_v0.36.0_dev1_sales_journal_contract_debug.apk.sha256
-            artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
-            artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
+            artifacts/TSUGUREGI_v0.37.0_dev1_customer_display_presentation_debug.apk
+            artifacts/TSUGUREGI_v0.37.0_dev1_customer_display_presentation_debug.apk.sha256
+            artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
+            artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk.sha256
             artifacts/build-summary.txt
           if-no-files-found: error
           retention-days: 30
