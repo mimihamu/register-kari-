@@ -35,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -49,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.NumberFormat
@@ -71,8 +73,23 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 val settingsStore = remember { CustomerDisplayConnectionSettingsStore(this) }
+                val snapshotStore = remember { CustomerDisplaySnapshotStore(this) }
                 var settings by remember { mutableStateOf(settingsStore.load()) }
-                var uiState by remember { mutableStateOf(CustomerDisplayUiState()) }
+                var uiState by remember {
+                    val restored = snapshotStore.load()
+                    mutableStateOf(
+                        if (restored == null) {
+                            CustomerDisplayUiState()
+                        } else {
+                            CustomerDisplayUiState(
+                                connected = false,
+                                snapshot = restored,
+                                statusMessage = "再接続準備中",
+                                lastError = "保存済み表示状態を復元しました",
+                            )
+                        },
+                    )
+                }
                 var settingsOpen by remember { mutableStateOf(!settings.isConfigured) }
 
                 DisposableEffect(settings) {
@@ -83,6 +100,7 @@ class MainActivity : ComponentActivity() {
                                 runOnUiThread { uiState = CustomerDisplayStateReducer.connected(uiState) }
                             },
                             onSnapshot = { snapshot ->
+                                snapshotStore.save(snapshot)
                                 runOnUiThread { uiState = CustomerDisplayStateReducer.received(uiState, snapshot) }
                             },
                             onDisconnected = { reason ->
@@ -99,7 +117,18 @@ class MainActivity : ComponentActivity() {
                     onDispose { client?.stop() }
                 }
 
-                Surface(modifier = Modifier.fillMaxSize(), color = Background) {
+                val presentation = uiState.snapshot.presentation
+                val currentDensity = LocalDensity.current
+                CompositionLocalProvider(
+                    LocalDensity provides Density(
+                        density = currentDensity.density,
+                        fontScale = currentDensity.fontScale * presentation.textScalePercent / 100f,
+                    ),
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = presentation.backgroundColor(),
+                    ) {
                     if (settingsOpen) {
                         CustomerDisplayConnectionSettingsScreen(
                             initial = settings,
@@ -117,6 +146,7 @@ class MainActivity : ComponentActivity() {
                             connectionLabel = settings.displayAddress,
                             onSettings = { settingsOpen = true },
                         )
+                    }
                     }
                 }
             }
@@ -139,6 +169,7 @@ private fun CustomerDisplayScreen(
                 statusMessage = state.statusMessage,
                 connectionLabel = connectionLabel,
                 layoutMode = layoutMode,
+                presentation = state.snapshot.presentation,
                 onSettings = onSettings,
             )
             Box(
@@ -170,6 +201,7 @@ private fun CustomerDisplayHeader(
     statusMessage: String,
     connectionLabel: String,
     layoutMode: CustomerDisplayLayoutMode,
+    presentation: CustomerDisplayPresentation,
     onSettings: () -> Unit,
 ) {
     if (layoutMode.compact) {
@@ -185,6 +217,7 @@ private fun CustomerDisplayHeader(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                LogoBadge(presentation, compact = true)
                 Text(
                     text = storeName,
                     color = TextPrimary,
@@ -229,6 +262,7 @@ private fun CustomerDisplayHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            LogoBadge(presentation, compact = true)
             Text(
                 text = storeName,
                 color = TextPrimary,
@@ -263,6 +297,7 @@ private fun StandbyScreen(
             verticalArrangement = Arrangement.spacedBy(if (layoutMode.compact) 12.dp else 18.dp),
             modifier = Modifier.padding(16.dp),
         ) {
+            LogoBadge(snapshot.presentation, compact = layoutMode.compact.not())
             Text(
                 snapshot.storeName,
                 color = Accent,
@@ -271,7 +306,9 @@ private fun StandbyScreen(
                 textAlign = TextAlign.Center,
             )
             Text(
-                snapshot.message ?: "いらっしゃいませ",
+                snapshot.presentation.standbyMessage.ifBlank {
+                    snapshot.message ?: "いらっしゃいませ"
+                },
                 color = TextPrimary,
                 fontSize = if (layoutMode.compact) 25.sp else 34.sp,
                 fontWeight = FontWeight.Bold,
@@ -295,14 +332,14 @@ private fun SalesScreen(
     if (layoutMode.stacked) {
         Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             TotalSummaryCard(snapshot, layoutMode.compact, horizontal = true, modifier = Modifier.fillMaxWidth())
-            OrderItemsCard(snapshot, layoutMode.compact, Modifier.weight(1f).fillMaxWidth())
+            OrderItemsCard(snapshot, layoutMode.compact, snapshot.presentation, Modifier.weight(1f).fillMaxWidth())
         }
     } else {
         Row(
             modifier = Modifier.fillMaxSize(),
             horizontalArrangement = Arrangement.spacedBy(if (layoutMode.compact) 10.dp else 18.dp),
         ) {
-            OrderItemsCard(snapshot, layoutMode.compact, Modifier.weight(1.45f).fillMaxHeight())
+            OrderItemsCard(snapshot, layoutMode.compact, snapshot.presentation, Modifier.weight(1.45f).fillMaxHeight())
             TotalSummaryCard(snapshot, layoutMode.compact, horizontal = false, modifier = Modifier.weight(0.75f).fillMaxHeight())
         }
     }
@@ -312,11 +349,16 @@ private fun SalesScreen(
 private fun OrderItemsCard(
     snapshot: CustomerDisplaySnapshot,
     compact: Boolean,
+    presentation: CustomerDisplayPresentation,
     modifier: Modifier,
 ) {
+    val visibleItems = CustomerDisplayPresentationPolicy.visibleItems(
+        snapshot.orderItems,
+        presentation,
+    )
     val listState = rememberLazyListState()
-    val targetIndex = CustomerDisplayScrollPolicy.targetIndex(snapshot.orderItems)
-    LaunchedEffect(snapshot.sequence, targetIndex, snapshot.orderItems.size) {
+    val targetIndex = CustomerDisplayScrollPolicy.targetIndex(visibleItems)
+    LaunchedEffect(snapshot.sequence, targetIndex, visibleItems.size) {
         if (targetIndex >= 0) listState.animateScrollToItem(targetIndex)
     }
     Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = Panel)) {
@@ -330,13 +372,13 @@ private fun OrderItemsCard(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 8.dp),
+                verticalArrangement = Arrangement.spacedBy(presentation.rowSpacingDp.dp),
             ) {
                 itemsIndexed(
-                    items = snapshot.orderItems,
+                    items = visibleItems,
                     key = { index, item -> "${item.productId}-${item.unitPrice}-$index" },
                 ) { _, item ->
-                    CustomerDisplayItemRow(item, compact)
+                    CustomerDisplayItemRow(item, compact, presentation)
                 }
             }
         }
@@ -385,7 +427,11 @@ private fun TotalSummaryCard(
 }
 
 @Composable
-private fun CustomerDisplayItemRow(item: CustomerDisplayOrderItem, compact: Boolean) {
+private fun CustomerDisplayItemRow(
+    item: CustomerDisplayOrderItem,
+    compact: Boolean,
+    presentation: CustomerDisplayPresentation,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -410,7 +456,15 @@ private fun CustomerDisplayItemRow(item: CustomerDisplayOrderItem, compact: Bool
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text("${yen(item.unitPrice)} × ${item.quantity}", color = TextSecondary, fontSize = if (compact) 11.sp else 14.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("${yen(item.unitPrice)} × ${item.quantity}", color = TextSecondary, fontSize = if (compact) 11.sp else 14.sp)
+                if (presentation.showTaxSymbol && item.taxSymbol.isNotBlank()) {
+                    Text(item.taxSymbol, color = Accent, fontSize = if (compact) 11.sp else 14.sp, fontWeight = FontWeight.Bold)
+                }
+                if (item.cancelled) {
+                    Text("取消", color = Warning, fontSize = if (compact) 11.sp else 14.sp, fontWeight = FontWeight.Bold)
+                }
+            }
         }
         Text("${item.quantity}", color = TextPrimary, fontSize = if (compact) 17.sp else 22.sp, textAlign = TextAlign.End, modifier = Modifier.weight(0.24f))
         Text(yen(item.amount), color = TextPrimary, fontSize = if (compact) 18.sp else 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.weight(0.46f))
@@ -425,14 +479,14 @@ private fun AccountingScreen(
     if (layoutMode.stacked) {
         Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             PaymentSummaryCard(snapshot, layoutMode.compact, Modifier.fillMaxWidth())
-            OrderItemsCard(snapshot, layoutMode.compact, Modifier.weight(1f).fillMaxWidth())
+            OrderItemsCard(snapshot, layoutMode.compact, snapshot.presentation, Modifier.weight(1f).fillMaxWidth())
         }
     } else {
         Row(
             modifier = Modifier.fillMaxSize(),
             horizontalArrangement = Arrangement.spacedBy(if (layoutMode.compact) 10.dp else 18.dp),
         ) {
-            OrderItemsCard(snapshot, layoutMode.compact, Modifier.weight(1f).fillMaxHeight())
+            OrderItemsCard(snapshot, layoutMode.compact, snapshot.presentation, Modifier.weight(1f).fillMaxHeight())
             PaymentSummaryCard(snapshot, layoutMode.compact, Modifier.weight(1f).fillMaxHeight())
         }
     }
@@ -771,6 +825,31 @@ private fun CustomerDisplayConnectionSettingsScreen(
                 Text("手動設定を保存して接続")
             }
         }
+    }
+}
+
+@Composable
+private fun LogoBadge(
+    presentation: CustomerDisplayPresentation,
+    compact: Boolean,
+) {
+    if (!presentation.showLogo) return
+    Box(
+        modifier = Modifier
+            .background(Accent, RoundedCornerShape(999.dp))
+            .padding(
+                horizontal = if (compact) 10.dp else 18.dp,
+                vertical = if (compact) 5.dp else 9.dp,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            presentation.logoText.ifBlank { "つぐ" },
+            color = Background,
+            fontSize = if (compact) 16.sp else 25.sp,
+            fontWeight = FontWeight.Black,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

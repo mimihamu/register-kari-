@@ -1,5 +1,6 @@
 package jp.co.tenposinfo.register.cd
 
+import org.json.JSONArray
 import org.json.JSONObject
 
 internal const val CUSTOMER_DISPLAY_SCHEMA_VERSION = 1
@@ -21,6 +22,7 @@ data class CustomerDisplayOrderItem(
     val amount: Long,
     val latest: Boolean,
     val cancelled: Boolean,
+    val taxSymbol: String = "",
 )
 
 data class CustomerDisplaySnapshot(
@@ -40,7 +42,41 @@ data class CustomerDisplaySnapshot(
     val changeAmount: Long,
     val message: String?,
     val orderItems: List<CustomerDisplayOrderItem>,
+    val presentation: CustomerDisplayPresentation = CustomerDisplayPresentation(),
 ) {
+    fun toJson(): String = JSONObject().apply {
+        put("schemaVersion", schemaVersion)
+        put("sequence", sequence)
+        put("serverInstanceId", serverInstanceId ?: JSONObject.NULL)
+        put("sentAtMillis", sentAtMillis)
+        put("mode", mode.name)
+        put("transactionId", transactionId ?: JSONObject.NULL)
+        put("storeName", storeName)
+        put("numberOfProducts", numberOfProducts)
+        put("subtotalAmount", subtotalAmount)
+        put("totalAmount", totalAmount)
+        put("paymentMethod", paymentMethod ?: JSONObject.NULL)
+        put("receivedAmount", receivedAmount)
+        put("shortageAmount", shortageAmount)
+        put("changeAmount", changeAmount)
+        put("message", message ?: JSONObject.NULL)
+        put("presentation", presentation.toJsonObject())
+        put("orderItems", JSONArray().apply {
+            orderItems.forEach { item ->
+                put(JSONObject().apply {
+                    put("productId", item.productId)
+                    put("name", item.name)
+                    put("quantity", item.quantity)
+                    put("unitPrice", item.unitPrice)
+                    put("amount", item.amount)
+                    put("latest", item.latest)
+                    put("cancelled", item.cancelled)
+                    put("taxSymbol", item.taxSymbol)
+                })
+            }
+        })
+    }.toString()
+
     companion object {
         fun parse(json: String): CustomerDisplaySnapshot {
             val root = JSONObject(json)
@@ -62,6 +98,7 @@ data class CustomerDisplaySnapshot(
                                 amount = item.optLong("amount"),
                                 latest = item.optBoolean("latest"),
                                 cancelled = item.optBoolean("cancelled"),
+                                taxSymbol = item.optString("taxSymbol"),
                             ),
                         )
                     }
@@ -84,6 +121,9 @@ data class CustomerDisplaySnapshot(
                 changeAmount = root.optLong("changeAmount"),
                 message = root.optNullableString("message"),
                 orderItems = orderItems,
+                presentation = CustomerDisplayPresentation.fromJsonObject(
+                    root.optJSONObject("presentation"),
+                ),
             )
         }
 
@@ -104,6 +144,7 @@ data class CustomerDisplaySnapshot(
             changeAmount = 0L,
             message = "いらっしゃいませ",
             orderItems = emptyList(),
+            presentation = CustomerDisplayPresentation(),
         )
     }
 }

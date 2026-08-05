@@ -67,6 +67,15 @@ private fun CustomerDisplaySettingsScreen(
     var storeName by remember { mutableStateOf(initial.storeName) }
     var token by remember { mutableStateOf(initial.token) }
     var completeSecondsText by remember { mutableStateOf(initial.completeSeconds.toString()) }
+    var displayTheme by remember { mutableStateOf(initial.presentation.theme) }
+    var showLogo by remember { mutableStateOf(initial.presentation.showLogo) }
+    var logoText by remember { mutableStateOf(initial.presentation.logoText) }
+    var textScaleText by remember { mutableStateOf(initial.presentation.textScalePercent.toString()) }
+    var maxRowsText by remember { mutableStateOf(initial.presentation.maxVisibleRows.toString()) }
+    var rowSpacingText by remember { mutableStateOf(initial.presentation.rowSpacingDp.toString()) }
+    var showCancelled by remember { mutableStateOf(initial.presentation.showCancelledItems) }
+    var showTax by remember { mutableStateOf(initial.presentation.showTaxSymbol) }
+    var standbyMessage by remember { mutableStateOf(initial.presentation.standbyMessage) }
     var message by remember { mutableStateOf<String?>(null) }
     var pairingState by remember { mutableStateOf(CustomerDisplayPairingState()) }
     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -110,6 +119,9 @@ private fun CustomerDisplaySettingsScreen(
     fun buildConfig(requestedEnabled: Boolean): CustomerDisplayServerConfig? {
         val port = portText.toIntOrNull()
         val seconds = completeSecondsText.toIntOrNull()
+        val textScale = textScaleText.toIntOrNull()
+        val maxRows = maxRowsText.toIntOrNull()
+        val rowSpacing = rowSpacingText.toIntOrNull()
         return when {
             port == null || port !in 1024..65535 -> {
                 message = "ポートは1024～65535で入力してください"
@@ -123,6 +135,18 @@ private fun CustomerDisplaySettingsScreen(
                 message = "接続トークンが不正です。再発行してください"
                 null
             }
+            textScale == null || textScale !in 80..150 -> {
+                message = "文字倍率は80～150で入力してください"
+                null
+            }
+            maxRows == null || maxRows !in 3..20 -> {
+                message = "表示行数は3～20で入力してください"
+                null
+            }
+            rowSpacing == null || rowSpacing !in 0..24 -> {
+                message = "行間は0～24で入力してください"
+                null
+            }
             else -> CustomerDisplayServerConfig(
                 enabled = requestedEnabled,
                 port = port,
@@ -130,6 +154,17 @@ private fun CustomerDisplaySettingsScreen(
                 token = token,
                 storeName = storeName.trim().ifEmpty { CustomerDisplaySettingsStore.DEFAULT_STORE_NAME },
                 completeSeconds = seconds,
+                presentation = CustomerDisplayPresentation(
+                    theme = displayTheme,
+                    showLogo = showLogo,
+                    logoText = logoText.trim().take(12),
+                    textScalePercent = textScale,
+                    maxVisibleRows = maxRows,
+                    rowSpacingDp = rowSpacing,
+                    showCancelledItems = showCancelled,
+                    showTaxSymbol = showTax,
+                    standbyMessage = standbyMessage.trim().ifEmpty { "いらっしゃいませ" }.take(80),
+                ),
             )
         }
     }
@@ -245,6 +280,86 @@ private fun CustomerDisplaySettingsScreen(
                             message = "接続URLをコピーしました"
                         }) { Text("接続URLをコピー") }
                     }
+                }
+            }
+        }
+
+
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("表示デザイン（つぐレジ CDへ自動同期）", fontWeight = FontWeight.Bold)
+                Text("背景")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CustomerDisplayTheme.entries.forEach { theme ->
+                        OutlinedButton(onClick = { displayTheme = theme }) {
+                            Text(
+                                when (theme) {
+                                    CustomerDisplayTheme.NAVY -> if (displayTheme == theme) "● 紺" else "紺"
+                                    CustomerDisplayTheme.LIGHT -> if (displayTheme == theme) "● 明るい" else "明るい"
+                                    CustomerDisplayTheme.WARM -> if (displayTheme == theme) "● 和風" else "和風"
+                                },
+                            )
+                        }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Switch(checked = showLogo, onCheckedChange = { showLogo = it })
+                    Text("ロゴを表示")
+                }
+                OutlinedTextField(
+                    value = logoText,
+                    onValueChange = { logoText = it.take(12) },
+                    label = { Text("ロゴ文字") },
+                    singleLine = true,
+                    enabled = showLogo,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = standbyMessage,
+                    onValueChange = { standbyMessage = it.take(80) },
+                    label = { Text("待機メッセージ") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = textScaleText,
+                        onValueChange = { textScaleText = it.filter(Char::isDigit).take(3) },
+                        label = { Text("文字倍率 %") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = maxRowsText,
+                        onValueChange = { maxRowsText = it.filter(Char::isDigit).take(2) },
+                        label = { Text("表示行数") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = rowSpacingText,
+                        onValueChange = { rowSpacingText = it.filter(Char::isDigit).take(2) },
+                        label = { Text("行間 dp") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Switch(checked = showCancelled, onCheckedChange = { showCancelled = it })
+                    Text("取消商品を表示")
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Switch(checked = showTax, onCheckedChange = { showTax = it })
+                    Text("税記号（内・外・内※・外※・非）を表示")
                 }
             }
         }

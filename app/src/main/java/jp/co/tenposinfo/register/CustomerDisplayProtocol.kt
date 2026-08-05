@@ -22,6 +22,7 @@ data class CustomerDisplayOrderItem(
     val amount: Long,
     val latest: Boolean = false,
     val cancelled: Boolean = false,
+    val taxSymbol: String = "",
 )
 
 data class CustomerDisplaySnapshot(
@@ -41,6 +42,7 @@ data class CustomerDisplaySnapshot(
     val changeAmount: Long = 0L,
     val message: String? = null,
     val orderItems: List<CustomerDisplayOrderItem> = emptyList(),
+    val presentation: CustomerDisplayPresentation = CustomerDisplayPresentation(),
 ) {
     fun toJson(): String = JSONObject().apply {
         put("schemaVersion", schemaVersion)
@@ -58,6 +60,7 @@ data class CustomerDisplaySnapshot(
         put("shortageAmount", shortageAmount)
         put("changeAmount", changeAmount)
         put("message", message ?: JSONObject.NULL)
+        put("presentation", presentation.toJsonObject())
         put("orderItems", JSONArray().apply {
             orderItems.forEach { item ->
                 put(JSONObject().apply {
@@ -68,6 +71,7 @@ data class CustomerDisplaySnapshot(
                     put("amount", item.amount)
                     put("latest", item.latest)
                     put("cancelled", item.cancelled)
+                    put("taxSymbol", item.taxSymbol)
                 })
             }
         })
@@ -75,18 +79,23 @@ data class CustomerDisplaySnapshot(
 }
 
 object CustomerDisplaySnapshotFactory {
-    fun standby(storeName: String): CustomerDisplaySnapshot = CustomerDisplaySnapshot(
+    fun standby(
+        storeName: String,
+        presentation: CustomerDisplayPresentation = CustomerDisplayPresentation(),
+    ): CustomerDisplaySnapshot = CustomerDisplaySnapshot(
         mode = CustomerDisplayMode.STANDBY,
         storeName = storeName,
-        message = "いらっしゃいませ",
+        message = presentation.standbyMessage,
+        presentation = presentation,
     )
 
     fun sales(
         items: List<CartItem>,
         storeName: String,
         latestProductId: String? = null,
+        presentation: CustomerDisplayPresentation = CustomerDisplayPresentation(),
     ): CustomerDisplaySnapshot {
-        if (items.isEmpty()) return standby(storeName)
+        if (items.isEmpty()) return standby(storeName, presentation)
         val total = TaxEngine.calculate(items).grossAmount
         return CustomerDisplaySnapshot(
             mode = CustomerDisplayMode.SALES,
@@ -95,6 +104,7 @@ object CustomerDisplaySnapshotFactory {
             subtotalAmount = total,
             totalAmount = total,
             orderItems = orderItems(items, latestProductId),
+            presentation = presentation,
         )
     }
 
@@ -102,8 +112,9 @@ object CustomerDisplaySnapshotFactory {
         items: List<CartItem>,
         paymentState: PaymentState,
         storeName: String,
+        presentation: CustomerDisplayPresentation = CustomerDisplayPresentation(),
     ): CustomerDisplaySnapshot {
-        if (items.isEmpty()) return standby(storeName)
+        if (items.isEmpty()) return standby(storeName, presentation)
         val total = TaxEngine.calculate(items).grossAmount
         val methods = paymentState.allocations
             .map { it.method.displayName }
@@ -122,12 +133,14 @@ object CustomerDisplaySnapshotFactory {
             changeAmount = paymentState.changeAmount,
             message = if (paymentState.remaining(total) > 0L) "お支払い金額をご確認ください" else "お支払いを確認しました",
             orderItems = orderItems(items),
+            presentation = presentation,
         )
     }
 
     fun complete(
         detail: SaleDetailRecord,
         storeName: String,
+        presentation: CustomerDisplayPresentation = CustomerDisplayPresentation(),
     ): CustomerDisplaySnapshot = CustomerDisplaySnapshot(
         mode = CustomerDisplayMode.COMPLETE,
         transactionId = detail.summary.id.toString(),
@@ -141,6 +154,7 @@ object CustomerDisplaySnapshotFactory {
         changeAmount = detail.summary.changeAmount,
         message = if (detail.summary.changeAmount > 0L) "お釣りをご確認ください" else "ありがとうございました",
         orderItems = orderItems(detail.items),
+        presentation = presentation,
     )
 
     private fun orderItems(
@@ -154,6 +168,7 @@ object CustomerDisplaySnapshotFactory {
             unitPrice = item.unitPrice,
             amount = item.baseAmount,
             latest = item.product.id == latestProductId,
+            taxSymbol = item.product.taxSymbol,
         )
     }
 }
