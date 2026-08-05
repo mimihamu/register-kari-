@@ -28,12 +28,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet; then
-            echo "No integration changes required"
+          if git diff --quiet -- app; then
+            echo "No application integration changes required"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app .github/workflows/build-apk.yml
+          git add app
           git commit -m "feat: integrate verified external outbox delivery"
           git push origin HEAD:develop/v0.35
