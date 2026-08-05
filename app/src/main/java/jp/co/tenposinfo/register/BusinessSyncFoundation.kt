@@ -839,8 +839,11 @@ class DriveOutboxWorker(context: Context, parameters: WorkerParameters) : Worker
         if (!settings.automaticStaging) return Result.success()
         return runCatching {
             JournalOutboxStore(applicationContext).use { it.stagePending(100) }
+            OutboxExternalDeliveryCoordinator(applicationContext).process(100)
         }.fold(
-            onSuccess = { Result.success() },
+            onSuccess = { delivery ->
+                if (delivery.retryRecommended) Result.retry() else Result.success()
+            },
             onFailure = { Result.retry() },
         )
     }
@@ -865,7 +868,7 @@ object DriveOutboxScheduler {
         val request = OneTimeWorkRequestBuilder<DriveOutboxWorker>().build()
         WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
             IMMEDIATE_NAME,
-            ExistingWorkPolicy.REPLACE,
+            ExistingWorkPolicy.APPEND_OR_REPLACE,
             request,
         )
     }
@@ -873,7 +876,7 @@ object DriveOutboxScheduler {
 
 /**
  * 起動時に拡張テーブルとジャーナルトリガーを準備する。
- * 実Google Drive OAuthとアップロードは後続版で接続し、v0.11は耐障害Outboxとファイル生成までを担当する。
+ * v0.35ではAndroidのDocumentsProviderへ安全配送する。Google Drive REST APIとOAuthは使用しない。
  */
 class JournalOutboxBootstrapProvider : ContentProvider() {
     override fun onCreate(): Boolean {
