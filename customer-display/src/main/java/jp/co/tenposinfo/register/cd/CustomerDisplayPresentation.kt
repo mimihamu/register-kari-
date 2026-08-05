@@ -44,6 +44,24 @@ data class CustomerDisplayPresentation(
         CustomerDisplayTheme.WARM -> Color(0xFFF2E5D2)
     }
 
+    fun standbyPrimaryColor(): Color = when (theme) {
+        CustomerDisplayTheme.NAVY -> Color(0xFFF8FBFF)
+        CustomerDisplayTheme.LIGHT -> Color(0xFF10283D)
+        CustomerDisplayTheme.WARM -> Color(0xFF3E2723)
+    }
+
+    fun standbySecondaryColor(): Color = when (theme) {
+        CustomerDisplayTheme.NAVY -> Color(0xFFB8C7D4)
+        CustomerDisplayTheme.LIGHT -> Color(0xFF36556E)
+        CustomerDisplayTheme.WARM -> Color(0xFF6D4C41)
+    }
+
+    fun standbyAccentColor(): Color = when (theme) {
+        CustomerDisplayTheme.NAVY -> Color(0xFF64B5F6)
+        CustomerDisplayTheme.LIGHT -> Color(0xFF1565C0)
+        CustomerDisplayTheme.WARM -> Color(0xFF9A5B00)
+    }
+
     companion object {
         fun fromJsonObject(json: JSONObject?): CustomerDisplayPresentation {
             if (json == null) return CustomerDisplayPresentation()
