@@ -51,15 +51,15 @@ internal fun OutboxDeliveryOperationsPanel(
     val context = LocalContext.current.applicationContext
     val store = remember { OutboxDeliveryOperationsStore(context) }
     var dashboard by remember { mutableStateOf(runCatching(store::dashboard).getOrDefault(OutboxDeliveryDashboard())) }
-    var items by remember { mutableStateOf(runCatching(store::recentItems).getOrDefault(emptyList())) }
-    var audits by remember { mutableStateOf(runCatching(store::recentAudit).getOrDefault(emptyList())) }
+    var items by remember { mutableStateOf(runCatching { store.recentItems() }.getOrDefault(emptyList())) }
+    var audits by remember { mutableStateOf(runCatching { store.recentAudit() }.getOrDefault(emptyList())) }
     var preview by remember { mutableStateOf<OutboxDeliveryJsonPreview?>(null) }
     var operationMessage by remember { mutableStateOf<String?>(null) }
 
     fun refresh(message: String? = null) {
         dashboard = runCatching(store::dashboard).getOrDefault(OutboxDeliveryDashboard())
-        items = runCatching(store::recentItems).getOrDefault(emptyList())
-        audits = runCatching(store::recentAudit).getOrDefault(emptyList())
+        items = runCatching { store.recentItems() }.getOrDefault(emptyList())
+        audits = runCatching { store.recentAudit() }.getOrDefault(emptyList())
         if (message != null) operationMessage = message
     }
 
