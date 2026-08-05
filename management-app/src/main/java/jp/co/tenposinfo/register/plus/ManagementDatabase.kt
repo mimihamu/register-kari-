@@ -72,18 +72,7 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
             )
             """.trimIndent(),
         )
-        db.execSQL(
-            "CREATE INDEX idx_imported_journal_business_date ON imported_journal(business_date)",
-        )
-        db.execSQL(
-            "CREATE INDEX idx_imported_journal_event_type ON imported_journal(event_type)",
-        )
-        db.execSQL(
-            "CREATE INDEX idx_imported_journal_imported_at ON imported_journal(imported_at DESC)",
-        )
-        db.execSQL(
-            "CREATE INDEX idx_import_rejections_created_at ON import_rejections(created_at DESC)",
-        )
+        createIndexes(db)
     }
 
     override fun onUpgrade(
@@ -91,13 +80,37 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
         oldVersion: Int,
         newVersion: Int,
     ) {
-        require(oldVersion == newVersion) {
-            "未定義のDB移行です: $oldVersion -> $newVersion"
+        if (oldVersion < 2) {
+            createIndexes(db)
         }
+        require(newVersion <= DATABASE_VERSION) {
+            "未対応のDB移行です: $oldVersion -> $newVersion"
+        }
+    }
+
+    private fun createIndexes(db: SQLiteDatabase) {
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_imported_journal_business_date ON imported_journal(business_date)",
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_imported_journal_event_type ON imported_journal(event_type)",
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_imported_journal_imported_at ON imported_journal(imported_at DESC)",
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_imported_journal_report ON imported_journal(business_date, store_id, terminal_id, event_type, occurred_at DESC)",
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_imported_journal_aggregate ON imported_journal(store_id, terminal_id, aggregate_id, event_type)",
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_import_rejections_created_at ON import_rejections(created_at DESC)",
+        )
     }
 
     companion object {
         const val DATABASE_NAME = "tsuguregi_plus.db"
-        const val DATABASE_VERSION = 1
+        const val DATABASE_VERSION = 2
     }
 }
