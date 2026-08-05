@@ -17,6 +17,7 @@ class SalesJournalImportContractTest {
         assertEquals("TERMINAL-001", envelope.terminalId)
         assertEquals("register.sale.v2", envelope.payloadSchema)
         assertEquals(1_080L, envelope.totalAmount)
+        assertEquals(expectedDuplicateKey(), envelope.duplicateImportKey)
     }
 
     @Test
@@ -39,14 +40,16 @@ class SalesJournalImportContractTest {
     }
 
     @Test
-    fun duplicateKeyAndEventTypeAreStrictlyValidated() {
-        val badKey = SalesJournalImportContract.parse(
-            validEnvelope().replace(
-                "sj1-${"a".repeat(64)}",
-                "sj1-short",
-            ),
+    fun duplicateKeyFormatFormulaAndEventTypeAreStrictlyValidated() {
+        val badFormat = SalesJournalImportContract.parse(
+            validEnvelope().replace(expectedDuplicateKey(), "sj1-short"),
         )
-        assertRejected(badKey, ImportRejectionCode.INVALID_FIELD)
+        assertRejected(badFormat, ImportRejectionCode.INVALID_FIELD)
+
+        val wrongFormula = SalesJournalImportContract.parse(
+            validEnvelope().replace(expectedDuplicateKey(), "sj1-${"b".repeat(64)}"),
+        )
+        assertRejected(wrongFormula, ImportRejectionCode.DUPLICATE_KEY_MISMATCH)
 
         val badEvent = SalesJournalImportContract.parse(
             validEnvelope().replace("\"eventType\":\"SALE\"", "\"eventType\":\"UNKNOWN\""),
@@ -96,6 +99,15 @@ class SalesJournalImportContractTest {
         assertEquals(code, (result as JournalParseResult.Rejected).code)
     }
 
+    private fun expectedDuplicateKey(): String =
+        SalesJournalImportContract.expectedDuplicateImportKey(
+            storeId = "STORE-001",
+            terminalId = "TERMINAL-001",
+            businessDate = "2026-08-05",
+            eventType = "SALE",
+            eventId = "sale-10-1000",
+        )
+
     private fun validEnvelope(): String = """
         {
           "schema":"${SalesJournalImportContract.SCHEMA}",
@@ -103,7 +115,7 @@ class SalesJournalImportContractTest {
           "minimumReaderVersion":1,
           "duplicateKeyVersion":1,
           "eventId":"sale-10-1000",
-          "duplicateImportKey":"sj1-${"a".repeat(64)}",
+          "duplicateImportKey":"${expectedDuplicateKey()}",
           "eventType":"SALE",
           "storeId":"STORE-001",
           "terminalId":"TERMINAL-001",
