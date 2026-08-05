@@ -73,6 +73,7 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
             """.trimIndent(),
         )
         createFolderImportFilesTable(db)
+        createDriveSyncFilesTable(db)
         createIndexes(db)
     }
 
@@ -86,6 +87,9 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
         }
         if (oldVersion < 3) {
             createFolderImportFilesTable(db)
+        }
+        if (oldVersion < 4) {
+            createDriveSyncFilesTable(db)
         }
         require(newVersion <= DATABASE_VERSION) {
             "未対応のDB移行です: $oldVersion -> $newVersion"
@@ -106,6 +110,29 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
         )
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS idx_folder_import_files_tree ON folder_import_files(tree_uri, last_processed_at DESC)",
+        )
+    }
+
+    private fun createDriveSyncFilesTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS drive_sync_files (
+                file_id TEXT PRIMARY KEY NOT NULL,
+                file_name TEXT NOT NULL,
+                modified_time TEXT NOT NULL,
+                content_sha256 TEXT NOT NULL,
+                store_id TEXT,
+                terminal_id TEXT,
+                business_date TEXT,
+                last_processed_at INTEGER NOT NULL
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_drive_sync_files_modified ON drive_sync_files(modified_time, last_processed_at DESC)",
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_drive_sync_files_identity ON drive_sync_files(store_id, terminal_id, business_date)",
         )
     }
 
@@ -132,6 +159,6 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
 
     companion object {
         const val DATABASE_NAME = "tsuguregi_plus.db"
-        const val DATABASE_VERSION = 3
+        const val DATABASE_VERSION = 4
     }
 }

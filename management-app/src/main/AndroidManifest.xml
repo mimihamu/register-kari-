@@ -10,6 +10,12 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.TsuguRegiPlus">
 
+        <provider
+            android:name=".GoogleDriveDirectSyncBootstrapProvider"
+            android:authorities="${applicationId}.google-drive-direct-sync-bootstrap"
+            android:exported="false"
+            android:initOrder="100" />
+
         <activity
             android:name=".GoogleDriveAccountActivity"
             android:exported="false"

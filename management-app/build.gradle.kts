@@ -19,8 +19,8 @@ android {
         applicationId = "jp.co.tenposinfo.register.plus"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.6.0-dev.1"
+        versionCode = 7
+        versionName = "0.7.0-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ＋"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -70,6 +70,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
+    implementation("androidx.work:work-runtime:2.11.2")
     implementation("com.google.android.gms:play-services-auth:21.6.0")
 
     implementation("androidx.compose.ui:ui:1.11.4")

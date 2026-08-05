@@ -3,7 +3,6 @@ package jp.co.tenposinfo.register
 import android.accounts.Account
 import android.app.Activity
 import android.content.Context
-import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -92,7 +91,7 @@ class GoogleDriveAccountStore(context: Context) {
             displayName = preferences.getString("display_name", null),
             permissionId = preferences.getString("permission_id", null),
             lastVerifiedAt = preferences.getLong("verified_at", 0L).takeIf { it > 0L },
-            message = "前回接続したGoogleアカウントです。接続確認を実行してください",
+            message = "前回接続したGoogleアカウントです。必要に応じて接続確認を実行してください",
         )
     }
 
@@ -156,6 +155,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
     private val authorizationClient by lazy { Identity.getAuthorizationClient(this) }
     private val accountStore by lazy { GoogleDriveAccountStore(this) }
     private val state = mutableStateOf(GoogleDriveAccountState())
+    private val uploadStatus = mutableStateOf(GoogleDriveDirectUploadStatus())
 
     private val authorizationLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult(),
@@ -176,20 +176,30 @@ class GoogleDriveAccountActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         state.value = accountStore.load()
+        uploadStatus.value = GoogleDriveDirectUploadStatusStore(this).load()
         configureRegisterSystemBars(window)
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GoogleDriveAccountScreen(
                         state = state.value,
+                        uploadStatus = uploadStatus.value,
                         onConnect = { authorize(selectAccount = true) },
                         onVerify = { authorize(selectAccount = false) },
+                        onUpload = ::uploadNow,
+                        onRetry = ::retryFailed,
                         onDisconnect = ::disconnect,
                         onClose = ::finish,
                     )
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        state.value = accountStore.load()
+        uploadStatus.value = GoogleDriveDirectUploadStatusStore(this).load()
     }
 
     private fun authorize(selectAccount: Boolean) {
@@ -270,6 +280,28 @@ class GoogleDriveAccountActivity : ComponentActivity() {
         }
     }
 
+    private fun uploadNow() {
+        JournalOutboxStore(applicationContext).use { it.stagePending(500) }
+        GoogleDriveDirectUploadScheduler.enqueueNow(applicationContext)
+        uploadStatus.value = uploadStatus.value.copy(
+            running = true,
+            lastMessage = "Google Driveへの直接アップロードを要求しました",
+        )
+    }
+
+    private fun retryFailed() {
+        lifecycleScope.launch {
+            val count = withContext(Dispatchers.IO) {
+                GoogleDriveDirectUploadCoordinator(applicationContext).retryPermanentFailures()
+            }
+            GoogleDriveDirectUploadScheduler.enqueueNow(applicationContext)
+            uploadStatus.value = uploadStatus.value.copy(
+                running = count > 0,
+                lastMessage = "$count 件を再試行へ戻しました",
+            )
+        }
+    }
+
     private fun handleAuthorizationFailure(error: Throwable) {
         val status = GoogleDriveAccountPolicy.statusForAuthorizationError(error)
         state.value = state.value.copy(
@@ -302,7 +334,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
                 accountStore.clear()
                 state.value = GoogleDriveAccountState(
                     message = if (it.isSuccessful) {
-                        "Googleアカウント連携を解除しました"
+                        "Googleアカウント連携を解除しました。ローカル売上データは削除していません"
                     } else {
                         "端末内の登録を解除しました。Google側の解除結果は確認できませんでした"
                     },
@@ -314,43 +346,36 @@ class GoogleDriveAccountActivity : ComponentActivity() {
 @Composable
 private fun GoogleDriveAccountScreen(
     state: GoogleDriveAccountState,
+    uploadStatus: GoogleDriveDirectUploadStatus,
     onConnect: () -> Unit,
     onVerify: () -> Unit,
+    onUpload: () -> Unit,
+    onRetry: () -> Unit,
     onDisconnect: () -> Unit,
     onClose: () -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("Google Driveアカウント連携", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("つぐレジがDriveへ売上JSONを送信するためのGoogleアカウントを登録します")
+                Text(
+                    "Google Driveアカウント連携",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text("つぐレジが売上ジャーナルJSONをDrive APIで直接送信します")
             }
             OutlinedButton(onClick = onClose) { Text("戻る") }
         }
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = if (state.status == GoogleDriveAccountStatus.CONNECTED) {
-                    MaterialTheme.colorScheme.primaryContainer
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant
-                },
-            ),
-        ) {
-            Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                Text(accountStatusLabel(state.status), fontWeight = FontWeight.Bold)
-                state.email?.let { Text("アカウント：$it") }
-                state.displayName?.let { Text("表示名：$it") }
-                Text("権限：Google Driveでこのアプリが使用するファイル（drive.file）")
-                Text(state.message)
-            }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            AccountCard(state, Modifier.weight(1f))
+            UploadStatusCard(uploadStatus, Modifier.weight(1f))
         }
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -366,6 +391,16 @@ private fun GoogleDriveAccountScreen(
                 enabled = state.email != null && state.status != GoogleDriveAccountStatus.CONNECTING,
                 modifier = Modifier.weight(1f).height(52.dp),
             ) { Text("接続確認") }
+            Button(
+                onClick = onUpload,
+                enabled = state.email != null && !uploadStatus.running,
+                modifier = Modifier.weight(1f).height(52.dp),
+            ) { Text("今すぐアップロード") }
+            OutlinedButton(
+                onClick = onRetry,
+                enabled = state.email != null && !uploadStatus.running,
+                modifier = Modifier.weight(1f).height(52.dp),
+            ) { Text("失敗を再試行") }
             OutlinedButton(
                 onClick = onDisconnect,
                 enabled = state.email != null && state.status != GoogleDriveAccountStatus.CONNECTING,
@@ -374,14 +409,48 @@ private fun GoogleDriveAccountScreen(
         }
 
         Card(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("初回だけ必要な開発設定", fontWeight = FontWeight.Bold)
-                Text("Google CloudでGoogle Drive APIを有効化し、つぐレジのapplicationIdと署名証明書SHA-1をAndroid OAuthクライアントとして登録します。")
-                Text("Googleアカウントのパスワードとアクセストークンは保存しません。保存するのはメールアドレス、表示名、最終確認日時だけです。")
-                Text("v0.44はアカウント認可とDrive API接続確認までです。売上JSONの直接アップロードは次段階で接続します。")
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text("v0.45 直接同期仕様", fontWeight = FontWeight.Bold)
+                Text("Drive上には つぐレジ/stores/{storeId}/terminals/{terminalId}/journal/{businessDate}/{duplicateKey}.json を作成します。")
+                Text("フォルダとJSONはappProperties、親fileId、重複キー、SHA-256で識別します。")
+                Text("アクセストークンと更新トークンは保存しません。Driveは同期・バックアップ経路であり、SQLiteのローカル売上を原本として維持します。")
+                Text("互換用フォルダ送信は削除せず、USB・端末フォルダ・Driveアプリ経由の運用として併存します。")
             }
         }
         Spacer(Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun AccountCard(state: GoogleDriveAccountState, modifier: Modifier) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = if (state.status == GoogleDriveAccountStatus.CONNECTED) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            },
+        ),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(accountStatusLabel(state.status), fontWeight = FontWeight.Bold)
+            state.email?.let { Text("アカウント：$it") }
+            state.displayName?.let { Text("表示名：$it") }
+            Text("権限：drive.file（このプロジェクトが作成・許可されたファイルのみ）")
+            Text(state.message)
+        }
+    }
+}
+
+@Composable
+private fun UploadStatusCard(status: GoogleDriveDirectUploadStatus, modifier: Modifier) {
+    Card(modifier = modifier) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(if (status.running) "直接アップロード処理中" else "直接アップロード状態", fontWeight = FontWeight.Bold)
+            Text(status.lastMessage)
+            Text("送信 ${status.uploadedCount}／既存 ${status.duplicateCount}／再試行 ${status.retryCount}／永久失敗 ${status.permanentFailureCount}")
+        }
     }
 }
 

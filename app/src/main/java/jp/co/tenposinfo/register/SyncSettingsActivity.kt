@@ -75,6 +75,9 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
     var refresh by remember { mutableIntStateOf(0) }
     val summary = remember(refresh) { store.summary() }
     val rows = remember(refresh) { store.list(250) }
+    val directStatus = remember(refresh) {
+        GoogleDriveDirectUploadStatusStore(context.applicationContext).load()
+    }
     val initial = remember { DriveSyncSettingsStore.load(context.applicationContext) }
     var automatic by remember { mutableStateOf(initial.automaticStaging) }
     var folderName by remember { mutableStateOf(initial.folderName) }
@@ -110,7 +113,7 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                             OutlinedTextField(
                                 value = folderName,
                                 onValueChange = { folderName = it.take(80) },
-                                label = { Text("Driveフォルダー名") },
+                                label = { Text("同期ルート名") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
                             )
@@ -122,6 +125,7 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                                         DriveSyncFoundationSettings(automatic, folderName),
                                     )
                                     DriveOutboxScheduler.ensurePeriodic(context.applicationContext)
+                                    GoogleDriveDirectUploadScheduler.ensurePeriodic(context.applicationContext)
                                     message = "同期設定を保存しました"
                                 },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
@@ -134,22 +138,24 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                                 },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = SyBlue),
-                            ) { Text("Googleアカウント連携") }
+                            ) { Text("Googleアカウント・直接送信") }
                             Spacer(Modifier.height(10.dp))
                             OutlinedButton(
                                 onClick = {
                                     val count = store.stagePending(500)
                                     DriveOutboxScheduler.enqueueNow(context.applicationContext)
+                                    GoogleDriveDirectUploadScheduler.enqueueNow(context.applicationContext)
                                     refresh++
-                                    message = "$count 件をローカル送信ステージへ出力し、外部送信を要求しました"
+                                    message = "$count 件をローカルステージへ出力し、Drive APIと互換用送信を要求しました"
                                 },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
-                            ) { Text("今すぐステージ出力") }
+                            ) { Text("今すぐステージ出力・送信") }
                             Spacer(Modifier.height(8.dp))
                             OutlinedButton(
                                 onClick = {
                                     val count = store.requeueStaged()
                                     DriveOutboxScheduler.enqueueNow(context.applicationContext)
+                                    GoogleDriveDirectUploadScheduler.enqueueNow(context.applicationContext)
                                     refresh++
                                     message = "$count 件を再キューしました"
                                 },
@@ -158,11 +164,13 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                             Spacer(Modifier.height(14.dp))
                             Card(colors = CardDefaults.cardColors(containerColor = SyPaleGreen)) {
                                 Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                                    Text("Googleアカウント認可", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                                    Text("v0.45 Drive API直接送信", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
                                     Text(
-                                        "v0.44は端末上でGoogleアカウントを選択し、drive.file権限とDrive API接続を確認します。パスワードとアクセストークンは保存しません。従来のAndroidフォルダ配送は互換用として残します。",
+                                        "Googleアカウントのdrive.file権限を都度取得し、Outboxの売上JSONをDrive APIへ直接送信します。トークンは保存しません。従来のAndroidフォルダ配送は互換用として残します。",
                                         fontSize = 13.sp,
                                     )
+                                    Spacer(Modifier.height(5.dp))
+                                    Text(directStatus.lastMessage, fontSize = 12.sp)
                                 }
                             }
                             Spacer(Modifier.height(10.dp))
@@ -183,7 +191,7 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                             Spacer(Modifier.weight(1f))
                             Card(colors = CardDefaults.cardColors(containerColor = SyPaleGreen)) {
                                 Text(
-                                    "販売確定時は、売上・明細・支払・税スナップショット・印刷キュー・ジャーナル・Outboxを同一SQLiteトランザクションで保存します。",
+                                    "販売確定時は、売上・明細・支払・税スナップショット・印刷キュー・ジャーナル・Outboxを同一SQLiteトランザクションで保存します。Driveは同期経路であり、唯一の原本にはしません。",
                                     modifier = Modifier.padding(12.dp),
                                     fontSize = 13.sp,
                                 )
