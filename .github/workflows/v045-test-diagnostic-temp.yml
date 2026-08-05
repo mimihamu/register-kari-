@@ -1,0 +1,75 @@
+name: v0.45 temporary unit test diagnostics
+
+on:
+  pull_request:
+    branches:
+      - develop/v0.44
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout v0.45 head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle 9.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Run cumulative unit tests
+        continue-on-error: true
+        run: gradle --no-daemon --stacktrace :app:testDebugUnitTest :customer-display:testDebugUnitTest :management-app:testDebugUnitTest
+
+      - name: Print failed test XML
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          failed=0
+          while IFS= read -r file; do
+            if grep -qE '<failure|<error' "$file"; then
+              failed=1
+              echo "===== $file ====="
+              sed -n '1,360p' "$file"
+            fi
+          done < <(find app customer-display management-app -path '*/build/test-results/*/TEST-*.xml' -type f | sort)
+          if [ "$failed" -eq 0 ]; then
+            echo "No failed JUnit XML found"
+          fi
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSUGUREGI-v0.45-unit-test-diagnostics-current
+          path: |
+            app/build/test-results/
+            customer-display/build/test-results/
+            management-app/build/test-results/
+            app/build/reports/tests/
+            customer-display/build/reports/tests/
+            management-app/build/reports/tests/
+          if-no-files-found: warn
+          retention-days: 1
