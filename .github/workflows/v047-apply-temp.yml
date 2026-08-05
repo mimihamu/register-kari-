@@ -24,6 +24,7 @@ jobs:
       - name: Generate workflow file
         shell: bash
         run: |
+          mkdir -p tools
           python3 - <<'PY'
           from pathlib import Path
 
