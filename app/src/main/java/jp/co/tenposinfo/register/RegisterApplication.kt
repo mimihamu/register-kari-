@@ -38,7 +38,8 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
             is AdminSettingsActivity,
             is DataProtectionActivity,
             is AutoBackupSettingsActivity,
-            is ExternalBackupSettingsActivity -> guardSettingsActivity(activity)
+            is ExternalBackupSettingsActivity,
+            is OutboxDeliverySettingsActivity -> guardSettingsActivity(activity)
         }
     }
 

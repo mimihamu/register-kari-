@@ -1,5 +1,6 @@
 package jp.co.tenposinfo.register
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -130,8 +131,9 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                             OutlinedButton(
                                 onClick = {
                                     val count = store.stagePending(500)
+                                    DriveOutboxScheduler.enqueueNow(context.applicationContext)
                                     refresh++
-                                    message = "$count 件をローカル送信ステージへ出力しました"
+                                    message = "$count 件をローカル送信ステージへ出力し、外部送信を要求しました"
                                 },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                             ) { Text("今すぐステージ出力") }
@@ -146,15 +148,23 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                             ) { Text("ステージ済みを再キュー") }
                             Spacer(Modifier.height(14.dp))
-                            Card(colors = CardDefaults.cardColors(containerColor = SyPaleYellow)) {
+                            Card(colors = CardDefaults.cardColors(containerColor = SyPaleGreen)) {
                                 Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                                    Text("接続状態：Google Drive未認証", fontWeight = FontWeight.Bold, color = SyDanger)
+                                    Text("外部送信：Androidフォルダ連携", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
                                     Text(
-                                        "v0.11は売上ジャーナル、耐障害Outbox、JSON生成、WorkManager再試行までを実装しています。OAuth認証とDrive APIアップロードは未接続です。",
+                                        "v0.35は端末内JSONをGoogle Drive・USB・端末フォルダへ自動配送し、サイズとSHA-256確認後に送信済みへ確定します。Drive REST APIとOAuthは使用しません。",
                                         fontSize = 13.sp,
                                     )
                                 }
                             }
+                            Spacer(Modifier.height(10.dp))
+                            Button(
+                                onClick = {
+                                    context.startActivity(Intent(context, OutboxDeliverySettingsActivity::class.java))
+                                },
+                                modifier = Modifier.fillMaxWidth().height(50.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = SyBlue),
+                            ) { Text("外部自動送信設定") }
                             Spacer(Modifier.height(12.dp))
                             Text("ローカル出力先", fontWeight = FontWeight.Bold, color = SyNavy)
                             Text(store.stagingRoot().absolutePath, fontSize = 12.sp, color = Color.DarkGray)
@@ -231,7 +241,7 @@ private fun SyHeader(onClose: () -> Unit) {
     ) {
         Text("つぐレジ", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(22.dp))
-        Text("SCR-760  売上ジャーナル・Google Drive同期基盤", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        Text("SCR-760  売上ジャーナル・外部同期基盤", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.weight(1f))
         Text("営業日 ${BusinessDateResolver.current(LocalContext.current)}", color = Color.White, fontSize = 13.sp)
         Spacer(Modifier.width(12.dp))

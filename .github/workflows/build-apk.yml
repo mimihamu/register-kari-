@@ -42,16 +42,20 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.34 sources
+      - name: Verify cumulative v0.14-v0.35 sources
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 64' app/build.gradle.kts
-          grep -q 'versionName = "0.34.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 65' app/build.gradle.kts
+          grep -q 'versionName = "0.35.0-dev.1"' app/build.gradle.kts
           grep -q 'versionCode = 6' customer-display/build.gradle.kts
           grep -q 'versionName = "0.13.0-dev.6"' customer-display/build.gradle.kts
 
           for file in \
+            app/src/main/java/jp/co/tenposinfo/register/OutboxExternalDelivery.kt \
+            app/src/main/java/jp/co/tenposinfo/register/OutboxDeliverySettingsActivity.kt \
+            app/src/main/java/jp/co/tenposinfo/register/BusinessSyncFoundation.kt \
+            app/src/main/java/jp/co/tenposinfo/register/SyncSettingsActivity.kt \
             app/src/main/java/jp/co/tenposinfo/register/ExternalBackupSync.kt \
             app/src/main/java/jp/co/tenposinfo/register/ExternalBackupSettingsActivity.kt \
             app/src/main/java/jp/co/tenposinfo/register/AutoBackup.kt \
@@ -65,10 +69,13 @@ jobs:
             app/src/main/java/jp/co/tenposinfo/register/UnifiedPrintQueueActivity.kt \
             app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt \
             app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsStore.kt \
+            app/src/test/java/jp/co/tenposinfo/register/V035OutboxExternalDeliveryTest.kt \
             app/src/test/java/jp/co/tenposinfo/register/V034ExternalBackupMirrorTest.kt \
             app/src/test/java/jp/co/tenposinfo/register/V033PeriodicBackupSettingsTest.kt \
             app/src/test/java/jp/co/tenposinfo/register/V032PrintQueueOperationsTest.kt \
             app/src/test/java/jp/co/tenposinfo/register/V031PrinterPaperSettingTest.kt \
+            docs/V0.35_OUTBOX_EXTERNAL_DELIVERY.md \
+            docs/V0.35_RELEASE_NOTES.md \
             docs/V0.34_EXTERNAL_BACKUP_MIRROR.md \
             docs/V0.34_RELEASE_NOTES.md; do
             test -s "$file"
@@ -78,6 +85,10 @@ jobs:
           from pathlib import Path
 
           root = Path('app/src/main/java/jp/co/tenposinfo/register')
+          delivery = (root / 'OutboxExternalDelivery.kt').read_text()
+          delivery_ui = (root / 'OutboxDeliverySettingsActivity.kt').read_text()
+          foundation = (root / 'BusinessSyncFoundation.kt').read_text()
+          sync_ui = (root / 'SyncSettingsActivity.kt').read_text()
           mirror = (root / 'ExternalBackupSync.kt').read_text()
           external_ui = (root / 'ExternalBackupSettingsActivity.kt').read_text()
           settings = (root / 'AutoBackupSettings.kt').read_text()
@@ -94,7 +105,31 @@ jobs:
           printer = (root / 'AdminSettingsStore.kt').read_text()
           manifest = Path('app/src/main/AndroidManifest.xml').read_text()
 
-          # v0.34 external automatic mirror.
+          # v0.35 verified external Outbox delivery.
+          for token in (
+              'data class OutboxDeliverySettings',
+              "status='STAGED'",
+              'SyncOutboxStatus.SENT.name',
+              'OutboxDeliveryPathPolicy',
+              '.partial',
+              'SHA-256',
+              'MAX_ATTEMPTS = 10',
+              'SYNC_OUTBOX_EXTERNAL_SENT',
+              'SYNC_OUTBOX_EXTERNAL_FAILED',
+              'outbox_delivery_failures',
+          ):
+              assert token in delivery, token
+          assert 'ActivityResultContracts.OpenDocumentTree' in delivery_ui
+          assert 'takePersistableUriPermission' in delivery_ui
+          assert 'releasePersistableUriPermission' in delivery_ui
+          assert '失敗を再試行' in delivery_ui
+          assert 'OutboxExternalDeliveryCoordinator' in foundation
+          assert 'ExistingWorkPolicy.APPEND_OR_REPLACE' in foundation
+          assert 'OutboxDeliverySettingsActivity::class.java' in sync_ui
+          assert 'is OutboxDeliverySettingsActivity' in application
+          assert 'android:name=".OutboxDeliverySettingsActivity"' in manifest
+
+          # v0.34 external automatic backup mirror remains cumulative.
           for token in (
               'data class ExternalBackupSettings',
               'persistedUriPermissions',
@@ -155,10 +190,13 @@ jobs:
           assert 'currentWidthMm' in printer
 
           # Temporary transfer files/workflows must not survive the final branch.
+          assert not list(Path('tools').glob('v035*'))
+          assert not Path('.github/workflows/v035-apply.yml').exists()
           assert not list(Path('tools').glob('v034*'))
           assert not Path('.github/workflows/v034-apply.yml').exists()
           PY
 
+          test "$(grep -c 'android:name=".OutboxDeliverySettingsActivity"' app/src/main/AndroidManifest.xml)" -eq 1
           test "$(grep -c 'android:name=".ExternalBackupSettingsActivity"' app/src/main/AndroidManifest.xml)" -eq 1
           ! grep -q '<activity-alias' app/src/main/AndroidManifest.xml
 
@@ -187,17 +225,24 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.34.0_dev1_external_backup_mirror_debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.35.0_dev1_outbox_external_delivery_debug.apk
           cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
-          sha256sum artifacts/TSUGUREGI_v0.34.0_dev1_external_backup_mirror_debug.apk | tee artifacts/TSUGUREGI_v0.34.0_dev1_external_backup_mirror_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_v0.35.0_dev1_outbox_external_delivery_debug.apk | tee artifacts/TSUGUREGI_v0.35.0_dev1_outbox_external_delivery_debug.apk.sha256
           sha256sum artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
-          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.34.0_dev1_external_backup_mirror_debug.apk | tee artifacts/build-summary.txt
+          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.35.0_dev1_outbox_external_delivery_debug.apk | tee artifacts/build-summary.txt
           stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.34.0-dev.1
-          REGISTER_VERSION_CODE=64
+          REGISTER_VERSION_NAME=0.35.0-dev.1
+          REGISTER_VERSION_CODE=65
           CUSTOMER_DISPLAY_VERSION_NAME=0.13.0-dev.6
           CUSTOMER_DISPLAY_VERSION_CODE=6
+          OUTBOX_EXTERNAL_DELIVERY=android-document-tree
+          OUTBOX_STAGED_MEANING=local-json-ready
+          OUTBOX_SENT_MEANING=external-size-and-sha256-verified
+          OUTBOX_EXTERNAL_PARTIAL_COMMIT=true
+          OUTBOX_EXTERNAL_SHA256_VERIFY=true
+          OUTBOX_EXTERNAL_MAX_ATTEMPTS=10
+          OUTBOX_EXTERNAL_TARGETS=google-drive-usb-device-folder
           EXTERNAL_BACKUP_DESTINATION=android-document-tree
           EXTERNAL_BACKUP_TARGETS=google-drive-usb-device-folder
           EXTERNAL_BACKUP_TRIGGER=backup-created-and-periodic-scan
@@ -213,6 +258,7 @@ jobs:
           PRINT_QUEUE_DISCARD=manager-pin-reason-audit
           SIGNING=development-not-production
           REAL_DEVICE_EXTERNAL_BACKUP_VERIFICATION=required
+          REAL_DEVICE_OUTBOX_DELIVERY_VERIFICATION=required
           EOF
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
@@ -220,10 +266,10 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.34.0-dev1-external-backup-mirror-apks
+          name: TSUGUREGI-v0.35.0-dev1-outbox-external-delivery-apks
           path: |
-            artifacts/TSUGUREGI_v0.34.0_dev1_external_backup_mirror_debug.apk
-            artifacts/TSUGUREGI_v0.34.0_dev1_external_backup_mirror_debug.apk.sha256
+            artifacts/TSUGUREGI_v0.35.0_dev1_outbox_external_delivery_debug.apk
+            artifacts/TSUGUREGI_v0.35.0_dev1_outbox_external_delivery_debug.apk.sha256
             artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk
             artifacts/TSUGUREGI_CD_v0.13.0_dev6_transition_fix_debug.apk.sha256
             artifacts/build-summary.txt
