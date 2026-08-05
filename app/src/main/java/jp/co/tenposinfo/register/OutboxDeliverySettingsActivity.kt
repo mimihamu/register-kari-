@@ -298,6 +298,12 @@ private fun OutboxDeliverySettingsScreen(onClose: () -> Unit) {
                         }
                     }
 
+                    OutboxDeliveryOperationsPanel(
+                        treeUriText = treeUriText,
+                        destinationPermission = destinationPermission,
+                        onChanged = { text -> refreshState(text) },
+                    )
+
                     Card(colors = CardDefaults.cardColors(containerColor = Color.White), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text("失敗通知", color = OdsNavy, fontSize = 22.sp, fontWeight = FontWeight.Bold)
