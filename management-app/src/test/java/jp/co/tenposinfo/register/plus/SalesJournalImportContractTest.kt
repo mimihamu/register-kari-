@@ -58,8 +58,8 @@ class SalesJournalImportContractTest {
     fun payloadSchemaMismatchIsQuarantined() {
         val result = SalesJournalImportContract.parse(
             validEnvelope().replace(
-                "\"schema\":\"register.sale.v2\",\"totalAmount\"",
-                "\"schema\":\"register.reversal.v2\",\"totalAmount\"",
+                "\"schema\":\"register.sale.v2\"",
+                "\"schema\":\"register.reversal.v2\"",
             ),
         )
         assertRejected(result, ImportRejectionCode.PAYLOAD_SCHEMA_MISMATCH)
@@ -73,7 +73,10 @@ class SalesJournalImportContractTest {
         )
 
         val withoutTotal = SalesJournalImportContract.parse(
-            validEnvelope().replace(",\"totalAmount\":1080", ""),
+            validEnvelope().replace(
+                "\"totalAmount\":1080",
+                "\"unknownAmount\":1080",
+            ),
         )
         assertTrue(withoutTotal is JournalParseResult.Accepted)
         assertNull((withoutTotal as JournalParseResult.Accepted).envelope.totalAmount)
