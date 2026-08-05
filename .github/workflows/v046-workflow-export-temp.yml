@@ -1,0 +1,30 @@
+name: v0.46 temporary CI workflow export
+
+on:
+  pull_request:
+    branches:
+      - develop/v0.45
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    if: github.head_ref == 'develop/v0.46'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v0.46
+
+      - name: Generate final CI workflow
+        run: python3 tools/v046_apply.py
+
+      - name: Upload final CI workflow
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSUGUREGI-v0.46-build-workflow-export
+          path: .github/workflows/build-apk.yml
+          if-no-files-found: error
+          retention-days: 1
