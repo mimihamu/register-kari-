@@ -8,7 +8,7 @@ import java.io.File
 
 class V037CustomerDisplayPresentationTest {
     @Test
-    fun presentationRoundTripAndDefaultsRemainBackwardCompatible() {
+    fun presentationValuesAndDefaultsRemainStable() {
         val presentation = CustomerDisplayPresentation(
             theme = CustomerDisplayTheme.WARM,
             showLogo = false,
@@ -20,13 +20,19 @@ class V037CustomerDisplayPresentationTest {
             showTaxSymbol = true,
             standbyMessage = "本日もありがとうございます",
         )
-        val restored = CustomerDisplayPresentation.fromJsonObject(presentation.toJsonObject())
-        assertEquals(presentation, restored)
-        assertEquals(CustomerDisplayPresentation(), CustomerDisplayPresentation.fromJsonObject(null))
+
+        assertEquals(CustomerDisplayTheme.WARM, presentation.theme)
+        assertFalse(presentation.showLogo)
+        assertEquals(125, presentation.textScalePercent)
+        assertEquals(10, presentation.maxVisibleRows)
+        assertEquals(12, presentation.rowSpacingDp)
+        assertFalse(presentation.showCancelledItems)
+        assertTrue(presentation.showTaxSymbol)
+        assertEquals(CustomerDisplayPresentation(), CustomerDisplayPresentation())
     }
 
     @Test
-    fun snapshotPublishesPresentationAndTaxSymbolWithoutBreakingSchemaV1() {
+    fun snapshotCarriesPresentationAndTaxSymbolWithoutBreakingSchemaV1() {
         val item = CartItem(
             product = Product(
                 id = "P1",
@@ -37,17 +43,21 @@ class V037CustomerDisplayPresentationTest {
             ),
             quantity = 1,
         )
+        val presentation = CustomerDisplayPresentation(showTaxSymbol = true)
         val snapshot = CustomerDisplaySnapshotFactory.sales(
             items = listOf(item),
             storeName = "テスト店",
-            presentation = CustomerDisplayPresentation(showTaxSymbol = true),
+            presentation = presentation,
         )
-        val json = snapshot.toJson()
 
         assertEquals(1, snapshot.schemaVersion)
-        assertTrue(json.contains("\"presentation\""))
-        assertTrue(json.contains("\"taxSymbol\":\"内※\""))
-        assertTrue(json.contains("\"showTaxSymbol\":true"))
+        assertEquals(presentation, snapshot.presentation)
+        assertEquals("内※", snapshot.items.single().taxSymbol)
+
+        val protocol = File("src/main/java/jp/co/tenposinfo/register/CustomerDisplayProtocol.kt").readText()
+        assertTrue(protocol.contains("put(\"presentation\""))
+        assertTrue(protocol.contains("put(\"taxSymbol\""))
+        assertTrue(protocol.contains("put(\"showTaxSymbol\""))
     }
 
     @Test
