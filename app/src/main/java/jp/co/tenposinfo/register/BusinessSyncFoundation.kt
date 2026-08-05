@@ -609,12 +609,19 @@ class JournalOutboxStore(context: Context) : AutoCloseable {
 }
 
 object OutboxPayloadAssembler {
-    fun build(db: SQLiteDatabase, record: JournalOutboxRecord): String = when (record.eventType) {
-        JournalEventType.SALE.name -> salePayload(db, record)
-        JournalEventType.REVERSAL.name -> reversalPayload(db, record)
-        JournalEventType.SETTLEMENT.name -> settlementPayload(db, record)
-        JournalEventType.MENU_REVISION.name -> menuRevisionPayload(db, record)
-        else -> genericPayload(db, record)
+    fun build(db: SQLiteDatabase, record: JournalOutboxRecord): String {
+        val legacyPayload = when (record.eventType) {
+            JournalEventType.SALE.name -> salePayload(db, record)
+            JournalEventType.REVERSAL.name -> reversalPayload(db, record)
+            JournalEventType.SETTLEMENT.name -> settlementPayload(db, record)
+            JournalEventType.MENU_REVISION.name -> menuRevisionPayload(db, record)
+            else -> genericPayload(db, record)
+        }
+        return SalesJournalJsonContract.wrap(
+            record = record,
+            legacyPayload = legacyPayload,
+            identity = SalesJournalIdentityStore.resolve(db),
+        )
     }
 
     private fun salePayload(db: SQLiteDatabase, record: JournalOutboxRecord): String {
