@@ -1,0 +1,37 @@
+name: Apply v0.38 panel compile fix
+
+on:
+  push:
+    branches:
+      - develop/v0.38
+    paths:
+      - tools/v038_fix_panel.py
+      - .github/workflows/v038-fix-panel.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout v0.38
+        uses: actions/checkout@v4
+        with:
+          ref: develop/v0.38
+          fetch-depth: 0
+
+      - name: Apply panel compile fix
+        run: python3 tools/v038_fix_panel.py
+
+      - name: Commit production fix
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/jp/co/tenposinfo/register/OutboxDeliveryOperationsPanel.kt
+          git diff --cached --check
+          git commit -m "fix: call outbox list queries with explicit lambdas"
+          git push origin HEAD:develop/v0.38
