@@ -1,0 +1,39 @@
+name: Apply v0.35 integration
+
+on:
+  pull_request:
+    branches:
+      - develop/v0.34
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.ref == 'develop/v0.35'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout head branch
+        uses: actions/checkout@v4
+        with:
+          ref: develop/v0.35
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply integration patch
+        run: python3 tools/v035_apply.py
+
+      - name: Commit integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No integration changes required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app .github/workflows/build-apk.yml
+          git commit -m "feat: integrate verified external outbox delivery"
+          git push origin HEAD:develop/v0.35
