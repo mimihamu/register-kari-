@@ -16,12 +16,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
@@ -91,7 +94,7 @@ class GoogleDriveAccountStore(context: Context) {
             displayName = preferences.getString("display_name", null),
             permissionId = preferences.getString("permission_id", null),
             lastVerifiedAt = preferences.getLong("verified_at", 0L).takeIf { it > 0L },
-            message = "前回接続したGoogleアカウントです。接続確認を実行してください",
+            message = "前回接続したGoogleアカウントです。必要に応じて接続確認を実行してください",
         )
     }
 
@@ -155,6 +158,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
     private val authorizationClient by lazy { Identity.getAuthorizationClient(this) }
     private val accountStore by lazy { GoogleDriveAccountStore(this) }
     private val state = mutableStateOf(GoogleDriveAccountState())
+    private val syncStatus = mutableStateOf(GoogleDriveDirectSyncStatus())
 
     private val authorizationLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult(),
@@ -174,20 +178,34 @@ class GoogleDriveAccountActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        state.value = accountStore.load()
+        refreshState()
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GoogleDriveAccountScreen(
                         state = state.value,
+                        syncStatus = syncStatus.value,
                         onConnect = { authorize(selectAccount = true) },
                         onVerify = { authorize(selectAccount = false) },
+                        onSync = { synchronize(forceReimport = false) },
+                        onForceSync = { synchronize(forceReimport = true) },
+                        onAutoSyncChanged = ::setAutoSync,
                         onDisconnect = ::disconnect,
                         onClose = ::finish,
                     )
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshState()
+    }
+
+    private fun refreshState() {
+        state.value = accountStore.load()
+        syncStatus.value = GoogleDriveDirectSyncStatusStore(this).load()
     }
 
     private fun authorize(selectAccount: Boolean) {
@@ -268,6 +286,41 @@ class GoogleDriveAccountActivity : ComponentActivity() {
         }
     }
 
+    private fun synchronize(forceReimport: Boolean) {
+        if (state.value.email == null || syncStatus.value.running) return
+        syncStatus.value = syncStatus.value.copy(
+            running = true,
+            lastMessage = if (forceReimport) "Drive上のJSONを全件再確認しています" else "Drive上の差分を確認しています",
+        )
+        lifecycleScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val token = GoogleDriveSyncAccessTokenProvider.acquire(applicationContext)
+                    GoogleDriveDirectSyncRepository(applicationContext).use { repository ->
+                        repository.synchronize(token, forceReimport)
+                    }
+                }
+            }
+            syncStatus.value = GoogleDriveDirectSyncStatusStore(applicationContext).load()
+            result.onFailure { error ->
+                val category = GoogleDriveSyncErrorPolicy.classify(error)
+                val message = "${GoogleDriveSyncErrorPolicy.message(category)}：${error.message ?: error.javaClass.simpleName}"
+                GoogleDriveDirectSyncStatusStore(applicationContext).failed(message)
+                syncStatus.value = GoogleDriveDirectSyncStatusStore(applicationContext).load()
+                state.value = state.value.copy(message = message)
+            }
+        }
+    }
+
+    private fun setAutoSync(enabled: Boolean) {
+        GoogleDriveDirectSyncStatusStore(applicationContext).setAutoSyncOnLaunch(enabled)
+        syncStatus.value = syncStatus.value.copy(autoSyncOnLaunch = enabled)
+        if (enabled) {
+            GoogleDriveDirectSyncScheduler.ensurePeriodic(applicationContext)
+            GoogleDriveDirectSyncScheduler.enqueueStartup(applicationContext)
+        }
+    }
+
     private fun handleAuthorizationFailure(error: Throwable) {
         val status = GoogleDriveAccountPolicy.statusForAuthorizationError(error)
         state.value = state.value.copy(
@@ -300,7 +353,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
                 accountStore.clear()
                 state.value = GoogleDriveAccountState(
                     message = if (it.isSuccessful) {
-                        "Googleアカウント連携を解除しました"
+                        "Googleアカウント連携を解除しました。取込済みローカル売上は削除していません"
                     } else {
                         "端末内の登録を解除しました。Google側の解除結果は確認できませんでした"
                     },
@@ -312,13 +365,20 @@ class GoogleDriveAccountActivity : ComponentActivity() {
 @Composable
 private fun GoogleDriveAccountScreen(
     state: GoogleDriveAccountState,
+    syncStatus: GoogleDriveDirectSyncStatus,
     onConnect: () -> Unit,
     onVerify: () -> Unit,
+    onSync: () -> Unit,
+    onForceSync: () -> Unit,
+    onAutoSyncChanged: (Boolean) -> Unit,
     onDisconnect: () -> Unit,
     onClose: () -> Unit,
 ) {
     Column(
-        modifier = Modifier.fillMaxSize().padding(18.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(
@@ -327,7 +387,7 @@ private fun GoogleDriveAccountScreen(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("Google Driveアカウント", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("つぐレジ＋が売上JSONを取得するGoogleアカウントを登録します")
+                Text("つぐレジ＋がDrive APIから売上JSONを差分取得します")
             }
             OutlinedButton(onClick = onClose) { Text("戻る") }
         }
@@ -342,42 +402,76 @@ private fun GoogleDriveAccountScreen(
                 },
             ),
         ) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(accountStatusLabel(state.status), fontWeight = FontWeight.Bold)
                 state.email?.let { Text("アカウント：$it") }
                 state.displayName?.let { Text("表示名：$it") }
-                Text("権限：Google Driveでこのアプリが使用するファイル（drive.file）")
+                Text("権限：drive.file（このGoogle Cloudプロジェクトが作成・許可されたファイルのみ）")
                 Text(state.message)
+            }
+        }
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(if (syncStatus.running) "Drive API同期中" else "Drive API同期状態", fontWeight = FontWeight.Bold)
+                Text(syncStatus.lastMessage)
+                Text("確認 ${syncStatus.listedCount}／取得 ${syncStatus.downloadedCount}／未変更 ${syncStatus.unchangedCount}")
+                Text("新規 ${syncStatus.importedCount}／重複 ${syncStatus.duplicateCount}／隔離 ${syncStatus.rejectedCount}／読込エラー ${syncStatus.errorCount}")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("起動時に差分同期", fontWeight = FontWeight.SemiBold)
+                        Text("接続済みの場合、起動時と1時間ごとに差分を確認します")
+                    }
+                    Switch(
+                        checked = syncStatus.autoSyncOnLaunch,
+                        onCheckedChange = onAutoSyncChanged,
+                        enabled = !syncStatus.running,
+                    )
+                }
             }
         }
 
         Button(
             onClick = onConnect,
-            enabled = state.status != GoogleDriveAccountStatus.CONNECTING,
+            enabled = state.status != GoogleDriveAccountStatus.CONNECTING && !syncStatus.running,
             modifier = Modifier.fillMaxWidth().height(52.dp),
         ) {
             Text(if (state.email == null) "Googleアカウントを登録" else "別アカウントへ変更")
         }
         OutlinedButton(
             onClick = onVerify,
-            enabled = state.email != null && state.status != GoogleDriveAccountStatus.CONNECTING,
+            enabled = state.email != null && state.status != GoogleDriveAccountStatus.CONNECTING && !syncStatus.running,
             modifier = Modifier.fillMaxWidth().height(52.dp),
         ) { Text("接続確認") }
+        Button(
+            onClick = onSync,
+            enabled = state.email != null && !syncStatus.running,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+        ) { Text("今すぐ差分同期") }
+        OutlinedButton(
+            onClick = onForceSync,
+            enabled = state.email != null && !syncStatus.running,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+        ) { Text("全件再取込") }
         OutlinedButton(
             onClick = onDisconnect,
-            enabled = state.email != null && state.status != GoogleDriveAccountStatus.CONNECTING,
+            enabled = state.email != null && state.status != GoogleDriveAccountStatus.CONNECTING && !syncStatus.running,
             modifier = Modifier.fillMaxWidth().height(52.dp),
         ) { Text("連携解除") }
 
         Card(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("初回だけ必要な開発設定", fontWeight = FontWeight.Bold)
-                Text("Google CloudでGoogle Drive APIを有効化し、つぐレジ＋のapplicationIdと署名SHA-1をAndroid OAuthクライアントとして登録します。")
-                Text("Googleアカウントのパスワードとアクセストークンは保存しません。")
-                Text("v0.44はアカウント認可とDrive API接続確認までです。JSONの直接取得は次段階で接続します。")
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text("v0.45 差分同期仕様", fontWeight = FontWeight.Bold)
+                Text("Drive APIのfileId・modifiedTime・SHA-256をSQLiteへ保存し、変更されたJSONだけを取得します。")
+                Text("取得したJSONは既存のSalesJournalImportRepositoryへ渡し、duplicateImportKeyで二重計上を防止します。")
+                Text("不正JSONは隔離します。Drive上の削除とローカル売上削除は自動連動しません。")
+                Text("フォルダ方式はUSB・端末フォルダ・Driveアプリ経由の互換用として残します。")
             }
         }
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(12.dp))
     }
 }
 
