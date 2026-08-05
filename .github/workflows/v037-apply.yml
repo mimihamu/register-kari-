@@ -1,11 +1,10 @@
-name: Apply v0.37 source changes
+name: Fix v0.37 CI template
 
 on:
   push:
     branches:
       - develop/v0.37
     paths:
-      - tools/v037_apply.py
       - .github/workflows/v037-apply.yml
   workflow_dispatch:
 
@@ -19,7 +18,7 @@ concurrency:
 jobs:
   apply:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - name: Checkout v0.37
         uses: actions/checkout@v4
@@ -27,15 +26,19 @@ jobs:
           ref: develop/v0.37
           fetch-depth: 0
 
-      - name: Apply source, tests and docs
-        run: python3 tools/v037_apply.py
+      - name: Correct cumulative version check
+        run: |
+          set -euo pipefail
+          sed -i 's/versionCode = 77/versionCode = 67/g' tools/v037_build_apk.yml
+          grep -q 'versionCode = 67' tools/v037_build_apk.yml
+          ! grep -q 'versionCode = 77' tools/v037_build_apk.yml
 
-      - name: Commit production changes and CI template
+      - name: Commit corrected CI template
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app customer-display docs tools/v037_build_apk.yml
+          git add tools/v037_build_apk.yml
           git diff --cached --check
-          git commit -m "feat: complete v0.37 customer display presentation"
+          git commit -m "ci: correct v0.37 cumulative version check"
           git push origin HEAD:develop/v0.37
