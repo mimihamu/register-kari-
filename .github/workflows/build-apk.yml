@@ -42,64 +42,56 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.44 sources
+      - name: Verify cumulative v0.14-v0.45 sources
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 74' app/build.gradle.kts
-          grep -q 'versionName = "0.44.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 75' app/build.gradle.kts
+          grep -q 'versionName = "0.45.0-dev.1"' app/build.gradle.kts
           grep -q 'versionCode = 7' customer-display/build.gradle.kts
           grep -q 'versionName = "0.14.0-dev.1"' customer-display/build.gradle.kts
-          grep -q 'versionCode = 6' management-app/build.gradle.kts
-          grep -q 'versionName = "0.6.0-dev.1"' management-app/build.gradle.kts
+          grep -q 'versionCode = 7' management-app/build.gradle.kts
+          grep -q 'versionName = "0.7.0-dev.1"' management-app/build.gradle.kts
           grep -q 'com.google.android.gms:play-services-auth:21.6.0' app/build.gradle.kts
           grep -q 'com.google.android.gms:play-services-auth:21.6.0' management-app/build.gradle.kts
+          grep -q 'androidx.work:work-runtime:2.11.2' app/build.gradle.kts
+          grep -q 'androidx.work:work-runtime:2.11.2' management-app/build.gradle.kts
           grep -q 'include(":management-app")' settings.gradle.kts
 
           for file in \
             app/src/main/AndroidManifest.xml \
             app/src/main/java/jp/co/tenposinfo/register/GoogleDriveAccountActivity.kt \
+            app/src/main/java/jp/co/tenposinfo/register/GoogleDriveDirectUpload.kt \
             app/src/main/java/jp/co/tenposinfo/register/SyncSettingsActivity.kt \
+            app/src/main/java/jp/co/tenposinfo/register/SalesJournalJsonContract.kt \
+            app/src/main/java/jp/co/tenposinfo/register/BusinessSyncFoundation.kt \
+            app/src/main/java/jp/co/tenposinfo/register/OutboxExternalDelivery.kt \
+            app/src/main/java/jp/co/tenposinfo/register/OutboxDeliveryOperations.kt \
             app/src/test/java/jp/co/tenposinfo/register/V044GoogleDriveAccountTest.kt \
+            app/src/test/java/jp/co/tenposinfo/register/V045GoogleDriveDirectUploadTest.kt \
             management-app/src/main/AndroidManifest.xml \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveAccountActivity.kt \
+            management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/MainActivity.kt \
-            management-app/src/main/java/jp/co/tenposinfo/register/plus/ManagementMobileScreen.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/ManagementFolderSyncScreen.kt \
-            management-app/src/main/java/jp/co/tenposinfo/register/plus/DriveConnection.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/ImportFolderSource.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/FolderImportRepository.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/ManagementDatabase.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/SalesJournalImportContract.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/SalesJournalImportRepository.kt \
-            management-app/src/main/java/jp/co/tenposinfo/register/plus/SalesReporting.kt \
-            management-app/src/test/java/jp/co/tenposinfo/register/plus/V039ManagementImportIntegrationTest.kt \
-            management-app/src/test/java/jp/co/tenposinfo/register/plus/V040ManagementSalesReportingIntegrationTest.kt \
-            management-app/src/test/java/jp/co/tenposinfo/register/plus/V041ManagementPortraitMobileTest.kt \
-            management-app/src/test/java/jp/co/tenposinfo/register/plus/V042FolderImportTest.kt \
-            management-app/src/test/java/jp/co/tenposinfo/register/plus/V043DriveConnectionTest.kt \
             management-app/src/test/java/jp/co/tenposinfo/register/plus/V044GoogleDriveAccountTest.kt \
-            management-app/src/test/java/jp/co/tenposinfo/register/plus/SalesJournalImportContractTest.kt \
-            management-app/src/test/java/jp/co/tenposinfo/register/plus/SalesReportCalculatorTest.kt \
+            management-app/src/test/java/jp/co/tenposinfo/register/plus/V045GoogleDriveDirectSyncTest.kt \
+            customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt \
+            customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplaySnapshotStore.kt \
+            docs/V0.45_GOOGLE_DRIVE_DIRECT_SYNC.md \
+            docs/V0.45_RELEASE_NOTES.md \
             docs/V0.44_GOOGLE_ACCOUNT_AUTHORIZATION.md \
             docs/V0.44_RELEASE_NOTES.md \
             docs/V0.43_GOOGLE_DRIVE_CONNECTION.md \
-            docs/V0.43_RELEASE_NOTES.md \
             docs/V0.42_TSUGUREGI_PLUS_FOLDER_IMPORT.md \
-            docs/V0.42_RELEASE_NOTES.md \
             docs/V0.41_TSUGUREGI_PLUS_MOBILE_PORTRAIT.md \
             docs/V0.40_TSUGUREGI_PLUS_SALES_REPORTING.md \
             docs/V0.39_TSUGUREGI_PLUS_IMPORT.md \
-            app/src/main/java/jp/co/tenposinfo/register/SalesJournalJsonContract.kt \
-            app/src/main/java/jp/co/tenposinfo/register/BusinessSyncFoundation.kt \
-            app/src/main/java/jp/co/tenposinfo/register/OutboxExternalDelivery.kt \
-            app/src/main/java/jp/co/tenposinfo/register/OutboxDeliveryOperations.kt \
-            app/src/main/java/jp/co/tenposinfo/register/ExternalBackupSync.kt \
-            app/src/main/java/jp/co/tenposinfo/register/AutoBackup.kt \
-            app/src/main/java/jp/co/tenposinfo/register/UnifiedPrintQueue.kt \
-            app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt \
-            customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt \
-            customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplaySnapshotStore.kt \
             docs/schemas/tsuguregi-sales-journal-v1.schema.json; do
             test -s "$file"
           done
@@ -110,19 +102,18 @@ jobs:
           root = Path('app/src/main/java/jp/co/tenposinfo/register')
           plus = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus')
           pos_account = (root / 'GoogleDriveAccountActivity.kt').read_text()
+          pos_drive = (root / 'GoogleDriveDirectUpload.kt').read_text()
           plus_account = (plus / 'GoogleDriveAccountActivity.kt').read_text()
-          sync_ui = (root / 'SyncSettingsActivity.kt').read_text()
-          activity = (plus / 'MainActivity.kt').read_text()
-          folder_source = (plus / 'ImportFolderSource.kt').read_text()
-          folder_repo = (plus / 'FolderImportRepository.kt').read_text()
+          plus_drive = (plus / 'GoogleDriveDirectSync.kt').read_text()
+          plus_db = (plus / 'ManagementDatabase.kt').read_text()
+          plus_import = (plus / 'SalesJournalImportRepository.kt').read_text()
           folder_ui = (plus / 'ManagementFolderSyncScreen.kt').read_text()
-          drive_connection = (plus / 'DriveConnection.kt').read_text()
-          mobile_ui = (plus / 'ManagementMobileScreen.kt').read_text()
-          database = (plus / 'ManagementDatabase.kt').read_text()
-          journal_repo = (plus / 'SalesJournalImportRepository.kt').read_text()
-          reporting = (plus / 'SalesReporting.kt').read_text()
+          pos_manifest = Path('app/src/main/AndroidManifest.xml').read_text()
           plus_manifest = Path('management-app/src/main/AndroidManifest.xml').read_text()
-          register_manifest = Path('app/src/main/AndroidManifest.xml').read_text()
+          contract = (root / 'SalesJournalJsonContract.kt').read_text()
+          foundation = (root / 'BusinessSyncFoundation.kt').read_text()
+          saf_delivery = (root / 'OutboxExternalDelivery.kt').read_text()
+          schema = Path('docs/schemas/tsuguregi-sales-journal-v1.schema.json').read_text()
 
           for account_source in (pos_account, plus_account):
               for token in (
@@ -139,80 +130,76 @@ jobs:
               assert 'putString("access_token"' not in account_source
               assert 'putString("refresh_token"' not in account_source
 
-          assert 'GoogleDriveAccountActivity::class.java' in sync_ui
-          assert '互換用フォルダ送信設定' in sync_ui
-          assert 'Googleアカウント連携' in folder_ui
-          assert 'フォルダ方式は互換用' in folder_ui
-          assert 'android:name=".GoogleDriveAccountActivity"' in register_manifest
-          assert 'android:name=".GoogleDriveAccountActivity"' in plus_manifest
-
           for token in (
-              'takePersistableUriPermission',
-              'releasePersistableUriPermission',
-              'DocumentsContract.buildChildDocumentsUriUsingTree',
-              'MAX_RECURSION_DEPTH = 12',
-              'MAX_JSON_DOCUMENTS = 5_000',
+              'GoogleDriveAccessTokenProvider',
+              'GoogleDriveAccountPolicy.requestedScopes',
+              'https://www.googleapis.com/drive/v3/files',
+              'https://www.googleapis.com/upload/drive/v3/files',
+              'supportsAllDrives=false',
+              'spaces=drive',
+              'appProperties has',
+              'sales-journal-root',
+              'storeId',
+              'terminalId',
+              'businessDate',
+              'duplicateKey',
               'contentSha256',
-              'forceRescan',
+              'drive_api_uploads',
+              "o.status IN ('STAGED','SENT')",
+              'GoogleDriveDirectUploadWorker',
+              'GoogleDriveDirectUploadScheduler',
+              'OutboxDeliverySettingsStore',
           ):
-              assert token in folder_source, token
-          for token in ('knownFingerprints', 'recordProcessedFiles', 'CONFLICT_REPLACE'):
-              assert token in folder_repo, token
-          for token in (
-              'DriveConnectionStatus',
-              'PERMISSION_MISSING',
-              'PROVIDER_UNAVAILABLE',
-              'READ_FAILED',
-              'persistedUriPermissions',
-              'resolveContentProvider',
-              'DocumentsContract.getTreeDocumentId',
-              'AUTO_IMPORT_COOLDOWN_MS',
-              'DriveSyncPreferences',
-          ):
-              assert token in drive_connection, token
-          for token in (
-              '差分取込',
-              '全件再確認',
-              'OpenDocumentTree',
-              '接続診断',
-              '永続読取権限',
-              '起動時に差分取込',
-              'DriveConnectionPolicy.shouldAutoImport',
-          ):
-              assert token in folder_ui, token
-          for token in ('TsuguRegiPlusFolderSyncScreen', 'importRegisteredFolder', '差分はありませんでした'):
-              assert token in activity, token
-          for token in ('folder_import_files', 'DATABASE_VERSION = 3', 'idx_folder_import_files_tree'):
-              assert token in database, token
+              assert token in pos_drive, token
+          assert 'putString("access_token"' not in pos_drive
+          assert 'putString("refresh_token"' not in pos_drive
+          assert 'https://www.googleapis.com/auth/drive"' not in pos_drive
 
+          for token in (
+              'GoogleDriveSyncAccessTokenProvider',
+              'GoogleDriveAccountPolicy.requestedScopes',
+              'files(id,name,modifiedTime,size,appProperties)',
+              'supportsAllDrives=false',
+              'spaces=drive',
+              'appProperties has',
+              'sales-journal',
+              'drive_sync_files',
+              'file_id',
+              'modified_time',
+              'content_sha256',
+              'SalesJournalImportRepository(database).importDocuments',
+              'forceReimport',
+              'GoogleDriveDirectSyncWorker',
+              'GoogleDriveDirectSyncScheduler',
+              'enqueueStartup',
+          ):
+              assert token in plus_drive, token
+          assert 'putString("access_token"' not in plus_drive
+          assert 'putString("refresh_token"' not in plus_drive
+          assert 'DATABASE_VERSION = 4' in plus_db
+          assert 'drive_sync_files' in plus_db
+          assert 'fun importDocuments' in plus_import
+
+          assert 'GoogleDriveDirectUploadBootstrapProvider' in pos_manifest
+          assert 'GoogleDriveDirectSyncBootstrapProvider' in plus_manifest
+          assert 'android:screenOrientation="landscape"' in pos_manifest
           assert 'android:screenOrientation="sensorPortrait"' in plus_manifest
           assert 'android:screenOrientation="landscape"' not in plus_manifest
-          assert 'android:screenOrientation="landscape"' in register_manifest
-          assert 'NavigationBar' in mobile_ui
-          assert 'fun importDocuments' in journal_repo
-          assert 'object SalesReportCalculator' in reporting
-
-          contract = (root / 'SalesJournalJsonContract.kt').read_text()
-          foundation = (root / 'BusinessSyncFoundation.kt').read_text()
-          delivery = (root / 'OutboxExternalDelivery.kt').read_text()
-          operations = (root / 'OutboxDeliveryOperations.kt').read_text()
-          mirror = (root / 'ExternalBackupSync.kt').read_text()
-          backup = (root / 'AutoBackup.kt').read_text()
-          queue = (root / 'UnifiedPrintQueue.kt').read_text()
-          schema = Path('docs/schemas/tsuguregi-sales-journal-v1.schema.json').read_text()
+          assert 'フォルダ方式は互換用' in folder_ui
+          assert '今すぐアップロード' in pos_account
+          assert '今すぐ差分同期' in plus_account
+          assert '全件再取込' in plus_account
+          assert '起動時に差分同期' in plus_account
 
           assert 'DUPLICATE_KEY_VERSION = 1' in contract
           assert 'SalesJournalJsonContract.wrap' in foundation
-          assert "status='STAGED'" in delivery
-          assert 'fun retryItem' in operations
-          assert 'ExternalBackupMirrorWorker' in mirror
-          assert 'AutoBackupWorker' in backup
-          assert 'DISCARDED' in queue
+          assert "status='STAGED'" in saf_delivery
           assert 'jp.co.tenposinfo.tsuguregi.sales-journal' in schema
 
-          for version in ('v044', 'v043', 'v042', 'v041', 'v040', 'v039', 'v038', 'v037', 'v036', 'v035'):
+          for version in ('v045', 'v044', 'v043', 'v042', 'v041', 'v040', 'v039', 'v038', 'v037', 'v036', 'v035'):
               assert not list(Path('tools').glob(f'{version}*'))
               assert not Path(f'.github/workflows/{version}-apply.yml').exists()
+          assert not Path('.github/workflows/v045-source-export-temp.yml').exists()
           PY
 
       - name: Verify launcher and orientation configuration
@@ -228,8 +215,6 @@ jobs:
           grep -q 'android:screenOrientation="sensorPortrait"' management-app/src/main/AndroidManifest.xml
           ! grep -q 'android:screenOrientation="landscape"' management-app/src/main/AndroidManifest.xml
           grep -q 'android:screenOrientation="landscape"' app/src/main/AndroidManifest.xml
-          grep -q 'android:name=".GoogleDriveAccountActivity"' app/src/main/AndroidManifest.xml
-          grep -q 'android:name=".GoogleDriveAccountActivity"' management-app/src/main/AndroidManifest.xml
 
       - name: Run cumulative unit tests
         run: gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest :management-app:testDebugUnitTest
@@ -245,17 +230,17 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.44.0_dev1_google_account_debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.45.0_dev1_drive_api_sync_debug.apk
           cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
-          cp management-app/build/outputs/apk/debug/management-app-debug.apk artifacts/TSUGUREGI_PLUS_v0.6.0_dev1_google_account_debug.apk
+          cp management-app/build/outputs/apk/debug/management-app-debug.apk artifacts/TSUGUREGI_PLUS_v0.7.0_dev1_drive_api_sync_debug.apk
 
-          sha256sum artifacts/TSUGUREGI_v0.44.0_dev1_google_account_debug.apk | tee artifacts/TSUGUREGI_v0.44.0_dev1_google_account_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_v0.45.0_dev1_drive_api_sync_debug.apk | tee artifacts/TSUGUREGI_v0.45.0_dev1_drive_api_sync_debug.apk.sha256
           sha256sum artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk | tee artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk.sha256
-          sha256sum artifacts/TSUGUREGI_PLUS_v0.6.0_dev1_google_account_debug.apk | tee artifacts/TSUGUREGI_PLUS_v0.6.0_dev1_google_account_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_PLUS_v0.7.0_dev1_drive_api_sync_debug.apk | tee artifacts/TSUGUREGI_PLUS_v0.7.0_dev1_drive_api_sync_debug.apk.sha256
 
-          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.44.0_dev1_google_account_debug.apk | tee artifacts/build-summary.txt
+          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.45.0_dev1_drive_api_sync_debug.apk | tee artifacts/build-summary.txt
           stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk | tee -a artifacts/build-summary.txt
-          stat --printf='MANAGEMENT_APP_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_PLUS_v0.6.0_dev1_google_account_debug.apk | tee -a artifacts/build-summary.txt
+          stat --printf='MANAGEMENT_APP_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_PLUS_v0.7.0_dev1_drive_api_sync_debug.apk | tee -a artifacts/build-summary.txt
 
           keytool -list -v \
             -keystore app/build/signing/tsuguregi-development.jks \
@@ -265,30 +250,28 @@ jobs:
             | tee -a artifacts/build-summary.txt
 
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.44.0-dev.1
-          REGISTER_VERSION_CODE=74
+          REGISTER_VERSION_NAME=0.45.0-dev.1
+          REGISTER_VERSION_CODE=75
           REGISTER_APPLICATION_ID_DEBUG=jp.co.tenposinfo.register.dev
           CUSTOMER_DISPLAY_VERSION_NAME=0.14.0-dev.1
           CUSTOMER_DISPLAY_VERSION_CODE=7
-          MANAGEMENT_APP_VERSION_NAME=0.6.0-dev.1
-          MANAGEMENT_APP_VERSION_CODE=6
+          MANAGEMENT_APP_VERSION_NAME=0.7.0-dev.1
+          MANAGEMENT_APP_VERSION_CODE=7
           MANAGEMENT_APP_APPLICATION_ID_DEBUG=jp.co.tenposinfo.register.plus.dev
           MANAGEMENT_SCREEN_ORIENTATION=sensorPortrait
-          GOOGLE_ACCOUNT_AUTHORIZATION=true
           GOOGLE_AUTHORIZATION_LIBRARY=play-services-auth-21.6.0
           GOOGLE_DRIVE_SCOPE=https://www.googleapis.com/auth/drive.file
-          GOOGLE_DRIVE_API_PROBE=drive-v3-about-get
+          GOOGLE_DRIVE_DIRECT_UPLOAD=true
+          GOOGLE_DRIVE_DIRECT_DOWNLOAD=true
+          GOOGLE_DRIVE_DIFFERENTIAL_SYNC=true
           GOOGLE_ACCESS_TOKEN_PERSISTED=false
           GOOGLE_REFRESH_TOKEN_PERSISTED=false
-          GOOGLE_DRIVE_DIRECT_UPLOAD=false
-          GOOGLE_DRIVE_DIRECT_DOWNLOAD=false
           SAF_FOLDER_COMPATIBILITY=true
-          MANAGEMENT_DATABASE=sqlite-open-helper-version-3
+          MANAGEMENT_DATABASE=sqlite-open-helper-version-4
+          SHARED_DRIVES_SUPPORTED=false
           SIGNING=development-not-production
-          REAL_DEVICE_GOOGLE_ACCOUNT_AUTHORIZATION=required
-          REAL_DEVICE_GOOGLE_DRIVE_API_PROBE=required
-          REAL_DEVICE_MANAGEMENT_PORTRAIT_VERIFICATION=required
-          REAL_DEVICE_CUSTOMER_DISPLAY_VERIFICATION=required
+          REAL_DEVICE_GOOGLE_DRIVE_DIRECT_SYNC=required
+          REAL_DEVICE_CROSS_APP_DRIVE_FILE_SCOPE=required
           EOF
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
@@ -296,14 +279,14 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.44.0-dev1-google-account-authorization-apks
+          name: TSUGUREGI-v0.45.0-dev1-drive-api-sync-apks
           path: |
-            artifacts/TSUGUREGI_v0.44.0_dev1_google_account_debug.apk
-            artifacts/TSUGUREGI_v0.44.0_dev1_google_account_debug.apk.sha256
+            artifacts/TSUGUREGI_v0.45.0_dev1_drive_api_sync_debug.apk
+            artifacts/TSUGUREGI_v0.45.0_dev1_drive_api_sync_debug.apk.sha256
             artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
             artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk.sha256
-            artifacts/TSUGUREGI_PLUS_v0.6.0_dev1_google_account_debug.apk
-            artifacts/TSUGUREGI_PLUS_v0.6.0_dev1_google_account_debug.apk.sha256
+            artifacts/TSUGUREGI_PLUS_v0.7.0_dev1_drive_api_sync_debug.apk
+            artifacts/TSUGUREGI_PLUS_v0.7.0_dev1_drive_api_sync_debug.apk.sha256
             artifacts/build-summary.txt
           if-no-files-found: error
           retention-days: 30
