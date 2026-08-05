@@ -38,27 +38,31 @@ class CustomerDisplayPresentationPolicyTest {
 
     @Test
     fun cacheFreshnessHasExplicitBoundary() {
-        val now = CustomerDisplaySnapshotCachePolicy.MAX_AGE_MS + 1_000L
+        val savedAt = 1_000L
         assertTrue(
             CustomerDisplaySnapshotCachePolicy.isFresh(
-                now - CustomerDisplaySnapshotCachePolicy.MAX_AGE_MS,
-                now,
+                savedAt,
+                savedAt + CustomerDisplaySnapshotCachePolicy.MAX_AGE_MS,
             ),
         )
         assertFalse(
             CustomerDisplaySnapshotCachePolicy.isFresh(
-                now - CustomerDisplaySnapshotCachePolicy.MAX_AGE_MS - 1L,
-                now,
+                savedAt,
+                savedAt + CustomerDisplaySnapshotCachePolicy.MAX_AGE_MS + 1L,
             ),
         )
-        assertFalse(CustomerDisplaySnapshotCachePolicy.isFresh(0L, now))
+        assertFalse(CustomerDisplaySnapshotCachePolicy.isFresh(0L, savedAt))
+        assertFalse(CustomerDisplaySnapshotCachePolicy.isFresh(savedAt + 1L, savedAt))
     }
 
     @Test
     fun optionalPresentationAndTaxFieldsRemainBackwardCompatible() {
-        val source = File(
-            "src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayModel.kt",
-        ).readText()
+        val sourceFile = sequenceOf(
+            File("src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayModel.kt"),
+            File("customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayModel.kt"),
+        ).firstOrNull { it.isFile }
+            ?: error("CustomerDisplayModel.kt was not found from the test working directory")
+        val source = sourceFile.readText()
 
         assertTrue(source.contains("root.optJSONObject(\"presentation\")"))
         assertTrue(source.contains("taxSymbol = item.optString(\"taxSymbol\")"))
