@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.tenposinfo.co.jp/tsuguregi/sales-journal/v1",
+  "title": "つぐレジ 売上ジャーナル外部JSON v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "minimumReaderVersion",
+    "duplicateKeyVersion",
+    "eventId",
+    "duplicateImportKey",
+    "eventType",
+    "storeId",
+    "terminalId",
+    "businessDate",
+    "aggregateId",
+    "occurredAt",
+    "payloadSchema",
+    "payload"
+  ],
+  "properties": {
+    "schema": {
+      "const": "jp.co.tenposinfo.tsuguregi.sales-journal"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "minimumReaderVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1
+    },
+    "duplicateKeyVersion": {
+      "const": 1
+    },
+    "eventId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "duplicateImportKey": {
+      "type": "string",
+      "pattern": "^sj1-[0-9a-f]{64}$"
+    },
+    "eventType": {
+      "enum": [
+        "SALE",
+        "REVERSAL",
+        "INSPECTION",
+        "Z_SETTLEMENT",
+        "CASH_MOVEMENT",
+        "BUSINESS_OPEN",
+        "BUSINESS_STATE",
+        "MENU_REVISION"
+      ]
+    },
+    "storeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "terminalId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "businessDate": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "aggregateId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "occurredAt": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "payloadSchema": {
+      "type": "string",
+      "minLength": 1
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "items": {
+          "type": "array"
+        },
+        "taxTotals": {
+          "type": "array"
+        },
+        "payments": {
+          "type": "array"
+        }
+      }
+    }
+  }
+}
