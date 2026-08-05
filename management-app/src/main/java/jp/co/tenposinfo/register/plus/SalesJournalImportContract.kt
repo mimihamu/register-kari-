@@ -12,6 +12,7 @@ enum class ImportRejectionCode {
     UNSUPPORTED_VERSION,
     MISSING_FIELD,
     INVALID_FIELD,
+    DUPLICATE_KEY_MISMATCH,
     UNSUPPORTED_EVENT_TYPE,
     UNSUPPORTED_PAYLOAD_SCHEMA,
     PAYLOAD_SCHEMA_MISMATCH,
@@ -160,6 +161,21 @@ object SalesJournalImportContract {
             )
         }
 
+        val expectedDuplicateKey = expectedDuplicateImportKey(
+            duplicateKeyVersion = duplicateKeyVersion,
+            storeId = storeId,
+            terminalId = terminalId,
+            businessDate = businessDate,
+            eventType = eventType,
+            eventId = eventId,
+        )
+        if (duplicateImportKey != expectedDuplicateKey) {
+            return rejected(
+                ImportRejectionCode.DUPLICATE_KEY_MISMATCH,
+                "duplicateImportKeyが識別項目から再計算した値と一致しません",
+            )
+        }
+
         if (!root.has("occurredAt") || root.isNull("occurredAt")) {
             return missing("occurredAt")
         }
@@ -203,6 +219,26 @@ object SalesJournalImportContract {
                 rawJson = rawJson,
             ),
         )
+    }
+
+    fun expectedDuplicateImportKey(
+        duplicateKeyVersion: Int = SUPPORTED_DUPLICATE_KEY_VERSION,
+        storeId: String,
+        terminalId: String,
+        businessDate: String,
+        eventType: String,
+        eventId: String,
+    ): String {
+        require(duplicateKeyVersion == SUPPORTED_DUPLICATE_KEY_VERSION)
+        val source = listOf(
+            duplicateKeyVersion.toString(),
+            storeId,
+            terminalId,
+            businessDate,
+            eventType,
+            eventId,
+        ).joinToString("|")
+        return "sj$duplicateKeyVersion-${sha256(source)}"
     }
 
     fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
