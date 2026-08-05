@@ -52,7 +52,7 @@ class V037CustomerDisplayPresentationTest {
 
         assertEquals(1, snapshot.schemaVersion)
         assertEquals(presentation, snapshot.presentation)
-        assertEquals("内※", snapshot.items.single().taxSymbol)
+        assertEquals("内※", snapshot.orderItems.single().taxSymbol)
 
         val protocol = File("src/main/java/jp/co/tenposinfo/register/CustomerDisplayProtocol.kt").readText()
         assertTrue(protocol.contains("put(\"presentation\""))
