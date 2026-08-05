@@ -46,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -297,7 +298,7 @@ private fun StandbyScreen(
             verticalArrangement = Arrangement.spacedBy(if (layoutMode.compact) 12.dp else 18.dp),
             modifier = Modifier.padding(16.dp),
         ) {
-            LogoBadge(snapshot.presentation, compact = layoutMode.compact.not())
+            LogoBadge(snapshot.presentation, compact = layoutMode.compact)
             Text(
                 snapshot.storeName,
                 color = Accent,
