@@ -36,7 +36,10 @@ object CustomerDisplayRuntime {
             if (existing == config && ((config.enabled && server != null) || (!config.enabled && server == null))) return
             stopLocked()
             currentConfig = config
-            latestSnapshot = latestSnapshot.copy(storeName = config.storeName)
+            latestSnapshot = latestSnapshot.copy(
+                storeName = config.storeName,
+                presentation = config.presentation,
+            )
             lastError = null
             connectedClients = 0
             if (!config.enabled) return
@@ -160,10 +163,10 @@ internal class CustomerDisplayPoller(
             lastCartFingerprint = fingerprint(cart)
             lastSeenSaleId = latestSale?.id ?: 0L
             if (cart.isEmpty()) {
-                publish(CustomerDisplaySnapshotFactory.standby(config.storeName))
+                publish(CustomerDisplaySnapshotFactory.standby(config.storeName, config.presentation))
             } else {
                 latestProductId = cart.lastOrNull()?.product?.id
-                publish(CustomerDisplaySnapshotFactory.sales(cart, config.storeName, latestProductId))
+                publish(CustomerDisplaySnapshotFactory.sales(cart, config.storeName, latestProductId, config.presentation))
             }
             return
         }
@@ -174,23 +177,23 @@ internal class CustomerDisplayPoller(
             val detectedLatest = detectLatestProduct(previousCart, cart)
             if (detectedLatest != null) latestProductId = detectedLatest
             if (cartFingerprint != lastCartFingerprint) {
-                publish(CustomerDisplaySnapshotFactory.sales(cart, config.storeName, latestProductId))
+                publish(CustomerDisplaySnapshotFactory.sales(cart, config.storeName, latestProductId, config.presentation))
             }
         } else {
             val saleId = latestSale?.id ?: 0L
             if (saleId > lastSeenSaleId && saleId != lastPublishedSaleId) {
                 val detail = database.loadSaleDetail(saleId)
                 if (detail != null) {
-                    publish(CustomerDisplaySnapshotFactory.complete(detail, config.storeName))
+                    publish(CustomerDisplaySnapshotFactory.complete(detail, config.storeName, config.presentation))
                     lastPublishedSaleId = saleId
                     completeUntil = now + config.completeSeconds * 1_000L
                 }
             } else if (completeUntil > 0L && now >= completeUntil) {
-                publish(CustomerDisplaySnapshotFactory.standby(config.storeName))
+                publish(CustomerDisplaySnapshotFactory.standby(config.storeName, config.presentation))
                 completeUntil = 0L
                 latestProductId = null
             } else if (previousCart.isNotEmpty() && saleId <= lastSeenSaleId && completeUntil == 0L) {
-                publish(CustomerDisplaySnapshotFactory.standby(config.storeName))
+                publish(CustomerDisplaySnapshotFactory.standby(config.storeName, config.presentation))
                 latestProductId = null
             }
             lastSeenSaleId = maxOf(lastSeenSaleId, saleId)
