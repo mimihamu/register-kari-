@@ -51,8 +51,8 @@ class V040ManagementSalesReportingIntegrationTest {
         assertTrue(calculatorTest.isFile)
         assertTrue(calculatorTest.readText().contains("SalesReportCalculator"))
 
-        assertTrue(registerBuild.contains("versionCode = 76"))
-        assertTrue(registerBuild.contains("versionName = \"0.46.0-dev.1\""))
+        assertTrue(registerBuild.contains("versionCode = 77"))
+        assertTrue(registerBuild.contains("versionName = \"0.47.0-dev.1\""))
         assertTrue(plusBuild.contains("versionCode = 7"))
         assertTrue(plusBuild.contains("versionName = \"0.7.0-dev.1\""))
         assertTrue(workflow.contains(":management-app:testDebugUnitTest"))
