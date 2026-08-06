@@ -110,7 +110,7 @@ class V036SalesJournalJsonContractTest {
         assertTrue(schema.contains("\"schemaVersion\""))
         assertTrue(schema.contains("\"duplicateImportKey\""))
         assertTrue(schema.contains("\"taxTotals\""))
-        assertTrue(build.contains("versionCode = 83"))
-        assertTrue(build.contains("versionName = \"0.53.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 84"))
+        assertTrue(build.contains("versionName = \"0.54.0-dev.1\""))
     }
 }
