@@ -32,10 +32,13 @@ jobs:
       - name: Apply navigation and version changes
         run: python3 tools/v048_apply.py
 
-      - name: Remove temporary patch files
-        run: git rm tools/v048_apply.py .github/workflows/v048-apply-temp.yml
+      - name: Export generated CI and restore tracked workflow
+        run: |
+          cp .github/workflows/build-apk.yml tools/build-apk-v048.generated.yml
+          git checkout -- .github/workflows/build-apk.yml
+          git rm tools/v048_apply.py
 
-      - name: Commit and push v0.48
+      - name: Commit and push v0.48 code
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
