@@ -6,6 +6,7 @@ on:
       - develop/v0.51
     paths:
       - tools/v051_apply.py
+      - tools/v051_trigger.txt
   workflow_dispatch:
 
 permissions:
