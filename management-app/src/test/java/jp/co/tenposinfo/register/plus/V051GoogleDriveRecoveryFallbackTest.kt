@@ -54,7 +54,7 @@ class V051GoogleDriveRecoveryFallbackTest {
             "DriveSyncPreferences(applicationContext).setAutoImportOnLaunch(true)",
             "GoogleDriveDirectSyncStatusStore(applicationContext).setAutoSyncOnLaunch(false)",
             "GoogleDriveDirectSyncScheduler.setAutomaticSyncEnabled",
-            "if (connection.status == DriveConnectionStatus.READY)",
+            "connection.status == DriveConnectionStatus.READY",
             "同じGoogle Driveフォルダを選択",
             "Googleアカウント連携、取込済み売上",
         )) assertTrue(recovery.contains(token))
@@ -63,16 +63,16 @@ class V051GoogleDriveRecoveryFallbackTest {
         assertTrue(directSync.contains("cancelUniqueWork(PERIODIC_NAME)"))
         assertTrue(directSync.contains("cancelUniqueWork(STARTUP_NAME)"))
         assertTrue(account.contains("GoogleDriveRecoveryActivity::class.java"))
-        assertTrue(account.contains("互換フォルダ方式へ切替"))
+        assertTrue(account.contains("運用セットアップ・復旧"))
         assertTrue(folderScreen.contains("Drive APIで取得できない場合の復旧経路"))
         assertTrue(manifest.contains("android:name=\".GoogleDriveRecoveryActivity\""))
         assertTrue(manifest.contains("android:screenOrientation=\"sensorPortrait\""))
-        assertTrue(registerBuild.contains("versionCode = 81"))
-        assertTrue(registerBuild.contains("versionName = \"0.51.0-dev.1\""))
-        assertTrue(plusBuild.contains("versionCode = 10"))
-        assertTrue(plusBuild.contains("versionName = \"0.10.0-dev.1\""))
+        assertTrue(registerBuild.contains("versionCode = 82"))
+        assertTrue(registerBuild.contains("versionName = \"0.52.0-dev.1\""))
+        assertTrue(plusBuild.contains("versionCode = 11"))
+        assertTrue(plusBuild.contains("versionName = \"0.11.0-dev.1\""))
         assertTrue(workflow.contains("V051GoogleDriveRecoveryFallbackTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.10.0_dev1_drive_recovery_fallback_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.11.0_dev1_drive_operations_setup_debug.apk"))
         assertTrue(docs.contains("Drive API自動同期を停止"))
         assertFalse(recovery.contains("putString(\"access_token\""))
         assertFalse(recovery.contains("putString(\"refresh_token\""))

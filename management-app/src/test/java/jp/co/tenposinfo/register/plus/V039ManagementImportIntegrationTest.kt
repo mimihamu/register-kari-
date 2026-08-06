@@ -24,11 +24,11 @@ class V039ManagementImportIntegrationTest {
         val notes = File(root, "docs/V0.39_RELEASE_NOTES.md").readText()
 
         assertTrue(settings.contains("include(\":management-app\")"))
-        assertTrue(appBuild.contains("versionCode = 81"))
-        assertTrue(appBuild.contains("versionName = \"0.51.0-dev.1\""))
+        assertTrue(appBuild.contains("versionCode = 82"))
+        assertTrue(appBuild.contains("versionName = \"0.52.0-dev.1\""))
         assertTrue(plusBuild.contains("applicationId = \"jp.co.tenposinfo.register.plus\""))
-        assertTrue(plusBuild.contains("versionCode = 10"))
-        assertTrue(plusBuild.contains("versionName = \"0.10.0-dev.1\""))
+        assertTrue(plusBuild.contains("versionCode = 11"))
+        assertTrue(plusBuild.contains("versionName = \"0.11.0-dev.1\""))
         assertTrue(manifest.contains("android:name=\".MainActivity\""))
         assertTrue(manifest.contains("android.intent.category.LAUNCHER"))
 
@@ -54,7 +54,7 @@ class V039ManagementImportIntegrationTest {
 
         assertTrue(workflow.contains(":management-app:testDebugUnitTest"))
         assertTrue(workflow.contains(":management-app:assembleDebug"))
-        assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.10.0_dev1_drive_recovery_fallback_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.11.0_dev1_drive_operations_setup_debug.apk"))
         assertTrue(docs.contains("重複取込"))
         assertTrue(docs.contains("不正データ隔離"))
         assertTrue(notes.contains("つぐレジ＋"))
