@@ -93,7 +93,7 @@ class V042FolderImportTest {
         assertTrue(plusBuild.contains("versionName = \"0.7.0-dev.1\""))
         assertTrue(workflow.contains(":management-app:testDebugUnitTest"))
         assertTrue(workflow.contains(":management-app:assembleDebug"))
-        assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.7.0_dev1_drive_api_sync_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.8.0_dev1_drive_setup_diagnostics_debug.apk"))
         assertTrue(docs.contains("内容SHA-256"))
         assertTrue(docs.contains("全件再確認"))
         assertTrue(notes.contains("取込フォルダ"))
