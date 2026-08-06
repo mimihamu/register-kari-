@@ -7,12 +7,20 @@ on:
     paths:
       - tools/v048_apply.py
       - .github/workflows/v048-apply-temp.yml
+  pull_request:
+    branches:
+      - develop/v0.47
+    types:
+      - opened
+      - reopened
+      - synchronize
 
 permissions:
   contents: write
 
 jobs:
   apply:
+    if: github.head_ref == 'develop/v0.48' || github.ref_name == 'develop/v0.48'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout v0.48
