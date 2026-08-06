@@ -1,0 +1,37 @@
+name: v0.52 apply temporary
+
+on:
+  push:
+    branches:
+      - develop/v0.52
+    paths:
+      - tools/v052_apply.py
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v0.52
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply v0.52
+        run: python tools/v052_apply.py
+      - name: Commit generated sources
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A -- app management-app customer-display docs tools
+          if git diff --cached --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git commit -m "v0.52 add Drive operations setup"
+          git push origin HEAD:develop/v0.52
