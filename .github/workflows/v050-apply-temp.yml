@@ -1,0 +1,35 @@
+name: Apply v0.50 Drive cross-app connection test
+
+on:
+  push:
+    branches:
+      - develop/v0.50
+    paths:
+      - tools/v050_apply.py
+      - .github/workflows/v050-apply-temp.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout v0.50
+        uses: actions/checkout@v4
+        with:
+          ref: develop/v0.50
+          fetch-depth: 0
+
+      - name: Apply v0.50 changes
+        run: python3 tools/v050_apply.py
+
+      - name: Commit source changes and generated CI
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app management-app docs tools/build-apk-v050.generated.yml
+          git commit -m "v0.50 add Drive cross-app connection test"
+          git push origin HEAD:develop/v0.50
