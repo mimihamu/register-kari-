@@ -1,0 +1,68 @@
+name: Finalize validated v0.53 source
+
+on:
+  pull_request:
+    branches:
+      - develop/v0.52
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  finalize:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'develop/v0.53'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout branch head
+        uses: actions/checkout@v4
+        with:
+          ref: develop/v0.53
+          fetch-depth: 0
+
+      - name: Download validated generated source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api \
+            -H 'Accept: application/vnd.github+json' \
+            /repos/mimihamu/register-kari-/actions/artifacts/8970672520/zip \
+            > /tmp/v053-artifact.zip
+          rm -rf /tmp/v053-artifact /tmp/v053-source
+          mkdir -p /tmp/v053-artifact /tmp/v053-source
+          unzip -q /tmp/v053-artifact.zip -d /tmp/v053-artifact
+          test -s /tmp/v053-artifact/v053-generated-source.zip
+          echo '2355920ea3a8118e9108c7000daba5794cd864767c87a57128d37dc1d1ad0d28  /tmp/v053-artifact/v053-generated-source.zip' | sha256sum --check --strict
+          unzip -q /tmp/v053-artifact/v053-generated-source.zip -d /tmp/v053-source
+          test -s /tmp/v053-source/repository/.github/workflows/build-apk.yml
+          test -s /tmp/v053-source/repository/management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveSyncVerificationActivity.kt
+
+      - name: Replace branch with validated source
+        run: |
+          set -euo pipefail
+          rsync -a --delete \
+            --exclude='.git' \
+            --exclude='.gradle' \
+            --exclude='.kotlin' \
+            --exclude='*/build' \
+            /tmp/v053-source/repository/ ./
+          test ! -e tools/v053_apply.py
+          test ! -e tools/build-apk-v052-source.yml
+          test ! -e .github/workflows/v053-finalize-generated-source.yml
+          grep -q 'versionName = "0.53.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionName = "0.12.0-dev.1"' management-app/build.gradle.kts
+
+      - name: Commit validated source
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git status --short
+          test -n "$(git status --porcelain)"
+          git commit -m 'v0.53 Google Drive sales sync verification and recovery'
+          git push origin HEAD:develop/v0.53
