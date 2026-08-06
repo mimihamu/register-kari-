@@ -56,6 +56,12 @@ jobs:
           test -s management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveSyncVerificationActivity.kt
           test -s management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt
           test -s management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveRecoveryActivity.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V044GoogleDriveAccountTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V046GoogleDriveSetupGuideTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V047GoogleDriveDiagnosticsTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V048GoogleDriveSettingsEntryTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V050GoogleDriveCrossAppConnectionTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V051GoogleDriveRecoveryFallbackTest.kt
           test -s management-app/src/test/java/jp/co/tenposinfo/register/plus/V044GoogleDriveAccountTest.kt
           test -s management-app/src/test/java/jp/co/tenposinfo/register/plus/V049GoogleDrivePlusSetupDiagnosticsTest.kt
           test -s management-app/src/test/java/jp/co/tenposinfo/register/plus/V050GoogleDriveCrossAppConnectionTest.kt
