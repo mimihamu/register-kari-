@@ -134,11 +134,18 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                             Spacer(Modifier.height(10.dp))
                             Button(
                                 onClick = {
-                                    context.startActivity(Intent(context, GoogleDriveSetupGuideActivity::class.java))
+                                    context.startActivity(Intent(context, GoogleDriveEasyConnectActivity::class.java))
                                 },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = SyBlue),
-                            ) { Text("Google Drive初期設定・アカウント") }
+                            ) { Text("Googleかんたん接続") }
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    context.startActivity(Intent(context, GoogleDriveSetupGuideActivity::class.java))
+                                },
+                                modifier = Modifier.fillMaxWidth().height(46.dp),
+                            ) { Text("初期設定ガイド・詳細") }
                             Spacer(Modifier.height(10.dp))
                             OutlinedButton(
                                 onClick = {
@@ -164,9 +171,9 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                             Spacer(Modifier.height(14.dp))
                             Card(colors = CardDefaults.cardColors(containerColor = SyPaleGreen)) {
                                 Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                                    Text("v0.45 Drive API直接送信", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                                    Text("v0.54 Googleかんたん接続", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
                                     Text(
-                                        "Googleアカウントのdrive.file権限を都度取得し、Outboxの売上JSONをDrive APIへ直接送信します。トークンは保存しません。従来のAndroidフォルダ配送は互換用として残します。",
+                                        "通常はGoogleアカウントを選ぶだけで、接続確認ファイル作成、定期送信、初回同期要求まで自動設定します。従来の詳細設定と互換フォルダは保守用として残します。",
                                         fontSize = 13.sp,
                                     )
                                     Spacer(Modifier.height(5.dp))
