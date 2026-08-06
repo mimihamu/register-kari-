@@ -1,12 +1,6 @@
-name: Apply v0.48 settings entry
+name: Finalize v0.48 CI definition
 
 on:
-  push:
-    branches:
-      - develop/v0.48
-    paths:
-      - tools/v048_apply.py
-      - .github/workflows/v048-apply-temp.yml
   pull_request:
     branches:
       - develop/v0.47
@@ -19,8 +13,8 @@ permissions:
   contents: write
 
 jobs:
-  apply:
-    if: github.head_ref == 'develop/v0.48' || github.ref_name == 'develop/v0.48'
+  finalize:
+    if: github.head_ref == 'develop/v0.48'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout v0.48
@@ -29,19 +23,31 @@ jobs:
           ref: develop/v0.48
           fetch-depth: 0
 
-      - name: Apply navigation and version changes
-        run: python3 tools/v048_apply.py
-
-      - name: Export generated CI and restore tracked workflow
+      - name: Correct generated CI metadata
         run: |
-          cp .github/workflows/build-apk.yml tools/build-apk-v048.generated.yml
-          git checkout -- .github/workflows/build-apk.yml
-          git rm tools/v048_apply.py
+          python3 - <<'PY'
+          from pathlib import Path
 
-      - name: Commit and push v0.48 code
+          path = Path('tools/build-apk-v048.generated.yml')
+          text = path.read_text()
+          text = text.replace('versionName = "0.47.0-dev.1"', 'versionName = "0.48.0-dev.1"')
+          text = text.replace('REGISTER_VERSION_NAME=0.47.0-dev.1', 'REGISTER_VERSION_NAME=0.48.0-dev.1')
+          text = text.replace('REGISTER_VERSION_CODE=77', 'REGISTER_VERSION_CODE=78')
+          text = text.replace(
+              "          assert not Path('tools/v048_apply.py').exists()",
+              "          assert not Path('tools/v048_apply.py').exists()\n          assert not Path('tools/build-apk-v048.generated.yml').exists()",
+          )
+          text = text.replace(
+              '          GOOGLE_DRIVE_DIAGNOSTICS=true',
+              '          GOOGLE_DRIVE_DIAGNOSTICS=true\n          GOOGLE_DRIVE_SETTINGS_ENTRY=true',
+          )
+          path.write_text(text)
+          PY
+
+      - name: Commit corrected generated CI
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "v0.48 expose Google Drive sync settings"
+          git add tools/build-apk-v048.generated.yml
+          git commit -m "v0.48 finalize generated CI metadata"
           git push origin HEAD:develop/v0.48
