@@ -1,0 +1,36 @@
+name: Apply v0.51 recovery fallback
+
+on:
+  push:
+    branches:
+      - develop/v0.51
+    paths:
+      - tools/v051_apply.py
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout v0.51
+        uses: actions/checkout@v4
+        with:
+          ref: develop/v0.51
+          fetch-depth: 0
+
+      - name: Apply patch
+        run: python3 tools/v051_apply.py
+
+      - name: Commit generated source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app management-app docs tools/build-apk-v051.generated.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "v0.51 add Google Drive recovery fallback"
+          git push origin HEAD:develop/v0.51
