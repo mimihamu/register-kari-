@@ -17,6 +17,16 @@
             android:initOrder="100" />
 
         <activity
+            android:name=".GoogleDriveSetupGuideActivity"
+            android:exported="false"
+            android:screenOrientation="sensorPortrait" />
+
+        <activity
+            android:name=".GoogleDriveDiagnosticsActivity"
+            android:exported="false"
+            android:screenOrientation="sensorPortrait" />
+
+        <activity
             android:name=".GoogleDriveAccountActivity"
             android:exported="false"
             android:screenOrientation="sensorPortrait" />

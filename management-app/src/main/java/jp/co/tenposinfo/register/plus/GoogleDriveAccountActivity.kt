@@ -3,6 +3,7 @@ package jp.co.tenposinfo.register.plus
 import android.accounts.Account
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -191,6 +192,12 @@ class GoogleDriveAccountActivity : ComponentActivity() {
                         onForceSync = { synchronize(forceReimport = true) },
                         onAutoSyncChanged = ::setAutoSync,
                         onDisconnect = ::disconnect,
+                        onOpenSetupGuide = {
+                            startActivity(Intent(this, GoogleDriveSetupGuideActivity::class.java))
+                        },
+                        onOpenDiagnostics = {
+                            startActivity(Intent(this, GoogleDriveDiagnosticsActivity::class.java))
+                        },
                         onClose = ::finish,
                     )
                 }
@@ -372,6 +379,8 @@ private fun GoogleDriveAccountScreen(
     onForceSync: () -> Unit,
     onAutoSyncChanged: (Boolean) -> Unit,
     onDisconnect: () -> Unit,
+    onOpenSetupGuide: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
     onClose: () -> Unit,
 ) {
     Column(
@@ -432,6 +441,22 @@ private fun GoogleDriveAccountScreen(
                     )
                 }
             }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            OutlinedButton(
+                onClick = onOpenSetupGuide,
+                enabled = !syncStatus.running,
+                modifier = Modifier.weight(1f).height(52.dp),
+            ) { Text("初期設定ガイド") }
+            OutlinedButton(
+                onClick = onOpenDiagnostics,
+                enabled = !syncStatus.running,
+                modifier = Modifier.weight(1f).height(52.dp),
+            ) { Text("診断・ログ") }
         }
 
         Button(
