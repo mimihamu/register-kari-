@@ -11,6 +11,7 @@ class V051GoogleDriveRecoveryFallbackTest {
         val root = File("..")
         val build = File("build.gradle.kts").readText()
         val delivery = File("src/main/java/jp/co/tenposinfo/register/OutboxExternalDelivery.kt").readText()
+        val deliverySettings = File("src/main/java/jp/co/tenposinfo/register/OutboxDeliverySettingsActivity.kt").readText()
         val syncSettings = File("src/main/java/jp/co/tenposinfo/register/SyncSettingsActivity.kt").readText()
         val plusRecovery = File(root, "management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveRecoveryActivity.kt").readText()
         val workflow = File(root, ".github/workflows/build-apk.yml").readText()
@@ -18,7 +19,8 @@ class V051GoogleDriveRecoveryFallbackTest {
 
         assertTrue(build.contains("versionCode = 81"))
         assertTrue(build.contains("versionName = \"0.51.0-dev.1\""))
-        assertTrue(delivery.contains("takePersistableUriPermission"))
+        assertTrue(deliverySettings.contains("ActivityResultContracts.OpenDocumentTree"))
+        assertTrue(deliverySettings.contains("takePersistableUriPermission"))
         assertTrue(delivery.contains("drive-sync-staging"))
         assertTrue(syncSettings.contains("Google Drive・同期設定"))
         assertTrue(plusRecovery.contains("つぐレジ側でも互換用送信先として同じGoogle Driveフォルダを選択"))
