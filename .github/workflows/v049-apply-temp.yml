@@ -1,0 +1,36 @@
+name: Apply v0.49 Plus Drive setup diagnostics
+
+on:
+  push:
+    branches:
+      - develop/v0.49
+    paths:
+      - tools/v049_apply.py
+      - .github/workflows/v049-apply-temp.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout v0.49
+        uses: actions/checkout@v4
+        with:
+          ref: develop/v0.49
+          fetch-depth: 0
+
+      - name: Apply v0.49 changes
+        run: python3 tools/v049_apply.py
+
+      - name: Keep generated CI for connector and remove temporary patch files
+        run: git rm tools/v049_apply.py .github/workflows/v049-apply-temp.yml
+
+      - name: Commit and push v0.49 source changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "v0.49 add Plus Drive setup guide and diagnostics"
+          git push origin HEAD:develop/v0.49
