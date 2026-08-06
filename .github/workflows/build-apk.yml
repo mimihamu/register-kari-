@@ -312,9 +312,9 @@ jobs:
           assert not Path('.github/workflows/v051-apply-temp.yml').exists()
           assert not Path('tools/v051_apply.py').exists()
           assert not Path('tools/build-apk-v051.generated.yml').exists()
-assert not Path('.github/workflows/v052-apply-temp.yml').exists()
-assert not Path('tools/v052_apply.py').exists()
-assert not Path('tools/build-apk-v052.generated.yml').exists()
+          assert not Path('.github/workflows/v052-apply-temp.yml').exists()
+          assert not Path('tools/v052_apply.py').exists()
+          assert not Path('tools/build-apk-v052.generated.yml').exists()
           PY
 
       - name: Verify launcher and orientation configuration
