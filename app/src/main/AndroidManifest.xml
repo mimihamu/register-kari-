@@ -74,6 +74,11 @@
             android:screenOrientation="landscape" />
 
         <activity
+            android:name=".GoogleDriveEasyConnectActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
             android:name=".GoogleDriveAccountActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
