@@ -185,13 +185,16 @@ class GoogleDriveRecoveryActivity : ComponentActivity() {
                         displayName = documentSource.folderDisplayName(uri),
                     )
                     folderPreferences.saveRegistration(registration)
-                    DriveSyncPreferences(applicationContext).setAutoImportOnLaunch(true)
-                    GoogleDriveDirectSyncStatusStore(applicationContext).setAutoSyncOnLaunch(false)
-                    GoogleDriveDirectSyncScheduler.setAutomaticSyncEnabled(
-                        applicationContext,
-                        enabled = false,
-                    )
-                    registration to inspector.inspect(registration)
+                    val connection = inspector.inspect(registration)
+                    if (connection.status == DriveConnectionStatus.READY) {
+                        DriveSyncPreferences(applicationContext).setAutoImportOnLaunch(true)
+                        GoogleDriveDirectSyncStatusStore(applicationContext).setAutoSyncOnLaunch(false)
+                        GoogleDriveDirectSyncScheduler.setAutomaticSyncEnabled(
+                            applicationContext,
+                            enabled = false,
+                        )
+                    }
+                    registration to connection
                 }
             }
             result.fold(
@@ -201,8 +204,16 @@ class GoogleDriveRecoveryActivity : ComponentActivity() {
                         registering = false,
                         folderRegistration = registration,
                         folderConnection = connection,
-                        directAutoSyncEnabled = false,
-                        folderAutoImportEnabled = true,
+                        directAutoSyncEnabled = if (connection.status == DriveConnectionStatus.READY) {
+                            false
+                        } else {
+                            GoogleDriveDirectSyncStatusStore(applicationContext).load().autoSyncOnLaunch
+                        },
+                        folderAutoImportEnabled = if (connection.status == DriveConnectionStatus.READY) {
+                            true
+                        } else {
+                            DriveSyncPreferences(applicationContext).autoImportOnLaunch()
+                        },
                         message = if (connection.status == DriveConnectionStatus.READY) {
                             "互換フォルダ方式へ切り替えました。Drive API自動同期は停止しています"
                         } else {

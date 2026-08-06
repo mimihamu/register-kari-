@@ -54,6 +54,7 @@ class V051GoogleDriveRecoveryFallbackTest {
             "DriveSyncPreferences(applicationContext).setAutoImportOnLaunch(true)",
             "GoogleDriveDirectSyncStatusStore(applicationContext).setAutoSyncOnLaunch(false)",
             "GoogleDriveDirectSyncScheduler.setAutomaticSyncEnabled",
+            "if (connection.status == DriveConnectionStatus.READY)",
             "同じGoogle Driveフォルダを選択",
             "Googleアカウント連携、取込済み売上",
         )) assertTrue(recovery.contains(token))

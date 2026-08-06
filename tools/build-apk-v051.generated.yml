@@ -351,13 +351,13 @@ jobs:
             | tee -a artifacts/build-summary.txt
 
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.50.0-dev.1
-          REGISTER_VERSION_CODE=80
+          REGISTER_VERSION_NAME=0.51.0-dev.1
+          REGISTER_VERSION_CODE=81
           REGISTER_APPLICATION_ID_DEBUG=jp.co.tenposinfo.register.dev
           CUSTOMER_DISPLAY_VERSION_NAME=0.14.0-dev.1
           CUSTOMER_DISPLAY_VERSION_CODE=7
-          MANAGEMENT_APP_VERSION_NAME=0.9.0-dev.1
-          MANAGEMENT_APP_VERSION_CODE=9
+          MANAGEMENT_APP_VERSION_NAME=0.10.0-dev.1
+          MANAGEMENT_APP_VERSION_CODE=10
           MANAGEMENT_APP_APPLICATION_ID_DEBUG=jp.co.tenposinfo.register.plus.dev
           MANAGEMENT_SCREEN_ORIENTATION=sensorPortrait
           GOOGLE_AUTHORIZATION_LIBRARY=play-services-auth-21.6.0
@@ -390,6 +390,7 @@ jobs:
           SIGNING=development-not-production
           REAL_DEVICE_GOOGLE_DRIVE_DIRECT_SYNC=required
           REAL_DEVICE_CROSS_APP_DRIVE_FILE_SCOPE=required
+          REAL_DEVICE_FOLDER_RECOVERY=required
           EOF
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
