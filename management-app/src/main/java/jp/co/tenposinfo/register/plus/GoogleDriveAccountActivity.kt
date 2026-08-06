@@ -160,6 +160,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
     private val accountStore by lazy { GoogleDriveAccountStore(this) }
     private val state = mutableStateOf(GoogleDriveAccountState())
     private val syncStatus = mutableStateOf(GoogleDriveDirectSyncStatus())
+    private val connectionTest = mutableStateOf(GoogleDriveConnectionTestState())
 
     private val authorizationLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult(),
@@ -186,10 +187,12 @@ class GoogleDriveAccountActivity : ComponentActivity() {
                     GoogleDriveAccountScreen(
                         state = state.value,
                         syncStatus = syncStatus.value,
+                        connectionTest = connectionTest.value,
                         onConnect = { authorize(selectAccount = true) },
                         onVerify = { authorize(selectAccount = false) },
                         onSync = { synchronize(forceReimport = false) },
                         onForceSync = { synchronize(forceReimport = true) },
+                        onConnectionTest = ::verifyConnectionTest,
                         onAutoSyncChanged = ::setAutoSync,
                         onDisconnect = ::disconnect,
                         onOpenSetupGuide = {
@@ -213,6 +216,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
     private fun refreshState() {
         state.value = accountStore.load()
         syncStatus.value = GoogleDriveDirectSyncStatusStore(this).load()
+        connectionTest.value = GoogleDriveConnectionTestStore(this).load()
     }
 
     private fun authorize(selectAccount: Boolean) {
@@ -319,6 +323,28 @@ class GoogleDriveAccountActivity : ComponentActivity() {
         }
     }
 
+    private fun verifyConnectionTest() {
+        if (state.value.email == null || connectionTest.value.status == GoogleDriveConnectionTestStatus.RUNNING) return
+        connectionTest.value = GoogleDriveConnectionTestStore(applicationContext).running()
+        lifecycleScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val token = GoogleDriveSyncAccessTokenProvider.acquire(applicationContext)
+                    GoogleDriveConnectionTestVerifier(applicationContext).searchAndVerify(token)
+                }
+            }
+            connectionTest.value = result.fold(
+                onSuccess = { it },
+                onFailure = { error ->
+                    val category = GoogleDriveSyncErrorPolicy.classify(error)
+                    GoogleDriveConnectionTestStore(applicationContext).failed(
+                        "${GoogleDriveSyncErrorPolicy.message(category)}：${error.message ?: error.javaClass.simpleName}",
+                    )
+                },
+            )
+        }
+    }
+
     private fun setAutoSync(enabled: Boolean) {
         GoogleDriveDirectSyncStatusStore(applicationContext).setAutoSyncOnLaunch(enabled)
         syncStatus.value = syncStatus.value.copy(autoSyncOnLaunch = enabled)
@@ -373,10 +399,12 @@ class GoogleDriveAccountActivity : ComponentActivity() {
 private fun GoogleDriveAccountScreen(
     state: GoogleDriveAccountState,
     syncStatus: GoogleDriveDirectSyncStatus,
+    connectionTest: GoogleDriveConnectionTestState,
     onConnect: () -> Unit,
     onVerify: () -> Unit,
     onSync: () -> Unit,
     onForceSync: () -> Unit,
+    onConnectionTest: () -> Unit,
     onAutoSyncChanged: (Boolean) -> Unit,
     onDisconnect: () -> Unit,
     onOpenSetupGuide: () -> Unit,
@@ -460,6 +488,23 @@ private fun GoogleDriveAccountScreen(
         }
 
         Button(
+            onClick = onConnectionTest,
+            enabled = state.email != null && !syncStatus.running && connectionTest.status != GoogleDriveConnectionTestStatus.RUNNING,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+        ) { Text("つぐレジ接続テストを検索") }
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("つぐレジ→つぐレジ＋ 接続テスト", fontWeight = FontWeight.Bold)
+                Text(connectionTest.message)
+                connectionTest.testId?.let { Text("テストID：$it") }
+                connectionTest.fileName?.let { Text("ファイル：$it") }
+                connectionTest.fileId?.let { Text("fileId：$it") }
+                Text("接続テストJSONは売上取込・集計の対象にしません。")
+            }
+        }
+
+        Button(
             onClick = onConnect,
             enabled = state.status != GoogleDriveAccountStatus.CONNECTING && !syncStatus.running,
             modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -489,7 +534,7 @@ private fun GoogleDriveAccountScreen(
 
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("v0.45 差分同期仕様", fontWeight = FontWeight.Bold)
+                Text("v0.50 アプリ間接続テスト対応", fontWeight = FontWeight.Bold)
                 Text("Drive APIのfileId・modifiedTime・SHA-256をSQLiteへ保存し、変更されたJSONだけを取得します。")
                 Text("取得したJSONは既存のSalesJournalImportRepositoryへ渡し、duplicateImportKeyで二重計上を防止します。")
                 Text("不正JSONは隔離します。Drive上の削除とローカル売上削除は自動連動しません。")

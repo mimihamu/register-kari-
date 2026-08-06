@@ -158,6 +158,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
     private val diagnosticLog by lazy { GoogleDriveDiagnosticLogStore(this) }
     private val state = mutableStateOf(GoogleDriveAccountState())
     private val uploadStatus = mutableStateOf(GoogleDriveDirectUploadStatus())
+    private val connectionTest = mutableStateOf(GoogleDriveConnectionTestState())
 
     private val authorizationLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult(),
@@ -180,6 +181,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         state.value = accountStore.load()
         uploadStatus.value = GoogleDriveDirectUploadStatusStore(this).load()
+        connectionTest.value = GoogleDriveConnectionTestStore(this).load()
         configureRegisterSystemBars(window)
         setContent {
             MaterialTheme {
@@ -187,10 +189,12 @@ class GoogleDriveAccountActivity : ComponentActivity() {
                     GoogleDriveAccountScreen(
                         state = state.value,
                         uploadStatus = uploadStatus.value,
+                        connectionTest = connectionTest.value,
                         onConnect = { authorize(selectAccount = true) },
                         onVerify = { authorize(selectAccount = false) },
                         onUpload = ::uploadNow,
                         onRetry = ::retryFailed,
+                        onConnectionTest = ::createConnectionTest,
                         onDiagnostics = {
                             startActivity(Intent(this, GoogleDriveDiagnosticsActivity::class.java))
                         },
@@ -206,6 +210,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
         super.onResume()
         state.value = accountStore.load()
         uploadStatus.value = GoogleDriveDirectUploadStatusStore(this).load()
+        connectionTest.value = GoogleDriveConnectionTestStore(this).load()
     }
 
     private fun authorize(selectAccount: Boolean) {
@@ -308,6 +313,41 @@ class GoogleDriveAccountActivity : ComponentActivity() {
         )
     }
 
+    private fun createConnectionTest() {
+        if (state.value.email == null || connectionTest.value.status == GoogleDriveConnectionTestStatus.RUNNING) return
+        connectionTest.value = GoogleDriveConnectionTestStore(applicationContext).running()
+        diagnosticLog.append("CONNECTION_TEST", "STARTED", "売上なし接続テストJSON作成")
+        lifecycleScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val token = GoogleDriveAccessTokenProvider.acquire(applicationContext)
+                    GoogleDriveConnectionTestCoordinator(applicationContext).createOrUpdate(token)
+                }
+            }
+            connectionTest.value = result.fold(
+                onSuccess = { completed ->
+                    diagnosticLog.append(
+                        "CONNECTION_TEST",
+                        "SUCCESS",
+                        "testId=${completed.testId} / fileId=${completed.fileId}",
+                    )
+                    completed
+                },
+                onFailure = { error ->
+                    val category = GoogleDriveApiErrorPolicy.classify(error)
+                    diagnosticLog.append(
+                        "CONNECTION_TEST",
+                        category.name,
+                        error.message ?: error.javaClass.simpleName,
+                    )
+                    GoogleDriveConnectionTestStore(applicationContext).failed(
+                        "${GoogleDriveApiErrorPolicy.message(category)}：${error.message ?: error.javaClass.simpleName}",
+                    )
+                },
+            )
+        }
+    }
+
     private fun retryFailed() {
         lifecycleScope.launch {
             val count = withContext(Dispatchers.IO) {
@@ -378,10 +418,12 @@ class GoogleDriveAccountActivity : ComponentActivity() {
 private fun GoogleDriveAccountScreen(
     state: GoogleDriveAccountState,
     uploadStatus: GoogleDriveDirectUploadStatus,
+    connectionTest: GoogleDriveConnectionTestState,
     onConnect: () -> Unit,
     onVerify: () -> Unit,
     onUpload: () -> Unit,
     onRetry: () -> Unit,
+    onConnectionTest: () -> Unit,
     onDiagnostics: () -> Unit,
     onDisconnect: () -> Unit,
     onClose: () -> Unit,
@@ -440,14 +482,32 @@ private fun GoogleDriveAccountScreen(
             ) { Text("連携解除") }
         }
 
-        OutlinedButton(
-            onClick = onDiagnostics,
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-        ) { Text("診断・ログ") }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(
+                onClick = onDiagnostics,
+                modifier = Modifier.weight(1f).height(48.dp),
+            ) { Text("診断・ログ") }
+            Button(
+                onClick = onConnectionTest,
+                enabled = state.email != null && connectionTest.status != GoogleDriveConnectionTestStatus.RUNNING,
+                modifier = Modifier.weight(1f).height(48.dp),
+            ) { Text("接続テストJSONを作成") }
+        }
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("つぐレジ→つぐレジ＋ 接続テスト", fontWeight = FontWeight.Bold)
+                Text(connectionTest.message)
+                connectionTest.testId?.let { Text("テストID：$it") }
+                connectionTest.fileName?.let { Text("ファイル：$it") }
+                connectionTest.fileId?.let { Text("fileId：$it") }
+                Text("商品名・金額・税・支払などの売上情報は含めません。")
+            }
+        }
 
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("v0.47 診断対応済み直接同期", fontWeight = FontWeight.Bold)
+                Text("v0.50 アプリ間接続テスト対応", fontWeight = FontWeight.Bold)
                 Text("Drive上には つぐレジ/stores/{storeId}/terminals/{terminalId}/journal/{businessDate}/{duplicateKey}.json を作成します。")
                 Text("フォルダとJSONはappProperties、親fileId、重複キー、SHA-256で識別します。")
                 Text("アクセストークンと更新トークンは保存しません。Driveは同期・バックアップ経路であり、SQLiteのローカル売上を原本として維持します。")
