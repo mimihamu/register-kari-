@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   generate-verify:
@@ -46,6 +46,32 @@ jobs:
       - name: Apply v0.53 source changes
         run: python3 tools/v053_apply.py
 
+      - name: Update cumulative current-version assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          roots = [Path('app/src/test'), Path('management-app/src/test')]
+          replacements = {
+              'versionName = \\"0.52.0-dev.1\\"': 'versionName = \\"0.53.0-dev.1\\"',
+              'versionName = \\"0.11.0-dev.1\\"': 'versionName = \\"0.12.0-dev.1\\"',
+          }
+          changed = 0
+          for root in roots:
+              for path in root.rglob('*.kt'):
+                  text = path.read_text(encoding='utf-8')
+                  updated = text
+                  for old, new in replacements.items():
+                      updated = updated.replace(old, new)
+                  if updated != text:
+                      path.write_text(updated, encoding='utf-8')
+                      changed += 1
+          print(f'updated current-version assertions in {changed} test files')
+          assert changed >= 10
+          PY
+
       - name: Verify generated source markers
         run: |
           set -euo pipefail
@@ -58,6 +84,8 @@ jobs:
           test -s docs/V0.53_RELEASE_NOTES.md
           test ! -e tools/v053_apply.py
           test ! -e .github/workflows/v053-apply-temp.yml
+          ! grep -R -q --include='*.kt' 'versionName = \\"0.52.0-dev.1\\"' app/src/test management-app/src/test
+          ! grep -R -q --include='*.kt' 'versionName = \\"0.11.0-dev.1\\"' app/src/test management-app/src/test
 
       - name: Run cumulative unit tests
         run: gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest :management-app:testDebugUnitTest
@@ -67,6 +95,18 @@ jobs:
 
       - name: Build debug APKs
         run: gradle --no-daemon :app:assembleDebug :customer-display:assembleDebug :management-app:assembleDebug
+
+      - name: Commit generated v0.53 sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git status --short
+          test -n "$(git status --porcelain)"
+          git commit -m "v0.53 Google Drive sales sync verification and recovery"
+          git push origin HEAD:develop/v0.53
 
       - name: Package generated source
         if: always()
