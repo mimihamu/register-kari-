@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - develop/v0.53
-  pull_request:
-    branches:
-      - develop/v0.52
   workflow_dispatch:
 
 permissions:
@@ -18,10 +15,10 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - name: Checkout
+      - name: Checkout branch head
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ref: develop/v0.53
           fetch-depth: 0
 
       - name: Set up JDK 17
