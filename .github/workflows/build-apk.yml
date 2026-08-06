@@ -42,16 +42,16 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.50 sources
+      - name: Verify cumulative v0.14-v0.51 sources
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 80' app/build.gradle.kts
-          grep -q 'versionName = "0.50.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 81' app/build.gradle.kts
+          grep -q 'versionName = "0.51.0-dev.1"' app/build.gradle.kts
           grep -q 'versionCode = 7' customer-display/build.gradle.kts
           grep -q 'versionName = "0.14.0-dev.1"' customer-display/build.gradle.kts
-          grep -q 'versionCode = 9' management-app/build.gradle.kts
-          grep -q 'versionName = "0.9.0-dev.1"' management-app/build.gradle.kts
+          grep -q 'versionCode = 10' management-app/build.gradle.kts
+          grep -q 'versionName = "0.10.0-dev.1"' management-app/build.gradle.kts
           grep -q 'com.google.android.gms:play-services-auth:21.6.0' app/build.gradle.kts
           grep -q 'com.google.android.gms:play-services-auth:21.6.0' management-app/build.gradle.kts
           grep -q 'androidx.work:work-runtime:2.11.2' app/build.gradle.kts
@@ -77,11 +77,13 @@ jobs:
             app/src/test/java/jp/co/tenposinfo/register/V047GoogleDriveDiagnosticsTest.kt \
             app/src/test/java/jp/co/tenposinfo/register/V048GoogleDriveSettingsEntryTest.kt \
             app/src/test/java/jp/co/tenposinfo/register/V050GoogleDriveCrossAppConnectionTest.kt \
+            app/src/test/java/jp/co/tenposinfo/register/V051GoogleDriveRecoveryFallbackTest.kt \
             management-app/src/main/AndroidManifest.xml \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveAccountActivity.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveSetupGuideActivity.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDiagnosticsActivity.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveConnectionTest.kt \
+            management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveRecoveryActivity.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/MainActivity.kt \
             management-app/src/main/java/jp/co/tenposinfo/register/plus/ManagementFolderSyncScreen.kt \
@@ -94,8 +96,11 @@ jobs:
             management-app/src/test/java/jp/co/tenposinfo/register/plus/V045GoogleDriveDirectSyncTest.kt \
             management-app/src/test/java/jp/co/tenposinfo/register/plus/V049GoogleDrivePlusSetupDiagnosticsTest.kt \
             management-app/src/test/java/jp/co/tenposinfo/register/plus/V050GoogleDriveCrossAppConnectionTest.kt \
+            management-app/src/test/java/jp/co/tenposinfo/register/plus/V051GoogleDriveRecoveryFallbackTest.kt \
             customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt \
             customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplaySnapshotStore.kt \
+            docs/V0.51_GOOGLE_DRIVE_RECOVERY_FALLBACK.md \
+            docs/V0.51_RELEASE_NOTES.md \
             docs/V0.50_GOOGLE_DRIVE_CROSS_APP_CONNECTION_TEST.md \
             docs/V0.50_RELEASE_NOTES.md \
             docs/V0.49_TSUGUREGI_PLUS_DRIVE_SETUP_DIAGNOSTICS.md \
@@ -136,6 +141,7 @@ jobs:
           plus_diagnostics = (plus / 'GoogleDriveDiagnosticsActivity.kt').read_text()
           register_connection_test = (root / 'GoogleDriveConnectionTest.kt').read_text()
           plus_connection_test = (plus / 'GoogleDriveConnectionTest.kt').read_text()
+          plus_recovery = (plus / 'GoogleDriveRecoveryActivity.kt').read_text()
           plus_db = (plus / 'ManagementDatabase.kt').read_text()
           plus_import = (plus / 'SalesJournalImportRepository.kt').read_text()
           folder_ui = (plus / 'ManagementFolderSyncScreen.kt').read_text()
@@ -230,6 +236,14 @@ jobs:
           assert 'putString("refresh_token"' not in plus_connection_test
           assert '接続テストJSONを作成' in pos_account
           assert 'つぐレジ接続テストを検索' in plus_account
+          assert 'GoogleDriveRecoveryActivity::class.java' in plus_account
+          assert '互換フォルダ方式へ切替' in plus_account
+          for token in ('GoogleDriveRecoveryPolicy', 'ActivityResultContracts.OpenDocumentTree', 'persistFolderPermission', 'ImportFolderPreferences', 'DriveConnectionInspector', 'setAutomaticSyncEnabled'):
+              assert token in plus_recovery, token
+          assert 'putString("access_token"' not in plus_recovery
+          assert 'putString("refresh_token"' not in plus_recovery
+          assert 'cancelUniqueWork(PERIODIC_NAME)' in plus_drive
+          assert 'cancelUniqueWork(STARTUP_NAME)' in plus_drive
 
           for token in ('GET_SIGNING_CERTIFICATES', 'MessageDigest.getInstance', 'applicationId（パッケージ名）', 'Google Cloud Consoleを開く', 'Googleアカウント登録へ進む'):
               assert token in setup_guide, token
@@ -250,6 +264,7 @@ jobs:
           assert 'GoogleDriveDiagnosticLogStore' in pos_drive
           assert 'GoogleDriveDirectUploadBootstrapProvider' in pos_manifest
           assert 'GoogleDriveDirectSyncBootstrapProvider' in plus_manifest
+          assert 'GoogleDriveRecoveryActivity' in plus_manifest
           assert 'android:screenOrientation="landscape"' in pos_manifest
           assert 'android:screenOrientation="sensorPortrait"' in plus_manifest
           assert 'android:screenOrientation="landscape"' not in plus_manifest
@@ -264,7 +279,7 @@ jobs:
           assert "status='STAGED'" in saf_delivery
           assert 'jp.co.tenposinfo.tsuguregi.sales-journal' in schema
 
-          for version in ('v050', 'v049', 'v048', 'v047', 'v046', 'v045', 'v044', 'v043', 'v042', 'v041', 'v040', 'v039', 'v038', 'v037', 'v036', 'v035'):
+          for version in ('v051', 'v050', 'v049', 'v048', 'v047', 'v046', 'v045', 'v044', 'v043', 'v042', 'v041', 'v040', 'v039', 'v038', 'v037', 'v036', 'v035'):
               assert not list(Path('tools').glob(f'{version}*'))
               assert not Path(f'.github/workflows/{version}-apply.yml').exists()
           assert not Path('.github/workflows/v045-source-export-temp.yml').exists()
@@ -283,6 +298,9 @@ jobs:
           assert not Path('.github/workflows/v050-apply-temp.yml').exists()
           assert not Path('tools/v050_apply.py').exists()
           assert not Path('tools/build-apk-v050.generated.yml').exists()
+          assert not Path('.github/workflows/v051-apply-temp.yml').exists()
+          assert not Path('tools/v051_apply.py').exists()
+          assert not Path('tools/build-apk-v051.generated.yml').exists()
           PY
 
       - name: Verify launcher and orientation configuration
@@ -313,17 +331,17 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.50.0_dev1_drive_cross_app_connection_test_debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/TSUGUREGI_v0.51.0_dev1_drive_recovery_fallback_debug.apk
           cp customer-display/build/outputs/apk/debug/customer-display-debug.apk artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
-          cp management-app/build/outputs/apk/debug/management-app-debug.apk artifacts/TSUGUREGI_PLUS_v0.9.0_dev1_drive_cross_app_connection_test_debug.apk
+          cp management-app/build/outputs/apk/debug/management-app-debug.apk artifacts/TSUGUREGI_PLUS_v0.10.0_dev1_drive_recovery_fallback_debug.apk
 
-          sha256sum artifacts/TSUGUREGI_v0.50.0_dev1_drive_cross_app_connection_test_debug.apk | tee artifacts/TSUGUREGI_v0.50.0_dev1_drive_cross_app_connection_test_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_v0.51.0_dev1_drive_recovery_fallback_debug.apk | tee artifacts/TSUGUREGI_v0.51.0_dev1_drive_recovery_fallback_debug.apk.sha256
           sha256sum artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk | tee artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk.sha256
-          sha256sum artifacts/TSUGUREGI_PLUS_v0.9.0_dev1_drive_cross_app_connection_test_debug.apk | tee artifacts/TSUGUREGI_PLUS_v0.9.0_dev1_drive_cross_app_connection_test_debug.apk.sha256
+          sha256sum artifacts/TSUGUREGI_PLUS_v0.10.0_dev1_drive_recovery_fallback_debug.apk | tee artifacts/TSUGUREGI_PLUS_v0.10.0_dev1_drive_recovery_fallback_debug.apk.sha256
 
-          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.50.0_dev1_drive_cross_app_connection_test_debug.apk | tee artifacts/build-summary.txt
+          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_v0.51.0_dev1_drive_recovery_fallback_debug.apk | tee artifacts/build-summary.txt
           stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk | tee -a artifacts/build-summary.txt
-          stat --printf='MANAGEMENT_APP_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_PLUS_v0.9.0_dev1_drive_cross_app_connection_test_debug.apk | tee -a artifacts/build-summary.txt
+          stat --printf='MANAGEMENT_APP_APK_SIZE_BYTES=%s\n' artifacts/TSUGUREGI_PLUS_v0.10.0_dev1_drive_recovery_fallback_debug.apk | tee -a artifacts/build-summary.txt
 
           keytool -list -v \
             -keystore app/build/signing/tsuguregi-development.jks \
@@ -333,13 +351,13 @@ jobs:
             | tee -a artifacts/build-summary.txt
 
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.50.0-dev.1
-          REGISTER_VERSION_CODE=80
+          REGISTER_VERSION_NAME=0.51.0-dev.1
+          REGISTER_VERSION_CODE=81
           REGISTER_APPLICATION_ID_DEBUG=jp.co.tenposinfo.register.dev
           CUSTOMER_DISPLAY_VERSION_NAME=0.14.0-dev.1
           CUSTOMER_DISPLAY_VERSION_CODE=7
-          MANAGEMENT_APP_VERSION_NAME=0.9.0-dev.1
-          MANAGEMENT_APP_VERSION_CODE=9
+          MANAGEMENT_APP_VERSION_NAME=0.10.0-dev.1
+          MANAGEMENT_APP_VERSION_CODE=10
           MANAGEMENT_APP_APPLICATION_ID_DEBUG=jp.co.tenposinfo.register.plus.dev
           MANAGEMENT_SCREEN_ORIENTATION=sensorPortrait
           GOOGLE_AUTHORIZATION_LIBRARY=play-services-auth-21.6.0
@@ -352,6 +370,10 @@ jobs:
           PLUS_GOOGLE_DRIVE_DIAGNOSTIC_TOKENS_INCLUDED=false
           PLUS_GOOGLE_DRIVE_DIAGNOSTIC_SALES_JSON_INCLUDED=false
           GOOGLE_DRIVE_CROSS_APP_CONNECTION_TEST=true
+          GOOGLE_DRIVE_RECOVERY_FALLBACK=true
+          DIRECT_AUTOMATIC_SYNC_CANCELLED_ON_FALLBACK=true
+          FOLDER_AUTO_IMPORT_ENABLED_ON_FALLBACK=true
+          RECOVERY_SCREEN_DISPLAYS_FOLDER_URI=false
           CONNECTION_TEST_CONTAINS_SALES_DATA=false
           CONNECTION_TEST_IMPORTED_TO_SALES_DATABASE=false
           GOOGLE_DRIVE_DIAGNOSTIC_EVENT_LIMIT=100
@@ -368,6 +390,7 @@ jobs:
           SIGNING=development-not-production
           REAL_DEVICE_GOOGLE_DRIVE_DIRECT_SYNC=required
           REAL_DEVICE_CROSS_APP_DRIVE_FILE_SCOPE=required
+          REAL_DEVICE_FOLDER_RECOVERY=required
           EOF
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
@@ -375,14 +398,14 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.50.0-dev1-drive-cross-app-connection-test-apks
+          name: TSUGUREGI-v0.51.0-dev1-drive-recovery-fallback-apks
           path: |
-            artifacts/TSUGUREGI_v0.50.0_dev1_drive_cross_app_connection_test_debug.apk
-            artifacts/TSUGUREGI_v0.50.0_dev1_drive_cross_app_connection_test_debug.apk.sha256
+            artifacts/TSUGUREGI_v0.51.0_dev1_drive_recovery_fallback_debug.apk
+            artifacts/TSUGUREGI_v0.51.0_dev1_drive_recovery_fallback_debug.apk.sha256
             artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
             artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk.sha256
-            artifacts/TSUGUREGI_PLUS_v0.9.0_dev1_drive_cross_app_connection_test_debug.apk
-            artifacts/TSUGUREGI_PLUS_v0.9.0_dev1_drive_cross_app_connection_test_debug.apk.sha256
+            artifacts/TSUGUREGI_PLUS_v0.10.0_dev1_drive_recovery_fallback_debug.apk
+            artifacts/TSUGUREGI_PLUS_v0.10.0_dev1_drive_recovery_fallback_debug.apk.sha256
             artifacts/build-summary.txt
           if-no-files-found: error
           retention-days: 30

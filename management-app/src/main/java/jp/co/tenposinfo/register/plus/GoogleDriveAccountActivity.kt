@@ -201,6 +201,9 @@ class GoogleDriveAccountActivity : ComponentActivity() {
                         onOpenDiagnostics = {
                             startActivity(Intent(this, GoogleDriveDiagnosticsActivity::class.java))
                         },
+                        onOpenRecovery = {
+                            startActivity(Intent(this, GoogleDriveRecoveryActivity::class.java))
+                        },
                         onClose = ::finish,
                     )
                 }
@@ -348,10 +351,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
     private fun setAutoSync(enabled: Boolean) {
         GoogleDriveDirectSyncStatusStore(applicationContext).setAutoSyncOnLaunch(enabled)
         syncStatus.value = syncStatus.value.copy(autoSyncOnLaunch = enabled)
-        if (enabled) {
-            GoogleDriveDirectSyncScheduler.ensurePeriodic(applicationContext)
-            GoogleDriveDirectSyncScheduler.enqueueStartup(applicationContext)
-        }
+        GoogleDriveDirectSyncScheduler.setAutomaticSyncEnabled(applicationContext, enabled)
     }
 
     private fun handleAuthorizationFailure(error: Throwable) {
@@ -409,6 +409,7 @@ private fun GoogleDriveAccountScreen(
     onDisconnect: () -> Unit,
     onOpenSetupGuide: () -> Unit,
     onOpenDiagnostics: () -> Unit,
+    onOpenRecovery: () -> Unit,
     onClose: () -> Unit,
 ) {
     Column(
@@ -504,6 +505,23 @@ private fun GoogleDriveAccountScreen(
             }
         }
 
+        OutlinedButton(
+            onClick = onOpenRecovery,
+            enabled = !syncStatus.running && connectionTest.status != GoogleDriveConnectionTestStatus.RUNNING,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+        ) {
+            Text(
+                if (
+                    connectionTest.status == GoogleDriveConnectionTestStatus.NOT_FOUND ||
+                    connectionTest.status == GoogleDriveConnectionTestStatus.FAILED
+                ) {
+                    "互換フォルダ方式へ切替"
+                } else {
+                    "接続方式・復旧設定"
+                },
+            )
+        }
+
         Button(
             onClick = onConnect,
             enabled = state.status != GoogleDriveAccountStatus.CONNECTING && !syncStatus.running,
@@ -534,7 +552,7 @@ private fun GoogleDriveAccountScreen(
 
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("v0.50 アプリ間接続テスト対応", fontWeight = FontWeight.Bold)
+                Text("v0.51 接続方式・復旧対応", fontWeight = FontWeight.Bold)
                 Text("Drive APIのfileId・modifiedTime・SHA-256をSQLiteへ保存し、変更されたJSONだけを取得します。")
                 Text("取得したJSONは既存のSalesJournalImportRepositoryへ渡し、duplicateImportKeyで二重計上を防止します。")
                 Text("不正JSONは隔離します。Drive上の削除とローカル売上削除は自動連動しません。")
