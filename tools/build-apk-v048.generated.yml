@@ -47,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -q 'versionCode = 78' app/build.gradle.kts
-          grep -q 'versionName = "0.47.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionName = "0.48.0-dev.1"' app/build.gradle.kts
           grep -q 'versionCode = 7' customer-display/build.gradle.kts
           grep -q 'versionName = "0.14.0-dev.1"' customer-display/build.gradle.kts
           grep -q 'versionCode = 7' management-app/build.gradle.kts
@@ -241,6 +241,7 @@ jobs:
           assert not Path('tools/build-apk-v047.generated.yml').exists()
           assert not Path('.github/workflows/v048-apply-temp.yml').exists()
           assert not Path('tools/v048_apply.py').exists()
+          assert not Path('tools/build-apk-v048.generated.yml').exists()
           PY
 
       - name: Verify launcher and orientation configuration
@@ -291,8 +292,8 @@ jobs:
             | tee -a artifacts/build-summary.txt
 
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.47.0-dev.1
-          REGISTER_VERSION_CODE=77
+          REGISTER_VERSION_NAME=0.48.0-dev.1
+          REGISTER_VERSION_CODE=78
           REGISTER_APPLICATION_ID_DEBUG=jp.co.tenposinfo.register.dev
           CUSTOMER_DISPLAY_VERSION_NAME=0.14.0-dev.1
           CUSTOMER_DISPLAY_VERSION_CODE=7
@@ -304,6 +305,7 @@ jobs:
           GOOGLE_DRIVE_SCOPE=https://www.googleapis.com/auth/drive.file
           GOOGLE_DRIVE_SETUP_GUIDE=true
           GOOGLE_DRIVE_DIAGNOSTICS=true
+          GOOGLE_DRIVE_SETTINGS_ENTRY=true
           GOOGLE_DRIVE_DIAGNOSTIC_EVENT_LIMIT=100
           GOOGLE_DRIVE_DIAGNOSTIC_TOKENS_INCLUDED=false
           GOOGLE_DRIVE_DIAGNOSTIC_SALES_JSON_INCLUDED=false
