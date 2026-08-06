@@ -38,10 +38,9 @@ jobs:
           test -s /tmp/v053-artifact/v053-generated-source.zip
           echo '2355920ea3a8118e9108c7000daba5794cd864767c87a57128d37dc1d1ad0d28  /tmp/v053-artifact/v053-generated-source.zip' | sha256sum --check --strict
           unzip -q /tmp/v053-artifact/v053-generated-source.zip -d /tmp/v053-source
-          test -s /tmp/v053-source/repository/.github/workflows/build-apk.yml
           test -s /tmp/v053-source/repository/management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveSyncVerificationActivity.kt
 
-      - name: Replace branch with validated source
+      - name: Replace non-workflow source with validated source
         run: |
           set -euo pipefail
           rsync -a --delete \
@@ -49,14 +48,16 @@ jobs:
             --exclude='.gradle' \
             --exclude='.kotlin' \
             --exclude='*/build' \
+            --exclude='.github/workflows' \
             /tmp/v053-source/repository/ ./
           test ! -e tools/v053_apply.py
           test ! -e tools/build-apk-v052-source.yml
-          test ! -e .github/workflows/v053-finalize-generated-source.yml
+          test -s .github/workflows/build-apk.yml
+          test -s .github/workflows/v053-finalize-generated-source.yml
           grep -q 'versionName = "0.53.0-dev.1"' app/build.gradle.kts
           grep -q 'versionName = "0.12.0-dev.1"' management-app/build.gradle.kts
 
-      - name: Commit validated source
+      - name: Commit validated non-workflow source
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
@@ -64,5 +65,6 @@ jobs:
           git add -A
           git status --short
           test -n "$(git status --porcelain)"
+          ! git diff --cached --name-only | grep -q '^.github/workflows/'
           git commit -m 'v0.53 Google Drive sales sync verification and recovery'
           git push origin HEAD:develop/v0.53
