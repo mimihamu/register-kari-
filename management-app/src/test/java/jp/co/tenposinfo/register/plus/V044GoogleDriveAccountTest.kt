@@ -38,7 +38,7 @@ class V044GoogleDriveAccountTest {
 
         assertFalse(account.contains("putString(\"access_token\""))
         assertFalse(account.contains("putString(\"refresh_token\""))
-        assertTrue(folderScreen.contains("Googleアカウント連携"))
+        assertTrue(folderScreen.contains("Google Drive設定・診断"))
         assertTrue(folderScreen.contains("フォルダ方式は互換用"))
         assertTrue(manifest.contains("android:name=\".GoogleDriveAccountActivity\""))
         assertTrue(manifest.contains("android:screenOrientation=\"sensorPortrait\""))
