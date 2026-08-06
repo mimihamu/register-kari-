@@ -146,6 +146,9 @@ class GoogleDriveRecoveryActivity : ComponentActivity() {
                         onOpenDiagnostics = {
                             startActivity(Intent(this, GoogleDriveDiagnosticsActivity::class.java))
                         },
+                        onOpenSyncVerification = {
+                            startActivity(Intent(this, GoogleDriveSyncVerificationActivity::class.java))
+                        },
                         onClose = ::finish,
                     )
                 }
@@ -317,6 +320,7 @@ private fun GoogleDriveRecoveryScreen(
     onOpenMain: () -> Unit,
     onOpenSetupGuide: () -> Unit,
     onOpenDiagnostics: () -> Unit,
+    onOpenSyncVerification: () -> Unit,
     onClose: () -> Unit,
 ) {
     val snapshot = GoogleDriveOperationsSnapshot(
@@ -527,6 +531,12 @@ private fun GoogleDriveRecoveryScreen(
                 enabled = !state.registering,
             ) { Text("診断・ログ") }
         }
+
+        Button(
+            onClick = onOpenSyncVerification,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !state.registering,
+        ) { Text("売上同期検証・復旧") }
 
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {

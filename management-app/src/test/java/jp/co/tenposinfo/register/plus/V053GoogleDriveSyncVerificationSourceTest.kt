@@ -1,0 +1,37 @@
+package jp.co.tenposinfo.register.plus
+
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.io.File
+
+class V053GoogleDriveSyncVerificationSourceTest {
+    @Test
+    fun verificationCenterIsWiredWithoutPersistingSecrets() {
+        val root = File("..")
+        val build = File("build.gradle.kts").readText()
+        val source = File("src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveSyncVerificationActivity.kt").readText()
+        val recovery = File("src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveRecoveryActivity.kt").readText()
+        val direct = File("src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt").readText()
+        val manifest = File("src/main/AndroidManifest.xml").readText()
+        val workflow = File(root, ".github/workflows/build-apk.yml").readText()
+
+        assertTrue(build.contains("versionCode = 12"))
+        assertTrue(build.contains("versionName = \"0.12.0-dev.1\""))
+        assertTrue(source.contains("GoogleDriveSyncVerificationPolicy"))
+        assertTrue(source.contains("CompatibilityFolderSyncRunner"))
+        assertTrue(source.contains("現在の方式で差分同期を実行"))
+        assertTrue(source.contains("自動設定を修復"))
+        assertTrue(source.contains("Intent.ACTION_SEND"))
+        assertTrue(source.contains("MAX_HISTORY = 20"))
+        assertTrue(recovery.contains("売上同期検証・復旧"))
+        assertTrue(manifest.contains("GoogleDriveSyncVerificationActivity"))
+        assertTrue(direct.contains("lastFailureCategory"))
+        assertTrue(direct.contains("recoverStaleRun"))
+        assertFalse(source.contains("putString(\"access_token\""))
+        assertFalse(source.contains("putString(\"refresh_token\""))
+        assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.12.0_dev1_drive_sync_verification_recovery_debug.apk"))
+        assertFalse(File(root, "tools/v053_apply.py").exists())
+        assertFalse(File(root, ".github/workflows/v053-apply-temp.yml").exists())
+    }
+}

@@ -27,6 +27,11 @@
             android:screenOrientation="sensorPortrait" />
 
         <activity
+            android:name=".GoogleDriveSyncVerificationActivity"
+            android:exported="false"
+            android:screenOrientation="sensorPortrait" />
+
+        <activity
             android:name=".GoogleDriveRecoveryActivity"
             android:exported="false"
             android:screenOrientation="sensorPortrait" />

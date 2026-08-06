@@ -218,6 +218,7 @@ data class GoogleDriveDirectSyncStatus(
     val duplicateCount: Int = 0,
     val rejectedCount: Int = 0,
     val errorCount: Int = 0,
+    val lastFailureCategory: GoogleDriveSyncFailureCategory? = null,
     val lastMessage: String = "Drive API同期はまだ実行されていません",
 )
 
@@ -239,6 +240,9 @@ class GoogleDriveDirectSyncStatusStore(context: Context) {
         duplicateCount = preferences.getInt("duplicates", 0),
         rejectedCount = preferences.getInt("rejected", 0),
         errorCount = preferences.getInt("errors", 0),
+        lastFailureCategory = preferences.getString("failure_category", null)?.let { value ->
+            runCatching { GoogleDriveSyncFailureCategory.valueOf(value) }.getOrNull()
+        },
         lastMessage = preferences.getString("message", null)
             ?: "Drive API同期はまだ実行されていません",
     )
@@ -251,6 +255,7 @@ class GoogleDriveDirectSyncStatusStore(context: Context) {
         preferences.edit()
             .putBoolean("running", true)
             .putLong("started_at", System.currentTimeMillis())
+            .remove("failure_category")
             .putString("message", "Google Driveの売上JSONを確認しています")
             .apply()
     }
@@ -267,6 +272,7 @@ class GoogleDriveDirectSyncStatusStore(context: Context) {
             .putInt("duplicates", result.duplicateCount)
             .putInt("rejected", result.rejectedCount)
             .putInt("errors", result.errorCount)
+            .remove("failure_category")
             .putString(
                 "message",
                 "最終同期 ${formatSyncTime(completedAt)}／確認${result.listedCount}件／取得${result.downloadedCount}件／新規${result.importedCount}件／重複${result.duplicateCount}件／隔離${result.rejectedCount}件",
@@ -275,13 +281,31 @@ class GoogleDriveDirectSyncStatusStore(context: Context) {
     }
 
     fun failed(message: String) {
+        failed(GoogleDriveSyncFailureCategory.UNKNOWN, message)
+    }
+
+    fun failed(category: GoogleDriveSyncFailureCategory, message: String) {
         val completedAt = System.currentTimeMillis()
         preferences.edit()
             .putBoolean("running", false)
             .putLong("completed_at", completedAt)
+            .putString("failure_category", category.name)
             .putString(
                 "message",
                 "最終同期 ${formatSyncTime(completedAt)}（失敗）／${message.take(420)}",
+            )
+            .apply()
+    }
+
+    fun recoverStaleRun(message: String) {
+        val completedAt = System.currentTimeMillis()
+        preferences.edit()
+            .putBoolean("running", false)
+            .putLong("completed_at", completedAt)
+            .putString("failure_category", GoogleDriveSyncFailureCategory.UNKNOWN.name)
+            .putString(
+                "message",
+                "最終同期 ${formatSyncTime(completedAt)}（停止状態を修復）／${message.take(360)}",
             )
             .apply()
     }
@@ -445,6 +469,7 @@ class GoogleDriveDirectSyncWorker(context: Context, parameters: WorkerParameters
             onFailure = { error ->
                 val category = GoogleDriveSyncErrorPolicy.classify(error)
                 GoogleDriveDirectSyncStatusStore(applicationContext).failed(
+                    category,
                     "${GoogleDriveSyncErrorPolicy.message(category)}：${error.message ?: error.javaClass.simpleName}",
                 )
                 if (category.retryable) Result.retry() else Result.success()
