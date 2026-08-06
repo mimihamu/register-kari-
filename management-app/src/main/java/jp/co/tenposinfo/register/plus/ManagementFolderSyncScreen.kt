@@ -108,7 +108,7 @@ fun TsuguRegiPlusFolderSyncScreen(
             connection = connection,
             importing = current.importing,
             onOpenGoogleAccount = {
-                context.startActivity(Intent(context, GoogleDriveAccountActivity::class.java))
+                context.startActivity(Intent(context, GoogleDriveEasyConnectActivity::class.java))
             },
             onChooseFolder = { folderLauncher.launch(null) },
             onImportChanged = { onImportRegisteredFolder(false) },
@@ -205,12 +205,12 @@ private fun ImportFolderBar(
                 }
             }
 
-            OutlinedButton(
+            Button(
                 onClick = onOpenGoogleAccount,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !importing && !folderState.scanning,
             ) {
-                Text("Google Drive運用設定・診断")
+                Text("Googleかんたん接続")
             }
 
             if (expanded && registration != null) {
