@@ -87,7 +87,7 @@ class V042FolderImportTest {
         assertTrue(folderScreen.contains("ActivityResultContracts.OpenDocumentTree"))
         assertTrue(manifest.contains("android:screenOrientation=\"sensorPortrait\""))
 
-        assertTrue(registerBuild.contains("versionCode = 90"))
+        assertTrue(registerBuild.contains("versionCode = 80"))
         assertTrue(registerBuild.contains("versionName = \"0.50.0-dev.1\""))
         assertTrue(plusBuild.contains("versionCode = 9"))
         assertTrue(plusBuild.contains("versionName = \"0.9.0-dev.1\""))
