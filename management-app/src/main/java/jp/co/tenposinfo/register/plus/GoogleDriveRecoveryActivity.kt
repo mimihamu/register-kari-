@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -78,11 +79,11 @@ object GoogleDriveRecoveryPolicy {
         GoogleDriveRecoveryRecommendation.RUN_CONNECTION_TEST ->
             "つぐレジで接続テストJSONを作成し、つぐレジ＋で検索してください。"
         GoogleDriveRecoveryRecommendation.DIRECT_API_READY ->
-            "別アプリ間で接続テストJSONを取得できています。通常のDrive API差分同期を継続できます。"
+            "別アプリ間で接続テストJSONを取得できています。通常のDrive API差分同期を利用できます。"
         GoogleDriveRecoveryRecommendation.USE_COMPATIBILITY_FOLDER ->
-            "同じGoogleアカウントでもdrive.fileの別OAuthクライアント間可視性により見つからない場合があります。両アプリで同じDriveフォルダを選択してください。"
+            "drive.fileの別OAuthクライアント間可視性により見つからない場合があります。両アプリで同じDriveフォルダを選択してください。"
         GoogleDriveRecoveryRecommendation.COMPATIBILITY_FOLDER_READY ->
-            "登録フォルダの永続読取権限を確認できました。起動時のフォルダ差分取込を利用できます。"
+            "登録フォルダの永続読取権限を確認できました。フォルダ差分取込を利用できます。"
         GoogleDriveRecoveryRecommendation.CHECK_CONFIGURATION ->
             "Googleアカウント、Drive API、OAuth設定、通信状態を診断してください。復旧を急ぐ場合は互換フォルダ方式を利用できます。"
     }
@@ -91,11 +92,15 @@ object GoogleDriveRecoveryPolicy {
 data class GoogleDriveRecoveryUiState(
     val loading: Boolean = true,
     val registering: Boolean = false,
+    val account: GoogleDriveAccountState = GoogleDriveAccountState(),
     val connectionTest: GoogleDriveConnectionTestState = GoogleDriveConnectionTestState(),
     val folderRegistration: ImportFolderRegistration? = null,
     val folderConnection: DriveConnectionUiState = DriveConnectionUiState(),
     val directAutoSyncEnabled: Boolean = true,
     val folderAutoImportEnabled: Boolean = true,
+    val selectedMode: GoogleDriveOperatingMode = GoogleDriveOperatingMode.AUTOMATIC,
+    val resolvedMode: GoogleDriveResolvedMode = GoogleDriveResolvedMode.UNDECIDED,
+    val checklist: GoogleDriveValidationChecklist = GoogleDriveValidationChecklist(),
     val message: String = "接続方式を確認しています",
 )
 
@@ -103,6 +108,8 @@ class GoogleDriveRecoveryActivity : ComponentActivity() {
     private val folderPreferences by lazy { ImportFolderPreferences(this) }
     private val documentSource by lazy { SalesJournalDocumentSource(contentResolver) }
     private val inspector by lazy { DriveConnectionInspector(this, contentResolver) }
+    private val operatingModeStore by lazy { GoogleDriveOperatingModeStore(this) }
+    private val checklistStore by lazy { GoogleDriveValidationChecklistStore(this) }
     private val uiState = mutableStateOf(GoogleDriveRecoveryUiState())
 
     private val folderLauncher = registerForActivityResult(
@@ -119,7 +126,10 @@ class GoogleDriveRecoveryActivity : ComponentActivity() {
                     GoogleDriveRecoveryScreen(
                         state = uiState.value,
                         onChooseFolder = { folderLauncher.launch(null) },
-                        onEnableDirectApi = ::enableDirectApiAutomaticSync,
+                        onModeChanged = ::changeOperatingMode,
+                        onApplyRecommended = ::applyRecommendedMode,
+                        onChecklistChanged = ::updateChecklist,
+                        onResetChecklist = ::resetChecklist,
                         onOpenConnectionTest = {
                             startActivity(Intent(this, GoogleDriveAccountActivity::class.java))
                         },
@@ -155,16 +165,32 @@ class GoogleDriveRecoveryActivity : ComponentActivity() {
             val connection = withContext(Dispatchers.IO) {
                 inspector.inspect(registration)
             }
+            val account = GoogleDriveAccountStore(applicationContext).load()
+            val test = GoogleDriveConnectionTestStore(applicationContext).load()
+            val directEnabled = GoogleDriveDirectSyncStatusStore(applicationContext)
+                .load().autoSyncOnLaunch
+            val folderEnabled = DriveSyncPreferences(applicationContext).autoImportOnLaunch()
+            val mode = operatingModeStore.load()
+            val snapshot = GoogleDriveOperationsSnapshot(
+                accountConnected = account.email != null,
+                connectionTestStatus = test.status,
+                folderStatus = connection.status,
+                selectedMode = mode,
+                directAutoSyncEnabled = directEnabled,
+                folderAutoImportEnabled = folderEnabled,
+            )
             uiState.value = GoogleDriveRecoveryUiState(
                 loading = false,
                 registering = false,
-                connectionTest = GoogleDriveConnectionTestStore(applicationContext).load(),
+                account = account,
+                connectionTest = test,
                 folderRegistration = registration,
                 folderConnection = connection,
-                directAutoSyncEnabled = GoogleDriveDirectSyncStatusStore(applicationContext)
-                    .load().autoSyncOnLaunch,
-                folderAutoImportEnabled = DriveSyncPreferences(applicationContext)
-                    .autoImportOnLaunch(),
+                directAutoSyncEnabled = directEnabled,
+                folderAutoImportEnabled = folderEnabled,
+                selectedMode = mode,
+                resolvedMode = GoogleDriveOperationsPolicy.resolve(snapshot),
+                checklist = checklistStore.load(),
                 message = message ?: "現在の接続方式を確認しました",
             )
         }
@@ -186,7 +212,11 @@ class GoogleDriveRecoveryActivity : ComponentActivity() {
                     )
                     folderPreferences.saveRegistration(registration)
                     val connection = inspector.inspect(registration)
-                    if (connection.status == DriveConnectionStatus.READY) {
+                    val selectedMode = operatingModeStore.load()
+                    if (
+                        connection.status == DriveConnectionStatus.READY &&
+                        selectedMode != GoogleDriveOperatingMode.DRIVE_API
+                    ) {
                         DriveSyncPreferences(applicationContext).setAutoImportOnLaunch(true)
                         GoogleDriveDirectSyncStatusStore(applicationContext).setAutoSyncOnLaunch(false)
                         GoogleDriveDirectSyncScheduler.setAutomaticSyncEnabled(
@@ -198,24 +228,14 @@ class GoogleDriveRecoveryActivity : ComponentActivity() {
                 }
             }
             result.fold(
-                onSuccess = { (registration, connection) ->
-                    uiState.value = uiState.value.copy(
-                        loading = false,
-                        registering = false,
-                        folderRegistration = registration,
-                        folderConnection = connection,
-                        directAutoSyncEnabled = if (connection.status == DriveConnectionStatus.READY) {
-                            false
-                        } else {
-                            GoogleDriveDirectSyncStatusStore(applicationContext).load().autoSyncOnLaunch
-                        },
-                        folderAutoImportEnabled = if (connection.status == DriveConnectionStatus.READY) {
-                            true
-                        } else {
-                            DriveSyncPreferences(applicationContext).autoImportOnLaunch()
-                        },
-                        message = if (connection.status == DriveConnectionStatus.READY) {
-                            "互換フォルダ方式へ切り替えました。Drive API自動同期は停止しています"
+                onSuccess = { (_, connection) ->
+                    refresh(
+                        if (connection.status == DriveConnectionStatus.READY) {
+                            if (operatingModeStore.load() == GoogleDriveOperatingMode.DRIVE_API) {
+                                "フォルダを登録しました。Drive API固定のため自動切替はしていません"
+                            } else {
+                                "互換フォルダを登録し、重複同期を避ける設定へ切り替えました"
+                            }
                         } else {
                             "フォルダを登録しましたが、接続診断が必要です"
                         },
@@ -232,10 +252,56 @@ class GoogleDriveRecoveryActivity : ComponentActivity() {
         }
     }
 
-    private fun enableDirectApiAutomaticSync() {
-        GoogleDriveDirectSyncStatusStore(applicationContext).setAutoSyncOnLaunch(true)
-        GoogleDriveDirectSyncScheduler.setAutomaticSyncEnabled(applicationContext, enabled = true)
-        refresh("Drive APIの起動時・定期差分同期を再有効化しました。登録済み互換フォルダは削除していません")
+    private fun changeOperatingMode(mode: GoogleDriveOperatingMode) {
+        operatingModeStore.save(mode)
+        refresh("運用モードを「${operatingModeLabel(mode)}」に変更しました。設定を一括適用してください")
+    }
+
+    private fun applyRecommendedMode() {
+        val current = uiState.value
+        val snapshot = GoogleDriveOperationsSnapshot(
+            accountConnected = current.account.email != null,
+            connectionTestStatus = current.connectionTest.status,
+            folderStatus = current.folderConnection.status,
+            selectedMode = current.selectedMode,
+            directAutoSyncEnabled = current.directAutoSyncEnabled,
+            folderAutoImportEnabled = current.folderAutoImportEnabled,
+        )
+        when (GoogleDriveOperationsPolicy.resolve(snapshot)) {
+            GoogleDriveResolvedMode.DRIVE_API -> {
+                DriveSyncPreferences(applicationContext).setAutoImportOnLaunch(false)
+                GoogleDriveDirectSyncStatusStore(applicationContext).setAutoSyncOnLaunch(true)
+                GoogleDriveDirectSyncScheduler.setAutomaticSyncEnabled(applicationContext, enabled = true)
+                refresh("Drive API方式を適用しました。互換フォルダの自動取込は停止しています")
+            }
+
+            GoogleDriveResolvedMode.COMPATIBILITY_FOLDER -> {
+                DriveSyncPreferences(applicationContext).setAutoImportOnLaunch(true)
+                GoogleDriveDirectSyncStatusStore(applicationContext).setAutoSyncOnLaunch(false)
+                GoogleDriveDirectSyncScheduler.setAutomaticSyncEnabled(applicationContext, enabled = false)
+                refresh("互換フォルダ方式を適用しました。Drive API自動同期は停止しています")
+            }
+
+            GoogleDriveResolvedMode.UNDECIDED -> {
+                uiState.value = current.copy(
+                    message = GoogleDriveOperationsPolicy.nextAction(snapshot),
+                )
+            }
+        }
+    }
+
+    private fun updateChecklist(key: String, checked: Boolean) {
+        uiState.value = uiState.value.copy(
+            checklist = checklistStore.update(key, checked),
+            message = "実機確認チェックを更新しました",
+        )
+    }
+
+    private fun resetChecklist() {
+        uiState.value = uiState.value.copy(
+            checklist = checklistStore.reset(),
+            message = "実機確認チェックをリセットしました",
+        )
     }
 }
 
@@ -243,17 +309,30 @@ class GoogleDriveRecoveryActivity : ComponentActivity() {
 private fun GoogleDriveRecoveryScreen(
     state: GoogleDriveRecoveryUiState,
     onChooseFolder: () -> Unit,
-    onEnableDirectApi: () -> Unit,
+    onModeChanged: (GoogleDriveOperatingMode) -> Unit,
+    onApplyRecommended: () -> Unit,
+    onChecklistChanged: (String, Boolean) -> Unit,
+    onResetChecklist: () -> Unit,
     onOpenConnectionTest: () -> Unit,
     onOpenMain: () -> Unit,
     onOpenSetupGuide: () -> Unit,
     onOpenDiagnostics: () -> Unit,
     onClose: () -> Unit,
 ) {
+    val snapshot = GoogleDriveOperationsSnapshot(
+        accountConnected = state.account.email != null,
+        connectionTestStatus = state.connectionTest.status,
+        folderStatus = state.folderConnection.status,
+        selectedMode = state.selectedMode,
+        directAutoSyncEnabled = state.directAutoSyncEnabled,
+        folderAutoImportEnabled = state.folderAutoImportEnabled,
+    )
     val recommendation = GoogleDriveRecoveryPolicy.recommend(
         testStatus = state.connectionTest.status,
         folderStatus = state.folderConnection.status,
     )
+    val healthy = GoogleDriveOperationsPolicy.currentConfigurationHealthy(snapshot)
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -267,11 +346,11 @@ private fun GoogleDriveRecoveryScreen(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "Google Drive接続方式・復旧",
+                    "Google Drive運用セットアップ・復旧",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                 )
-                Text("Drive APIで取得できない場合も、同じDriveフォルダを介して運用を継続できます")
+                Text("接続確認、方式選択、自動同期、実機確認を一画面で完了します")
             }
             OutlinedButton(onClick = onClose) { Text("戻る") }
         }
@@ -279,10 +358,7 @@ private fun GoogleDriveRecoveryScreen(
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
-                containerColor = if (
-                    recommendation == GoogleDriveRecoveryRecommendation.DIRECT_API_READY ||
-                    recommendation == GoogleDriveRecoveryRecommendation.COMPATIBILITY_FOLDER_READY
-                ) {
+                containerColor = if (healthy) {
                     MaterialTheme.colorScheme.primaryContainer
                 } else {
                     MaterialTheme.colorScheme.secondaryContainer
@@ -290,10 +366,71 @@ private fun GoogleDriveRecoveryScreen(
             ),
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("推奨", fontWeight = FontWeight.Bold)
-                Text(GoogleDriveRecoveryPolicy.title(recommendation), fontWeight = FontWeight.SemiBold)
-                Text(GoogleDriveRecoveryPolicy.detail(recommendation))
+                Text(if (healthy) "運用設定：正常" else "運用設定：確認が必要", fontWeight = FontWeight.Bold)
+                Text("選択：${operatingModeLabel(state.selectedMode)}")
+                Text("適用候補：${resolvedModeLabel(state.resolvedMode)}", fontWeight = FontWeight.SemiBold)
+                Text(GoogleDriveOperationsPolicy.nextAction(snapshot))
                 Text(state.message)
+            }
+        }
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text("初回セットアップ状況", fontWeight = FontWeight.Bold)
+                SetupStatusRow("1. Googleアカウント", state.account.email != null, state.account.email ?: "未登録")
+                SetupStatusRow(
+                    "2. アプリ間接続テスト",
+                    state.connectionTest.status == GoogleDriveConnectionTestStatus.SUCCEEDED,
+                    connectionTestStatusLabel(state.connectionTest.status),
+                )
+                SetupStatusRow(
+                    "3. 互換フォルダ",
+                    state.folderConnection.status == DriveConnectionStatus.READY,
+                    state.folderRegistration?.displayName ?: "未登録",
+                )
+                SetupStatusRow(
+                    "4. 自動同期の競合防止",
+                    healthy,
+                    if (healthy) "同時実行なし" else "一括適用が必要",
+                )
+                Text(GoogleDriveRecoveryPolicy.title(recommendation))
+                Text(GoogleDriveRecoveryPolicy.detail(recommendation))
+            }
+        }
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("運用モード", fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ModeButton(
+                        label = "自動選択",
+                        selected = state.selectedMode == GoogleDriveOperatingMode.AUTOMATIC,
+                        enabled = !state.registering,
+                        modifier = Modifier.weight(1f),
+                    ) { onModeChanged(GoogleDriveOperatingMode.AUTOMATIC) }
+                    ModeButton(
+                        label = "Drive API",
+                        selected = state.selectedMode == GoogleDriveOperatingMode.DRIVE_API,
+                        enabled = !state.registering,
+                        modifier = Modifier.weight(1f),
+                    ) { onModeChanged(GoogleDriveOperatingMode.DRIVE_API) }
+                    ModeButton(
+                        label = "互換フォルダ",
+                        selected = state.selectedMode == GoogleDriveOperatingMode.COMPATIBILITY_FOLDER,
+                        enabled = !state.registering,
+                        modifier = Modifier.weight(1f),
+                    ) { onModeChanged(GoogleDriveOperatingMode.COMPATIBILITY_FOLDER) }
+                }
+                Text("自動選択は接続テスト成功時にDrive APIを優先し、見つからない場合は利用可能な互換フォルダへ切り替えます。")
+                Button(
+                    onClick = onApplyRecommended,
+                    enabled = !state.loading && !state.registering &&
+                        state.resolvedMode != GoogleDriveResolvedMode.UNDECIDED,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                ) { Text("推奨設定を一括適用") }
             }
         }
 
@@ -308,7 +445,7 @@ private fun GoogleDriveRecoveryScreen(
                     onClick = onOpenConnectionTest,
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !state.registering,
-                ) { Text("接続テスト画面を開く") }
+                ) { Text("アカウント・接続テスト画面を開く") }
             }
         }
 
@@ -321,30 +458,59 @@ private fun GoogleDriveRecoveryScreen(
                 state.folderConnection.providerName?.let { Text("提供元：$it") }
                 Text("永続読取権限：${if (state.folderConnection.persistedReadPermission) "有効" else "未確認・無効"}")
                 Text("起動時差分取込：${if (state.folderAutoImportEnabled) "有効" else "停止"}")
+                Button(
+                    onClick = onChooseFolder,
+                    enabled = !state.loading && !state.registering,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                ) {
+                    Text(if (state.folderRegistration == null) "同じGoogle Driveフォルダを選択" else "互換フォルダを変更")
+                }
+                if (state.folderConnection.status == DriveConnectionStatus.READY) {
+                    OutlinedButton(
+                        onClick = onOpenMain,
+                        enabled = !state.registering,
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                    ) { Text("登録フォルダの差分取込画面を開く") }
+                }
             }
         }
 
-        Button(
-            onClick = onChooseFolder,
-            enabled = !state.loading && !state.registering,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-        ) {
-            Text(if (state.folderRegistration == null) "同じGoogle Driveフォルダを選択" else "互換フォルダを変更")
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(
+                    "実機確認チェック ${state.checklist.completedCount}/6",
+                    fontWeight = FontWeight.Bold,
+                )
+                ChecklistRow(
+                    "両アプリで同じGoogleアカウントを使用",
+                    state.checklist.sameGoogleAccountConfirmed,
+                ) { onChecklistChanged(GoogleDriveChecklistKey.SAME_ACCOUNT, it) }
+                ChecklistRow(
+                    "つぐレジから互換フォルダへ書込成功",
+                    state.checklist.registerFolderWriteConfirmed,
+                ) { onChecklistChanged(GoogleDriveChecklistKey.REGISTER_FOLDER_WRITE, it) }
+                ChecklistRow(
+                    "つぐレジ＋から同じフォルダを読取成功",
+                    state.checklist.plusFolderReadConfirmed,
+                ) { onChecklistChanged(GoogleDriveChecklistKey.PLUS_FOLDER_READ, it) }
+                ChecklistRow(
+                    "テスト売上JSONをDriveへ送信",
+                    state.checklist.sampleSaleUploaded,
+                ) { onChecklistChanged(GoogleDriveChecklistKey.SAMPLE_SALE_UPLOADED, it) }
+                ChecklistRow(
+                    "テスト売上をつぐレジ＋へ重複なしで取込",
+                    state.checklist.sampleSaleImported,
+                ) { onChecklistChanged(GoogleDriveChecklistKey.SAMPLE_SALE_IMPORTED, it) }
+                ChecklistRow(
+                    "端末再起動後も同期方式と権限を維持",
+                    state.checklist.appRestartVerified,
+                ) { onChecklistChanged(GoogleDriveChecklistKey.APP_RESTART_VERIFIED, it) }
+                OutlinedButton(
+                    onClick = onResetChecklist,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("確認チェックをリセット") }
+            }
         }
-
-        if (state.folderConnection.status == DriveConnectionStatus.READY) {
-            Button(
-                onClick = onOpenMain,
-                enabled = !state.registering,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-            ) { Text("登録フォルダの差分取込画面を開く") }
-        }
-
-        OutlinedButton(
-            onClick = onEnableDirectApi,
-            enabled = !state.registering && !state.directAutoSyncEnabled,
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-        ) { Text("Drive API自動同期を再有効化") }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -364,15 +530,72 @@ private fun GoogleDriveRecoveryScreen(
 
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("切替時の動作", fontWeight = FontWeight.Bold)
-                Text("互換フォルダ登録時はDrive APIの起動時・定期同期を停止し、フォルダの起動時差分取込を有効化します。")
+                Text("一括適用時の安全動作", fontWeight = FontWeight.Bold)
+                Text("Drive API方式では互換フォルダの起動時取込を停止します。")
+                Text("互換フォルダ方式ではDrive APIの起動時・定期同期を停止します。")
                 Text("Googleアカウント連携、取込済み売上、Drive上のファイル、SQLiteデータは削除しません。")
-                Text("つぐレジ側でも互換用送信先として同じGoogle Driveフォルダを選択してください。")
                 Text("フォルダURI、アクセストークン、更新トークンは画面や診断メッセージへ表示しません。")
             }
         }
         Spacer(Modifier.height(12.dp))
     }
+}
+
+@Composable
+private fun SetupStatusRow(label: String, complete: Boolean, detail: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(if (complete) "✓" else "・", fontWeight = FontWeight.Bold)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, fontWeight = FontWeight.SemiBold)
+            Text(detail, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun ModeButton(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    if (selected) {
+        Button(onClick = onClick, enabled = enabled, modifier = modifier) { Text(label) }
+    } else {
+        OutlinedButton(onClick = onClick, enabled = enabled, modifier = modifier) { Text(label) }
+    }
+}
+
+@Composable
+private fun ChecklistRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        Text(label, modifier = Modifier.weight(1f))
+    }
+}
+
+private fun operatingModeLabel(mode: GoogleDriveOperatingMode): String = when (mode) {
+    GoogleDriveOperatingMode.AUTOMATIC -> "自動選択"
+    GoogleDriveOperatingMode.DRIVE_API -> "Drive API固定"
+    GoogleDriveOperatingMode.COMPATIBILITY_FOLDER -> "互換フォルダ固定"
+}
+
+private fun resolvedModeLabel(mode: GoogleDriveResolvedMode): String = when (mode) {
+    GoogleDriveResolvedMode.DRIVE_API -> "Drive API方式"
+    GoogleDriveResolvedMode.COMPATIBILITY_FOLDER -> "互換フォルダ方式"
+    GoogleDriveResolvedMode.UNDECIDED -> "未決定"
 }
 
 private fun connectionTestStatusLabel(status: GoogleDriveConnectionTestStatus): String = when (status) {

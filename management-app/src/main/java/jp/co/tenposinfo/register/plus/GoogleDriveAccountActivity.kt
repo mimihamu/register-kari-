@@ -515,9 +515,9 @@ private fun GoogleDriveAccountScreen(
                     connectionTest.status == GoogleDriveConnectionTestStatus.NOT_FOUND ||
                     connectionTest.status == GoogleDriveConnectionTestStatus.FAILED
                 ) {
-                    "互換フォルダ方式へ切替"
+                    "運用セットアップ・復旧"
                 } else {
-                    "接続方式・復旧設定"
+                    "運用セットアップ・復旧"
                 },
             )
         }
@@ -552,7 +552,7 @@ private fun GoogleDriveAccountScreen(
 
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("v0.51 接続方式・復旧対応", fontWeight = FontWeight.Bold)
+                Text("v0.52 運用セットアップ・復旧", fontWeight = FontWeight.Bold)
                 Text("Drive APIのfileId・modifiedTime・SHA-256をSQLiteへ保存し、変更されたJSONだけを取得します。")
                 Text("取得したJSONは既存のSalesJournalImportRepositoryへ渡し、duplicateImportKeyで二重計上を防止します。")
                 Text("不正JSONは隔離します。Drive上の削除とローカル売上削除は自動連動しません。")

@@ -210,7 +210,7 @@ private fun ImportFolderBar(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !importing && !folderState.scanning,
             ) {
-                Text("Google Drive設定・診断")
+                Text("Google Drive運用設定・診断")
             }
 
             if (expanded && registration != null) {

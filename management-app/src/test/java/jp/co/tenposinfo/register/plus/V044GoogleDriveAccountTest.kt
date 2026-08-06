@@ -38,17 +38,17 @@ class V044GoogleDriveAccountTest {
 
         assertFalse(account.contains("putString(\"access_token\""))
         assertFalse(account.contains("putString(\"refresh_token\""))
-        assertTrue(folderScreen.contains("Google Drive設定・診断"))
+        assertTrue(folderScreen.contains("Google Drive運用設定・診断"))
         assertTrue(folderScreen.contains("フォルダ方式は互換用"))
         assertTrue(manifest.contains("android:name=\".GoogleDriveAccountActivity\""))
         assertTrue(manifest.contains("android:screenOrientation=\"sensorPortrait\""))
         assertTrue(build.contains("com.google.android.gms:play-services-auth:21.6.0"))
-        assertTrue(build.contains("versionCode = 10"))
-        assertTrue(build.contains("versionName = \"0.10.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 11"))
+        assertTrue(build.contains("versionName = \"0.11.0-dev.1\""))
         assertTrue(docs.contains("jp.co.tenposinfo.register.plus"))
         assertTrue(notes.contains("0.6.0-dev.1"))
         assertTrue(notes.contains("Drive API接続確認"))
         assertTrue(workflow.contains("management-app/src/test/java/jp/co/tenposinfo/register/plus/V044GoogleDriveAccountTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.10.0_dev1_drive_recovery_fallback_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.11.0_dev1_drive_operations_setup_debug.apk"))
     }
 }
