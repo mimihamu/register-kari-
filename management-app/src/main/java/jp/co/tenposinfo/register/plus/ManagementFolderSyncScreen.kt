@@ -307,7 +307,7 @@ private fun ConnectionSummary(connection: DriveConnectionUiState) {
         )
         if (connection.isGoogleDrive) {
             Text(
-                text = "フォルダ方式は互換用です。本格連携は上の『Googleアカウント連携』から登録します。",
+                text = "フォルダ方式は互換用です。Drive APIで取得できない場合の復旧経路として利用できます。",
                 style = MaterialTheme.typography.labelSmall,
             )
         }

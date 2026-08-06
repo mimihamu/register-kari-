@@ -458,6 +458,17 @@ object GoogleDriveDirectSyncScheduler {
     private const val STARTUP_NAME = "tsuguregi-plus-drive-api-sync-startup"
     private const val MANUAL_NAME = "tsuguregi-plus-drive-api-sync-manual"
 
+    fun setAutomaticSyncEnabled(context: Context, enabled: Boolean) {
+        val appContext = context.applicationContext
+        if (enabled) {
+            ensurePeriodic(appContext)
+            enqueueStartup(appContext)
+        } else {
+            WorkManager.getInstance(appContext).cancelUniqueWork(PERIODIC_NAME)
+            WorkManager.getInstance(appContext).cancelUniqueWork(STARTUP_NAME)
+        }
+    }
+
     fun ensurePeriodic(context: Context) {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -496,8 +507,8 @@ class GoogleDriveDirectSyncBootstrapProvider : ContentProvider() {
     override fun onCreate(): Boolean {
         val appContext = context?.applicationContext ?: return false
         runCatching {
-            GoogleDriveDirectSyncScheduler.ensurePeriodic(appContext)
-            GoogleDriveDirectSyncScheduler.enqueueStartup(appContext)
+            val enabled = GoogleDriveDirectSyncStatusStore(appContext).load().autoSyncOnLaunch
+            GoogleDriveDirectSyncScheduler.setAutomaticSyncEnabled(appContext, enabled)
         }
         return true
     }
