@@ -131,6 +131,7 @@ private fun AdminSettingsApp(onClose: () -> Unit) {
                     onCustomerDisplay = { context.startActivity(Intent(context, CustomerDisplaySettingsActivity::class.java)) },
                     onPrinterTools = { context.startActivity(Intent(context, PrinterToolsHubActivity::class.java)) },
                     onDataProtection = { context.startActivity(Intent(context, DataProtectionActivity::class.java)) },
+                    onSync = { context.startActivity(Intent(context, SyncSettingsActivity::class.java)) },
                     onSecurity = { screen = AdminScreen.SECURITY },
                     onAudit = { screen = AdminScreen.AUDIT },
                     onLock = { unlocked = false },
@@ -227,6 +228,7 @@ private fun AdminMenuScreen(
     onCustomerDisplay: () -> Unit,
     onPrinterTools: () -> Unit,
     onDataProtection: () -> Unit,
+    onSync: () -> Unit,
     onSecurity: () -> Unit,
     onAudit: () -> Unit,
     onLock: () -> Unit,
@@ -266,7 +268,7 @@ private fun AdminMenuScreen(
                 Row(Modifier.weight(0.72f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     AsMenuTile("責任者PIN", "責任者PINを安全に更新", AsPaleYellow, Modifier.weight(1f), onSecurity)
                     AsMenuTile("データ保全", "整合性診断、バックアップ、復元", Color(0xFFE8F3EE), Modifier.weight(1f), onDataProtection)
-                    Spacer(Modifier.weight(1f))
+                    AsMenuTile("Google Drive・同期", "初期設定、アカウント、送信状況、診断", Color(0xFFE8F0FC), Modifier.weight(1f), onSync)
                 }
             }
         }

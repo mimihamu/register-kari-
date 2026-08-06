@@ -104,7 +104,7 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                         border = BorderStroke(1.dp, SyBorder),
                     ) {
                         Column(Modifier.fillMaxSize().padding(16.dp)) {
-                            Text("Google Drive同期基盤", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = SyNavy)
+                            Text("Google Drive・同期設定", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = SyNavy)
                             Spacer(Modifier.height(10.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(automatic, { automatic = it })
@@ -257,7 +257,7 @@ private fun SyHeader(onClose: () -> Unit) {
     ) {
         Text("つぐレジ", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(22.dp))
-        Text("SCR-760  売上ジャーナル・外部同期基盤", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        Text("SCR-760  Google Drive・同期", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.weight(1f))
         Text("営業日 ${BusinessDateResolver.current(LocalContext.current)}", color = Color.White, fontSize = 13.sp)
         Spacer(Modifier.width(12.dp))
