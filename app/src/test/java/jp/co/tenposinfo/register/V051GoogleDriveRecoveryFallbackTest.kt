@@ -23,7 +23,7 @@ class V051GoogleDriveRecoveryFallbackTest {
         assertTrue(deliverySettings.contains("takePersistableUriPermission"))
         assertTrue(delivery.contains("drive-sync-staging"))
         assertTrue(syncSettings.contains("Google Drive・同期設定"))
-        assertTrue(plusRecovery.contains("つぐレジ側でも互換用送信先として同じGoogle Driveフォルダを選択"))
+        assertTrue(plusRecovery.contains("両アプリで同じDriveフォルダを選択してください"))
         assertTrue(docs.contains("同じGoogle Driveフォルダ"))
         assertTrue(workflow.contains("TSUGUREGI_v0.52.0_dev1_drive_operations_setup_debug.apk"))
         assertTrue(workflow.contains("TSUGUREGI-v0.52.0-dev1-drive-operations-setup-apks"))
