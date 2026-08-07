@@ -46,12 +46,12 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.56 sources
+      - name: Verify cumulative v0.14-v0.57 sources
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 86' app/build.gradle.kts
-          grep -q 'versionName = "0.56.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 87' app/build.gradle.kts
+          grep -q 'versionName = "0.57.0-dev.1"' app/build.gradle.kts
           grep -q 'versionCode = 14' management-app/build.gradle.kts
           grep -q 'versionName = "0.14.0-dev.1"' management-app/build.gradle.kts
           grep -q 'versionCode = 7' customer-display/build.gradle.kts
@@ -71,6 +71,7 @@ jobs:
           test -s app/src/test/java/jp/co/tenposinfo/register/V054GoogleEasyConnectTest.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V055OutboxOperationsEntryTest.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V056HeldTicketMergeSplitTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V057HeldTicketOperationsUiTest.kt
           test -s management-app/src/test/java/jp/co/tenposinfo/register/plus/V044GoogleDriveAccountTest.kt
           test -s management-app/src/test/java/jp/co/tenposinfo/register/plus/V049GoogleDrivePlusSetupDiagnosticsTest.kt
           test -s management-app/src/test/java/jp/co/tenposinfo/register/plus/V050GoogleDriveCrossAppConnectionTest.kt
@@ -86,6 +87,8 @@ jobs:
           test -s docs/V0.55_RELEASE_NOTES.md
           test -s docs/V0.56_HELD_TICKET_MERGE_SPLIT.md
           test -s docs/V0.56_RELEASE_NOTES.md
+          test -s docs/V0.57_HELD_TICKET_OPERATIONS_UI.md
+          test -s docs/V0.57_RELEASE_NOTES.md
           grep -q '^# つぐレジ$' README.md
           grep -q 'GoogleDriveEasyConnectActivity' app/src/main/AndroidManifest.xml
           grep -q 'GoogleDriveEasyConnectActivity' management-app/src/main/AndroidManifest.xml
@@ -103,6 +106,10 @@ jobs:
           grep -q 'fun merge(' app/src/main/java/jp/co/tenposinfo/register/HeldTicketSafety.kt
           grep -q 'fun split(' app/src/main/java/jp/co/tenposinfo/register/HeldTicketSafety.kt
           grep -q 'HeldTicketMergeSplitPolicy' app/src/main/java/jp/co/tenposinfo/register/HeldTicketSafety.kt
+          grep -q 'TICKET_SPLIT' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q '結合確定' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q '分割実行' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          test -s app/src/main/java/jp/co/tenposinfo/register/HeldTicketOperationsUi.kt
           ! grep -R -q --include='*.kt' 'putString("access_token"' app/src/main management-app/src/main
           ! grep -R -q --include='*.kt' 'putString("refresh_token"' app/src/main management-app/src/main
 
@@ -134,7 +141,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v0.56.0_dev1_held_ticket_merge_split_debug.apk
+          register_apk=artifacts/TSUGUREGI_v0.57.0_dev1_held_ticket_operations_ui_debug.apk
           plus_apk=artifacts/TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
@@ -153,8 +160,8 @@ jobs:
             | awk -F': ' '/SHA1:/{print "DEVELOPMENT_SIGNING_SHA1=" $2} /SHA256:/{print "DEVELOPMENT_SIGNING_SHA256=" $2}' \
             | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.56.0-dev.1
-          REGISTER_VERSION_CODE=86
+          REGISTER_VERSION_NAME=0.57.0-dev.1
+          REGISTER_VERSION_CODE=87
           REGISTER_APPLICATION_ID_DEBUG=jp.co.tenposinfo.register.dev
           MANAGEMENT_APP_VERSION_NAME=0.14.0-dev.1
           MANAGEMENT_APP_VERSION_CODE=14
@@ -176,7 +183,9 @@ jobs:
           HELD_TICKET_MERGE_SPLIT_SQLITE_ATOMIC=true
           HELD_TICKET_SPLIT_DISCOUNT_PRESERVED=true
           HELD_TICKET_SPLIT_TAX_SNAPSHOT_PRESERVED=true
-          HELD_TICKET_MERGE_SPLIT_UI=false
+          HELD_TICKET_MERGE_SPLIT_UI=true
+          HELD_TICKET_MERGE_CONFIRMATION=true
+          HELD_TICKET_SPLIT_QUANTITY_UI=true
           GOOGLE_DRIVE_DIAGNOSTIC_TOKENS_INCLUDED=false
           GOOGLE_DRIVE_DIAGNOSTIC_SALES_JSON_INCLUDED=false
           GOOGLE_DRIVE_DIAGNOSTIC_CONTENT_URI_INCLUDED=false
@@ -190,7 +199,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.56.0-dev1-held-ticket-merge-split-apks
+          name: TSUGUREGI-v0.57.0-dev1-held-ticket-operations-ui-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30

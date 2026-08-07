@@ -115,6 +115,7 @@ private enum class AppScreen {
     LINE_EDIT,
     DISCOUNT,
     TICKETS,
+    TICKET_SPLIT,
     PAYMENT,
     COMPLETE,
     SALES_HISTORY,
@@ -197,6 +198,7 @@ private fun RegisterApp() {
     var selectedSaleId by remember { mutableStateOf<Long?>(null) }
     var queueMessage by remember { mutableStateOf<String?>(null) }
     var ticketMessage by remember { mutableStateOf<String?>(null) }
+    var selectedHeldTicketId by remember { mutableStateOf<Long?>(null) }
     var paymentMessage by remember { mutableStateOf<String?>(null) }
     var paymentCommitKey by remember { mutableStateOf<String?>(null) }
     var saleCommitInProgress by remember { mutableStateOf(false) }
@@ -438,8 +440,62 @@ private fun RegisterApp() {
                     screen = AppScreen.SALES
                     screen = AppScreen.TICKETS
                 },
+                onMerge = { source, target ->
+                    runCatching {
+                        heldTicketCoordinator.merge(source, target)
+                    }.onSuccess { result ->
+                        ticketMessage = result.message
+                    }.onFailure { error ->
+                        ticketMessage = error.message ?: "伝票を結合できませんでした"
+                    }
+                },
+                onSplit = { ticket ->
+                    selectedHeldTicketId = ticket.id
+                    ticketMessage = null
+                    screen = AppScreen.TICKET_SPLIT
+                },
                 onBack = { screen = AppScreen.SALES },
             )
+
+            AppScreen.TICKET_SPLIT -> {
+                val tickets = database.listHeldTickets()
+                val ticket = selectedHeldTicketId?.let { selectedId ->
+                    tickets.firstOrNull { it.id == selectedId }
+                }
+                if (ticket == null) {
+                    selectedHeldTicketId = null
+                    ticketMessage = "分割対象の伝票が見つかりませんでした"
+                    screen = AppScreen.TICKETS
+                } else {
+                    TicketSplitScreen(
+                        ticket = ticket,
+                        items = database.loadHeldTicket(ticket.id),
+                        suggestedName = HeldTicketSafetyPolicy.splitName(ticket.name, tickets.map { it.name }),
+                        externalMessage = ticketMessage,
+                        onConfirm = { movedQuantities, newName ->
+                            runCatching {
+                                heldTicketCoordinator.split(
+                                    ticket = ticket,
+                                    movedQuantities = movedQuantities,
+                                    newTicketName = newName,
+                                    operatorName = operatorName,
+                                )
+                            }.onSuccess { result ->
+                                ticketMessage = result.message
+                                selectedHeldTicketId = null
+                                screen = AppScreen.TICKETS
+                            }.onFailure { error ->
+                                ticketMessage = error.message ?: "伝票を分割できませんでした"
+                            }
+                        },
+                        onBack = {
+                            selectedHeldTicketId = null
+                            ticketMessage = null
+                            screen = AppScreen.TICKETS
+                        },
+                    )
+                }
+            }
 
             AppScreen.PAYMENT -> PaymentScreen(
                 items = cart,
@@ -1155,11 +1211,16 @@ private fun TicketListScreen(
     onLoad: (HeldTicket) -> Unit,
     onRename: (HeldTicket, String) -> Unit,
     onDelete: (HeldTicket) -> Unit,
+    onMerge: (HeldTicket, HeldTicket) -> Unit,
+    onSplit: (HeldTicket) -> Unit,
     onBack: () -> Unit,
 ) {
     var editingTicketId by remember { mutableStateOf<Long?>(null) }
     var editingName by remember { mutableStateOf("") }
     var pendingDeleteId by remember { mutableStateOf<Long?>(null) }
+    var mergeSourceId by remember { mutableStateOf<Long?>(null) }
+    var pendingMergeTargetId by remember { mutableStateOf<Long?>(null) }
+    val mergeSource = mergeSourceId?.let { sourceId -> tickets.firstOrNull { it.id == sourceId } }
 
     Column(Modifier.fillMaxSize()) {
         Header("SCR-200", "伝票一覧")
@@ -1176,11 +1237,33 @@ private fun TicketListScreen(
                 )
             }
         }
+        if (mergeSource != null) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = PaleBlue),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "${mergeSource.name} を結合元として選択中です。結合先を選び、もう一度［結合確定］を押してください。",
+                        modifier = Modifier.weight(1f),
+                        color = Navy,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    OutlinedButton(onClick = {
+                        mergeSourceId = null
+                        pendingMergeTargetId = null
+                    }) { Text("結合を取消") }
+                }
+            }
+        }
         if (!message.isNullOrBlank()) {
             Text(
                 message,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 6.dp),
-                color = if (message.contains("できません")) Danger else Color(0xFF2E7D32),
+                color = if (message.contains("できません") || message.contains("見つかりません")) Danger else Color(0xFF2E7D32),
                 fontWeight = FontWeight.Bold,
             )
         }
@@ -1197,7 +1280,12 @@ private fun TicketListScreen(
                                 .fillMaxWidth()
                                 .padding(vertical = 7.dp)
                                 .background(
-                                    if (pendingDeleteId == ticket.id) Color(0xFFFFEBEE) else Color.Transparent,
+                                    when {
+                                        pendingDeleteId == ticket.id -> Color(0xFFFFEBEE)
+                                        mergeSourceId == ticket.id -> PaleBlue
+                                        pendingMergeTargetId == ticket.id -> PaleYellow
+                                        else -> Color.Transparent
+                                    },
                                     RoundedCornerShape(8.dp),
                                 )
                                 .padding(8.dp),
@@ -1216,6 +1304,8 @@ private fun TicketListScreen(
                                     editingTicketId = ticket.id
                                     editingName = ticket.name
                                     pendingDeleteId = null
+                                    mergeSourceId = null
+                                    pendingMergeTargetId = null
                                 }) { Text("名称変更") }
                                 Spacer(Modifier.width(8.dp))
                                 OutlinedButton(onClick = {
@@ -1225,6 +1315,8 @@ private fun TicketListScreen(
                                     } else {
                                         pendingDeleteId = ticket.id
                                         editingTicketId = null
+                                        mergeSourceId = null
+                                        pendingMergeTargetId = null
                                     }
                                 }) {
                                     Text(
@@ -1238,6 +1330,51 @@ private fun TicketListScreen(
                                     if (currentCartCount > 0) "退避して呼出" else "呼出",
                                     { onLoad(ticket) },
                                     Modifier.width(if (currentCartCount > 0) 145.dp else 105.dp),
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (mergeSource == null) {
+                                    OutlinedButton(onClick = {
+                                        mergeSourceId = ticket.id
+                                        pendingMergeTargetId = null
+                                        editingTicketId = null
+                                        pendingDeleteId = null
+                                    }) { Text("結合") }
+                                    Spacer(Modifier.width(8.dp))
+                                    OutlinedButton(onClick = { onSplit(ticket) }) { Text("分割") }
+                                } else if (mergeSource.id == ticket.id) {
+                                    OutlinedButton(onClick = {
+                                        mergeSourceId = null
+                                        pendingMergeTargetId = null
+                                    }) { Text("結合元を取消") }
+                                } else if (pendingMergeTargetId == ticket.id) {
+                                    Button(
+                                        onClick = {
+                                            val source = mergeSource
+                                            mergeSourceId = null
+                                            pendingMergeTargetId = null
+                                            onMerge(source, ticket)
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Danger),
+                                    ) { Text("結合確定") }
+                                } else {
+                                    OutlinedButton(onClick = {
+                                        pendingMergeTargetId = ticket.id
+                                        editingTicketId = null
+                                        pendingDeleteId = null
+                                    }) { Text("この伝票へ結合") }
+                                }
+                            }
+                            if (pendingMergeTargetId == ticket.id && mergeSource != null) {
+                                Text(
+                                    "${mergeSource.name} の全明細を ${ticket.name} の末尾へ結合します。元伝票は結合成功時のみ削除されます。",
+                                    color = Danger,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(top = 6.dp),
                                 )
                             }
                             if (pendingDeleteId == ticket.id) {
@@ -1283,6 +1420,104 @@ private fun TicketListScreen(
             }
         }
         BottomActions(onBack, "販売へ戻る", onBack)
+    }
+}
+
+@Composable
+private fun TicketSplitScreen(
+    ticket: HeldTicket,
+    items: List<CartItem>,
+    suggestedName: String,
+    externalMessage: String?,
+    onConfirm: (Map<Int, Int>, String) -> Unit,
+    onBack: () -> Unit,
+) {
+    var newName by remember(ticket.id, suggestedName) { mutableStateOf(suggestedName) }
+    var rawQuantities by remember(ticket.id, items.size) { mutableStateOf(List(items.size) { "0" }) }
+    val validation = HeldTicketOperationsUiPolicy.validateSplit(items, rawQuantities, newName)
+
+    Column(Modifier.fillMaxSize()) {
+        Header("SCR-201", "伝票分割")
+        if (!externalMessage.isNullOrBlank()) {
+            Text(
+                externalMessage,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 6.dp),
+                color = Danger,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        Row(
+            modifier = Modifier.weight(1f).fillMaxWidth().padding(18.dp),
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            CardPanel(Modifier.weight(1f).fillMaxHeight()) {
+                Text("分割元: ${ticket.name}", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Navy)
+                Text("明細ごとに新しい伝票へ移す数量を入力します。元伝票を空にはできません。", color = Color.Gray)
+                Spacer(Modifier.height(10.dp))
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    itemsIndexed(items) { index, item ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(item.product.name, fontWeight = FontWeight.Bold, color = Navy)
+                                Text(
+                                    "元数量 ${item.quantity}点 / 単価 ${yen(item.unitPrice)} / 税 ${item.product.taxSymbol}",
+                                    color = Color.Gray,
+                                )
+                                if (item.discountAmount != 0L) {
+                                    Text("行値引 ${yen(item.discountAmount)}", color = Color.Gray)
+                                }
+                            }
+                            OutlinedTextField(
+                                value = rawQuantities.getOrElse(index) { "0" },
+                                onValueChange = { raw ->
+                                    val sanitized = raw.filter(Char::isDigit).take(6)
+                                    rawQuantities = rawQuantities.toMutableList().also { rows ->
+                                        rows[index] = sanitized
+                                    }
+                                },
+                                label = { Text("移動数量") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                modifier = Modifier.width(130.dp),
+                            )
+                        }
+                    }
+                }
+            }
+            CardPanel(Modifier.width(350.dp).fillMaxHeight()) {
+                Text("分割先", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Navy)
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it.take(HeldTicketSafetyPolicy.MAX_NAME_LENGTH) },
+                    label = { Text("新しい伝票名") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(14.dp))
+                AmountRow("移動点数", "${validation.movedCount}点", emphasized = validation.canConfirm)
+                AmountRow("元伝票残数", "${validation.remainingCount}点")
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "数量の一部を分ける場合、行値引は数量比で按分し、税スナップショットは双方へ維持します。",
+                    color = Color.Gray,
+                )
+                if (validation.message != null) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(validation.message, color = if (validation.canConfirm) Color(0xFF2E7D32) else Danger, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        BottomActions(
+            onBack = onBack,
+            confirmLabel = "分割実行",
+            onConfirm = { onConfirm(validation.movedQuantities, newName) },
+            confirmEnabled = validation.canConfirm,
+        )
     }
 }
 
