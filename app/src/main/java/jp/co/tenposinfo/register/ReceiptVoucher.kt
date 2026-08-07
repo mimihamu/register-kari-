@@ -106,7 +106,7 @@ internal object ReceiptVoucherPolicy {
             .replace(Regex("[\\r\\n\\t]+"), " ")
             .trim()
             .take(MAX_TEXT_LENGTH)
-        require(normalized.isNotBlank()) { "$labelを入力してください" }
+        require(normalized.isNotBlank()) { "${label}を入力してください" }
         return normalized
     }
 
@@ -219,7 +219,7 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
     override fun close() = baseDatabase.close()
 
     fun availability(saleId: Long): ReceiptVoucherAvailability {
-        val sale = baseDatabase.loadSaleDetail(saleId) ?: error("売上No.$saleIdが見つかりません")
+        val sale = baseDatabase.loadSaleDetail(saleId) ?: error("売上No.${saleId}が見つかりません")
         val allocated = longQuery(
             "SELECT COALESCE(SUM(amount), 0) FROM receipt_voucher_issuances WHERE sale_id = ?",
             arrayOf(saleId.toString()),
@@ -240,80 +240,80 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
 
         db.beginTransaction()
         try {
-            existingBatchResult(request.requestId.trim())?.let {
-                result = it.copy(idempotentReplay = true)
-                db.setTransactionSuccessful()
-                return@try
-            }
-            val allocated = longQuery(
-                "SELECT COALESCE(SUM(amount), 0) FROM receipt_voucher_issuances WHERE sale_id = ?",
-                arrayOf(request.saleId.toString()),
-            )
-            val plan = ReceiptVoucherPolicy.plan(
-                request,
-                ReceiptVoucherAvailability(sale.summary.totalAmount, allocated),
-            )
-            val batchId = db.insertOrThrow(
-                "receipt_voucher_batches",
-                null,
-                ContentValues().apply {
-                    put("request_id", plan.requestId)
-                    put("sale_id", plan.saleId)
-                    put("unit_amount", plan.unitAmount)
-                    put("copy_count", plan.copies)
-                    put("total_amount", plan.totalAmount)
-                    put("addressee", plan.addressee)
-                    put("purpose", plan.purpose)
-                    put("operator_name", plan.operatorName)
-                    put("created_at", now)
-                },
-            )
-            val issuanceIds = mutableListOf<Long>()
-            val printJobIds = mutableListOf<Long>()
-            repeat(plan.copies) { zeroIndex ->
-                val sequence = zeroIndex + 1
-                val issuanceId = db.insertOrThrow(
-                    "receipt_voucher_issuances",
+            val existingInsideTransaction = existingBatchResult(request.requestId.trim())
+            if (existingInsideTransaction != null) {
+                result = existingInsideTransaction.copy(idempotentReplay = true)
+            } else {
+                val allocated = longQuery(
+                    "SELECT COALESCE(SUM(amount), 0) FROM receipt_voucher_issuances WHERE sale_id = ?",
+                    arrayOf(request.saleId.toString()),
+                )
+                val plan = ReceiptVoucherPolicy.plan(
+                    request,
+                    ReceiptVoucherAvailability(sale.summary.totalAmount, allocated),
+                )
+                val batchId = db.insertOrThrow(
+                    "receipt_voucher_batches",
                     null,
                     ContentValues().apply {
-                        put("batch_id", batchId)
+                        put("request_id", plan.requestId)
                         put("sale_id", plan.saleId)
-                        put("sequence_no", sequence)
-                        put("sequence_count", plan.copies)
-                        put("amount", plan.unitAmount)
+                        put("unit_amount", plan.unitAmount)
+                        put("copy_count", plan.copies)
+                        put("total_amount", plan.totalAmount)
                         put("addressee", plan.addressee)
                         put("purpose", plan.purpose)
                         put("operator_name", plan.operatorName)
                         put("created_at", now)
                     },
                 )
-                val payload = ReceiptVoucherRenderer.render(
-                    ReceiptVoucherDocumentData(
-                        issuanceId = issuanceId,
-                        saleId = plan.saleId,
-                        sequenceNo = sequence,
-                        sequenceCount = plan.copies,
-                        amount = plan.unitAmount,
-                        addressee = plan.addressee,
-                        purpose = plan.purpose,
-                        operatorName = plan.operatorName,
-                        issuedAt = now,
-                        issuer = issuer,
-                    ),
-                    ReceiptPaper.fromWidth(paperWidthMm),
+                val issuanceIds = mutableListOf<Long>()
+                val printJobIds = mutableListOf<Long>()
+                repeat(plan.copies) { zeroIndex ->
+                    val sequence = zeroIndex + 1
+                    val issuanceId = db.insertOrThrow(
+                        "receipt_voucher_issuances",
+                        null,
+                        ContentValues().apply {
+                            put("batch_id", batchId)
+                            put("sale_id", plan.saleId)
+                            put("sequence_no", sequence)
+                            put("sequence_count", plan.copies)
+                            put("amount", plan.unitAmount)
+                            put("addressee", plan.addressee)
+                            put("purpose", plan.purpose)
+                            put("operator_name", plan.operatorName)
+                            put("created_at", now)
+                        },
+                    )
+                    val payload = ReceiptVoucherRenderer.render(
+                        ReceiptVoucherDocumentData(
+                            issuanceId = issuanceId,
+                            saleId = plan.saleId,
+                            sequenceNo = sequence,
+                            sequenceCount = plan.copies,
+                            amount = plan.unitAmount,
+                            addressee = plan.addressee,
+                            purpose = plan.purpose,
+                            operatorName = plan.operatorName,
+                            issuedAt = now,
+                            issuer = issuer,
+                        ),
+                        ReceiptPaper.fromWidth(paperWidthMm),
+                    )
+                    val printJobId = insertDocumentPrintJob(issuanceId, paperWidthMm, payload, now)
+                    issuanceIds += issuanceId
+                    printJobIds += printJobId
+                }
+                result = ReceiptVoucherIssueResult(
+                    batchId = batchId,
+                    issuanceIds = issuanceIds,
+                    printJobIds = printJobIds,
+                    totalAmount = plan.totalAmount,
+                    remainingAmount = sale.summary.totalAmount - allocated - plan.totalAmount,
+                    idempotentReplay = false,
                 )
-                val printJobId = insertDocumentPrintJob(issuanceId, paperWidthMm, payload, now)
-                issuanceIds += issuanceId
-                printJobIds += printJobId
             }
-            result = ReceiptVoucherIssueResult(
-                batchId = batchId,
-                issuanceIds = issuanceIds,
-                printJobIds = printJobIds,
-                totalAmount = plan.totalAmount,
-                remainingAmount = sale.summary.totalAmount - allocated - plan.totalAmount,
-                idempotentReplay = false,
-            )
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
@@ -324,7 +324,7 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
     }
 
     fun reprint(issuanceId: Long, operatorName: String): ReceiptVoucherReprintResult {
-        val record = loadIssuance(issuanceId) ?: error("領収書No.R$issuanceIdが見つかりません")
+        val record = loadIssuance(issuanceId) ?: error("領収書No.R${issuanceId}が見つかりません")
         val actor = ReceiptVoucherPolicy.normalizeRequired(operatorName, "再発行担当者")
         val now = System.currentTimeMillis()
         val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
