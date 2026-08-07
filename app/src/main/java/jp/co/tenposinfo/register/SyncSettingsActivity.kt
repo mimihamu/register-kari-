@@ -171,9 +171,9 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                             Spacer(Modifier.height(14.dp))
                             Card(colors = CardDefaults.cardColors(containerColor = SyPaleGreen)) {
                                 Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                                    Text("v0.54 Googleかんたん接続", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                                    Text("v0.55 同期運用", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
                                     Text(
-                                        "通常はGoogleアカウントを選ぶだけで、接続確認ファイル作成、定期送信、初回同期要求まで自動設定します。従来の詳細設定と互換フォルダは保守用として残します。",
+                                        "Googleかんたん接続を通常経路にしつつ、送信状態と個別再試行は下の運用画面から確認できます。既存売上と同期履歴は削除しません。",
                                         fontSize = 13.sp,
                                     )
                                     Spacer(Modifier.height(5.dp))
@@ -187,7 +187,7 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                                 },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = SyBlue),
-                            ) { Text("互換用フォルダ送信設定") }
+                            ) { Text("送信運用・個別再試行（互換用フォルダ送信設定）") }
                             Spacer(Modifier.height(12.dp))
                             Text("ローカル出力先", fontWeight = FontWeight.Bold, color = SyNavy)
                             Text(store.stagingRoot().absolutePath, fontSize = 12.sp, color = Color.DarkGray)
