@@ -56,6 +56,7 @@ data class ImportRejectionSummary(
     val rejectionCode: String,
     val message: String,
     val createdAt: Long,
+    val sourceUri: String? = null,
 )
 
 object SalesJournalImportPolicy {
@@ -333,7 +334,7 @@ class SalesJournalImportRepository(
         val rows = mutableListOf<ImportRejectionSummary>()
         database.readableDatabase.rawQuery(
             """
-            SELECT id, source_name, rejection_code, message, created_at
+            SELECT id, source_name, rejection_code, message, created_at, source_uri
             FROM import_rejections
             ORDER BY id DESC
             LIMIT ?
@@ -347,10 +348,37 @@ class SalesJournalImportRepository(
                     rejectionCode = cursor.getString(2),
                     message = cursor.getString(3),
                     createdAt = cursor.getLong(4),
+                    sourceUri = if (cursor.isNull(5)) null else cursor.getString(5),
                 )
             }
         }
         return rows
+    }
+
+    fun rejection(id: Long): ImportRejectionSummary? {
+        require(id > 0L)
+        return database.readableDatabase.rawQuery(
+            """
+            SELECT id, source_name, rejection_code, message, created_at, source_uri
+            FROM import_rejections
+            WHERE id=?
+            LIMIT 1
+            """.trimIndent(),
+            arrayOf(id.toString()),
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) {
+                null
+            } else {
+                ImportRejectionSummary(
+                    id = cursor.getLong(0),
+                    sourceName = cursor.getString(1),
+                    rejectionCode = cursor.getString(2),
+                    message = cursor.getString(3),
+                    createdAt = cursor.getLong(4),
+                    sourceUri = if (cursor.isNull(5)) null else cursor.getString(5),
+                )
+            }
+        }
     }
 
     private fun insertEnvelope(

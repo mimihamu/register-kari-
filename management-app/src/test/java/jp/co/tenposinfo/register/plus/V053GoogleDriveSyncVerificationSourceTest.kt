@@ -17,8 +17,8 @@ class V053GoogleDriveSyncVerificationSourceTest {
         val manifest = File("src/main/AndroidManifest.xml").readText()
         val workflow = File(root, ".github/workflows/build-apk.yml").readText()
 
-        assertTrue(build.contains("versionCode = 13"))
-        assertTrue(build.contains("versionName = \"0.13.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 14"))
+        assertTrue(build.contains("versionName = \"0.14.0-dev.1\""))
         assertTrue(source.contains("GoogleDriveSyncVerificationPolicy"))
         assertTrue(source.contains("CompatibilityFolderSyncRunner"))
         assertTrue(source.contains("現在の方式で差分同期を実行"))
@@ -34,7 +34,7 @@ class V053GoogleDriveSyncVerificationSourceTest {
         assertTrue(direct.contains("recoverStaleRun"))
         assertFalse(source.contains("putString(\"access_token\""))
         assertFalse(source.contains("putString(\"refresh_token\""))
-        assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.13.0_dev1_google_easy_connect_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk"))
         assertFalse(File(root, "tools/v053_apply.py").exists())
         assertFalse(File(root, ".github/workflows/v053-apply-temp.yml").exists())
     }

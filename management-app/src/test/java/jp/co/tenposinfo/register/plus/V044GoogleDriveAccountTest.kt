@@ -44,12 +44,12 @@ class V044GoogleDriveAccountTest {
         assertTrue(manifest.contains("android:name=\".GoogleDriveEasyConnectActivity\""))
         assertTrue(manifest.contains("android:screenOrientation=\"sensorPortrait\""))
         assertTrue(build.contains("com.google.android.gms:play-services-auth:21.6.0"))
-        assertTrue(build.contains("versionCode = 13"))
-        assertTrue(build.contains("versionName = \"0.13.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 14"))
+        assertTrue(build.contains("versionName = \"0.14.0-dev.1\""))
         assertTrue(docs.contains("jp.co.tenposinfo.register.plus"))
         assertTrue(notes.contains("0.6.0-dev.1"))
         assertTrue(notes.contains("Drive API接続確認"))
         assertTrue(workflow.contains("management-app/src/test/java/jp/co/tenposinfo/register/plus/V044GoogleDriveAccountTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.13.0_dev1_google_easy_connect_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk"))
     }
 }

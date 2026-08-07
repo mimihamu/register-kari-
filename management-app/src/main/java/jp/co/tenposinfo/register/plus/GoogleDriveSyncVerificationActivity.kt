@@ -34,6 +34,7 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 enum class GoogleDriveSyncHealth {
     SETUP_REQUIRED,
@@ -54,6 +55,10 @@ data class GoogleDriveSyncVerificationSnapshot(
     val folderSummary: ImportFolderScanSummary?,
     val dashboard: ImportDashboard,
     val recentRejectionCount: Int,
+    val recentRejections: List<ImportRejectionSummary> = emptyList(),
+    val latestBusinessDate: String? = null,
+    val scheduler: GoogleDriveSchedulerSnapshot = GoogleDriveSchedulerSnapshot(),
+    val folderAutoImportEnabled: Boolean = false,
 )
 
 object GoogleDriveSyncVerificationPolicy {
@@ -126,9 +131,9 @@ object GoogleDriveSyncVerificationPolicy {
         GoogleDriveSyncHealth.STALLED ->
             "30分以上完了していません。自動同期設定を修復してから再実行してください。"
         GoogleDriveSyncHealth.HEALTHY ->
-            "同期は正常です。直近履歴と取込件数を確認してください。"
+            "同期は正常です。通常は操作不要です。"
         GoogleDriveSyncHealth.WARNING ->
-            "隔離、読取失敗、古い同期結果のいずれかがあります。再実行後も残る場合は診断レポートを共有してください。"
+            "隔離、読取失敗、古い同期結果のいずれかがあります。必要な項目だけ安全に再試行してください。"
         GoogleDriveSyncHealth.ERROR ->
             "再認可、API有効化、権限確認が必要です。設定を修復して再実行してください。"
     }
@@ -301,6 +306,7 @@ object GoogleDriveSyncVerificationReport {
         appendLine("direct.rejected=${snapshot.directStatus.rejectedCount}")
         appendLine("direct.errors=${snapshot.directStatus.errorCount}")
         appendLine("direct.failureCategory=${snapshot.directStatus.lastFailureCategory?.name ?: "NONE"}")
+        appendLine("folder.auto=${snapshot.folderAutoImportEnabled}")
         appendLine("folder.lastScannedAt=${snapshot.folderSummary?.scannedAt ?: 0L}")
         appendLine("folder.discovered=${snapshot.folderSummary?.discoveredJsonCount ?: 0}")
         appendLine("folder.changed=${snapshot.folderSummary?.changedJsonCount ?: 0}")
@@ -308,7 +314,11 @@ object GoogleDriveSyncVerificationReport {
         appendLine("folder.readErrors=${snapshot.folderSummary?.readErrorCount ?: 0}")
         appendLine("database.totalImported=${snapshot.dashboard.totalImported}")
         appendLine("database.totalRejected=${snapshot.dashboard.totalRejected}")
+        appendLine("database.latestBusinessDate=${snapshot.latestBusinessDate ?: "NONE"}")
         appendLine("database.recentRejections=${snapshot.recentRejectionCount}")
+        appendLine("scheduler.periodic=${snapshot.scheduler.periodicStates.joinToString(",")}")
+        appendLine("scheduler.startup=${snapshot.scheduler.startupStates.joinToString(",")}")
+        appendLine("scheduler.manual=${snapshot.scheduler.manualStates.joinToString(",")}")
         appendLine("history.count=${history.size}")
         history.take(10).forEachIndexed { index, item ->
             appendLine(
@@ -345,6 +355,7 @@ class GoogleDriveSyncVerificationActivity : ComponentActivity() {
                         onRepair = ::repairAutomaticSettings,
                         onRefresh = { refresh() },
                         onShare = ::shareReport,
+                        onRetryRejection = ::retryRejection,
                         onClearHistory = ::clearHistory,
                         onOpenSetup = {
                             startActivity(Intent(this, GoogleDriveRecoveryActivity::class.java))
@@ -386,17 +397,19 @@ class GoogleDriveSyncVerificationActivity : ComponentActivity() {
         val directStatus = GoogleDriveDirectSyncStatusStore(applicationContext).load()
         val folderPreferences = ImportFolderPreferences(applicationContext)
         val selectedMode = GoogleDriveOperatingModeStore(applicationContext).load()
+        val folderAutoImportEnabled = DriveSyncPreferences(applicationContext).autoImportOnLaunch()
         val operations = GoogleDriveOperationsSnapshot(
             accountConnected = account.email != null,
             connectionTestStatus = test.status,
             folderStatus = folderConnection.status,
             selectedMode = selectedMode,
             directAutoSyncEnabled = directStatus.autoSyncOnLaunch,
-            folderAutoImportEnabled = DriveSyncPreferences(applicationContext).autoImportOnLaunch(),
+            folderAutoImportEnabled = folderAutoImportEnabled,
         )
         val database = ManagementDatabase(applicationContext)
         return try {
             val repository = SalesJournalImportRepository(database)
+            val recentRejections = repository.recentRejections()
             GoogleDriveSyncVerificationSnapshot(
                 accountEmail = account.email,
                 selectedMode = selectedMode,
@@ -405,7 +418,11 @@ class GoogleDriveSyncVerificationActivity : ComponentActivity() {
                 directStatus = directStatus,
                 folderSummary = folderPreferences.lastSummary(),
                 dashboard = repository.dashboard(),
-                recentRejectionCount = repository.recentRejections().size,
+                recentRejectionCount = recentRejections.size,
+                recentRejections = recentRejections,
+                latestBusinessDate = repository.reportFilterOptions().businessDates.firstOrNull(),
+                scheduler = GoogleDriveSchedulerInspector.inspect(applicationContext),
+                folderAutoImportEnabled = folderAutoImportEnabled,
             )
         } finally {
             database.close()
@@ -504,6 +521,59 @@ class GoogleDriveSyncVerificationActivity : ComponentActivity() {
         )
     }
 
+    private fun retryRejection(rejectionId: Long) {
+        if (uiState.value.running) return
+        val snapshot = uiState.value.snapshot ?: return
+        val item = snapshot.recentRejections.firstOrNull { it.id == rejectionId } ?: return
+        if (!GoogleDriveRejectedRetryPolicy.canRetry(item)) {
+            uiState.value = uiState.value.copy(
+                message = "この隔離データは元ファイルを安全に再取得できないため個別再試行できません",
+            )
+            return
+        }
+        uiState.value = uiState.value.copy(
+            running = true,
+            message = "隔離No.$rejectionId を元ファイルから再取得して検証しています",
+        )
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    GoogleDriveRejectedRetryService(applicationContext).use { service ->
+                        service.retry(rejectionId)
+                    }
+                }
+            }
+            result.fold(
+                onSuccess = { retry ->
+                    val success = retry.rejectedCount == 0
+                    historyStore.append(
+                        GoogleDriveSyncVerificationRecord(
+                            recordedAt = System.currentTimeMillis(),
+                            mode = snapshot.resolvedMode,
+                            success = success,
+                            listedCount = 1,
+                            importedCount = retry.importedCount,
+                            duplicateCount = retry.duplicateCount,
+                            rejectedCount = retry.rejectedCount,
+                            errorCount = 0,
+                            message = "隔離No.$rejectionId 個別再試行",
+                        ),
+                    )
+                    refresh(
+                        if (success) {
+                            "個別再試行完了：新規${retry.importedCount}件／重複${retry.duplicateCount}件。元の隔離履歴は監査用に保持しています"
+                        } else {
+                            "個別再試行しましたが再び隔離されました。元ファイル内容を確認してください"
+                        },
+                    )
+                },
+                onFailure = { error ->
+                    refresh("個別再試行失敗：${error.message ?: error.javaClass.simpleName}")
+                },
+            )
+        }
+    }
+
     private fun repairAutomaticSettings() {
         val snapshot = uiState.value.snapshot ?: return
         val directStore = GoogleDriveDirectSyncStatusStore(applicationContext)
@@ -572,14 +642,23 @@ private fun GoogleDriveSyncVerificationScreen(
     onRepair: () -> Unit,
     onRefresh: () -> Unit,
     onShare: () -> Unit,
+    onRetryRejection: (Long) -> Unit,
     onClearHistory: () -> Unit,
     onOpenSetup: () -> Unit,
     onClose: () -> Unit,
 ) {
     val snapshot = state.snapshot
+    val now = System.currentTimeMillis()
     val health = snapshot?.let {
-        GoogleDriveSyncVerificationPolicy.health(it, System.currentTimeMillis())
+        GoogleDriveSyncVerificationPolicy.health(it, now)
     } ?: GoogleDriveSyncHealth.SETUP_REQUIRED
+    val lastSyncAt = snapshot?.let {
+        when (it.resolvedMode) {
+            GoogleDriveResolvedMode.DRIVE_API -> it.directStatus.lastCompletedAt
+            GoogleDriveResolvedMode.COMPATIBILITY_FOLDER -> it.folderSummary?.scannedAt
+            GoogleDriveResolvedMode.UNDECIDED -> null
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -594,11 +673,11 @@ private fun GoogleDriveSyncVerificationScreen(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "Google Drive売上同期検証・復旧",
+                    "同期運用ダッシュボード",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                 )
-                Text("実同期、停止検出、設定修復、履歴、診断共有をまとめて確認します")
+                Text("日常確認、差分同期、停止復旧、安全な個別再試行をまとめて管理します")
             }
             OutlinedButton(onClick = onClose) { Text("戻る") }
         }
@@ -606,20 +685,35 @@ private fun GoogleDriveSyncVerificationScreen(
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text("状態：${verificationHealthLabel(health)}", fontWeight = FontWeight.Bold)
-                Text("方式：${verificationResolvedModeLabel(snapshot?.resolvedMode ?: GoogleDriveResolvedMode.UNDECIDED)}")
+                Text("現在経路：${verificationResolvedModeLabel(snapshot?.resolvedMode ?: GoogleDriveResolvedMode.UNDECIDED)}")
+                Text("最終同期：${formatVerificationTime(lastSyncAt)}（${formatSyncAge(lastSyncAt, now)}）")
                 Text(state.message)
             }
         }
 
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("同期・取込状況", fontWeight = FontWeight.Bold)
+                Text("売上同期サマリー", fontWeight = FontWeight.Bold)
                 Text("Googleアカウント：${GoogleDriveSyncVerificationReport.maskAccount(snapshot?.accountEmail)}")
-                Text("Drive API：${snapshot?.directStatus?.lastMessage ?: "未確認"}")
-                Text("互換フォルダ最終確認：${formatVerificationTime(snapshot?.folderSummary?.scannedAt)}")
-                Text("取込済み：${snapshot?.dashboard?.totalImported ?: 0}件")
-                Text("隔離累計：${snapshot?.dashboard?.totalRejected ?: 0}件")
-                Text("直近隔離表示：${snapshot?.recentRejectionCount ?: 0}件")
+                Text("最新営業日：${snapshot?.latestBusinessDate ?: "未取込"}")
+                Text("取込済み累計：${snapshot?.dashboard?.totalImported ?: 0}件")
+                Text("隔離履歴累計：${snapshot?.dashboard?.totalRejected ?: 0}件")
+                Text(
+                    "直近同期：確認${snapshot?.directStatus?.listedCount ?: 0}／取得${snapshot?.directStatus?.downloadedCount ?: 0}／" +
+                        "新規${snapshot?.directStatus?.importedCount ?: 0}／重複${snapshot?.directStatus?.duplicateCount ?: 0}／" +
+                        "隔離${snapshot?.directStatus?.rejectedCount ?: 0}／エラー${snapshot?.directStatus?.errorCount ?: 0}",
+                )
+            }
+        }
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text("自動同期スケジューラ", fontWeight = FontWeight.Bold)
+                Text("Drive API自動同期設定：${if (snapshot?.directStatus?.autoSyncOnLaunch == true) "有効" else "停止"}")
+                Text("1時間ごとの定期Work：${schedulerLabel(snapshot?.scheduler?.periodicStates.orEmpty())}")
+                Text("起動時Work：${schedulerLabel(snapshot?.scheduler?.startupStates.orEmpty())}")
+                Text("手動Work：${schedulerLabel(snapshot?.scheduler?.manualStates.orEmpty())}")
+                Text("互換フォルダ起動時取込：${if (snapshot?.folderAutoImportEnabled == true) "有効" else "停止"}")
             }
         }
 
@@ -630,7 +724,17 @@ private fun GoogleDriveSyncVerificationScreen(
                 snapshot.resolvedMode != GoogleDriveResolvedMode.UNDECIDED &&
                 !state.running &&
                 snapshot.directStatus.running.not(),
-        ) { Text(if (state.running) "同期実行中" else "現在の方式で差分同期を実行") }
+        ) {
+            Text(
+                if (state.running) {
+                    "同期実行中"
+                } else if (snapshot?.directStatus?.lastFailureCategory != null) {
+                    "失敗した同期を安全に再試行"
+                } else {
+                    "現在の方式で差分同期を実行"
+                },
+            )
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -648,6 +752,38 @@ private fun GoogleDriveSyncVerificationScreen(
             ) { Text("状態を再読込") }
         }
 
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text("直近の隔離データ", fontWeight = FontWeight.Bold)
+                Text("再試行は元ファイルを再取得して1件だけ再検証します。全件強制再取込はここから実行しません。")
+                if (snapshot?.recentRejections.isNullOrEmpty()) {
+                    Text("隔離データはありません")
+                } else {
+                    snapshot?.recentRejections?.take(8)?.forEach { rejection ->
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("No.${rejection.id} ${rejection.sourceName}", fontWeight = FontWeight.SemiBold)
+                                Text("${rejection.rejectionCode}／${rejection.message.take(180)}")
+                                Text(formatVerificationTime(rejection.createdAt))
+                                OutlinedButton(
+                                    onClick = { onRetryRejection(rejection.id) },
+                                    enabled = !state.running && GoogleDriveRejectedRetryPolicy.canRetry(rejection),
+                                ) {
+                                    Text(
+                                        if (GoogleDriveRejectedRetryPolicy.canRetry(rejection)) {
+                                            "この1件を再試行"
+                                        } else {
+                                            "元ファイル再取得不可"
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -660,7 +796,7 @@ private fun GoogleDriveSyncVerificationScreen(
             OutlinedButton(
                 onClick = onOpenSetup,
                 modifier = Modifier.weight(1f),
-            ) { Text("運用セットアップ") }
+            ) { Text("保守・復旧設定") }
         }
 
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -691,7 +827,7 @@ private fun GoogleDriveSyncVerificationScreen(
         }
 
         Text(
-            "履歴消去や設定修復では、取込済み売上、SQLite、Drive上のJSON、同期指紋を削除しません。",
+            "履歴消去、設定修復、個別再試行では、取込済み売上、SQLite、Drive上のJSON、同期指紋、過去の隔離履歴を削除しません。",
             style = MaterialTheme.typography.bodySmall,
         )
     }
@@ -717,3 +853,22 @@ private fun formatVerificationTime(value: Long?): String = value
     ?.takeIf { it > 0L }
     ?.let { SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.JAPAN).format(Date(it)) }
     ?: "未実行"
+
+private fun formatSyncAge(value: Long?, now: Long): String {
+    if (value == null || value <= 0L) return "未実行"
+    val elapsed = (now - value).coerceAtLeast(0L)
+    val minutes = TimeUnit.MILLISECONDS.toMinutes(elapsed)
+    return when {
+        minutes < 1 -> "1分未満"
+        minutes < 60 -> "${minutes}分前"
+        minutes < 24 * 60 -> "${minutes / 60}時間前"
+        else -> "${minutes / (24 * 60)}日前"
+    }
+}
+
+private fun schedulerLabel(states: List<String>): String = when {
+    states.isEmpty() -> "未登録"
+    states.any { it == "RUNNING" } -> "実行中"
+    states.any { it == "ENQUEUED" || it == "BLOCKED" } -> "登録済み"
+    else -> states.joinToString(",")
+}
