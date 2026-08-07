@@ -12,6 +12,7 @@ enum class UnifiedPrintJobType(val displayName: String) {
     SALE_RECEIPT("売上レシート"),
     REVERSAL_RECEIPT("返品・取消レシート"),
     SETTLEMENT_REPORT("点検・精算票"),
+    RECEIPT_VOUCHER("領収書"),
 }
 
 enum class UnifiedPrintFailureCategory(
@@ -119,6 +120,7 @@ enum class UnifiedPrintTypeFilter(val displayName: String) {
     SALE("売上"),
     REVERSAL("返品・取消"),
     SETTLEMENT("点検・精算"),
+    RECEIPT("領収書"),
 }
 
 enum class UnifiedPrintTimeFilter(val displayName: String) {
@@ -179,6 +181,7 @@ object UnifiedPrintQueueFilterPolicy {
             UnifiedPrintTypeFilter.SALE -> job.type == UnifiedPrintJobType.SALE_RECEIPT
             UnifiedPrintTypeFilter.REVERSAL -> job.type == UnifiedPrintJobType.REVERSAL_RECEIPT
             UnifiedPrintTypeFilter.SETTLEMENT -> job.type == UnifiedPrintJobType.SETTLEMENT_REPORT
+            UnifiedPrintTypeFilter.RECEIPT -> job.type == UnifiedPrintJobType.RECEIPT_VOUCHER
         }
         if (!typeMatches) return false
 
@@ -295,6 +298,7 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
                 type = when (job.documentType) {
                     OperationDocumentType.REVERSAL_RECEIPT -> UnifiedPrintJobType.REVERSAL_RECEIPT
                     OperationDocumentType.SETTLEMENT_REPORT -> UnifiedPrintJobType.SETTLEMENT_REPORT
+                    OperationDocumentType.RECEIPT_VOUCHER -> UnifiedPrintJobType.RECEIPT_VOUCHER
                 },
                 referenceId = job.referenceId,
                 paperWidthMm = job.paperWidthMm,
@@ -341,6 +345,7 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
             UnifiedPrintJobType.SALE_RECEIPT -> salesDatabase.retryPrintJob(job.sourceId)
             UnifiedPrintJobType.REVERSAL_RECEIPT,
             UnifiedPrintJobType.SETTLEMENT_REPORT,
+            UnifiedPrintJobType.RECEIPT_VOUCHER,
             -> documentStore.retryDocumentPrint(job.sourceId)
         }
         settingsStore.recordOperationalAudit(
@@ -379,6 +384,7 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
             )
             UnifiedPrintJobType.REVERSAL_RECEIPT,
             UnifiedPrintJobType.SETTLEMENT_REPORT,
+            UnifiedPrintJobType.RECEIPT_VOUCHER,
             -> documentStore.discardDocumentPrint(
                 jobId = job.sourceId,
                 reason = reason,
@@ -458,6 +464,7 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
             UnifiedPrintJobType.SALE_RECEIPT -> printSaleJob(job, configuration, gateway)
             UnifiedPrintJobType.REVERSAL_RECEIPT,
             UnifiedPrintJobType.SETTLEMENT_REPORT,
+            UnifiedPrintJobType.RECEIPT_VOUCHER,
             -> documentStore.processDocumentPrint(job.sourceId, gateway).map {
                 "${job.type.displayName}を送信しました（Job.${job.sourceId}）"
             }
