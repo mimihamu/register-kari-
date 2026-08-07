@@ -282,7 +282,7 @@ internal class HeldTicketSafetyCoordinator(
                 sourceTicketId = ticket.id,
                 newTicketId = newTicketId,
                 movedItemCount = plan.movedItems.sumOf { it.quantity },
-                message = "${ticket.name}から${plan.movedItems.sumOf { it.quantity }}点を$normalizedNameへ分割しました",
+                message = "${ticket.name}から${plan.movedItems.sumOf { it.quantity }}点を${normalizedName}へ分割しました",
             )
         } finally {
             db.endTransaction()
