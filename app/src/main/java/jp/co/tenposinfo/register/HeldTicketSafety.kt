@@ -1,12 +1,31 @@
 package jp.co.tenposinfo.register
 
 import android.content.ContentValues
+import java.math.BigInteger
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal data class HeldTicketLoadResult(
     val loadedItems: List<CartItem>,
     val parkedTicketId: Long?,
     val message: String,
+)
+
+internal data class HeldTicketMergeResult(
+    val targetTicketId: Long,
+    val itemCount: Int,
+    val message: String,
+)
+
+internal data class HeldTicketSplitResult(
+    val sourceTicketId: Long,
+    val newTicketId: Long,
+    val movedItemCount: Int,
+    val message: String,
+)
+
+internal data class HeldTicketSplitPlan(
+    val remainingItems: List<CartItem>,
+    val movedItems: List<CartItem>,
 )
 
 internal object HeldTicketSafetyPolicy {
@@ -25,10 +44,83 @@ internal object HeldTicketSafetyPolicy {
         return "$prefix$number"
     }
 
+    fun splitName(sourceName: String, existingNames: Collection<String>): String {
+        val used = existingNames.map { it.trim() }.toSet()
+        val base = normalizeName("$sourceName-分割", "分割伝票")
+        if (base !in used) return base
+        var number = 2
+        while (true) {
+            val suffix = "-$number"
+            val candidate = normalizeName(
+                base.take((MAX_NAME_LENGTH - suffix.length).coerceAtLeast(1)) + suffix,
+                "分割伝票$number",
+            )
+            if (candidate !in used) return candidate
+            number++
+        }
+    }
+
     fun parkedName(operatorName: String, timestampMillis: Long = System.currentTimeMillis()): String {
         val suffix = java.text.SimpleDateFormat("HHmmss", java.util.Locale.JAPAN)
             .format(java.util.Date(timestampMillis))
         return normalizeName("作業中退避-$operatorName-$suffix", "作業中退避-$suffix")
+    }
+}
+
+internal object HeldTicketMergeSplitPolicy {
+    fun mergeItems(targetItems: List<CartItem>, sourceItems: List<CartItem>): List<CartItem> {
+        require(targetItems.isNotEmpty()) { "結合先の伝票が空です" }
+        require(sourceItems.isNotEmpty()) { "結合元の伝票が空です" }
+        return targetItems + sourceItems
+    }
+
+    fun splitItems(items: List<CartItem>, movedQuantities: Map<Int, Int>): HeldTicketSplitPlan {
+        require(items.isNotEmpty()) { "分割元の伝票が空です" }
+        val remaining = mutableListOf<CartItem>()
+        val moved = mutableListOf<CartItem>()
+
+        items.forEachIndexed { index, item ->
+            val movedQuantity = movedQuantities[index] ?: 0
+            require(movedQuantity in 0..item.quantity) { "分割数量が明細数量を超えています" }
+            when {
+                movedQuantity == 0 -> remaining += item
+                movedQuantity == item.quantity -> moved += item
+                else -> {
+                    val movedDiscount = proportionalDiscount(
+                        totalDiscount = item.discountAmount,
+                        partQuantity = movedQuantity,
+                        wholeQuantity = item.quantity,
+                    )
+                    moved += item.copy(
+                        quantity = movedQuantity,
+                        discountAmount = movedDiscount,
+                    )
+                    remaining += item.copy(
+                        quantity = item.quantity - movedQuantity,
+                        discountAmount = item.discountAmount - movedDiscount,
+                    )
+                }
+            }
+        }
+
+        require(moved.isNotEmpty()) { "分割する商品を1点以上指定してください" }
+        require(remaining.isNotEmpty()) { "全商品を移動する場合は伝票の名称変更を使用してください" }
+        return HeldTicketSplitPlan(
+            remainingItems = remaining,
+            movedItems = moved,
+        )
+    }
+
+    private fun proportionalDiscount(
+        totalDiscount: Long,
+        partQuantity: Int,
+        wholeQuantity: Int,
+    ): Long {
+        if (totalDiscount == 0L) return 0L
+        return BigInteger.valueOf(totalDiscount)
+            .multiply(BigInteger.valueOf(partQuantity.toLong()))
+            .divide(BigInteger.valueOf(wholeQuantity.toLong()))
+            .longValueExact()
     }
 }
 
@@ -102,6 +194,99 @@ internal class HeldTicketSafetyCoordinator(
             arrayOf(ticketId.toString()),
         )
         return updated == 1
+    }
+
+    fun merge(
+        sourceTicket: HeldTicket,
+        targetTicket: HeldTicket,
+    ): HeldTicketMergeResult {
+        require(sourceTicket.id != targetTicket.id) { "同じ伝票同士は結合できません" }
+        val db = database.writableDatabase
+        db.beginTransaction()
+        return try {
+            val sourceItems = database.loadHeldTicket(sourceTicket.id)
+            val targetItems = database.loadHeldTicket(targetTicket.id)
+            val mergedItems = HeldTicketMergeSplitPolicy.mergeItems(targetItems, sourceItems)
+
+            db.delete("held_ticket_items", "ticket_id = ?", arrayOf(targetTicket.id.toString()))
+            mergedItems.forEach { item ->
+                db.insertOrThrow(
+                    "held_ticket_items",
+                    null,
+                    item.toDatabaseValues().apply { put("ticket_id", targetTicket.id) },
+                )
+            }
+            LineTaxSnapshotStore.save(
+                db,
+                LineTaxSnapshotStore.SCOPE_HELD,
+                targetTicket.id,
+                mergedItems,
+            )
+
+            val deleted = db.delete("held_tickets", "id = ?", arrayOf(sourceTicket.id.toString()))
+            require(deleted == 1) { "結合元の伝票を確定できませんでした" }
+            db.delete(
+                "line_tax_snapshots",
+                "scope = ? AND owner_id = ?",
+                arrayOf(LineTaxSnapshotStore.SCOPE_HELD, sourceTicket.id.toString()),
+            )
+
+            db.setTransactionSuccessful()
+            HeldTicketMergeResult(
+                targetTicketId = targetTicket.id,
+                itemCount = mergedItems.sumOf { it.quantity },
+                message = "${sourceTicket.name}を${targetTicket.name}へ結合しました",
+            )
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun split(
+        ticket: HeldTicket,
+        movedQuantities: Map<Int, Int>,
+        newTicketName: String,
+        operatorName: String,
+    ): HeldTicketSplitResult {
+        val db = database.writableDatabase
+        db.beginTransaction()
+        return try {
+            val originalItems = database.loadHeldTicket(ticket.id)
+            require(originalItems.isNotEmpty()) { "分割元の伝票が空か、既に削除されています" }
+            val plan = HeldTicketMergeSplitPolicy.splitItems(originalItems, movedQuantities)
+            val normalizedName = HeldTicketSafetyPolicy.normalizeName(newTicketName, "${ticket.name}-分割")
+
+            db.delete("held_ticket_items", "ticket_id = ?", arrayOf(ticket.id.toString()))
+            plan.remainingItems.forEach { item ->
+                db.insertOrThrow(
+                    "held_ticket_items",
+                    null,
+                    item.toDatabaseValues().apply { put("ticket_id", ticket.id) },
+                )
+            }
+            LineTaxSnapshotStore.save(
+                db,
+                LineTaxSnapshotStore.SCOPE_HELD,
+                ticket.id,
+                plan.remainingItems,
+            )
+
+            val newTicketId = insertHeldTicket(
+                name = normalizedName,
+                operatorName = operatorName,
+                items = plan.movedItems,
+            )
+
+            db.setTransactionSuccessful()
+            HeldTicketSplitResult(
+                sourceTicketId = ticket.id,
+                newTicketId = newTicketId,
+                movedItemCount = plan.movedItems.sumOf { it.quantity },
+                message = "${ticket.name}から${plan.movedItems.sumOf { it.quantity }}点を$normalizedNameへ分割しました",
+            )
+        } finally {
+            db.endTransaction()
+        }
     }
 
     private fun insertHeldTicket(
