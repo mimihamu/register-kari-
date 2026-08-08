@@ -27,6 +27,6 @@ class V063ReversalSaleLookupTest {
         assertTrue(store.contains("claimOperationKey"))
         assertTrue(secure.contains("RegisterPermission.REVERSAL"))
         assertTrue(workflow.contains("V063ReversalSaleLookupTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.67.0_dev1_sale_receipt_reprint_navigation_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.68.0_dev1_sale_receipt_reprint_audit_debug.apk"))
     }
 }

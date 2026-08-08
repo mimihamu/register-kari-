@@ -39,7 +39,14 @@ class V067SaleReceiptReprintNavigationTest {
         assertTrue(activity.contains("current.allows(RegisterPermission.VIEW_SALES)"))
         assertTrue(activity.contains("ReceiptFactory.fromSale"))
         assertTrue(activity.contains("ReceiptRenderer.render"))
-        assertTrue(activity.contains("database.enqueueReprint(detail.summary.id)"))
+        // v0.68 strengthens the v0.67 queue path by creating the print job atomically
+        // with an append-only audit row. The cumulative v0.67 requirement is that a
+        // confirmed reprint still enters the established print queue, not that the UI
+        // must call RegisterDatabase.enqueueReprint() directly forever.
+        assertTrue(
+            activity.contains("database.enqueueReprint(detail.summary.id)") ||
+                activity.contains("auditStore.request("),
+        )
         assertTrue(activity.contains("AutomaticPrintScheduler.enqueueNow"))
         assertTrue(activity.contains("再印字を確認"))
         assertTrue(activity.contains("再印字を確定"))
@@ -49,10 +56,10 @@ class V067SaleReceiptReprintNavigationTest {
         assertTrue(lookup.contains("SaleReceiptNavigation.intent(context, saleId)"))
         assertTrue(lookup.contains("通常レシート確認・再印字"))
         assertTrue(manifest.contains(".SaleReceiptReprintActivity"))
-        assertTrue(build.contains("versionCode = 97"))
-        assertTrue(build.contains("versionName = \"0.67.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 98"))
+        assertTrue(build.contains("versionName = \"0.68.0-dev.1\""))
         assertTrue(workflow.contains("V067SaleReceiptReprintNavigationTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.67.0_dev1_sale_receipt_reprint_navigation_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.68.0_dev1_sale_receipt_reprint_audit_debug.apk"))
         assertTrue(docs.isFile)
         assertTrue(notes.isFile)
     }
