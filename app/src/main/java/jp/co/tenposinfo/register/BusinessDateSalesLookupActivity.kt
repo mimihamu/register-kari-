@@ -201,6 +201,9 @@ private fun BusinessDateSalesLookupRoute(onClose: () -> Unit) {
             refreshEpoch = refreshEpoch,
             canReverse = current.allows(RegisterPermission.REVERSAL),
             onRefresh = { refreshEpoch++ },
+            onOpenReceipt = { saleId ->
+                context.startActivity(SaleReceiptNavigation.intent(context, saleId))
+            },
             onOpenVoucher = { saleId ->
                 context.startActivity(ReceiptVoucherNavigation.issuanceIntent(context, saleId))
             },
@@ -221,6 +224,7 @@ private fun BusinessDateSalesLookupScreen(
     refreshEpoch: Int,
     canReverse: Boolean,
     onRefresh: () -> Unit,
+    onOpenReceipt: (Long) -> Unit,
     onOpenVoucher: (Long) -> Unit,
     onOpenReversal: (Long) -> Unit,
     onOpenPrintQueue: () -> Unit,
@@ -476,6 +480,11 @@ private fun BusinessDateSalesLookupScreen(
                             }
                         }
                         Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { onOpenReceipt(sale.id) },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp),
+                        ) { Text("通常レシート確認・再印字") }
+                        Spacer(Modifier.height(6.dp))
                         OutlinedButton(
                             onClick = { onOpenVoucher(sale.id) },
                             modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp),
