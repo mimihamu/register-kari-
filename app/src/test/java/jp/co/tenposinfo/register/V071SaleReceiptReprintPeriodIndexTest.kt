@@ -111,10 +111,10 @@ class V071SaleReceiptReprintPeriodIndexTest {
         assertFalse(audit.contains("DELETE FROM sale_receipt_reprint_requests"))
         assertFalse(store.contains("UPDATE sale_receipt_reprint_requests"))
 
-        assertTrue(build.contains("versionCode = 105"))
-        assertTrue(build.contains("versionName = \"0.75.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 106"))
+        assertTrue(build.contains("versionName = \"0.76.0-dev.1\""))
         assertTrue(workflow.contains("V071SaleReceiptReprintPeriodIndexTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.75.0_dev1_sale_receipt_reprint_csv_export_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.76.0_dev1_business_session_sales_drilldown_debug.apk"))
         assertTrue(docs.isFile)
         assertTrue(notes.isFile)
     }

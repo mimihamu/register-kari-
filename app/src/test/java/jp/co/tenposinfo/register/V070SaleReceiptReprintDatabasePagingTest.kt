@@ -93,10 +93,10 @@ class V070SaleReceiptReprintDatabasePagingTest {
         assertTrue(activity.contains("SQLite直接検索"))
         assertFalse(activity.contains("store.list()"))
 
-        assertTrue(build.contains("versionCode = 105"))
-        assertTrue(build.contains("versionName = \"0.75.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 106"))
+        assertTrue(build.contains("versionName = \"0.76.0-dev.1\""))
         assertTrue(workflow.contains("V070SaleReceiptReprintDatabasePagingTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.75.0_dev1_sale_receipt_reprint_csv_export_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.76.0_dev1_business_session_sales_drilldown_debug.apk"))
         assertTrue(docs.isFile)
         assertTrue(notes.isFile)
     }

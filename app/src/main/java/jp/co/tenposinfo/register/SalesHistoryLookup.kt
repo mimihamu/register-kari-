@@ -8,6 +8,7 @@ internal data class SalesHistoryCriteria(
     val maxAmount: Long? = null,
     val businessDateFrom: String = "",
     val businessDateTo: String = "",
+    val businessSessionId: Long? = null,
 )
 
 internal data class SalesHistoryCriteriaValidation(
@@ -45,6 +46,9 @@ internal object SalesHistoryLookupPolicy {
         if (min != null && max != null && min > max) {
             return SalesHistoryCriteriaValidation(false, null, null, "金額範囲は『以上 ≤ 以下』になるよう入力してください")
         }
+        if (criteria.businessSessionId != null && criteria.businessSessionId <= 0L) {
+            return SalesHistoryCriteriaValidation(false, null, null, "営業セッションNo.が不正です")
+        }
 
         val from = parseBusinessDate(criteria.businessDateFrom)
         if (criteria.businessDateFrom.isNotBlank() && from == null) {
@@ -71,9 +75,13 @@ internal object SalesHistoryLookupPolicy {
         val validation = validate(criteria)
         if (!validation.valid) return emptyList()
         // SaleSummaryRecord itself intentionally remains the v0.15 immutable sales snapshot.
-        // Business-date filtering uses filterBusinessDate() so legacy callers cannot silently
-        // infer a business date from createdAt.
-        if (validation.businessDateFrom != null || validation.businessDateTo != null) return emptyList()
+        // Business-date/session filtering uses attributed records so legacy callers cannot silently
+        // infer attribution from createdAt or another mutable source.
+        if (
+            validation.businessDateFrom != null ||
+            validation.businessDateTo != null ||
+            criteria.businessSessionId != null
+        ) return emptyList()
 
         val query = criteria.query.trim().removePrefix("#").lowercase()
         val min = criteria.minAmount
@@ -101,6 +109,7 @@ internal object SalesHistoryLookupPolicy {
         val max = criteria.maxAmount
         val from = validation.businessDateFrom
         val to = validation.businessDateTo
+        val sessionId = criteria.businessSessionId
 
         return sales.filter { record ->
             val sale = record.summary
@@ -119,13 +128,15 @@ internal object SalesHistoryLookupPolicy {
                 to != null && businessDate > to -> false
                 else -> true
             }
-            matchesQuery && matchesMin && matchesMax && matchesBusinessDate
+            val matchesBusinessSession = sessionId == null || record.businessSessionId == sessionId
+            matchesQuery && matchesMin && matchesMax && matchesBusinessDate && matchesBusinessSession
         }
     }
 
     fun buildDatabaseQuery(
         criteria: SalesHistoryCriteria,
         businessDateColumnAvailable: Boolean,
+        businessSessionIdColumnAvailable: Boolean = true,
     ): BusinessDateSalesSqlQuery? {
         val validation = validate(criteria)
         if (!validation.valid) return null
@@ -133,6 +144,9 @@ internal object SalesHistoryLookupPolicy {
             !businessDateColumnAvailable &&
             (validation.businessDateFrom != null || validation.businessDateTo != null)
         ) {
+            return null
+        }
+        if (!businessSessionIdColumnAvailable && criteria.businessSessionId != null) {
             return null
         }
 
@@ -169,6 +183,10 @@ internal object SalesHistoryLookupPolicy {
         validation.businessDateTo?.let {
             clauses += "business_date <= ?"
             args += it
+        }
+        criteria.businessSessionId?.let {
+            clauses += "business_session_id = ?"
+            args += it.toString()
         }
         return BusinessDateSalesSqlQuery(
             whereSql = if (clauses.isEmpty()) "" else clauses.joinToString(" AND ", prefix = "WHERE "),
