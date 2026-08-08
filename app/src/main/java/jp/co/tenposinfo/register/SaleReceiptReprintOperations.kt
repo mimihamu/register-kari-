@@ -65,7 +65,7 @@ internal data class SaleReceiptReprintLedgerSqlQuery(
     val args: List<String>,
 )
 
-internal data class SaleReceiptReprintLedgerPage(
+data class SaleReceiptReprintLedgerPage(
     val entries: List<SaleReceiptReprintLedgerEntry>,
     val offset: Int,
     val pageSize: Int,
@@ -160,7 +160,7 @@ object SaleReceiptReprintLedgerPolicy {
                 "LOWER(COALESCE(j.last_error, '')) LIKE ? ESCAPE '\\'",
             )
             clauses += searchable.joinToString(" OR ", prefix = "(", postfix = ")")
-            repeat(searchable.size) { args += pattern }
+            searchable.forEach { args += pattern }
         }
 
         return SaleReceiptReprintLedgerSqlQuery(
