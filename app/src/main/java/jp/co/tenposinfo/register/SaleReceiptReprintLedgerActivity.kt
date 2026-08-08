@@ -4,6 +4,8 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -37,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +53,9 @@ import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val ReprintLedgerNavy = Color(0xFF173F6B)
 private val ReprintLedgerBlue = Color(0xFF1976B9)
@@ -129,6 +135,47 @@ private fun SaleReceiptReprintLedgerScreen(
     var pageCursor by remember { mutableStateOf<SaleReceiptReprintLedgerCursor?>(null) }
     var cursorHistory by remember { mutableStateOf<List<SaleReceiptReprintLedgerCursor?>>(emptyList()) }
     var selectedId by remember { mutableStateOf<Long?>(null) }
+    val context = LocalContext.current
+    val exportScope = rememberCoroutineScope()
+    var pendingExportCriteria by remember { mutableStateOf<SaleReceiptReprintLedgerCriteria?>(null) }
+    var pendingExportSnapshot by remember { mutableStateOf<SaleReceiptReprintLedgerSnapshot?>(null) }
+    var exportMessage by remember { mutableStateOf<String?>(null) }
+    val csvExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv"),
+    ) { uri ->
+        val criteriaToExport = pendingExportCriteria
+        val snapshotToExport = pendingExportSnapshot
+        pendingExportCriteria = null
+        pendingExportSnapshot = null
+        if (uri != null) {
+            val currentOperator = OperatorSessionRegistry.current(context.applicationContext)
+            if (criteriaToExport == null || snapshotToExport == null) {
+                exportMessage = "CSV出力条件を取得できませんでした"
+            } else if (currentOperator == null || !currentOperator.allows(RegisterPermission.VIEW_SALES)) {
+                exportMessage = "売上参照権限が失効したためCSV出力を中止しました"
+            } else {
+                exportScope.launch {
+                    val exportResult: Result<Int> = withContext(Dispatchers.IO) {
+                        runCatching {
+                            context.contentResolver.openOutputStream(uri, "wt")?.use { output ->
+                                val exporter = SaleReceiptReprintCsvExporter(context.applicationContext)
+                                try {
+                                    exporter.exportSnapshot(criteriaToExport, snapshotToExport, output)
+                                } finally {
+                                    exporter.close()
+                                }
+                            } ?: error("CSV保存先を開けませんでした")
+                        }
+                    }
+                    exportMessage = exportResult.fold(
+                        onSuccess = { count -> "CSV出力完了: ${count}件" },
+                        onFailure = { error -> "CSV出力失敗: ${error.message ?: "書き込みエラー"}" },
+                    )
+                }
+            }
+        }
+        Unit
+    }
 
     fun applyCriteria(criteria: SaleReceiptReprintLedgerCriteria) {
         appliedCriteria = criteria
@@ -259,6 +306,21 @@ private fun SaleReceiptReprintLedgerScreen(
                 OutlinedButton(
                     onClick = { applyCriteria(appliedCriteria) },
                 ) { Text("新着を反映") }
+            }
+            OutlinedButton(
+                enabled = snapshot != null,
+                onClick = {
+                    val snapshotToExport = snapshot
+                    if (snapshotToExport != null) {
+                        pendingExportCriteria = appliedCriteria
+                        pendingExportSnapshot = snapshotToExport
+                        exportMessage = null
+                        csvExportLauncher.launch(SaleReceiptReprintCsvPolicy.fileName())
+                    }
+                },
+            ) { Text("CSV出力") }
+            exportMessage?.let { message ->
+                Text(message, color = Color.Gray, fontSize = 12.sp, maxLines = 1)
             }
             OutlinedButton(
                 enabled = cursorHistory.isNotEmpty(),

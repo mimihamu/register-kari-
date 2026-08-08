@@ -54,6 +54,6 @@ class V061ReceiptVoucherSaleContextNavigationTest {
         assertTrue(voucher.contains("requestId"))
         assertTrue(voucher.contains("remainingAmount"))
         assertTrue(workflow.contains("V061ReceiptVoucherSaleContextNavigationTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.74.0_dev1_sale_receipt_reprint_matching_new_items_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.75.0_dev1_sale_receipt_reprint_csv_export_debug.apk"))
     }
 }
