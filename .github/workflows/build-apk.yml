@@ -46,12 +46,12 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.64 sources
+      - name: Verify cumulative v0.14-v0.65 sources
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 94' app/build.gradle.kts
-          grep -q 'versionName = "0.64.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 95' app/build.gradle.kts
+          grep -q 'versionName = "0.65.0-dev.1"' app/build.gradle.kts
           grep -q 'versionCode = 14' management-app/build.gradle.kts
           grep -q 'versionName = "0.14.0-dev.1"' management-app/build.gradle.kts
           grep -q 'versionCode = 7' customer-display/build.gradle.kts
@@ -79,6 +79,7 @@ jobs:
           test -s app/src/test/java/jp/co/tenposinfo/register/V062SalesHistoryLookupTest.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V063ReversalSaleLookupTest.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V064SaleDetailReversalNavigationTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V065BusinessDateSalesLookupTest.kt
           test -s management-app/src/test/java/jp/co/tenposinfo/register/plus/V044GoogleDriveAccountTest.kt
           test -s management-app/src/test/java/jp/co/tenposinfo/register/plus/V049GoogleDrivePlusSetupDiagnosticsTest.kt
           test -s management-app/src/test/java/jp/co/tenposinfo/register/plus/V050GoogleDriveCrossAppConnectionTest.kt
@@ -110,6 +111,8 @@ jobs:
           test -s docs/V0.63_RELEASE_NOTES.md
           test -s docs/V0.64_SALE_DETAIL_REVERSAL_NAVIGATION.md
           test -s docs/V0.64_RELEASE_NOTES.md
+          test -s docs/V0.65_BUSINESS_DATE_SALES_LOOKUP.md
+          test -s docs/V0.65_RELEASE_NOTES.md
           grep -q '^# つぐレジ$' README.md
           grep -q 'GoogleDriveEasyConnectActivity' app/src/main/AndroidManifest.xml
           grep -q 'GoogleDriveEasyConnectActivity' management-app/src/main/AndroidManifest.xml
@@ -163,6 +166,18 @@ jobs:
           grep -q 'current?.allows(RegisterPermission.REVERSAL) == true' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
           grep -q '返品・取消の権限が失効したため管理メニューへ戻りました' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
           grep -q '別売上を検索' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          test -s app/src/main/java/jp/co/tenposinfo/register/BusinessDateSalesLookupActivity.kt
+          test -s app/src/main/java/jp/co/tenposinfo/register/BusinessDateSalesLookupComponents.kt
+          grep -q 'SchemaMigration.hasColumn' app/src/main/java/jp/co/tenposinfo/register/BusinessDateSalesLookupActivity.kt
+          ! grep -q 'BusinessSessionSchema.ensure' app/src/main/java/jp/co/tenposinfo/register/BusinessDateSalesLookupActivity.kt
+          ! grep -q 'UPDATE sales' app/src/main/java/jp/co/tenposinfo/register/BusinessDateSalesLookupActivity.kt
+          ! grep -q 'ALTER TABLE' app/src/main/java/jp/co/tenposinfo/register/BusinessDateSalesLookupActivity.kt
+          grep -q '営業日From' app/src/main/java/jp/co/tenposinfo/register/BusinessDateSalesLookupActivity.kt
+          grep -q '営業日未記録' app/src/main/java/jp/co/tenposinfo/register/BusinessDateSalesLookupActivity.kt
+          grep -q 'ReceiptVoucherNavigation.issuanceIntent' app/src/main/java/jp/co/tenposinfo/register/BusinessDateSalesLookupActivity.kt
+          grep -q 'ReversalNavigation.intent' app/src/main/java/jp/co/tenposinfo/register/BusinessDateSalesLookupActivity.kt
+          grep -q 'BusinessDateSalesLookupActivity::class.java' app/src/main/java/jp/co/tenposinfo/register/OperationsHubActivityV030.kt
+          grep -q 'BusinessDateSalesLookupActivity' app/src/main/AndroidManifest.xml
           ! grep -R -q --include='*.kt' 'putString("access_token"' app/src/main management-app/src/main
           ! grep -R -q --include='*.kt' 'putString("refresh_token"' app/src/main management-app/src/main
 
@@ -194,7 +209,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v0.64.0_dev1_sale_detail_reversal_navigation_debug.apk
+          register_apk=artifacts/TSUGUREGI_v0.65.0_dev1_business_date_sales_lookup_debug.apk
           plus_apk=artifacts/TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
@@ -213,8 +228,8 @@ jobs:
             | awk -F': ' '/SHA1:/{print "DEVELOPMENT_SIGNING_SHA1=" $2} /SHA256:/{print "DEVELOPMENT_SIGNING_SHA256=" $2}' \
             | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.64.0-dev.1
-          REGISTER_VERSION_CODE=94
+          REGISTER_VERSION_NAME=0.65.0-dev.1
+          REGISTER_VERSION_CODE=95
           REGISTER_APPLICATION_ID_DEBUG=jp.co.tenposinfo.register.dev
           MANAGEMENT_APP_VERSION_NAME=0.14.0-dev.1
           MANAGEMENT_APP_VERSION_CODE=14
@@ -270,9 +285,14 @@ jobs:
           REVERSAL_CONTEXT_LIVE_PERMISSION_RECHECK=true
           REVERSAL_CONTEXT_SALE_LOCK=true
           REVERSAL_CONTEXT_EXPLICIT_UNLOCK=true
+          SALES_HISTORY_BUSINESS_DATE_FILTER=true
+          SALES_HISTORY_BUSINESS_SESSION_ATTRIBUTION=true
+          SALES_HISTORY_READ_ONLY_LEGACY_COLUMNS=true
+          SALES_HISTORY_LEGACY_DATE_INFERENCE=false
           GOOGLE_DRIVE_DIAGNOSTIC_TOKENS_INCLUDED=false
           GOOGLE_DRIVE_DIAGNOSTIC_SALES_JSON_INCLUDED=false
           GOOGLE_DRIVE_DIAGNOSTIC_CONTENT_URI_INCLUDED=false
+          REAL_DEVICE_BUSINESS_DATE_SALES_LOOKUP_VERIFICATION=required
           REAL_DEVICE_SALE_DETAIL_REVERSAL_NAVIGATION_VERIFICATION=required
           REAL_DEVICE_REVERSAL_SALE_LOOKUP_VERIFICATION=required
           REAL_DEVICE_SALES_HISTORY_LOOKUP_VERIFICATION=required
@@ -289,7 +309,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.64.0-dev1-sale-detail-reversal-navigation-apks
+          name: TSUGUREGI-v0.65.0-dev1-business-date-sales-lookup-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
