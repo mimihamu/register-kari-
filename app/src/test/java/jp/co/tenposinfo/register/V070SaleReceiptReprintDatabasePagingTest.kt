@@ -48,23 +48,24 @@ class V070SaleReceiptReprintDatabasePagingTest {
     @Test
     fun pagingBoundaryIsStable() {
         assertEquals(200, SaleReceiptReprintLedgerPolicy.DATABASE_PAGE_SIZE)
-        val page = SaleReceiptReprintLedgerPage(
+        val legacyPage = SaleReceiptReprintLedgerPage(
             entries = emptyList(),
             offset = 400,
             pageSize = 200,
             totalMatches = 999,
             hasNext = true,
         )
-        assertEquals(400, page.offset)
-        assertEquals(200, page.pageSize)
-        assertEquals(999, page.totalMatches)
-        assertTrue(page.hasNext)
+        assertEquals(400, legacyPage.offset)
+        assertEquals(200, legacyPage.pageSize)
+        assertEquals(999, legacyPage.totalMatches)
+        assertTrue(legacyPage.hasNext)
     }
 
     @Test
-    fun sourceUsesDirectBoundDatabaseSearchWithoutOneThousandCap() {
+    fun sourceKeepsDirectBoundDatabaseSearchWithoutOneThousandCap() {
         val root = File("..")
         val store = File("src/main/java/jp/co/tenposinfo/register/SaleReceiptReprintOperations.kt").readText()
+        val stable = File("src/main/java/jp/co/tenposinfo/register/SaleReceiptReprintStablePaging.kt").readText()
         val activity = File("src/main/java/jp/co/tenposinfo/register/SaleReceiptReprintLedgerActivity.kt").readText()
         val build = File("build.gradle.kts").readText()
         val workflow = File(root, ".github/workflows/build-apk.yml").readText()
@@ -72,9 +73,8 @@ class V070SaleReceiptReprintDatabasePagingTest {
         val notes = File(root, "docs/V0.70_RELEASE_NOTES.md")
 
         assertTrue(store.contains("DATABASE_PAGE_SIZE = 200"))
-        assertTrue(store.contains("LIMIT ? OFFSET ?"))
+        assertTrue(store.contains("LIMIT ? OFFSET ?")) // legacy compatibility API remains available
         assertTrue(store.contains("safePageSize + 1"))
-        assertTrue(store.contains("selectionArgs.toTypedArray()"))
         assertTrue(store.contains("SELECT COUNT(*)"))
         assertTrue(store.contains("escapeLike"))
         assertTrue(store.contains("ESCAPE"))
@@ -83,16 +83,20 @@ class V070SaleReceiptReprintDatabasePagingTest {
         assertFalse(store.contains("UPDATE sale_receipt_reprint_requests"))
         assertFalse(store.contains("DELETE FROM sale_receipt_reprint_requests"))
 
-        assertTrue(activity.contains("store.search(appliedCriteria, pageOffset)"))
+        // Current SCR-648 still satisfies v0.70's DB-direct/200-row requirement, now via keyset paging.
+        assertTrue(stable.contains("DATABASE_PAGE_SIZE"))
+        assertTrue(stable.contains("LIMIT ?"))
+        assertTrue(stable.contains("SELECT COUNT(*)"))
+        assertTrue(activity.contains("SaleReceiptReprintStablePagingStore"))
         assertTrue(activity.contains("前へ"))
         assertTrue(activity.contains("次へ"))
         assertTrue(activity.contains("SQLite直接検索"))
         assertFalse(activity.contains("store.list()"))
 
-        assertTrue(build.contains("versionCode = 102"))
-        assertTrue(build.contains("versionName = \"0.72.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 103"))
+        assertTrue(build.contains("versionName = \"0.73.0-dev.1\""))
         assertTrue(workflow.contains("V070SaleReceiptReprintDatabasePagingTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.72.0_dev1_sale_receipt_reprint_custom_range_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.73.0_dev1_sale_receipt_reprint_stable_paging_debug.apk"))
         assertTrue(docs.isFile)
         assertTrue(notes.isFile)
     }

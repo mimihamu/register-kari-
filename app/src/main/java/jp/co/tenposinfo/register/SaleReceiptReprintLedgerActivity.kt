@@ -77,7 +77,7 @@ class SaleReceiptReprintLedgerActivity : ComponentActivity() {
 private fun SaleReceiptReprintLedgerRoute(onClose: () -> Unit) {
     val context = LocalContext.current
     val appContext = context.applicationContext
-    val store = remember { SaleReceiptReprintOperationsStore(appContext) }
+    val store = remember { SaleReceiptReprintStablePagingStore(appContext) }
     var operator by remember { mutableStateOf(OperatorSessionRegistry.current(appContext)) }
     var refreshEpoch by remember { mutableIntStateOf(0) }
 
@@ -111,7 +111,7 @@ private fun SaleReceiptReprintLedgerRoute(onClose: () -> Unit) {
 
 @Composable
 private fun SaleReceiptReprintLedgerScreen(
-    store: SaleReceiptReprintOperationsStore,
+    store: SaleReceiptReprintStablePagingStore,
     refreshEpoch: Int,
     onOpenSale: (Long) -> Unit,
     onOpenQueue: () -> Unit,
@@ -125,27 +125,26 @@ private fun SaleReceiptReprintLedgerScreen(
     var customRange by remember { mutableStateOf<SaleReceiptReprintCustomRange?>(null) }
     var dateError by remember { mutableStateOf<String?>(null) }
     var appliedCriteria by remember { mutableStateOf(SaleReceiptReprintLedgerCriteria()) }
-    var pageOffset by remember { mutableIntStateOf(0) }
+    var snapshot by remember { mutableStateOf(store.captureSnapshot(appliedCriteria)) }
+    var pageCursor by remember { mutableStateOf<SaleReceiptReprintLedgerCursor?>(null) }
+    var cursorHistory by remember { mutableStateOf<List<SaleReceiptReprintLedgerCursor?>>(emptyList()) }
     var selectedId by remember { mutableStateOf<Long?>(null) }
 
-    val page = remember(appliedCriteria, pageOffset, refreshEpoch) {
-        store.search(appliedCriteria, pageOffset)
+    fun applyCriteria(criteria: SaleReceiptReprintLedgerCriteria) {
+        appliedCriteria = criteria
+        snapshot = store.captureSnapshot(criteria)
+        pageCursor = null
+        cursorHistory = emptyList()
+        selectedId = null
+    }
+
+    val page = remember(appliedCriteria, snapshot, pageCursor, refreshEpoch) {
+        store.searchStable(appliedCriteria, snapshot, pageCursor)
     }
     val summary = remember(refreshEpoch) { store.summary() }
     val entries = page.entries
     val selected = entries.firstOrNull { it.auditId == selectedId }
         ?: entries.firstOrNull()
-
-    LaunchedEffect(page.totalMatches, pageOffset, entries.size) {
-        if (pageOffset > 0 && entries.isEmpty()) {
-            pageOffset = if (page.totalMatches <= 0) {
-                0
-            } else {
-                ((page.totalMatches - 1) / page.pageSize) * page.pageSize
-            }
-            selectedId = null
-        }
-    }
 
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -156,7 +155,7 @@ private fun SaleReceiptReprintLedgerScreen(
             Spacer(Modifier.width(20.dp))
             Text("SCR-648  通常レシート再印字 運用台帳", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
-            Text("SQLite直接検索 / 期間DB絞込 / 1ページ${SaleReceiptReprintLedgerPolicy.DATABASE_PAGE_SIZE}件", color = Color.White)
+            Text("SQLite直接検索 / 検索時点固定 / keyset ${SaleReceiptReprintLedgerPolicy.DATABASE_PAGE_SIZE}件", color = Color.White)
         }
 
         Row(
@@ -184,24 +183,22 @@ private fun SaleReceiptReprintLedgerScreen(
                             SaleReceiptReprintLedgerPolicy.parseCustomRange(customStartDate, customEndDate)
                         }.onSuccess { range ->
                             customRange = range
-                            appliedCriteria = SaleReceiptReprintLedgerCriteria(
-                                filter = filter,
-                                period = SaleReceiptReprintLedgerPeriod.CUSTOM,
-                                customStartInclusive = range.startInclusive,
-                                customEndExclusive = range.endExclusive,
-                                query = query,
+                            applyCriteria(
+                                SaleReceiptReprintLedgerCriteria(
+                                    filter = filter,
+                                    period = SaleReceiptReprintLedgerPeriod.CUSTOM,
+                                    customStartInclusive = range.startInclusive,
+                                    customEndExclusive = range.endExclusive,
+                                    query = query,
+                                ),
                             )
                             dateError = null
-                            pageOffset = 0
-                            selectedId = null
                         }.onFailure { error ->
                             dateError = error.message ?: "任意期間を確認してください"
                         }
                     } else {
-                        appliedCriteria = SaleReceiptReprintLedgerCriteria(filter = filter, period = period, query = query)
+                        applyCriteria(SaleReceiptReprintLedgerCriteria(filter = filter, period = period, query = query))
                         dateError = null
-                        pageOffset = 0
-                        selectedId = null
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = ReprintLedgerBlue),
@@ -215,9 +212,7 @@ private fun SaleReceiptReprintLedgerScreen(
                     customEndDate = ""
                     customRange = null
                     dateError = null
-                    appliedCriteria = SaleReceiptReprintLedgerCriteria()
-                    pageOffset = 0
-                    selectedId = null
+                    applyCriteria(SaleReceiptReprintLedgerCriteria())
                 },
             ) { Text("クリア") }
         }
@@ -232,15 +227,15 @@ private fun SaleReceiptReprintLedgerScreen(
                 val active = filter == item
                 val applyFilter = {
                     filter = item
-                    appliedCriteria = SaleReceiptReprintLedgerCriteria(
-                        filter = item,
-                        period = period,
-                        customStartInclusive = if (period == SaleReceiptReprintLedgerPeriod.CUSTOM) customRange?.startInclusive else null,
-                        customEndExclusive = if (period == SaleReceiptReprintLedgerPeriod.CUSTOM) customRange?.endExclusive else null,
-                        query = query,
+                    applyCriteria(
+                        SaleReceiptReprintLedgerCriteria(
+                            filter = item,
+                            period = period,
+                            customStartInclusive = if (period == SaleReceiptReprintLedgerPeriod.CUSTOM) customRange?.startInclusive else null,
+                            customEndExclusive = if (period == SaleReceiptReprintLedgerPeriod.CUSTOM) customRange?.endExclusive else null,
+                            query = query,
+                        ),
                     )
-                    pageOffset = 0
-                    selectedId = null
                 }
                 if (active) {
                     Button(
@@ -252,21 +247,34 @@ private fun SaleReceiptReprintLedgerScreen(
                 }
             }
             Spacer(Modifier.weight(1f))
-            val resultFrom = if (page.totalMatches == 0 || entries.isEmpty()) 0 else page.offset + 1
-            val resultTo = if (entries.isEmpty()) 0 else page.offset + entries.size
-            Text("表示 $resultFrom-$resultTo / ${page.totalMatches}件", color = Color.Gray)
+            val pageNumber = cursorHistory.size + 1
+            Text("ページ $pageNumber / 条件一致 ${page.totalMatches}件", color = Color.Gray)
+            if (page.newerAuditCount > 0) {
+                Text(
+                    "新しい再印字要求 ${page.newerAuditCount}件（検索再実行で反映）",
+                    color = ReprintLedgerDanger,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                )
+            }
             OutlinedButton(
-                enabled = page.offset > 0,
+                enabled = cursorHistory.isNotEmpty(),
                 onClick = {
-                    pageOffset = (page.offset - page.pageSize).coerceAtLeast(0)
-                    selectedId = null
+                    if (cursorHistory.isNotEmpty()) {
+                        pageCursor = cursorHistory.last()
+                        cursorHistory = cursorHistory.dropLast(1)
+                        selectedId = null
+                    }
                 },
             ) { Text("前へ") }
             OutlinedButton(
-                enabled = page.hasNext,
+                enabled = page.hasNext && page.nextCursor != null,
                 onClick = {
-                    pageOffset = page.offset + page.pageSize
-                    selectedId = null
+                    page.nextCursor?.let { next ->
+                        cursorHistory = cursorHistory + listOf(pageCursor)
+                        pageCursor = next
+                        selectedId = null
+                    }
                 },
             ) { Text("次へ") }
         }
@@ -283,9 +291,7 @@ private fun SaleReceiptReprintLedgerScreen(
                     period = item
                     customRange = null
                     dateError = null
-                    appliedCriteria = SaleReceiptReprintLedgerCriteria(filter = filter, period = item, query = query)
-                    pageOffset = 0
-                    selectedId = null
+                    applyCriteria(SaleReceiptReprintLedgerCriteria(filter = filter, period = item, query = query))
                 }
                 if (active) {
                     Button(
@@ -297,7 +303,7 @@ private fun SaleReceiptReprintLedgerScreen(
                 }
             }
             Spacer(Modifier.weight(1f))
-            Text("期間変更時は先頭ページへ戻ります / 5秒更新は条件・ページを維持", color = Color.Gray, fontSize = 12.sp)
+            Text("条件変更時は新snapshot / 5秒更新はsnapshot・ページを維持", color = Color.Gray, fontSize = 12.sp)
         }
 
         Row(
@@ -327,16 +333,16 @@ private fun SaleReceiptReprintLedgerScreen(
                 }.onSuccess { range ->
                     customRange = range
                     period = SaleReceiptReprintLedgerPeriod.CUSTOM
-                    appliedCriteria = SaleReceiptReprintLedgerCriteria(
-                        filter = filter,
-                        period = SaleReceiptReprintLedgerPeriod.CUSTOM,
-                        customStartInclusive = range.startInclusive,
-                        customEndExclusive = range.endExclusive,
-                        query = query,
+                    applyCriteria(
+                        SaleReceiptReprintLedgerCriteria(
+                            filter = filter,
+                            period = SaleReceiptReprintLedgerPeriod.CUSTOM,
+                            customStartInclusive = range.startInclusive,
+                            customEndExclusive = range.endExclusive,
+                            query = query,
+                        ),
                     )
                     dateError = null
-                    pageOffset = 0
-                    selectedId = null
                 }.onFailure { error ->
                     dateError = error.message ?: "任意期間を確認してください"
                 }

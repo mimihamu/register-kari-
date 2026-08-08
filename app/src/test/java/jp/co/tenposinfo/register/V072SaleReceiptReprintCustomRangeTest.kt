@@ -83,10 +83,10 @@ class V072SaleReceiptReprintCustomRangeTest {
         assertFalse(store.contains("UPDATE sale_receipt_reprint_requests"))
         assertFalse(store.contains("DELETE FROM sale_receipt_reprint_requests"))
 
-        assertTrue(build.contains("versionCode = 102"))
-        assertTrue(build.contains("versionName = \"0.72.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 103"))
+        assertTrue(build.contains("versionName = \"0.73.0-dev.1\""))
         assertTrue(workflow.contains("V072SaleReceiptReprintCustomRangeTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.72.0_dev1_sale_receipt_reprint_custom_range_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.73.0_dev1_sale_receipt_reprint_stable_paging_debug.apk"))
         assertTrue(docs.isFile)
         assertTrue(notes.isFile)
     }

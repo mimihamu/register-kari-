@@ -61,10 +61,10 @@ class V068SaleReceiptReprintAuditTest {
         assertTrue(main.contains("lastSaleId?.let { saleId"))
         assertTrue(main.contains("SaleReceiptNavigation.intent(context, saleId)"))
         assertTrue(main.contains("SaleReceiptNavigation.intent(context, detail.summary.id)"))
-        assertTrue(build.contains("versionCode = 102"))
-        assertTrue(build.contains("versionName = \"0.72.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 103"))
+        assertTrue(build.contains("versionName = \"0.73.0-dev.1\""))
         assertTrue(workflow.contains("V068SaleReceiptReprintAuditTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.72.0_dev1_sale_receipt_reprint_custom_range_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.73.0_dev1_sale_receipt_reprint_stable_paging_debug.apk"))
         assertTrue(docs.isFile)
         assertTrue(notes.isFile)
     }
