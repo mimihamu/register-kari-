@@ -73,7 +73,7 @@ class V038OutboxDeliveryOperationsTest {
         assertTrue(panel.contains("端末内JSONプレビュー"))
         assertTrue(settings.contains("OutboxDeliveryOperationsPanel"))
         assertTrue(build.contains("versionCode = 96"))
-        assertTrue(build.contains("versionName = \"0.65.0-dev.1\""))
+        assertTrue(build.contains("versionName = \"0.66.0-dev.1\""))
         assertTrue(docs.contains("送信先テスト"))
         assertTrue(notes.contains("個別再試行"))
         assertFalse(File("../tools/v038_apply.py").exists())

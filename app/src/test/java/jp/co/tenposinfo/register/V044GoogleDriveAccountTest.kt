@@ -48,7 +48,7 @@ class V044GoogleDriveAccountTest {
         assertTrue(manifest.contains("android:name=\".GoogleDriveAccountActivity\""))
         assertTrue(build.contains("com.google.android.gms:play-services-auth:21.6.0"))
         assertTrue(build.contains("versionCode = 96"))
-        assertTrue(build.contains("versionName = \"0.65.0-dev.1\""))
+        assertTrue(build.contains("versionName = \"0.66.0-dev.1\""))
         assertTrue(docs.contains("drive.file"))
         assertTrue(docs.contains("OAuth"))
         assertTrue(notes.contains("0.44.0-dev.1"))

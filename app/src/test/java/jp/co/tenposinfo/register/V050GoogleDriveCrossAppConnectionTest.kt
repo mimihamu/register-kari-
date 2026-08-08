@@ -33,7 +33,7 @@ class V050GoogleDriveCrossAppConnectionTest {
         assertFalse(source.contains("putString(\"access_token\""))
         assertFalse(source.contains("putString(\"refresh_token\""))
         assertTrue(build.contains("versionCode = 96"))
-        assertTrue(build.contains("versionName = \"0.65.0-dev.1\""))
+        assertTrue(build.contains("versionName = \"0.66.0-dev.1\""))
         assertTrue(workflow.contains("V050GoogleDriveCrossAppConnectionTest.kt"))
         assertTrue(workflow.contains("TSUGUREGI_v0.66.0_dev1_business_date_database_search_debug.apk"))
         assertTrue(docs.contains("実売上を使用しない"))

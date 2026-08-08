@@ -17,7 +17,7 @@ class V054GoogleEasyConnectTest {
         val docs = File(root, "docs/V0.54_GOOGLE_EASY_CONNECT.md").readText()
 
         assertTrue(build.contains("versionCode = 96"))
-        assertTrue(build.contains("versionName = \"0.65.0-dev.1\""))
+        assertTrue(build.contains("versionName = \"0.66.0-dev.1\""))
         assertTrue(source.contains("AuthorizationRequest.Prompt.SELECT_ACCOUNT"))
         assertTrue(source.contains("GoogleDriveConnectionTestCoordinator(applicationContext)"))
         assertTrue(source.contains("createOrUpdate(accessToken)"))
