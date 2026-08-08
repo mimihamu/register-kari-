@@ -211,6 +211,11 @@
             android:screenOrientation="landscape" />
 
         <activity
+            android:name=".ReceiptVoucherActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
             android:name=".OperationsHubActivityV030"
             android:exported="false"
             android:screenOrientation="landscape" />
