@@ -21,7 +21,7 @@ jobs:
           fetch-depth: 0
 
       - name: Apply v0.61 patch
-        run: python3 tools/v061_apply.py
+        run: python3 tools/v061_fix_runner.py
 
       - name: Commit generated product changes
         shell: bash
