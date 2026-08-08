@@ -612,9 +612,13 @@ private fun RegisterApp() {
                 } else {
                     SaleDetailScreen(
                         detail = detail,
+                        canReverse = currentOperator?.allows(RegisterPermission.REVERSAL) == true,
                         onReceipt = { screen = AppScreen.RECEIPT_PREVIEW },
                         onVoucher = {
                             context.startActivity(ReceiptVoucherNavigation.issuanceIntent(context, detail.summary.id))
+                        },
+                        onReverse = {
+                            context.startActivity(ReversalNavigation.intent(context, detail.summary.id))
                         },
                         onBack = { screen = AppScreen.SALES_HISTORY },
                     )
@@ -1901,8 +1905,10 @@ private fun SalesHistoryScreen(
 @Composable
 private fun SaleDetailScreen(
     detail: SaleDetailRecord,
+    canReverse: Boolean,
     onReceipt: () -> Unit,
     onVoucher: () -> Unit,
+    onReverse: () -> Unit,
     onBack: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
@@ -1942,6 +1948,12 @@ private fun SaleDetailScreen(
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = onVoucher, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                     Text("この売上で領収書発行")
+                }
+                if (canReverse) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(onClick = onReverse, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                        Text("この売上を返品・取消", color = Danger, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

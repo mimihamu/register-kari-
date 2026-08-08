@@ -70,9 +70,13 @@ class OperationsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
+        val requestedReversalSaleId = ReversalNavigation.requestedSaleId(intent)
         setContent {
             MaterialTheme {
-                OperationsApp(onClose = { finish() })
+                OperationsApp(
+                    requestedReversalSaleId = requestedReversalSaleId,
+                    onClose = { finish() },
+                )
             }
         }
     }
@@ -90,7 +94,10 @@ private enum class OperationsScreen {
 }
 
 @Composable
-private fun OperationsApp(onClose: () -> Unit) {
+private fun OperationsApp(
+    requestedReversalSaleId: Long?,
+    onClose: () -> Unit,
+) {
     val context = LocalContext.current
     val appContext = context.applicationContext
     val store = remember { OperationsStore(appContext) }
@@ -100,6 +107,26 @@ private fun OperationsApp(onClose: () -> Unit) {
     var revision by remember { mutableStateOf(0) }
     var message by remember { mutableStateOf<String?>(null) }
     var activeOperator by remember { mutableStateOf(OperatorSessionRegistry.current(appContext)) }
+    var reversalContextSaleId by remember { mutableStateOf<Long?>(null) }
+    var requestedReversalHandled by remember(requestedReversalSaleId) { mutableStateOf(false) }
+
+    androidx.compose.runtime.LaunchedEffect(requestedReversalSaleId) {
+        val requested = requestedReversalSaleId
+        if (requested != null && !requestedReversalHandled) {
+            val current = OperatorSessionRegistry.current(appContext)
+            activeOperator = current
+            if (current?.allows(RegisterPermission.REVERSAL) == true) {
+                reversalContextSaleId = requested
+                message = null
+                screen = OperationsScreen.REVERSAL
+            } else {
+                reversalContextSaleId = null
+                message = "返品・取消の権限がありません"
+                screen = OperationsScreen.MENU
+            }
+            requestedReversalHandled = true
+        }
+    }
 
     androidx.compose.runtime.LaunchedEffect(Unit) {
         while (true) {
@@ -184,7 +211,10 @@ private fun OperationsApp(onClose: () -> Unit) {
                 onZSettlement = { openScreen(RegisterPermission.Z_SETTLEMENT, OperationsScreen.Z_SETTLEMENT) },
                 onSettlementHistory = ::openSettlementHistory,
                 onCashMovement = { openScreen(RegisterPermission.CASH_MOVEMENT, OperationsScreen.CASH_MOVEMENT) },
-                onReversal = { openScreen(RegisterPermission.REVERSAL, OperationsScreen.REVERSAL) },
+                onReversal = {
+                    reversalContextSaleId = null
+                    openScreen(RegisterPermission.REVERSAL, OperationsScreen.REVERSAL)
+                },
                 onClose = onClose,
             )
 
@@ -301,6 +331,7 @@ private fun OperationsApp(onClose: () -> Unit) {
             )
 
             OperationsScreen.REVERSAL -> ReversalScreen(
+                initialSaleId = reversalContextSaleId,
                 sales = registerDatabase.listSales(SalesHistoryLookupPolicy.RECENT_LOAD_LIMIT),
                 reversedSaleIds = store.reversedSaleIds(),
                 reversals = store.recentReversals(),
@@ -333,7 +364,10 @@ private fun OperationsApp(onClose: () -> Unit) {
                     activeOperator = OperatorSessionRegistry.current(appContext)
                     result.getOrNull()
                 },
-                onBack = { screen = OperationsScreen.MENU },
+                onBack = {
+                    reversalContextSaleId = null
+                    screen = OperationsScreen.MENU
+                },
             )
         }
     }
@@ -944,6 +978,7 @@ private fun CashMovementScreen(
 
 @Composable
 private fun ReversalScreen(
+    initialSaleId: Long?,
     sales: List<SaleSummaryRecord>,
     reversedSaleIds: Set<Long>,
     reversals: List<ReversalRecord>,
@@ -956,7 +991,8 @@ private fun ReversalScreen(
     onExecute: (Long, ReversalType, Map<Long, Int>, String, String, String) -> PartialReversalResult?,
     onBack: () -> Unit,
 ) {
-    var selectedSaleId by remember { mutableStateOf<Long?>(null) }
+    var selectedSaleId by remember(initialSaleId) { mutableStateOf<Long?>(initialSaleId) }
+    var contextSaleLocked by remember(initialSaleId) { mutableStateOf(initialSaleId != null) }
     var lines by remember { mutableStateOf<List<ReturnableSaleLine>>(emptyList()) }
     var quantities by remember { mutableStateOf<Map<Long, Int>>(emptyMap()) }
     var type by remember { mutableStateOf(ReversalType.RETURN) }
@@ -981,15 +1017,98 @@ private fun ReversalScreen(
         ReversalType.RETURN -> selectedItems.isNotEmpty()
     }
 
+    androidx.compose.runtime.LaunchedEffect(initialSaleId) {
+        val saleId = initialSaleId ?: return@LaunchedEffect
+        val sale = lookupSale(saleId)
+        val context = ReversalNavigation.resolve(
+            requestedSaleId = saleId,
+            saleExists = sale != null,
+            alreadyCompleted = saleId in reversedSaleIds,
+        )
+        when {
+            !context.saleExists -> {
+                selectedSaleId = null
+                directSaleOverride = null
+                contextSaleLocked = false
+                lines = emptyList()
+                quantities = emptyMap()
+                savedResult = null
+                requestId = UUID.randomUUID().toString()
+                localMessage = "指定された売上No.$saleId は見つかりません。元売上は選択していません"
+            }
+            context.alreadyCompleted -> {
+                selectedSaleId = null
+                directSaleOverride = null
+                contextSaleLocked = false
+                lines = emptyList()
+                quantities = emptyMap()
+                savedResult = null
+                requestId = UUID.randomUUID().toString()
+                localMessage = "売上No.$saleId は全量返品・取消済みです。元売上は選択していません"
+            }
+            context.mayOpenLocked && sale != null -> {
+                selectedSaleId = sale.id
+                directSaleOverride = sale.takeIf { candidate -> sales.none { it.id == candidate.id } }
+                lines = runCatching { loadLines(sale.id) }.getOrElse {
+                    localMessage = it.message ?: "明細取得に失敗しました"
+                    emptyList()
+                }
+                quantities = emptyMap()
+                savedResult = null
+                requestId = UUID.randomUUID().toString()
+                if (lines.isEmpty()) {
+                    selectedSaleId = null
+                    directSaleOverride = null
+                    contextSaleLocked = false
+                    localMessage = "売上No.${sale.id} に返品可能な明細がありません。元売上は選択していません"
+                } else {
+                    contextSaleLocked = true
+                    localMessage = "売上No.${sale.id} から開きました。元売上を固定しています"
+                }
+            }
+        }
+    }
+
     Column(Modifier.fillMaxSize()) {
         OpHeader("SCR-400/410", "返品・取消")
         Row(Modifier.weight(1f).padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OpPanel(Modifier.width(355.dp).fillMaxHeight()) {
                 Text("元売上を検索・選択", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = OpNavy)
+                if (contextSaleLocked && selectedSaleId != null) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                        colors = CardDefaults.cardColors(containerColor = OpPaleBlue),
+                        border = BorderStroke(2.dp, OpBlue),
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(8.dp)) {
+                            Text(
+                                "売上No.$selectedSaleId から開いています",
+                                fontWeight = FontWeight.Bold,
+                                color = OpNavy,
+                            )
+                            Text("対象売上は固定中です。変更する場合だけ下のボタンを押してください。", fontSize = 11.sp)
+                            Spacer(Modifier.height(5.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    contextSaleLocked = false
+                                    selectedSaleId = null
+                                    directSaleOverride = null
+                                    lines = emptyList()
+                                    quantities = emptyMap()
+                                    savedResult = null
+                                    requestId = UUID.randomUUID().toString()
+                                    localMessage = "元売上固定を解除しました。別売上を検索してください"
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("別売上を検索") }
+                        }
+                    }
+                }
                 Spacer(Modifier.height(6.dp))
                 OutlinedTextField(
                     value = saleQuery,
                     onValueChange = { saleQuery = it.take(80) },
+                    enabled = !contextSaleLocked,
                     label = { Text("売上No.・担当・支払") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -1006,6 +1125,7 @@ private fun ReversalScreen(
                             directSaleIdText = it.filter { ch -> ch.isDigit() || ch == '#' }.take(20)
                             localMessage = null
                         },
+                        enabled = !contextSaleLocked,
                         label = { Text("売上No.直接指定") },
                         singleLine = true,
                         modifier = Modifier.weight(1f),
@@ -1047,7 +1167,7 @@ private fun ReversalScreen(
                                 }
                             }
                         },
-                        enabled = directSaleId != null,
+                        enabled = directSaleId != null && !contextSaleLocked,
                         colors = ButtonDefaults.buttonColors(containerColor = OpBlue),
                     ) { Text("表示") }
                 }
@@ -1078,7 +1198,7 @@ private fun ReversalScreen(
                             Modifier
                                 .fillMaxWidth()
                                 .background(if (selectedRow) OpPaleBlue else Color.Transparent)
-                                .clickable(enabled = !completed) {
+                                .clickable(enabled = !completed && !contextSaleLocked) {
                                     selectedSaleId = sale.id
                                     directSaleOverride = null
                                     lines = runCatching { loadLines(sale.id) }.getOrElse {

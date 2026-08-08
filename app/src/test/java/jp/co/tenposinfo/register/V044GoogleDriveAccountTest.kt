@@ -47,13 +47,13 @@ class V044GoogleDriveAccountTest {
         assertTrue(manifest.contains("android:name=\".GoogleDriveSetupGuideActivity\""))
         assertTrue(manifest.contains("android:name=\".GoogleDriveAccountActivity\""))
         assertTrue(build.contains("com.google.android.gms:play-services-auth:21.6.0"))
-        assertTrue(build.contains("versionCode = 93"))
-        assertTrue(build.contains("versionName = \"0.63.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 94"))
+        assertTrue(build.contains("versionName = \"0.64.0-dev.1\""))
         assertTrue(docs.contains("drive.file"))
         assertTrue(docs.contains("OAuth"))
         assertTrue(notes.contains("0.44.0-dev.1"))
         assertTrue(notes.contains("Googleアカウント"))
         assertTrue(workflow.contains("V044GoogleDriveAccountTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.63.0_dev1_reversal_sale_lookup_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.64.0_dev1_sale_detail_reversal_navigation_debug.apk"))
     }
 }

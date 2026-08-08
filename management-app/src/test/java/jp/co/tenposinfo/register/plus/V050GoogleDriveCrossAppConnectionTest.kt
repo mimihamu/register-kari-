@@ -36,7 +36,7 @@ class V050GoogleDriveCrossAppConnectionTest {
         assertTrue(build.contains("versionName = \"0.14.0-dev.1\""))
         assertTrue(workflow.contains("V050GoogleDriveCrossAppConnectionTest.kt"))
         assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk"))
-        assertTrue(workflow.contains("TSUGUREGI-v0.63.0-dev1-reversal-sale-lookup-apks"))
+        assertTrue(workflow.contains("TSUGUREGI-v0.64.0-dev1-sale-detail-reversal-navigation-apks"))
         assertTrue(docs.contains("別Android OAuthクライアント"))
         assertFalse(File("../tools/v050_apply.py").exists())
         assertFalse(File("../.github/workflows/v050-apply-temp.yml").exists())
