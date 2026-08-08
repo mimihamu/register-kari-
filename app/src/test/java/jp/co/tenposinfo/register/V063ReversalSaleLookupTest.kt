@@ -18,6 +18,7 @@ class V063ReversalSaleLookupTest {
         assertTrue(activity.contains("SalesHistoryLookupPolicy.filter(sales, SalesHistoryCriteria(query = saleQuery))"))
         assertTrue(activity.contains("売上No.直接指定"))
         assertTrue(activity.contains("全量返品・取消済みです"))
+        assertTrue(activity.contains("元売上の選択を解除しました"))
         assertTrue(activity.contains("directSaleOverride"))
         assertTrue(activity.contains("secureStore.createReversal"))
         assertTrue(store.contains("PartialReturnPolicy.select"))

@@ -154,6 +154,7 @@ jobs:
           grep -q 'registerDatabase.listSales(SalesHistoryLookupPolicy.RECENT_LOAD_LIMIT)' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
           grep -q '売上No.直接指定' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
           grep -q '全量返品・取消済みです' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q '元売上の選択を解除しました' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
           ! grep -R -q --include='*.kt' 'putString("access_token"' app/src/main management-app/src/main
           ! grep -R -q --include='*.kt' 'putString("refresh_token"' app/src/main management-app/src/main
 

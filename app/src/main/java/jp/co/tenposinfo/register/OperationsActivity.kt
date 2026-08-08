@@ -1016,10 +1016,22 @@ private fun ReversalScreen(
                             val sale = lookupSale(saleId)
                             when {
                                 sale == null -> {
-                                    localMessage = "売上No.$saleId は見つかりません"
+                                    selectedSaleId = null
+                                    directSaleOverride = null
+                                    lines = emptyList()
+                                    quantities = emptyMap()
+                                    savedResult = null
+                                    requestId = UUID.randomUUID().toString()
+                                    localMessage = "売上No.$saleId は見つかりません。元売上の選択を解除しました"
                                 }
                                 sale.id in reversedSaleIds -> {
-                                    localMessage = "売上No.${sale.id} は全量返品・取消済みです"
+                                    selectedSaleId = null
+                                    directSaleOverride = null
+                                    lines = emptyList()
+                                    quantities = emptyMap()
+                                    savedResult = null
+                                    requestId = UUID.randomUUID().toString()
+                                    localMessage = "売上No.${sale.id} は全量返品・取消済みです。元売上の選択を解除しました"
                                 }
                                 else -> {
                                     selectedSaleId = sale.id
