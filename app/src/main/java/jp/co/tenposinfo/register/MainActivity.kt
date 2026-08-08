@@ -574,8 +574,9 @@ private fun RegisterApp() {
             AppScreen.COMPLETE -> CompleteScreen(
                 detail = lastSaleId?.let { database.loadSaleDetail(it) },
                 onReceipt = {
-                    selectedSaleId = lastSaleId
-                    screen = AppScreen.RECEIPT_PREVIEW
+                    lastSaleId?.let { saleId ->
+                        context.startActivity(SaleReceiptNavigation.intent(context, saleId))
+                    }
                 },
                 onVoucher = {
                     context.startActivity(ReceiptVoucherNavigation.issuanceIntent(context, lastSaleId))
@@ -613,7 +614,9 @@ private fun RegisterApp() {
                     SaleDetailScreen(
                         detail = detail,
                         canReverse = currentOperator?.allows(RegisterPermission.REVERSAL) == true,
-                        onReceipt = { screen = AppScreen.RECEIPT_PREVIEW },
+                        onReceipt = {
+                            context.startActivity(SaleReceiptNavigation.intent(context, detail.summary.id))
+                        },
                         onVoucher = {
                             context.startActivity(ReceiptVoucherNavigation.issuanceIntent(context, detail.summary.id))
                         },
