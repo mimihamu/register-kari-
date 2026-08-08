@@ -42,7 +42,7 @@ class V072SaleReceiptReprintCustomRangeTest {
         val range = SaleReceiptReprintLedgerPolicy.parseCustomRange("2026/8/1", "2026/8/3", tokyo)
         val spec = SaleReceiptReprintLedgerPolicy.buildDatabaseQuery(
             SaleReceiptReprintLedgerCriteria(
-                filter = SaleReceiptReprintLedgerFilter.FAILED_FOR_TEST_ONLY,
+                filter = SaleReceiptReprintLedgerFilter.COMPLETED,
                 period = SaleReceiptReprintLedgerPeriod.CUSTOM,
                 customStartInclusive = range.startInclusive,
                 customEndExclusive = range.endExclusive,
@@ -50,11 +50,14 @@ class V072SaleReceiptReprintCustomRangeTest {
             ),
             zoneId = tokyo,
         )
+        assertTrue(spec.whereSql.contains("j.status = ?"))
         assertTrue(spec.whereSql.contains("r.requested_at >= ?"))
         assertTrue(spec.whereSql.contains("r.requested_at < ?"))
+        assertEquals("COMPLETED", spec.args[0])
         assertEquals(range.startInclusive.toString(), spec.args[1])
         assertEquals(range.endExclusive.toString(), spec.args[2])
         assertEquals("%job%", spec.args[3])
+        assertEquals(12, spec.args.size)
     }
 
     @Test
