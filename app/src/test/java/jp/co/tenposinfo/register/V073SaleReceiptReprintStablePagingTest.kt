@@ -72,7 +72,7 @@ class V073SaleReceiptReprintStablePagingTest {
         assertTrue(stable.contains("ORDER BY r.requested_at DESC, r.id DESC"))
         assertTrue(stable.contains("LIMIT ?"))
         assertFalse(stable.contains("OFFSET ?"))
-        assertTrue(stable.contains("countNewerThan"))
+        assertTrue(stable.contains("newerAuditCount"))
         assertFalse(stable.contains("UPDATE sale_receipt_reprint_requests"))
         assertFalse(stable.contains("DELETE FROM sale_receipt_reprint_requests"))
 
@@ -83,14 +83,14 @@ class V073SaleReceiptReprintStablePagingTest {
         assertTrue(activity.contains("store.searchStable(appliedCriteria, snapshot, pageCursor)"))
         assertTrue(activity.contains("cursorHistory"))
         assertTrue(activity.contains("検索時点固定"))
-        assertTrue(activity.contains("新しい再印字要求"))
+        assertTrue(activity.contains("page.newerAuditCount > 0"))
         assertFalse(activity.contains("pageOffset"))
         assertFalse(activity.contains("store.search(appliedCriteria"))
 
-        assertTrue(build.contains("versionCode = 103"))
-        assertTrue(build.contains("versionName = \"0.73.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 104"))
+        assertTrue(build.contains("versionName = \"0.74.0-dev.1\""))
         assertTrue(workflow.contains("V073SaleReceiptReprintStablePagingTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.73.0_dev1_sale_receipt_reprint_stable_paging_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.74.0_dev1_sale_receipt_reprint_matching_new_items_debug.apk"))
         assertTrue(docs.isFile)
         assertTrue(notes.isFile)
     }

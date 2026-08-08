@@ -251,11 +251,14 @@ private fun SaleReceiptReprintLedgerScreen(
             Text("ページ $pageNumber / 条件一致 ${page.totalMatches}件", color = Color.Gray)
             if (page.newerAuditCount > 0) {
                 Text(
-                    "新しい再印字要求 ${page.newerAuditCount}件（検索再実行で反映）",
+                    "条件一致の新着 ${page.newerAuditCount}件",
                     color = ReprintLedgerDanger,
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp,
                 )
+                OutlinedButton(
+                    onClick = { applyCriteria(appliedCriteria) },
+                ) { Text("新着を反映") }
             }
             OutlinedButton(
                 enabled = cursorHistory.isNotEmpty(),
