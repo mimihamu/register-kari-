@@ -130,7 +130,7 @@ class V065BusinessDateSalesLookupTest {
         assertTrue(hub.contains("営業日別 売上検索"))
         assertTrue(manifest.contains(".BusinessDateSalesLookupActivity"))
         assertTrue(workflow.contains("V065BusinessDateSalesLookupTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.70.0_dev1_sale_receipt_reprint_database_paging_debug.apk"))
-        assertTrue(workflow.contains("TSUGUREGI-v0.70.0-dev1-sale-receipt-reprint-database-paging-apks"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.71.0_dev1_sale_receipt_reprint_period_index_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI-v0.71.0-dev1-sale-receipt-reprint-period-index-apks"))
     }
 }
