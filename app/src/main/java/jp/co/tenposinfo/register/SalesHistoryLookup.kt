@@ -150,7 +150,9 @@ internal object SalesHistoryLookupPolicy {
                 searchable += "LOWER(business_date) LIKE ? ESCAPE '\\'"
             }
             clauses += searchable.joinToString(" OR ", prefix = "(", postfix = ")")
-            repeat(searchable.size) { args += pattern }
+            for (ignored in searchable.indices) {
+                args += pattern
+            }
         }
         criteria.minAmount?.let {
             clauses += "total_amount >= ?"
