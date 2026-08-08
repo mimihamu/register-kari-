@@ -75,6 +75,7 @@ class OperationsHubActivityV030 : ComponentActivity() {
                         startActivity(SettlementActivityV030.intent(this, SettlementReportType.Z_SETTLEMENT))
                     },
                     openHistory = { startActivity(Intent(this, SettlementHistoryActivityV030::class.java)) },
+                    openReceiptVoucher = { startActivity(Intent(this, ReceiptVoucherActivity::class.java)) },
                     openLegacyManagement = { startActivity(Intent(this, OperationsActivity::class.java)) },
                 )
             }
@@ -89,6 +90,7 @@ private fun OperationsHubRouteV030(
     openXInspection: () -> Unit,
     openZSettlement: () -> Unit,
     openHistory: () -> Unit,
+    openReceiptVoucher: () -> Unit,
     openLegacyManagement: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -121,6 +123,7 @@ private fun OperationsHubRouteV030(
             openXInspection = openXInspection,
             openZSettlement = openZSettlement,
             openHistory = openHistory,
+            openReceiptVoucher = openReceiptVoucher,
             openLegacyManagement = openLegacyManagement,
         )
     }
@@ -137,6 +140,7 @@ private fun OperationsHubScreenV030(
     openXInspection: () -> Unit,
     openZSettlement: () -> Unit,
     openHistory: () -> Unit,
+    openReceiptVoucher: () -> Unit,
     openLegacyManagement: () -> Unit,
 ) {
     val metrics = rememberRegisterResponsiveMetrics()
@@ -187,14 +191,27 @@ private fun OperationsHubScreenV030(
                             Modifier.weight(1f).heightIn(min = 126.dp),
                         )
                     }
-                    HubTileV030(
-                        "点検・精算履歴",
-                        "営業セッション別の確認・再印字",
-                        Color(0xFFEDE7F6),
-                        SettlementHistoryPolicyV027.canView(permissions),
-                        openHistory,
-                        Modifier.fillMaxWidth().heightIn(min = 112.dp),
-                    )
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
+                    ) {
+                        HubTileV030(
+                            "点検・精算履歴",
+                            "営業セッション別の確認・再印字",
+                            Color(0xFFEDE7F6),
+                            SettlementHistoryPolicyV027.canView(permissions),
+                            openHistory,
+                            Modifier.weight(1f).heightIn(min = 112.dp),
+                        )
+                        HubTileV030(
+                            "領収書発行",
+                            "一部領収・複数枚・再発行",
+                            VoucherHubBackgroundV059,
+                            RegisterPermission.VIEW_SALES in permissions,
+                            openReceiptVoucher,
+                            Modifier.weight(1f).heightIn(min = 112.dp),
+                        )
+                    }
                     HubLegacyPanelV030(Modifier.fillMaxWidth(), permissions, openLegacyManagement)
                 }
             } else {
@@ -218,7 +235,7 @@ private fun OperationsHubScreenV030(
                             Color(0xFFE8EAF6),
                             RegisterPermission.Z_SETTLEMENT in permissions,
                             openBusiness,
-                            Modifier.weight(0.85f).fillMaxWidth(),
+                            Modifier.weight(0.75f).fillMaxWidth(),
                         )
                         Row(
                             Modifier.weight(1f).fillMaxWidth(),
@@ -253,12 +270,20 @@ private fun OperationsHubScreenV030(
                                 openHistory,
                                 Modifier.weight(1f).fillMaxHeight(),
                             )
-                            HubLegacyPanelV030(
+                            HubTileV030(
+                                "領収書発行",
+                                "一部領収・複数枚・再発行",
+                                VoucherHubBackgroundV059,
+                                RegisterPermission.VIEW_SALES in permissions,
+                                openReceiptVoucher,
                                 Modifier.weight(1f).fillMaxHeight(),
-                                permissions,
-                                openLegacyManagement,
                             )
                         }
+                        HubLegacyPanelV030(
+                            Modifier.weight(0.75f).fillMaxWidth(),
+                            permissions,
+                            openLegacyManagement,
+                        )
                     }
                 }
             }
@@ -266,6 +291,8 @@ private fun OperationsHubScreenV030(
         HubBottomV030(metrics, onClose)
     }
 }
+
+private val VoucherHubBackgroundV059 = Color(0xFFE3F2FD)
 
 @Composable
 private fun HubStatusPanelV030(
