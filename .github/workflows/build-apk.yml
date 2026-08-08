@@ -161,6 +161,7 @@ jobs:
           test -s app/src/main/java/jp/co/tenposinfo/register/ReversalNavigation.kt
           grep -q 'ReversalNavigation.intent(context, detail.summary.id)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
           grep -q 'current?.allows(RegisterPermission.REVERSAL) == true' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q '返品・取消の権限が失効したため管理メニューへ戻りました' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
           grep -q '別売上を検索' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
           ! grep -R -q --include='*.kt' 'putString("access_token"' app/src/main management-app/src/main
           ! grep -R -q --include='*.kt' 'putString("refresh_token"' app/src/main management-app/src/main
@@ -266,6 +267,7 @@ jobs:
           REVERSAL_SAFETY_ENGINE_UNCHANGED=true
           SALE_DETAIL_REVERSAL_NAVIGATION=true
           REVERSAL_CONTEXT_PERMISSION_RECHECK=true
+          REVERSAL_CONTEXT_LIVE_PERMISSION_RECHECK=true
           REVERSAL_CONTEXT_SALE_LOCK=true
           REVERSAL_CONTEXT_EXPLICIT_UNLOCK=true
           GOOGLE_DRIVE_DIAGNOSTIC_TOKENS_INCLUDED=false

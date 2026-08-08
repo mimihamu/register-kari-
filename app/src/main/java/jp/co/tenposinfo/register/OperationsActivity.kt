@@ -131,7 +131,13 @@ private fun OperationsApp(
     androidx.compose.runtime.LaunchedEffect(Unit) {
         while (true) {
             kotlinx.coroutines.delay(5_000L)
-            activeOperator = OperatorSessionRegistry.current(appContext)
+            val refreshed = OperatorSessionRegistry.current(appContext)
+            activeOperator = refreshed
+            if (screen == OperationsScreen.REVERSAL && refreshed?.allows(RegisterPermission.REVERSAL) != true) {
+                reversalContextSaleId = null
+                message = "返品・取消の権限が失効したため管理メニューへ戻りました"
+                screen = OperationsScreen.MENU
+            }
         }
     }
 

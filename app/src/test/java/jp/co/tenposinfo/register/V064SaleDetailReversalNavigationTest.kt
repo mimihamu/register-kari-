@@ -27,6 +27,7 @@ class V064SaleDetailReversalNavigationTest {
         assertTrue(main.contains("この売上を返品・取消"))
         assertTrue(operations.contains("ReversalNavigation.requestedSaleId(intent)"))
         assertTrue(operations.contains("current?.allows(RegisterPermission.REVERSAL) == true"))
+        assertTrue(operations.contains("返品・取消の権限が失効したため管理メニューへ戻りました"))
         assertTrue(operations.contains("initialSaleId = reversalContextSaleId"))
         assertTrue(operations.contains("contextSaleLocked"))
         assertTrue(operations.contains("元売上を固定しています"))
