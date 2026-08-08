@@ -106,8 +106,8 @@ class V071SaleReceiptReprintPeriodIndexTest {
         assertTrue(store.contains("r.requested_at >= ?"))
         assertTrue(store.contains("earliestRequestedAt"))
         assertTrue(activity.contains("SaleReceiptReprintLedgerPeriod.entries"))
-        assertTrue(activity.contains("期間DB絞込"))
         assertTrue(activity.contains("period = item"))
+        assertTrue(activity.contains("applyCriteria(SaleReceiptReprintLedgerCriteria(filter = filter, period = item, query = query))"))
         assertFalse(audit.contains("DELETE FROM sale_receipt_reprint_requests"))
         assertFalse(store.contains("UPDATE sale_receipt_reprint_requests"))
 
