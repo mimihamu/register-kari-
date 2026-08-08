@@ -78,7 +78,7 @@ class V037CustomerDisplayPresentationTest {
         assertTrue(cdScreen.contains("CustomerDisplayPresentationPolicy.visibleItems"))
         assertTrue(cdScreen.contains("snapshotStore.save(snapshot)"))
         assertTrue(cdCache.contains("MAX_AGE_MS"))
-        assertTrue(build.contains("versionCode = 95"))
+        assertTrue(build.contains("versionCode = 96"))
         assertTrue(build.contains("versionName = \"0.65.0-dev.1\""))
         assertTrue(cdBuild.contains("versionCode = 7"))
         assertTrue(cdBuild.contains("versionName = \"0.14.0-dev.1\""))

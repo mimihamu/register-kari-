@@ -72,7 +72,7 @@ class V038OutboxDeliveryOperationsTest {
         assertTrue(panel.contains("この1件を再試行"))
         assertTrue(panel.contains("端末内JSONプレビュー"))
         assertTrue(settings.contains("OutboxDeliveryOperationsPanel"))
-        assertTrue(build.contains("versionCode = 95"))
+        assertTrue(build.contains("versionCode = 96"))
         assertTrue(build.contains("versionName = \"0.65.0-dev.1\""))
         assertTrue(docs.contains("送信先テスト"))
         assertTrue(notes.contains("個別再試行"))
