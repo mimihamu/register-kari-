@@ -14,8 +14,8 @@ class V055OutboxOperationsEntryTest {
         val build = File("build.gradle.kts").readText()
         val workflow = File(root, ".github/workflows/build-apk.yml").readText()
 
-        assertTrue(build.contains("versionCode = 99"))
-        assertTrue(build.contains("versionName = \"0.69.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 100"))
+        assertTrue(build.contains("versionName = \"0.70.0-dev.1\""))
         assertTrue(settings.contains("送信運用・個別再試行"))
         assertTrue(settings.contains("互換用フォルダ送信設定"))
         assertTrue(settings.contains("OutboxDeliverySettingsActivity::class.java"))
@@ -24,6 +24,6 @@ class V055OutboxOperationsEntryTest {
         assertTrue(panel.contains("この1件を再試行"))
         assertTrue(panel.contains("DriveOutboxScheduler.enqueueNow"))
         assertTrue(workflow.contains("V055OutboxOperationsEntryTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.69.0_dev1_sale_receipt_reprint_operations_ledger_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.70.0_dev1_sale_receipt_reprint_database_paging_debug.apk"))
     }
 }

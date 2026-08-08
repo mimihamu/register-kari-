@@ -1,7 +1,6 @@
 package jp.co.tenposinfo.register
 
 import android.content.Context
-import android.database.sqlite.SQLiteDatabase
 
 enum class SaleReceiptReprintLedgerFilter(val displayName: String) {
     ALL("すべて"),
