@@ -269,7 +269,7 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
                 )
                 val issuanceIds = mutableListOf<Long>()
                 val printJobIds = mutableListOf<Long>()
-                repeat(plan.copies) { zeroIndex ->
+                for (zeroIndex in 0 until plan.copies) {
                     val sequence = zeroIndex + 1
                     val issuanceId = db.insertOrThrow(
                         "receipt_voucher_issuances",
