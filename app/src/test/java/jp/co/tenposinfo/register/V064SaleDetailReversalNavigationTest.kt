@@ -37,6 +37,6 @@ class V064SaleDetailReversalNavigationTest {
         assertTrue(operations.contains("secureStore.createReversal"))
         assertTrue(secure.contains("RegisterPermission.REVERSAL"))
         assertTrue(workflow.contains("V064SaleDetailReversalNavigationTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.66.0_dev1_business_date_database_search_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.67.0_dev1_sale_receipt_reprint_navigation_debug.apk"))
     }
 }
