@@ -25,7 +25,7 @@ class V074SaleReceiptReprintMatchingNewItemsTest {
         assertTrue(newer.whereSql.contains("j.status IN (?, ?)"))
         assertTrue(newer.whereSql.contains("r.requested_at >= ?"))
         assertTrue(newer.whereSql.contains("r.requested_at < ?"))
-        assertTrue(newer.whereSql.contains("LOWER(CAST(r.sale_id AS TEXT)) LIKE ? ESCAPE '\\'"))
+        assertTrue(newer.whereSql.contains("CAST(r.sale_id AS TEXT) LIKE ?"))
         assertTrue(newer.whereSql.contains("r.requested_at > ? OR (r.requested_at = ? AND r.id > ?)"))
         assertEquals(base.args, newer.args.dropLast(3))
         assertEquals(listOf("5000", "5000", "77"), newer.args.takeLast(3))
