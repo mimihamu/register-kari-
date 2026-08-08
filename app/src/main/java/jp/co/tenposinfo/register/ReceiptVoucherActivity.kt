@@ -125,7 +125,15 @@ private fun ReceiptVoucherRoute(
             return@Surface
         }
         OperatorSessionRegistry.touch(context.applicationContext)
-        val sales = remember(refreshEpoch) { database.listSales() }
+        val recentSales = remember(refreshEpoch) {
+            database.listSales(SalesHistoryLookupPolicy.RECENT_LOAD_LIMIT)
+        }
+        val requestedSale = remember(refreshEpoch, requestedSaleId) {
+            requestedSaleId?.let { database.loadSaleDetail(it)?.summary }
+        }
+        val sales = remember(recentSales, requestedSale) {
+            SalesHistoryLookupPolicy.includeRequestedSale(recentSales, requestedSale)
+        }
         val saleContext = ReceiptVoucherNavigation.resolveSaleContext(
             requestedSaleId = requestedSaleId,
             availableSaleIds = sales.map { it.id },

@@ -586,10 +586,20 @@ private fun RegisterApp() {
             )
 
             AppScreen.SALES_HISTORY -> SalesHistoryScreen(
-                sales = database.listSales(),
+                sales = database.listSales(SalesHistoryLookupPolicy.RECENT_LOAD_LIMIT),
                 onOpen = {
                     selectedSaleId = it.id
                     screen = AppScreen.SALE_DETAIL
+                },
+                onDirectLookup = { saleId ->
+                    val detail = database.loadSaleDetail(saleId)
+                    if (detail == null) {
+                        false
+                    } else {
+                        selectedSaleId = detail.summary.id
+                        screen = AppScreen.SALE_DETAIL
+                        true
+                    }
                 },
                 onQueue = { openUnifiedPrintQueue() },
                 onBack = { screen = AppScreen.SALES },
@@ -1756,35 +1766,129 @@ private fun CompleteScreen(
 private fun SalesHistoryScreen(
     sales: List<SaleSummaryRecord>,
     onOpen: (SaleSummaryRecord) -> Unit,
+    onDirectLookup: (Long) -> Boolean,
     onQueue: () -> Unit,
     onBack: () -> Unit,
 ) {
+    var query by remember { mutableStateOf("") }
+    var minAmountText by remember { mutableStateOf("") }
+    var maxAmountText by remember { mutableStateOf("") }
+    var directSaleIdText by remember { mutableStateOf("") }
+    var lookupMessage by remember { mutableStateOf<String?>(null) }
+
+    val criteria = SalesHistoryCriteria(
+        query = query,
+        minAmount = minAmountText.toLongOrNull(),
+        maxAmount = maxAmountText.toLongOrNull(),
+    )
+    val visibleSales = SalesHistoryLookupPolicy.filter(sales, criteria)
+    val directSaleId = SalesHistoryLookupPolicy.parseDirectSaleId(directSaleIdText)
+    val amountRangeInvalid = criteria.minAmount != null && criteria.maxAmount != null && criteria.minAmount > criteria.maxAmount
+
     Column(Modifier.fillMaxSize()) {
-        Header("SCR-400", "売上一覧")
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("確定売上 ${sales.size}件", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Navy)
-            Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = onQueue) { Text("統合印刷キュー") }
+        Header("SCR-400", "売上一覧・検索")
+        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it.take(80) },
+                    label = { Text("売上No.・担当・支払") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = minAmountText,
+                    onValueChange = { minAmountText = it.filter(Char::isDigit).take(12) },
+                    label = { Text("金額以上") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.width(150.dp),
+                )
+                OutlinedTextField(
+                    value = maxAmountText,
+                    onValueChange = { maxAmountText = it.filter(Char::isDigit).take(12) },
+                    label = { Text("金額以下") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.width(150.dp),
+                )
+                OutlinedButton(
+                    onClick = {
+                        query = ""
+                        minAmountText = ""
+                        maxAmountText = ""
+                    },
+                ) { Text("条件クリア") }
+                OutlinedButton(onClick = onQueue) { Text("統合印刷キュー") }
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    "表示 ${visibleSales.size}件 / 読込 ${sales.size}件（直近最大${SalesHistoryLookupPolicy.RECENT_LOAD_LIMIT}件）",
+                    fontWeight = FontWeight.Bold,
+                    color = Navy,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = directSaleIdText,
+                    onValueChange = {
+                        directSaleIdText = it.filter { ch -> ch.isDigit() || ch == '#' }.take(20)
+                        lookupMessage = null
+                    },
+                    label = { Text("売上No.直接表示") },
+                    singleLine = true,
+                    modifier = Modifier.width(210.dp),
+                )
+                Button(
+                    onClick = {
+                        val saleId = directSaleId ?: return@Button
+                        if (!onDirectLookup(saleId)) {
+                            lookupMessage = "売上No.$saleId は見つかりません"
+                        }
+                    },
+                    enabled = directSaleId != null,
+                    colors = ButtonDefaults.buttonColors(containerColor = Blue),
+                ) { Text("表示") }
+            }
+            if (amountRangeInvalid) {
+                Text("金額範囲は『以上 ≤ 以下』になるよう入力してください", color = Danger, fontWeight = FontWeight.Bold)
+            } else if (!lookupMessage.isNullOrBlank()) {
+                Text(lookupMessage.orEmpty(), color = Danger, fontWeight = FontWeight.Bold)
+            }
         }
         CardPanel(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp)) {
-            if (sales.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("売上はまだありません", color = Color.Gray, fontSize = 22.sp) }
-            } else {
-                LazyColumn {
-                    itemsIndexed(sales) { _, sale ->
-                        Row(
-                            Modifier.fillMaxWidth().clickable { onOpen(sale) }.padding(vertical = 11.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text("#${sale.id}", Modifier.width(80.dp), fontWeight = FontWeight.Bold)
-                            Text(formatDate(sale.createdAt), Modifier.width(165.dp))
-                            Text(sale.operatorName, Modifier.width(90.dp))
-                            Text(sale.paymentLabel, Modifier.weight(1f))
-                            Text("印字 ${sale.printCount}回", Modifier.width(85.dp), color = Color.Gray)
-                            Text(yen(sale.totalAmount), Modifier.width(130.dp), textAlign = TextAlign.End, fontWeight = FontWeight.Bold)
+            when {
+                sales.isEmpty() -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("売上はまだありません", color = Color.Gray, fontSize = 22.sp)
+                    }
+                }
+                visibleSales.isEmpty() -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("条件に一致する売上はありません", color = Color.Gray, fontSize = 22.sp)
+                    }
+                }
+                else -> {
+                    LazyColumn {
+                        itemsIndexed(visibleSales) { _, sale ->
+                            Row(
+                                Modifier.fillMaxWidth().clickable { onOpen(sale) }.padding(vertical = 11.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text("#${sale.id}", Modifier.width(80.dp), fontWeight = FontWeight.Bold)
+                                Text(formatDate(sale.createdAt), Modifier.width(165.dp))
+                                Text(sale.operatorName, Modifier.width(100.dp))
+                                Text(sale.paymentLabel, Modifier.weight(1f))
+                                Text("印字 ${sale.printCount}回", Modifier.width(85.dp), color = Color.Gray)
+                                Text(yen(sale.totalAmount), Modifier.width(130.dp), textAlign = TextAlign.End, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
