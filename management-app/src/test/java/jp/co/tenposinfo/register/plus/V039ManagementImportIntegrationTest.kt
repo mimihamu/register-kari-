@@ -24,8 +24,8 @@ class V039ManagementImportIntegrationTest {
         val notes = File(root, "docs/V0.39_RELEASE_NOTES.md").readText()
 
         assertTrue(settings.contains("include(\":management-app\")"))
-        assertTrue(appBuild.contains("versionCode = 94"))
-        assertTrue(appBuild.contains("versionName = \"0.64.0-dev.1\""))
+        assertTrue(appBuild.contains("versionCode = 95"))
+        assertTrue(appBuild.contains("versionName = \"0.65.0-dev.1\""))
         assertTrue(plusBuild.contains("applicationId = \"jp.co.tenposinfo.register.plus\""))
         assertTrue(plusBuild.contains("versionCode = 14"))
         assertTrue(plusBuild.contains("versionName = \"0.14.0-dev.1\""))
