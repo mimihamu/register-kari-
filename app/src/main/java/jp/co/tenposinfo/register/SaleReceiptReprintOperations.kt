@@ -1,6 +1,8 @@
 package jp.co.tenposinfo.register
 
 import android.content.Context
+import java.time.Instant
+import java.time.ZoneId
 
 enum class SaleReceiptReprintLedgerFilter(val displayName: String) {
     ALL("すべて"),
@@ -8,6 +10,13 @@ enum class SaleReceiptReprintLedgerFilter(val displayName: String) {
     ACTIVE("処理中"),
     COMPLETED("完了"),
     DISCARDED("破棄済み"),
+}
+
+enum class SaleReceiptReprintLedgerPeriod(val displayName: String) {
+    ALL("全期間"),
+    TODAY("今日"),
+    LAST_7_DAYS("7日以内"),
+    LAST_30_DAYS("30日以内"),
 }
 
 data class SaleReceiptReprintLedgerEntry(
@@ -30,6 +39,7 @@ data class SaleReceiptReprintLedgerEntry(
 
 data class SaleReceiptReprintLedgerCriteria(
     val filter: SaleReceiptReprintLedgerFilter = SaleReceiptReprintLedgerFilter.ALL,
+    val period: SaleReceiptReprintLedgerPeriod = SaleReceiptReprintLedgerPeriod.ALL,
     val query: String = "",
 )
 
@@ -75,49 +85,57 @@ data class SaleReceiptReprintLedgerPage(
 
 object SaleReceiptReprintLedgerPolicy {
     const val DATABASE_PAGE_SIZE = 200
+    private const val DAY_MILLIS = 24L * 60L * 60L * 1_000L
 
-    /**
-     * v0.69までのメモリ内フィルタ互換。純粋ポリシーの単体テストと既存呼出しを維持する。
-     * v0.70の運用画面は buildDatabaseQuery() + Store.search() を使用する。
-     */
+    /** v0.69互換の純粋フィルタ。運用画面はSQLite直接検索を使用する。 */
     fun filter(
         entries: List<SaleReceiptReprintLedgerEntry>,
         criteria: SaleReceiptReprintLedgerCriteria,
-    ): List<SaleReceiptReprintLedgerEntry> = entries.filter { entry ->
-        val statusMatches = when (criteria.filter) {
-            SaleReceiptReprintLedgerFilter.ALL -> true
-            SaleReceiptReprintLedgerFilter.ACTION_REQUIRED -> entry.status in setOf(
-                PrintJobStatus.RETRY,
-                PrintJobStatus.FAILED,
-            )
-            SaleReceiptReprintLedgerFilter.ACTIVE -> entry.status in setOf(
-                PrintJobStatus.PENDING,
-                PrintJobStatus.RETRY,
-                PrintJobStatus.FAILED,
-                PrintJobStatus.PRINTING,
-            )
-            SaleReceiptReprintLedgerFilter.COMPLETED -> entry.status == PrintJobStatus.COMPLETED
-            SaleReceiptReprintLedgerFilter.DISCARDED -> entry.status == PrintJobStatus.DISCARDED
-        }
-        if (!statusMatches) return@filter false
+        nowMillis: Long = System.currentTimeMillis(),
+        zoneId: ZoneId = ZoneId.systemDefault(),
+    ): List<SaleReceiptReprintLedgerEntry> {
+        val earliest = earliestRequestedAt(criteria.period, nowMillis, zoneId)
+        return entries.filter { entry ->
+            val statusMatches = when (criteria.filter) {
+                SaleReceiptReprintLedgerFilter.ALL -> true
+                SaleReceiptReprintLedgerFilter.ACTION_REQUIRED -> entry.status in setOf(
+                    PrintJobStatus.RETRY,
+                    PrintJobStatus.FAILED,
+                )
+                SaleReceiptReprintLedgerFilter.ACTIVE -> entry.status in setOf(
+                    PrintJobStatus.PENDING,
+                    PrintJobStatus.RETRY,
+                    PrintJobStatus.FAILED,
+                    PrintJobStatus.PRINTING,
+                )
+                SaleReceiptReprintLedgerFilter.COMPLETED -> entry.status == PrintJobStatus.COMPLETED
+                SaleReceiptReprintLedgerFilter.DISCARDED -> entry.status == PrintJobStatus.DISCARDED
+            }
+            if (!statusMatches) return@filter false
+            if (earliest != null && entry.requestedAt < earliest) return@filter false
 
-        val query = criteria.query.trim()
-        if (query.isEmpty()) return@filter true
-        buildString {
-            append(entry.saleId).append(' ')
-            append(entry.printJobId).append(' ')
-            append(entry.auditId).append(' ')
-            append(entry.requestId).append(' ')
-            append(entry.operatorName).append(' ')
-            append(entry.status.name).append(' ')
-            append(entry.paperWidthMm).append(' ')
-            append(entry.saleAmount).append(' ')
-            append(entry.failureCategory.displayName).append(' ')
-            append(entry.lastError.orEmpty())
-        }.contains(query, ignoreCase = true)
+            val query = criteria.query.trim()
+            if (query.isEmpty()) return@filter true
+            buildString {
+                append(entry.saleId).append(' ')
+                append(entry.printJobId).append(' ')
+                append(entry.auditId).append(' ')
+                append(entry.requestId).append(' ')
+                append(entry.operatorName).append(' ')
+                append(entry.status.name).append(' ')
+                append(entry.paperWidthMm).append(' ')
+                append(entry.saleAmount).append(' ')
+                append(entry.failureCategory.displayName).append(' ')
+                append(entry.lastError.orEmpty())
+            }.contains(query, ignoreCase = true)
+        }
     }
 
-    internal fun buildDatabaseQuery(criteria: SaleReceiptReprintLedgerCriteria): SaleReceiptReprintLedgerSqlQuery {
+    internal fun buildDatabaseQuery(
+        criteria: SaleReceiptReprintLedgerCriteria,
+        nowMillis: Long = System.currentTimeMillis(),
+        zoneId: ZoneId = ZoneId.systemDefault(),
+    ): SaleReceiptReprintLedgerSqlQuery {
         val clauses = mutableListOf<String>()
         val args = mutableListOf<String>()
 
@@ -145,6 +163,11 @@ object SaleReceiptReprintLedgerPolicy {
             }
         }
 
+        earliestRequestedAt(criteria.period, nowMillis, zoneId)?.let { earliest ->
+            clauses += "r.requested_at >= ?"
+            args += earliest.toString()
+        }
+
         val query = criteria.query.trim().removePrefix("#").lowercase()
         if (query.isNotBlank()) {
             val pattern = "%${escapeLike(query)}%"
@@ -169,6 +192,22 @@ object SaleReceiptReprintLedgerPolicy {
         )
     }
 
+    internal fun earliestRequestedAt(
+        period: SaleReceiptReprintLedgerPeriod,
+        nowMillis: Long,
+        zoneId: ZoneId,
+    ): Long? = when (period) {
+        SaleReceiptReprintLedgerPeriod.ALL -> null
+        SaleReceiptReprintLedgerPeriod.TODAY -> Instant.ofEpochMilli(nowMillis)
+            .atZone(zoneId)
+            .toLocalDate()
+            .atStartOfDay(zoneId)
+            .toInstant()
+            .toEpochMilli()
+        SaleReceiptReprintLedgerPeriod.LAST_7_DAYS -> (nowMillis - 7L * DAY_MILLIS).coerceAtLeast(0L)
+        SaleReceiptReprintLedgerPeriod.LAST_30_DAYS -> (nowMillis - 30L * DAY_MILLIS).coerceAtLeast(0L)
+    }
+
     private fun escapeLike(value: String): String = buildString(value.length) {
         value.forEach { ch ->
             when (ch) {
@@ -181,16 +220,13 @@ object SaleReceiptReprintLedgerPolicy {
 
 /**
  * 通常レシート再印字要求の全売上横断・読み取り専用台帳。
- * v0.70では検索条件をSQLiteへ直接渡し、全履歴を対象に200件単位でページングする。
- * 再試行、破棄、強制印刷などの書込操作はここでは提供しない。
+ * 全履歴を対象にSQLite直接検索し、期間・状態・文字列条件をDB側で絞り込む。
  */
 class SaleReceiptReprintOperationsStore(context: Context) : AutoCloseable {
     private val appContext = context.applicationContext
     private val database = RegisterDatabase(appContext)
 
     init {
-        // v0.68監査テーブルがまだ一度も使用されていない端末でも空台帳を開けるよう、
-        // 既存監査ストアの追加型CREATE IF NOT EXISTSだけを実行する。
         SaleReceiptReprintAuditStore(appContext).close()
     }
 
