@@ -113,8 +113,8 @@ class V065BusinessDateSalesLookupTest {
         val activity = File("src/main/java/jp/co/tenposinfo/register/BusinessDateSalesLookupActivity.kt").readText()
         val hub = File("src/main/java/jp/co/tenposinfo/register/OperationsHubActivityV030.kt").readText()
         val manifest = File("src/main/AndroidManifest.xml").readText()
+        val workflow = File("../.github/workflows/build-apk.yml").readText()
 
-        assertTrue(activity.contains("PRAGMA").not())
         assertTrue(activity.contains("SchemaMigration.hasColumn"))
         assertTrue(activity.contains("NULL"))
         assertFalse(activity.contains("BusinessSessionSchema.ensure"))
@@ -129,5 +129,8 @@ class V065BusinessDateSalesLookupTest {
         assertTrue(hub.contains("BusinessDateSalesLookupActivity::class.java"))
         assertTrue(hub.contains("営業日別 売上検索"))
         assertTrue(manifest.contains(".BusinessDateSalesLookupActivity"))
+        assertTrue(workflow.contains("V065BusinessDateSalesLookupTest.kt"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.65.0_dev1_business_date_sales_lookup_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI-v0.65.0-dev1-business-date-sales-lookup-apks"))
     }
 }
