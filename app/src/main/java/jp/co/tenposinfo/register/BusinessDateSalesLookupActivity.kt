@@ -325,7 +325,7 @@ private fun BusinessDateSalesLookupScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "DB検索 $resultFrom～$resultTo件 / 1ページ最大${page.pageSize}件",
+                    "DB検索 ${resultFrom}～${resultTo}件 / 1ページ最大${page.pageSize}件",
                     color = BusinessLookupNavy,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f),
