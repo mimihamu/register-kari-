@@ -76,6 +76,7 @@ class OperationsHubActivityV030 : ComponentActivity() {
                     },
                     openHistory = { startActivity(Intent(this, SettlementHistoryActivityV030::class.java)) },
                     openReceiptVoucher = { startActivity(Intent(this, ReceiptVoucherActivity::class.java)) },
+                    openSalesLookup = { startActivity(Intent(this, BusinessDateSalesLookupActivity::class.java)) },
                     openLegacyManagement = { startActivity(Intent(this, OperationsActivity::class.java)) },
                 )
             }
@@ -91,6 +92,7 @@ private fun OperationsHubRouteV030(
     openZSettlement: () -> Unit,
     openHistory: () -> Unit,
     openReceiptVoucher: () -> Unit,
+    openSalesLookup: () -> Unit,
     openLegacyManagement: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -124,6 +126,7 @@ private fun OperationsHubRouteV030(
             openZSettlement = openZSettlement,
             openHistory = openHistory,
             openReceiptVoucher = openReceiptVoucher,
+            openSalesLookup = openSalesLookup,
             openLegacyManagement = openLegacyManagement,
         )
     }
@@ -141,6 +144,7 @@ private fun OperationsHubScreenV030(
     openZSettlement: () -> Unit,
     openHistory: () -> Unit,
     openReceiptVoucher: () -> Unit,
+    openSalesLookup: () -> Unit,
     openLegacyManagement: () -> Unit,
 ) {
     val metrics = rememberRegisterResponsiveMetrics()
@@ -212,6 +216,14 @@ private fun OperationsHubScreenV030(
                             Modifier.weight(1f).heightIn(min = 112.dp),
                         )
                     }
+                    HubTileV030(
+                        "営業日別 売上検索",
+                        "営業日・売上No.・担当・支払・金額で検索",
+                        HubPaleBlueV030,
+                        RegisterPermission.VIEW_SALES in permissions,
+                        openSalesLookup,
+                        Modifier.fillMaxWidth().heightIn(min = 112.dp),
+                    )
                     HubLegacyPanelV030(Modifier.fillMaxWidth(), permissions, openLegacyManagement)
                 }
             } else {
@@ -279,11 +291,24 @@ private fun OperationsHubScreenV030(
                                 Modifier.weight(1f).fillMaxHeight(),
                             )
                         }
-                        HubLegacyPanelV030(
+                        Row(
                             Modifier.weight(0.75f).fillMaxWidth(),
-                            permissions,
-                            openLegacyManagement,
-                        )
+                            horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
+                        ) {
+                            HubTileV030(
+                                "営業日別 売上検索",
+                                "営業日・売上No.・担当・支払・金額で検索",
+                                HubPaleBlueV030,
+                                RegisterPermission.VIEW_SALES in permissions,
+                                openSalesLookup,
+                                Modifier.weight(1f).fillMaxHeight(),
+                            )
+                            HubLegacyPanelV030(
+                                Modifier.weight(1f).fillMaxHeight(),
+                                permissions,
+                                openLegacyManagement,
+                            )
+                        }
                     }
                 }
             }
