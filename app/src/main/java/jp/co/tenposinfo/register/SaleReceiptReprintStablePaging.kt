@@ -51,6 +51,19 @@ internal object SaleReceiptReprintStablePagingPolicy {
         )
     }
 
+    fun appendNewerThanSnapshot(
+        spec: SaleReceiptReprintLedgerSqlQuery,
+        snapshot: SaleReceiptReprintLedgerSnapshot,
+    ): SaleReceiptReprintLedgerSqlQuery = appendClause(
+        spec = spec,
+        clause = "(r.requested_at > ? OR (r.requested_at = ? AND r.id > ?))",
+        extraArgs = listOf(
+            snapshot.newest.requestedAt.toString(),
+            snapshot.newest.requestedAt.toString(),
+            snapshot.newest.auditId.toString(),
+        ),
+    )
+
     fun cursorOf(entry: SaleReceiptReprintLedgerEntry): SaleReceiptReprintLedgerCursor =
         SaleReceiptReprintLedgerCursor(entry.requestedAt, entry.auditId)
 
@@ -66,6 +79,7 @@ internal object SaleReceiptReprintStablePagingPolicy {
 
 /**
  * v0.73: SCR-648用の安定スナップショット＋keysetページング。
+ * v0.74: snapshotより新しい監査要求の件数も、現在の適用済み検索条件に一致する行だけを数える。
  *
  * 検索適用時に、その条件で最も新しい監査行(requested_at,id)を固定する。
  * その後に新しい再印字要求が追加されても、5秒更新中の現在ページへ割り込ませない。
@@ -160,7 +174,7 @@ class SaleReceiptReprintStablePagingStore(context: Context) : AutoCloseable {
             totalMatches = totalMatches,
             nextCursor = if (hasNext) entries.lastOrNull()?.let(SaleReceiptReprintStablePagingPolicy::cursorOf) else null,
             hasNext = hasNext,
-            newerAuditCount = countNewerThan(snapshot),
+            newerAuditCount = countMatchingNewerThan(criteria, snapshot),
         )
     }
 
@@ -189,19 +203,17 @@ class SaleReceiptReprintStablePagingStore(context: Context) : AutoCloseable {
         }
     }
 
-    private fun countNewerThan(snapshot: SaleReceiptReprintLedgerSnapshot): Int =
-        database.readableDatabase.rawQuery(
-            """
-            SELECT COUNT(*)
-            FROM ${SaleReceiptReprintAuditStore.TABLE}
-            WHERE requested_at > ? OR (requested_at = ? AND id > ?)
-            """.trimIndent(),
-            arrayOf(
-                snapshot.newest.requestedAt.toString(),
-                snapshot.newest.requestedAt.toString(),
-                snapshot.newest.auditId.toString(),
-            ),
+    private fun countMatchingNewerThan(
+        criteria: SaleReceiptReprintLedgerCriteria,
+        snapshot: SaleReceiptReprintLedgerSnapshot,
+    ): Int {
+        val base = SaleReceiptReprintLedgerPolicy.buildDatabaseQuery(criteria)
+        val newerSpec = SaleReceiptReprintStablePagingPolicy.appendNewerThanSnapshot(base, snapshot)
+        return database.readableDatabase.rawQuery(
+            "SELECT COUNT(*) ${ledgerFromSql()} ${newerSpec.whereSql}",
+            newerSpec.args.toTypedArray(),
         ).use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else 0 }
+    }
 
     private fun ledgerFromSql(): String = """
         FROM ${SaleReceiptReprintAuditStore.TABLE} r
