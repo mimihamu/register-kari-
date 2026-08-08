@@ -89,16 +89,23 @@ class ReceiptVoucherActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
+        val requestedSaleId = ReceiptVoucherNavigation.requestedSaleId(intent)
         setContent {
             MaterialTheme {
-                ReceiptVoucherRoute(onClose = { finish() })
+                ReceiptVoucherRoute(
+                    requestedSaleId = requestedSaleId,
+                    onClose = { finish() },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun ReceiptVoucherRoute(onClose: () -> Unit) {
+private fun ReceiptVoucherRoute(
+    requestedSaleId: Long?,
+    onClose: () -> Unit,
+) {
     val context = LocalContext.current
     val database = remember { RegisterDatabase(context.applicationContext) }
     val voucherStore = remember { ReceiptVoucherStore(context.applicationContext) }
@@ -119,10 +126,17 @@ private fun ReceiptVoucherRoute(onClose: () -> Unit) {
         }
         OperatorSessionRegistry.touch(context.applicationContext)
         val sales = remember(refreshEpoch) { database.listSales() }
+        val saleContext = ReceiptVoucherNavigation.resolveSaleContext(
+            requestedSaleId = requestedSaleId,
+            availableSaleIds = sales.map { it.id },
+        )
         ReceiptVoucherOperationsScreen(
             sales = sales,
             operatorName = operator.name,
             voucherStore = voucherStore,
+            initialSaleId = saleContext.selectedSaleId,
+            lockedSaleId = saleContext.selectedSaleId.takeIf { saleContext.selectionLocked },
+            requestedSaleUnavailable = saleContext.requestedSaleUnavailable,
             onRefresh = { refreshEpoch++ },
             onClose = onClose,
         )
@@ -134,11 +148,14 @@ private fun ReceiptVoucherOperationsScreen(
     sales: List<SaleSummaryRecord>,
     operatorName: String,
     voucherStore: ReceiptVoucherStore,
+    initialSaleId: Long?,
+    lockedSaleId: Long?,
+    requestedSaleUnavailable: Boolean,
     onRefresh: () -> Unit,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
-    var selectedSaleId by remember { mutableStateOf<Long?>(sales.firstOrNull()?.id) }
+    var selectedSaleId by remember(initialSaleId) { mutableStateOf<Long?>(initialSaleId) }
     var addressee by remember { mutableStateOf("") }
     var purpose by remember { mutableStateOf("お食事代") }
     var unitAmountText by remember { mutableStateOf("") }
@@ -174,23 +191,42 @@ private fun ReceiptVoucherOperationsScreen(
             ) {
                 Column(Modifier.fillMaxSize().padding(12.dp)) {
                     Text("売上を選択", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = VoucherNavy)
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
+                    if (lockedSaleId != null) {
+                        Text(
+                            "売上No.$lockedSaleId から開いています。対象売上は固定されています。",
+                            color = VoucherBlue,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                    } else if (requestedSaleUnavailable) {
+                        Text(
+                            "指定された売上が見つからないため、売上一覧から選択してください。",
+                            color = VoucherDanger,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                    }
                     if (sales.isEmpty()) {
                         Text("領収書を発行できる売上がありません", color = Color.Gray)
                     } else {
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             items(sales, key = { it.id }) { sale ->
                                 val selected = sale.id == selectedSaleId
+                                val saleSelectionEnabled = lockedSaleId == null || lockedSaleId == sale.id
                                 Card(
-                                    modifier = Modifier.fillMaxWidth().clickable {
-                                        selectedSaleId = sale.id
-                                        unitAmountText = ""
-                                        copiesText = "1"
-                                        requestId = UUID.randomUUID().toString()
-                                        issueConfirmation = false
-                                        reprintConfirmationId = null
-                                        message = null
-                                    },
+                                    modifier = Modifier.fillMaxWidth().clickable(
+                                        enabled = saleSelectionEnabled,
+                                        onClick = {
+                                            selectedSaleId = sale.id
+                                            unitAmountText = ""
+                                            copiesText = "1"
+                                            requestId = UUID.randomUUID().toString()
+                                            issueConfirmation = false
+                                            reprintConfirmationId = null
+                                            message = null
+                                        },
+                                    ),
                                     colors = CardDefaults.cardColors(
                                         containerColor = if (selected) VoucherPaleBlue else Color.White,
                                     ),
@@ -224,6 +260,13 @@ private fun ReceiptVoucherOperationsScreen(
                 ) {
                     Column(Modifier.fillMaxWidth().padding(14.dp)) {
                         Text("領収書発行", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = VoucherNavy)
+                        selectedSale?.let {
+                            Text(
+                                "対象 売上No.${it.id}${if (lockedSaleId == it.id) "（固定）" else ""}",
+                                color = if (lockedSaleId == it.id) VoucherBlue else Color.DarkGray,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
                         Spacer(Modifier.height(8.dp))
                         VoucherAmountRow("売上合計", selectedSale?.let { voucherYen(it.totalAmount) } ?: "-")
                         VoucherAmountRow("発行済み", availability?.let { voucherYen(it.allocatedAmount) } ?: "-")
@@ -414,7 +457,7 @@ private fun ReceiptVoucherOperationsScreen(
             Text("領収書履歴は削除せず、再発行も履歴へ追記します", color = Color.DarkGray)
             Spacer(Modifier.weight(1f))
             OutlinedButton(
-                onClick = { context.startActivity(Intent(context, ReceiptVoucherLedgerActivity::class.java)) },
+                onClick = { context.startActivity(ReceiptVoucherNavigation.ledgerIntent(context, selectedSaleId)) },
                 modifier = Modifier.heightIn(min = 46.dp),
             ) { Text("運用台帳・印刷状態") }
             Spacer(Modifier.width(8.dp))

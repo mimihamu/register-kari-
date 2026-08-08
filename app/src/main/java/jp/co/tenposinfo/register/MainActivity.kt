@@ -577,6 +577,9 @@ private fun RegisterApp() {
                     selectedSaleId = lastSaleId
                     screen = AppScreen.RECEIPT_PREVIEW
                 },
+                onVoucher = {
+                    context.startActivity(ReceiptVoucherNavigation.issuanceIntent(context, lastSaleId))
+                },
                 onHistory = { screen = AppScreen.SALES_HISTORY },
                 onQueue = { openUnifiedPrintQueue() },
                 onNext = { screen = AppScreen.SALES },
@@ -600,6 +603,9 @@ private fun RegisterApp() {
                     SaleDetailScreen(
                         detail = detail,
                         onReceipt = { screen = AppScreen.RECEIPT_PREVIEW },
+                        onVoucher = {
+                            context.startActivity(ReceiptVoucherNavigation.issuanceIntent(context, detail.summary.id))
+                        },
                         onBack = { screen = AppScreen.SALES_HISTORY },
                     )
                 }
@@ -1714,6 +1720,7 @@ private fun PaymentScreen(
 private fun CompleteScreen(
     detail: SaleDetailRecord?,
     onReceipt: () -> Unit,
+    onVoucher: () -> Unit,
     onHistory: () -> Unit,
     onQueue: () -> Unit,
     onNext: () -> Unit,
@@ -1736,6 +1743,7 @@ private fun CompleteScreen(
             Spacer(Modifier.height(20.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(onClick = onReceipt, enabled = detail != null) { Text("レシート確認") }
+                OutlinedButton(onClick = onVoucher, enabled = detail != null) { Text("領収書発行") }
                 OutlinedButton(onClick = onQueue) { Text("統合印刷キュー") }
                 OutlinedButton(onClick = onHistory) { Text("売上一覧") }
                 BlueButton("次の取引", onNext, Modifier.width(180.dp).height(54.dp))
@@ -1790,6 +1798,7 @@ private fun SalesHistoryScreen(
 private fun SaleDetailScreen(
     detail: SaleDetailRecord,
     onReceipt: () -> Unit,
+    onVoucher: () -> Unit,
     onBack: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
@@ -1826,6 +1835,10 @@ private fun SaleDetailScreen(
                 AmountRow("お釣り", yen(detail.summary.changeAmount))
                 Spacer(Modifier.weight(1f))
                 BlueButton("レシート／再印字", onReceipt, Modifier.fillMaxWidth().height(52.dp))
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = onVoucher, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                    Text("この売上で領収書発行")
+                }
             }
         }
         BottomActions(onBack, "一覧へ戻る", onBack)

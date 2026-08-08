@@ -141,7 +141,7 @@ class V060ReceiptVoucherOperationsLedgerTest {
         assertTrue(ledger.contains("統合印刷キューで確認・対応"))
         assertTrue(ledger.contains("UnifiedPrintQueueActivity::class.java"))
         assertTrue(ledger.contains("再試行・破棄・強制印刷は二重印刷防止のため統合印刷キュー"))
-        assertTrue(issuance.contains("ReceiptVoucherLedgerActivity::class.java"))
+        assertTrue(issuance.contains("ReceiptVoucherNavigation.ledgerIntent"))
         assertTrue(issuance.contains("運用台帳・印刷状態"))
         assertTrue(manifest.contains(".ReceiptVoucherLedgerActivity"))
         assertTrue(workflow.contains("V060ReceiptVoucherOperationsLedgerTest.kt"))

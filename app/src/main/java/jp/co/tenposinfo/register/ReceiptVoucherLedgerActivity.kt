@@ -67,11 +67,13 @@ class ReceiptVoucherLedgerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
+        val requestedSaleId = ReceiptVoucherNavigation.requestedSaleId(intent)
         setContent {
             MaterialTheme {
                 ReceiptVoucherLedgerRoute(
+                    requestedSaleId = requestedSaleId,
                     onOpenPrintQueue = { startActivity(Intent(this, UnifiedPrintQueueActivity::class.java)) },
-                    onOpenIssuance = { startActivity(Intent(this, ReceiptVoucherActivity::class.java)) },
+                    onOpenIssuance = { saleId -> startActivity(ReceiptVoucherNavigation.issuanceIntent(this, saleId)) },
                     onClose = { finish() },
                 )
             }
@@ -81,8 +83,9 @@ class ReceiptVoucherLedgerActivity : ComponentActivity() {
 
 @Composable
 private fun ReceiptVoucherLedgerRoute(
+    requestedSaleId: Long?,
     onOpenPrintQueue: () -> Unit,
-    onOpenIssuance: () -> Unit,
+    onOpenIssuance: (Long?) -> Unit,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -105,7 +108,11 @@ private fun ReceiptVoucherLedgerRoute(
         val allEntries = remember(revision) { store.listLedger() }
         val entries = remember(allEntries, criteria) { ReceiptVoucherLedgerPolicy.filter(allEntries, criteria) }
         val summary = remember(allEntries) { ReceiptVoucherLedgerSummary.from(allEntries) }
-        val selected = allEntries.firstOrNull { it.receipt.id == selectedId }
+        val contextSelectedId = requestedSaleId?.let { saleId ->
+            allEntries.firstOrNull { it.receipt.saleId == saleId }?.receipt?.id
+        }
+        val activeSelectedId = selectedId ?: contextSelectedId
+        val selected = allEntries.firstOrNull { it.receipt.id == activeSelectedId }
 
         Column(Modifier.fillMaxSize()) {
             ReceiptVoucherLedgerHeader(summary)
@@ -117,6 +124,14 @@ private fun ReceiptVoucherLedgerRoute(
                 },
                 onRefresh = { revision++ },
             )
+            if (requestedSaleId != null) {
+                Text(
+                    "売上No.$requestedSaleId の領収書コンテキストで開いています。台帳の他売上も確認できます。",
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    color = LedgerBlue,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
             BoxWithConstraints(
                 Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
@@ -129,13 +144,14 @@ private fun ReceiptVoucherLedgerRoute(
                         ReceiptVoucherLedgerList(
                             modifier = Modifier.fillMaxWidth().height(520.dp),
                             entries = entries,
-                            selectedId = selectedId,
+                            selectedId = activeSelectedId,
                             onSelect = { selectedId = it.receipt.id },
                         )
                         ReceiptVoucherLedgerDetail(
                             modifier = Modifier.fillMaxWidth().heightIn(min = 620.dp),
                             entry = selected,
                             onOpenPrintQueue = onOpenPrintQueue,
+                            onOpenIssuance = { saleId -> onOpenIssuance(saleId) },
                         )
                     }
                 } else {
@@ -146,19 +162,20 @@ private fun ReceiptVoucherLedgerRoute(
                         ReceiptVoucherLedgerList(
                             modifier = Modifier.weight(0.46f).fillMaxHeight(),
                             entries = entries,
-                            selectedId = selectedId,
+                            selectedId = activeSelectedId,
                             onSelect = { selectedId = it.receipt.id },
                         )
                         ReceiptVoucherLedgerDetail(
                             modifier = Modifier.weight(0.54f).fillMaxHeight(),
                             entry = selected,
                             onOpenPrintQueue = onOpenPrintQueue,
+                            onOpenIssuance = { saleId -> onOpenIssuance(saleId) },
                         )
                     }
                 }
             }
             ReceiptVoucherLedgerFooter(
-                onOpenIssuance = onOpenIssuance,
+                onOpenIssuance = { onOpenIssuance(requestedSaleId) },
                 onOpenPrintQueue = onOpenPrintQueue,
                 onClose = onClose,
             )
@@ -304,6 +321,7 @@ private fun ReceiptVoucherLedgerDetail(
     modifier: Modifier,
     entry: ReceiptVoucherLedgerEntry?,
     onOpenPrintQueue: () -> Unit,
+    onOpenIssuance: (Long) -> Unit,
 ) {
     Card(
         modifier = modifier,
@@ -370,12 +388,23 @@ private fun ReceiptVoucherLedgerDetail(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            Button(
-                onClick = onOpenPrintQueue,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = LedgerBlue),
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("統合印刷キューで確認・対応", fontWeight = FontWeight.Bold)
+                OutlinedButton(
+                    onClick = { onOpenIssuance(entry.receipt.saleId) },
+                    modifier = Modifier.weight(1f).heightIn(min = 50.dp),
+                ) {
+                    Text("この売上で追加発行", fontWeight = FontWeight.Bold)
+                }
+                Button(
+                    onClick = onOpenPrintQueue,
+                    modifier = Modifier.weight(1f).heightIn(min = 50.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = LedgerBlue),
+                ) {
+                    Text("統合印刷キューで確認・対応", fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
