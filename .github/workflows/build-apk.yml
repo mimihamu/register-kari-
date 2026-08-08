@@ -23,4 +23,16 @@ jobs:
           fetch-depth: 0
 
       - name: Finalize v0.69
-        run: python3 scripts/finalize_v069.py
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/finalize_v069.py')
+          text = path.read_text(encoding='utf-8')
+          old = """    count = text.count(old)\n    if count != 1:\n        raise RuntimeError(f'{label}: expected exactly 1 occurrence, found {count}')\n    return text.replace(old, new, 1)\n"""
+          new = """    count = text.count(old)\n    if label == 'hub route signature':\n        if count != 2:\n            raise RuntimeError(f'{label}: expected exactly 2 occurrences before first replacement, found {count}')\n        return text.replace(old, new, 1)\n    if count != 1:\n        raise RuntimeError(f'{label}: expected exactly 1 occurrence, found {count}')\n    return text.replace(old, new, 1)\n"""
+          if old not in text:
+              raise SystemExit('replace_once helper body not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          python3 scripts/finalize_v069.py
