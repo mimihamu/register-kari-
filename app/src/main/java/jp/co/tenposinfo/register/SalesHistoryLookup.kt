@@ -17,6 +17,12 @@ internal data class SalesHistoryCriteriaValidation(
     val message: String? = null,
 )
 
+internal data class BusinessDateSaleRecord(
+    val summary: SaleSummaryRecord,
+    val businessDate: String?,
+    val businessSessionId: Long?,
+)
+
 internal object SalesHistoryLookupPolicy {
     const val RECENT_LOAD_LIMIT = 1_000
 
@@ -51,6 +57,31 @@ internal object SalesHistoryLookupPolicy {
     ): List<SaleSummaryRecord> {
         val validation = validate(criteria)
         if (!validation.valid) return emptyList()
+        // SaleSummaryRecord itself intentionally remains the v0.15 immutable sales snapshot.
+        // Business-date filtering uses filterBusinessDate() so legacy callers cannot silently
+        // infer a business date from createdAt.
+        if (validation.businessDateFrom != null || validation.businessDateTo != null) return emptyList()
+
+        val query = criteria.query.trim().removePrefix("#").lowercase()
+        val min = criteria.minAmount
+        val max = criteria.maxAmount
+        return sales.filter { sale ->
+            val matchesQuery = query.isBlank() ||
+                sale.id.toString().contains(query) ||
+                sale.operatorName.lowercase().contains(query) ||
+                sale.paymentLabel.lowercase().contains(query)
+            val matchesMin = min == null || sale.totalAmount >= min
+            val matchesMax = max == null || sale.totalAmount <= max
+            matchesQuery && matchesMin && matchesMax
+        }
+    }
+
+    fun filterBusinessDate(
+        sales: List<BusinessDateSaleRecord>,
+        criteria: SalesHistoryCriteria,
+    ): List<BusinessDateSaleRecord> {
+        val validation = validate(criteria)
+        if (!validation.valid) return emptyList()
 
         val query = criteria.query.trim().removePrefix("#").lowercase()
         val min = criteria.minAmount
@@ -58,19 +89,21 @@ internal object SalesHistoryLookupPolicy {
         val from = validation.businessDateFrom
         val to = validation.businessDateTo
 
-        return sales.filter { sale ->
+        return sales.filter { record ->
+            val sale = record.summary
+            val businessDate = record.businessDate
             val matchesQuery = query.isBlank() ||
                 sale.id.toString().contains(query) ||
                 sale.operatorName.lowercase().contains(query) ||
                 sale.paymentLabel.lowercase().contains(query) ||
-                sale.businessDate?.lowercase()?.contains(query) == true
+                businessDate?.lowercase()?.contains(query) == true
             val matchesMin = min == null || sale.totalAmount >= min
             val matchesMax = max == null || sale.totalAmount <= max
             val matchesBusinessDate = when {
                 from == null && to == null -> true
-                sale.businessDate == null -> false
-                from != null && sale.businessDate < from -> false
-                to != null && sale.businessDate > to -> false
+                businessDate == null -> false
+                from != null && businessDate < from -> false
+                to != null && businessDate > to -> false
                 else -> true
             }
             matchesQuery && matchesMin && matchesMax && matchesBusinessDate
