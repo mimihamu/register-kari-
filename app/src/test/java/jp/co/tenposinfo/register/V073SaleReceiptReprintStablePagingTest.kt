@@ -72,7 +72,7 @@ class V073SaleReceiptReprintStablePagingTest {
         assertTrue(stable.contains("ORDER BY r.requested_at DESC, r.id DESC"))
         assertTrue(stable.contains("LIMIT ?"))
         assertFalse(stable.contains("OFFSET ?"))
-        assertTrue(stable.contains("countNewerThan"))
+        assertTrue(stable.contains("newerAuditCount"))
         assertFalse(stable.contains("UPDATE sale_receipt_reprint_requests"))
         assertFalse(stable.contains("DELETE FROM sale_receipt_reprint_requests"))
 
