@@ -77,6 +77,7 @@ class OperationsHubActivityV030 : ComponentActivity() {
                     openHistory = { startActivity(Intent(this, SettlementHistoryActivityV030::class.java)) },
                     openReceiptVoucher = { startActivity(Intent(this, ReceiptVoucherActivity::class.java)) },
                     openSalesLookup = { startActivity(Intent(this, BusinessDateSalesLookupActivity::class.java)) },
+                    openReceiptReprintLedger = { startActivity(Intent(this, SaleReceiptReprintLedgerActivity::class.java)) },
                     openLegacyManagement = { startActivity(Intent(this, OperationsActivity::class.java)) },
                 )
             }
@@ -93,6 +94,7 @@ private fun OperationsHubRouteV030(
     openHistory: () -> Unit,
     openReceiptVoucher: () -> Unit,
     openSalesLookup: () -> Unit,
+    openReceiptReprintLedger: () -> Unit,
     openLegacyManagement: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -127,6 +129,7 @@ private fun OperationsHubRouteV030(
             openHistory = openHistory,
             openReceiptVoucher = openReceiptVoucher,
             openSalesLookup = openSalesLookup,
+            openReceiptReprintLedger = openReceiptReprintLedger,
             openLegacyManagement = openLegacyManagement,
         )
     }
@@ -145,6 +148,7 @@ private fun OperationsHubScreenV030(
     openHistory: () -> Unit,
     openReceiptVoucher: () -> Unit,
     openSalesLookup: () -> Unit,
+    openReceiptReprintLedger: () -> Unit,
     openLegacyManagement: () -> Unit,
 ) {
     val metrics = rememberRegisterResponsiveMetrics()
@@ -224,6 +228,14 @@ private fun OperationsHubScreenV030(
                         openSalesLookup,
                         Modifier.fillMaxWidth().heightIn(min = 112.dp),
                     )
+                    HubTileV030(
+                        "レシート再印字台帳",
+                        "再印字要求・印刷状態・エラーを全売上横断で確認",
+                        Color(0xFFFFF3E0),
+                        RegisterPermission.VIEW_SALES in permissions,
+                        openReceiptReprintLedger,
+                        Modifier.fillMaxWidth().heightIn(min = 112.dp),
+                    )
                     HubLegacyPanelV030(Modifier.fillMaxWidth(), permissions, openLegacyManagement)
                 }
             } else {
@@ -301,6 +313,14 @@ private fun OperationsHubScreenV030(
                                 HubPaleBlueV030,
                                 RegisterPermission.VIEW_SALES in permissions,
                                 openSalesLookup,
+                                Modifier.weight(1f).fillMaxHeight(),
+                            )
+                            HubTileV030(
+                                "レシート再印字台帳",
+                                "再印字要求・印刷状態・エラーを横断確認",
+                                Color(0xFFFFF3E0),
+                                RegisterPermission.VIEW_SALES in permissions,
+                                openReceiptReprintLedger,
                                 Modifier.weight(1f).fillMaxHeight(),
                             )
                             HubLegacyPanelV030(

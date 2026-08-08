@@ -186,6 +186,9 @@ private fun SaleReceiptReprintRoute(
                         onOpenQueue = {
                             context.startActivity(Intent(context, UnifiedPrintQueueActivity::class.java))
                         },
+                        onOpenLedger = {
+                            context.startActivity(Intent(context, SaleReceiptReprintLedgerActivity::class.java))
+                        },
                         onClose = onClose,
                     )
                 }
@@ -205,6 +208,7 @@ private fun SaleReceiptReprintScreen(
     onCancelReprint: () -> Unit,
     onConfirmReprint: () -> Unit,
     onOpenQueue: () -> Unit,
+    onOpenLedger: () -> Unit,
     onClose: () -> Unit,
 ) {
     val receiptData = ReceiptFactory.fromSale(detail, reprint = detail.summary.printCount > 0)
@@ -319,6 +323,10 @@ private fun SaleReceiptReprintScreen(
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(onClick = onOpenQueue, modifier = Modifier.fillMaxWidth().height(46.dp)) {
                         Text("統合印刷キューを開く")
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedButton(onClick = onOpenLedger, modifier = Modifier.fillMaxWidth().height(46.dp)) {
+                        Text("運用台帳を開く")
                     }
                     Spacer(Modifier.height(10.dp))
                     Text("再印字要求履歴（追記専用）", color = SaleReceiptNavy, fontWeight = FontWeight.Bold)
