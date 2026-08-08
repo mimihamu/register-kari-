@@ -1,0 +1,16 @@
+package jp.co.tenposinfo.register
+
+import android.content.Context
+import android.content.Intent
+
+internal object SaleReceiptNavigation {
+    const val EXTRA_SALE_ID = "jp.co.tenposinfo.register.extra.SALE_RECEIPT_ID"
+
+    fun intent(context: Context, saleId: Long): Intent =
+        Intent(context, SaleReceiptReprintActivity::class.java).apply {
+            if (saleId > 0L) putExtra(EXTRA_SALE_ID, saleId)
+        }
+
+    fun requestedSaleId(intent: Intent?): Long? =
+        intent?.getLongExtra(EXTRA_SALE_ID, 0L)?.takeIf { it > 0L }
+}
