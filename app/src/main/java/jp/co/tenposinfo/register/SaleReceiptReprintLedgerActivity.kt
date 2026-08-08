@@ -60,7 +60,7 @@ private val ReprintLedgerDanger = Color(0xFFC62828)
 private val ReprintLedgerGreen = Color(0xFF2E7D32)
 private val ReprintLedgerWarning = Color(0xFFFFF4D9)
 
-/** v0.69 通常レシート再印字要求の全売上横断・読み取り専用運用台帳。 */
+/** v0.70 通常レシート再印字要求の全売上横断・SQLite直接検索運用台帳。 */
 class SaleReceiptReprintLedgerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -99,9 +99,9 @@ private fun SaleReceiptReprintLedgerRoute(onClose: () -> Unit) {
             return@Surface
         }
         OperatorSessionRegistry.touch(appContext)
-        val entries = remember(refreshEpoch) { store.list() }
         SaleReceiptReprintLedgerScreen(
-            entries = entries,
+            store = store,
+            refreshEpoch = refreshEpoch,
             onOpenSale = { saleId -> context.startActivity(SaleReceiptNavigation.intent(context, saleId)) },
             onOpenQueue = { context.startActivity(Intent(context, UnifiedPrintQueueActivity::class.java)) },
             onClose = onClose,
@@ -111,22 +111,36 @@ private fun SaleReceiptReprintLedgerRoute(onClose: () -> Unit) {
 
 @Composable
 private fun SaleReceiptReprintLedgerScreen(
-    entries: List<SaleReceiptReprintLedgerEntry>,
+    store: SaleReceiptReprintOperationsStore,
+    refreshEpoch: Int,
     onOpenSale: (Long) -> Unit,
     onOpenQueue: () -> Unit,
     onClose: () -> Unit,
 ) {
     var filter by remember { mutableStateOf(SaleReceiptReprintLedgerFilter.ALL) }
     var query by remember { mutableStateOf("") }
+    var appliedCriteria by remember { mutableStateOf(SaleReceiptReprintLedgerCriteria()) }
+    var pageOffset by remember { mutableIntStateOf(0) }
     var selectedId by remember { mutableStateOf<Long?>(null) }
 
-    val filtered = SaleReceiptReprintLedgerPolicy.filter(
-        entries,
-        SaleReceiptReprintLedgerCriteria(filter = filter, query = query),
-    )
-    val summary = SaleReceiptReprintLedgerSummary.from(entries)
-    val selected = filtered.firstOrNull { it.auditId == selectedId }
-        ?: filtered.firstOrNull()
+    val page = remember(appliedCriteria, pageOffset, refreshEpoch) {
+        store.search(appliedCriteria, pageOffset)
+    }
+    val summary = remember(refreshEpoch) { store.summary() }
+    val entries = page.entries
+    val selected = entries.firstOrNull { it.auditId == selectedId }
+        ?: entries.firstOrNull()
+
+    LaunchedEffect(page.totalMatches, pageOffset, entries.size) {
+        if (pageOffset > 0 && entries.isEmpty()) {
+            pageOffset = if (page.totalMatches <= 0) {
+                0
+            } else {
+                ((page.totalMatches - 1) / page.pageSize) * page.pageSize
+            }
+            selectedId = null
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -137,7 +151,7 @@ private fun SaleReceiptReprintLedgerScreen(
             Spacer(Modifier.width(20.dp))
             Text("SCR-648  通常レシート再印字 運用台帳", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
-            Text("読み取り専用 / 5秒更新", color = Color.White)
+            Text("SQLite直接検索 / 1ページ${SaleReceiptReprintLedgerPolicy.DATABASE_PAGE_SIZE}件 / 5秒更新", color = Color.White)
         }
 
         Row(
@@ -156,27 +170,67 @@ private fun SaleReceiptReprintLedgerScreen(
                 onValueChange = { query = it.take(100) },
                 label = { Text("売上No.・job・担当・状態・エラー") },
                 singleLine = true,
-                modifier = Modifier.width(330.dp),
+                modifier = Modifier.width(300.dp),
             )
+            Button(
+                onClick = {
+                    appliedCriteria = SaleReceiptReprintLedgerCriteria(filter = filter, query = query)
+                    pageOffset = 0
+                    selectedId = null
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = ReprintLedgerBlue),
+            ) { Text("検索") }
+            OutlinedButton(
+                onClick = {
+                    query = ""
+                    filter = SaleReceiptReprintLedgerFilter.ALL
+                    appliedCriteria = SaleReceiptReprintLedgerCriteria()
+                    pageOffset = 0
+                    selectedId = null
+                },
+            ) { Text("クリア") }
         }
 
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             SaleReceiptReprintLedgerFilter.entries.forEach { item ->
                 val active = filter == item
+                val applyFilter = {
+                    filter = item
+                    appliedCriteria = SaleReceiptReprintLedgerCriteria(filter = item, query = query)
+                    pageOffset = 0
+                    selectedId = null
+                }
                 if (active) {
                     Button(
-                        onClick = { filter = item },
+                        onClick = applyFilter,
                         colors = ButtonDefaults.buttonColors(containerColor = ReprintLedgerBlue),
                     ) { Text(item.displayName) }
                 } else {
-                    OutlinedButton(onClick = { filter = item }) { Text(item.displayName) }
+                    OutlinedButton(onClick = applyFilter) { Text(item.displayName) }
                 }
             }
             Spacer(Modifier.weight(1f))
-            Text("表示 ${filtered.size} / ${entries.size}件", color = Color.Gray, modifier = Modifier.align(Alignment.CenterVertically))
+            val resultFrom = if (page.totalMatches == 0 || entries.isEmpty()) 0 else page.offset + 1
+            val resultTo = if (entries.isEmpty()) 0 else page.offset + entries.size
+            Text("表示 $resultFrom-$resultTo / ${page.totalMatches}件", color = Color.Gray)
+            OutlinedButton(
+                enabled = page.offset > 0,
+                onClick = {
+                    pageOffset = (page.offset - page.pageSize).coerceAtLeast(0)
+                    selectedId = null
+                },
+            ) { Text("前へ") }
+            OutlinedButton(
+                enabled = page.hasNext,
+                onClick = {
+                    pageOffset = page.offset + page.pageSize
+                    selectedId = null
+                },
+            ) { Text("次へ") }
         }
 
         Row(
@@ -188,13 +242,13 @@ private fun SaleReceiptReprintLedgerScreen(
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 border = BorderStroke(1.dp, ReprintLedgerBorder),
             ) {
-                if (filtered.isEmpty()) {
+                if (entries.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text("条件に一致する再印字要求はありません", color = Color.Gray)
                     }
                 } else {
                     LazyColumn(Modifier.fillMaxSize().padding(8.dp)) {
-                        items(filtered, key = { it.auditId }) { entry ->
+                        items(entries, key = { it.auditId }) { entry ->
                             val selectedRow = selected?.auditId == entry.auditId
                             Row(
                                 Modifier
