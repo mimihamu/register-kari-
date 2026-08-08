@@ -66,7 +66,7 @@ internal class SaleReceiptReprintAuditStore(context: Context) : AutoCloseable {
         val normalizedRequestId = SaleReceiptReprintAuditPolicy.normalizeRequestId(requestId)
         val normalizedOperator = SaleReceiptReprintAuditPolicy.normalizeOperatorName(operatorName)
         val paperWidthMm = SaleReceiptReprintAuditPolicy.normalizePaperWidth(
-            PrinterPaperSettingPolicy.currentWidthMm(appContext),
+            PrinterPaperSettingPolicy.currentPaper(appContext).widthMm,
         )
         val now = System.currentTimeMillis()
 
