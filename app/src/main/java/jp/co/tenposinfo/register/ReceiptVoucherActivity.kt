@@ -1,5 +1,6 @@
 package jp.co.tenposinfo.register
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -136,6 +137,7 @@ private fun ReceiptVoucherOperationsScreen(
     onRefresh: () -> Unit,
     onClose: () -> Unit,
 ) {
+    val context = LocalContext.current
     var selectedSaleId by remember { mutableStateOf<Long?>(sales.firstOrNull()?.id) }
     var addressee by remember { mutableStateOf("") }
     var purpose by remember { mutableStateOf("お食事代") }
@@ -411,6 +413,11 @@ private fun ReceiptVoucherOperationsScreen(
         ) {
             Text("領収書履歴は削除せず、再発行も履歴へ追記します", color = Color.DarkGray)
             Spacer(Modifier.weight(1f))
+            OutlinedButton(
+                onClick = { context.startActivity(Intent(context, ReceiptVoucherLedgerActivity::class.java)) },
+                modifier = Modifier.heightIn(min = 46.dp),
+            ) { Text("運用台帳・印刷状態") }
+            Spacer(Modifier.width(8.dp))
             OutlinedButton(onClick = onClose, modifier = Modifier.heightIn(min = 46.dp)) { Text("管理メニューへ戻る") }
         }
     }

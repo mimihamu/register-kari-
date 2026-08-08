@@ -47,13 +47,13 @@ class V044GoogleDriveAccountTest {
         assertTrue(manifest.contains("android:name=\".GoogleDriveSetupGuideActivity\""))
         assertTrue(manifest.contains("android:name=\".GoogleDriveAccountActivity\""))
         assertTrue(build.contains("com.google.android.gms:play-services-auth:21.6.0"))
-        assertTrue(build.contains("versionCode = 89"))
-        assertTrue(build.contains("versionName = \"0.59.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 90"))
+        assertTrue(build.contains("versionName = \"0.60.0-dev.1\""))
         assertTrue(docs.contains("drive.file"))
         assertTrue(docs.contains("OAuth"))
         assertTrue(notes.contains("0.44.0-dev.1"))
         assertTrue(notes.contains("Googleアカウント"))
         assertTrue(workflow.contains("V044GoogleDriveAccountTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.59.0_dev1_receipt_voucher_ui_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.60.0_dev1_receipt_voucher_operations_ledger_debug.apk"))
     }
 }
