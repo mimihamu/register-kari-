@@ -202,6 +202,9 @@ internal class SaleReceiptReprintAuditStore(context: Context) : AutoCloseable {
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS idx_sale_receipt_reprint_sale_time ON $TABLE(sale_id, requested_at DESC, id DESC)",
         )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_sale_receipt_reprint_requested_time ON $TABLE(requested_at DESC, id DESC)",
+        )
     }
 
     companion object {

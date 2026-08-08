@@ -60,7 +60,7 @@ private val ReprintLedgerDanger = Color(0xFFC62828)
 private val ReprintLedgerGreen = Color(0xFF2E7D32)
 private val ReprintLedgerWarning = Color(0xFFFFF4D9)
 
-/** v0.70 通常レシート再印字要求の全売上横断・SQLite直接検索運用台帳。 */
+/** v0.71 通常レシート再印字要求の全売上横断・期間対応SQLite直接検索運用台帳。 */
 class SaleReceiptReprintLedgerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -118,6 +118,7 @@ private fun SaleReceiptReprintLedgerScreen(
     onClose: () -> Unit,
 ) {
     var filter by remember { mutableStateOf(SaleReceiptReprintLedgerFilter.ALL) }
+    var period by remember { mutableStateOf(SaleReceiptReprintLedgerPeriod.ALL) }
     var query by remember { mutableStateOf("") }
     var appliedCriteria by remember { mutableStateOf(SaleReceiptReprintLedgerCriteria()) }
     var pageOffset by remember { mutableIntStateOf(0) }
@@ -151,7 +152,7 @@ private fun SaleReceiptReprintLedgerScreen(
             Spacer(Modifier.width(20.dp))
             Text("SCR-648  通常レシート再印字 運用台帳", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
-            Text("SQLite直接検索 / 1ページ${SaleReceiptReprintLedgerPolicy.DATABASE_PAGE_SIZE}件 / 5秒更新", color = Color.White)
+            Text("SQLite直接検索 / 期間DB絞込 / 1ページ${SaleReceiptReprintLedgerPolicy.DATABASE_PAGE_SIZE}件", color = Color.White)
         }
 
         Row(
@@ -174,7 +175,7 @@ private fun SaleReceiptReprintLedgerScreen(
             )
             Button(
                 onClick = {
-                    appliedCriteria = SaleReceiptReprintLedgerCriteria(filter = filter, query = query)
+                    appliedCriteria = SaleReceiptReprintLedgerCriteria(filter = filter, period = period, query = query)
                     pageOffset = 0
                     selectedId = null
                 },
@@ -184,6 +185,7 @@ private fun SaleReceiptReprintLedgerScreen(
                 onClick = {
                     query = ""
                     filter = SaleReceiptReprintLedgerFilter.ALL
+                    period = SaleReceiptReprintLedgerPeriod.ALL
                     appliedCriteria = SaleReceiptReprintLedgerCriteria()
                     pageOffset = 0
                     selectedId = null
@@ -196,11 +198,12 @@ private fun SaleReceiptReprintLedgerScreen(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Text("状態", color = Color.Gray, fontWeight = FontWeight.Bold)
             SaleReceiptReprintLedgerFilter.entries.forEach { item ->
                 val active = filter == item
                 val applyFilter = {
                     filter = item
-                    appliedCriteria = SaleReceiptReprintLedgerCriteria(filter = item, query = query)
+                    appliedCriteria = SaleReceiptReprintLedgerCriteria(filter = item, period = period, query = query)
                     pageOffset = 0
                     selectedId = null
                 }
@@ -231,6 +234,33 @@ private fun SaleReceiptReprintLedgerScreen(
                     selectedId = null
                 },
             ) { Text("次へ") }
+        }
+
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("期間", color = Color.Gray, fontWeight = FontWeight.Bold)
+            SaleReceiptReprintLedgerPeriod.entries.forEach { item ->
+                val active = period == item
+                val applyPeriod = {
+                    period = item
+                    appliedCriteria = SaleReceiptReprintLedgerCriteria(filter = filter, period = item, query = query)
+                    pageOffset = 0
+                    selectedId = null
+                }
+                if (active) {
+                    Button(
+                        onClick = applyPeriod,
+                        colors = ButtonDefaults.buttonColors(containerColor = ReprintLedgerBlue),
+                    ) { Text(item.displayName) }
+                } else {
+                    OutlinedButton(onClick = applyPeriod) { Text(item.displayName) }
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            Text("期間変更時は先頭ページへ戻ります / 5秒更新は条件・ページを維持", color = Color.Gray, fontSize = 12.sp)
         }
 
         Row(

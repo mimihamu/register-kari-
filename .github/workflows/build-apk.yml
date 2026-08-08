@@ -46,12 +46,12 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.70 sources
+      - name: Verify cumulative v0.14-v0.71 sources
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 100' app/build.gradle.kts
-          grep -q 'versionName = "0.70.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 101' app/build.gradle.kts
+          grep -q 'versionName = "0.71.0-dev.1"' app/build.gradle.kts
           grep -q 'versionCode = 14' management-app/build.gradle.kts
           grep -q 'versionName = "0.14.0-dev.1"' management-app/build.gradle.kts
           grep -q 'versionCode = 7' customer-display/build.gradle.kts
@@ -85,6 +85,12 @@ jobs:
           test -s app/src/test/java/jp/co/tenposinfo/register/V068SaleReceiptReprintAuditTest.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V069SaleReceiptReprintOperationsLedgerTest.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V070SaleReceiptReprintDatabasePagingTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V071SaleReceiptReprintPeriodIndexTest.kt
+          grep -q 'idx_sale_receipt_reprint_requested_time' app/src/main/java/jp/co/tenposinfo/register/SaleReceiptReprintAudit.kt
+          grep -q 'enum class SaleReceiptReprintLedgerPeriod' app/src/main/java/jp/co/tenposinfo/register/SaleReceiptReprintOperations.kt
+          grep -Fq 'r.requested_at >= ?' app/src/main/java/jp/co/tenposinfo/register/SaleReceiptReprintOperations.kt
+          grep -q 'SaleReceiptReprintLedgerPeriod.entries' app/src/main/java/jp/co/tenposinfo/register/SaleReceiptReprintLedgerActivity.kt
+          grep -q '期間DB絞込' app/src/main/java/jp/co/tenposinfo/register/SaleReceiptReprintLedgerActivity.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SaleReceiptReprintOperations.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SaleReceiptReprintLedgerActivity.kt
           grep -q 'DATABASE_PAGE_SIZE = 200' app/src/main/java/jp/co/tenposinfo/register/SaleReceiptReprintOperations.kt
@@ -143,6 +149,8 @@ jobs:
           test -s docs/V0.69_RELEASE_NOTES.md
           test -s docs/V0.70_DATABASE_PAGING_FOUNDATION.md
           test -s docs/V0.70_RELEASE_NOTES.md
+          test -s docs/V0.71_REPRINT_LEDGER_PERIOD_INDEX.md
+          test -s docs/V0.71_RELEASE_NOTES.md
           grep -q '^# つぐレジ$' README.md
           grep -q 'GoogleDriveEasyConnectActivity' app/src/main/AndroidManifest.xml
           grep -q 'GoogleDriveEasyConnectActivity' management-app/src/main/AndroidManifest.xml
@@ -256,7 +264,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v0.70.0_dev1_sale_receipt_reprint_database_paging_debug.apk
+          register_apk=artifacts/TSUGUREGI_v0.71.0_dev1_sale_receipt_reprint_period_index_debug.apk
           plus_apk=artifacts/TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
@@ -275,8 +283,8 @@ jobs:
             | awk -F': ' '/SHA1:/{print "DEVELOPMENT_SIGNING_SHA1=" $2} /SHA256:/{print "DEVELOPMENT_SIGNING_SHA256=" $2}' \
             | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.70.0-dev.1
-          REGISTER_VERSION_CODE=100
+          REGISTER_VERSION_NAME=0.71.0-dev.1
+          REGISTER_VERSION_CODE=101
           REGISTER_APPLICATION_ID_DEBUG=jp.co.tenposinfo.register.dev
           MANAGEMENT_APP_VERSION_NAME=0.14.0-dev.1
           MANAGEMENT_APP_VERSION_CODE=14
@@ -360,9 +368,14 @@ jobs:
           SALE_RECEIPT_REPRINT_DATABASE_BOUND_ARGS=true
           SALE_RECEIPT_REPRINT_DATABASE_LIKE_ESCAPE=true
           SALE_RECEIPT_REPRINT_DATABASE_RECENT_LIMIT=false
+          SALE_RECEIPT_REPRINT_PERIOD_FILTER=true
+          SALE_RECEIPT_REPRINT_PERIOD_BOUND_ARGS=true
+          SALE_RECEIPT_REPRINT_GLOBAL_TIME_INDEX=true
+          SALE_RECEIPT_REPRINT_PERIOD_LOCAL_TODAY=true
           GOOGLE_DRIVE_DIAGNOSTIC_TOKENS_INCLUDED=false
           GOOGLE_DRIVE_DIAGNOSTIC_SALES_JSON_INCLUDED=false
           GOOGLE_DRIVE_DIAGNOSTIC_CONTENT_URI_INCLUDED=false
+          REAL_DEVICE_SALE_RECEIPT_REPRINT_PERIOD_INDEX_VERIFICATION=required
           REAL_DEVICE_SALE_RECEIPT_REPRINT_DATABASE_PAGING_VERIFICATION=required
           REAL_DEVICE_SALE_RECEIPT_REPRINT_LEDGER_VERIFICATION=required
           REAL_DEVICE_SALE_RECEIPT_REPRINT_AUDIT_VERIFICATION=required
@@ -385,7 +398,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.70.0-dev1-sale-receipt-reprint-database-paging-apks
+          name: TSUGUREGI-v0.71.0-dev1-sale-receipt-reprint-period-index-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30

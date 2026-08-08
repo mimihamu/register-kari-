@@ -114,10 +114,10 @@ class V058ReceiptVoucherFoundationTest {
         assertTrue(advanced.contains("RECEIPT_VOUCHER(\"領収書\")"))
         assertTrue(unified.contains("RECEIPT_VOUCHER(\"領収書\")"))
         assertTrue(unified.contains("UnifiedPrintTypeFilter.RECEIPT"))
-        assertTrue(build.contains("versionCode = 100"))
-        assertTrue(build.contains("versionName = \"0.70.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 101"))
+        assertTrue(build.contains("versionName = \"0.71.0-dev.1\""))
         assertTrue(workflow.contains("V058ReceiptVoucherFoundationTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.70.0_dev1_sale_receipt_reprint_database_paging_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.71.0_dev1_sale_receipt_reprint_period_index_debug.apk"))
         assertTrue(docs.contains("4,000円 × 30枚"))
         assertTrue(docs.contains("元売上レシート"))
     }
