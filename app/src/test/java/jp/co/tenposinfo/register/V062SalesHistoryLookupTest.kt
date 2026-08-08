@@ -69,6 +69,6 @@ class V062SalesHistoryLookupTest {
         assertTrue(voucher.contains("database.loadSaleDetail(it)?.summary"))
         assertTrue(voucher.contains("SalesHistoryLookupPolicy.includeRequestedSale"))
         assertTrue(workflow.contains("V062SalesHistoryLookupTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.62.0_dev1_sales_history_lookup_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.63.0_dev1_reversal_sale_lookup_debug.apk"))
     }
 }

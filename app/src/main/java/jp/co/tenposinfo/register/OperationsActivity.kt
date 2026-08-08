@@ -301,7 +301,7 @@ private fun OperationsApp(onClose: () -> Unit) {
             )
 
             OperationsScreen.REVERSAL -> ReversalScreen(
-                sales = registerDatabase.listSales(200),
+                sales = registerDatabase.listSales(SalesHistoryLookupPolicy.RECENT_LOAD_LIMIT),
                 reversedSaleIds = store.reversedSaleIds(),
                 reversals = store.recentReversals(),
                 operatorName = operator.name,
@@ -309,6 +309,7 @@ private fun OperationsApp(onClose: () -> Unit) {
                 message = message,
                 printerPaperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext),
                 loadLines = store::loadReturnableLines,
+                lookupSale = { saleId -> registerDatabase.loadSaleDetail(saleId)?.summary },
                 onExecute = { saleId, type, quantities, reason, pin, requestId ->
                     val result = runCatching {
                         secureStore.createReversal(
@@ -951,6 +952,7 @@ private fun ReversalScreen(
     message: String?,
     printerPaperWidthMm: Int,
     loadLines: (Long) -> List<ReturnableSaleLine>,
+    lookupSale: (Long) -> SaleSummaryRecord?,
     onExecute: (Long, ReversalType, Map<Long, Int>, String, String, String) -> PartialReversalResult?,
     onBack: () -> Unit,
 ) {
@@ -963,8 +965,14 @@ private fun ReversalScreen(
     var requestId by remember { mutableStateOf(UUID.randomUUID().toString()) }
     var savedResult by remember { mutableStateOf<PartialReversalResult?>(null) }
     var localMessage by remember { mutableStateOf<String?>(null) }
+    var saleQuery by remember { mutableStateOf("") }
+    var directSaleIdText by remember { mutableStateOf("") }
+    var directSaleOverride by remember { mutableStateOf<SaleSummaryRecord?>(null) }
     @Suppress("UNUSED_VARIABLE") val refresh = revision
-    val selected = sales.firstOrNull { it.id == selectedSaleId }
+    val visibleSales = SalesHistoryLookupPolicy.filter(sales, SalesHistoryCriteria(query = saleQuery))
+    val directSaleId = SalesHistoryLookupPolicy.parseDirectSaleId(directSaleIdText)
+    val selected = directSaleOverride?.takeIf { it.id == selectedSaleId }
+        ?: sales.firstOrNull { it.id == selectedSaleId }
     val selectedItems = runCatching { PartialReturnPolicy.select(type, lines, quantities) }.getOrNull().orEmpty()
     val previewSummary = selectedItems.takeIf { it.isNotEmpty() }?.let { TaxEngine.calculate(it.map { pair -> pair.second }) }
     val canCancel = lines.isNotEmpty() && lines.all { it.returnedQuantity == 0 && it.remainingQuantity > 0 }
@@ -976,11 +984,94 @@ private fun ReversalScreen(
     Column(Modifier.fillMaxSize()) {
         OpHeader("SCR-400/410", "返品・取消")
         Row(Modifier.weight(1f).padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OpPanel(Modifier.width(315.dp).fillMaxHeight()) {
-                Text("元売上を選択", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = OpNavy)
-                Spacer(Modifier.height(8.dp))
+            OpPanel(Modifier.width(355.dp).fillMaxHeight()) {
+                Text("元売上を検索・選択", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = OpNavy)
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = saleQuery,
+                    onValueChange = { saleQuery = it.take(80) },
+                    label = { Text("売上No.・担当・支払") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(5.dp))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedTextField(
+                        value = directSaleIdText,
+                        onValueChange = {
+                            directSaleIdText = it.filter { ch -> ch.isDigit() || ch == '#' }.take(20)
+                            localMessage = null
+                        },
+                        label = { Text("売上No.直接指定") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Button(
+                        onClick = {
+                            val saleId = directSaleId ?: return@Button
+                            val sale = lookupSale(saleId)
+                            when {
+                                sale == null -> {
+                                    selectedSaleId = null
+                                    directSaleOverride = null
+                                    lines = emptyList()
+                                    quantities = emptyMap()
+                                    savedResult = null
+                                    requestId = UUID.randomUUID().toString()
+                                    localMessage = "売上No.$saleId は見つかりません。元売上の選択を解除しました"
+                                }
+                                sale.id in reversedSaleIds -> {
+                                    selectedSaleId = null
+                                    directSaleOverride = null
+                                    lines = emptyList()
+                                    quantities = emptyMap()
+                                    savedResult = null
+                                    requestId = UUID.randomUUID().toString()
+                                    localMessage = "売上No.${sale.id} は全量返品・取消済みです。元売上の選択を解除しました"
+                                }
+                                else -> {
+                                    selectedSaleId = sale.id
+                                    directSaleOverride = sale.takeIf { candidate -> sales.none { it.id == candidate.id } }
+                                    lines = runCatching { loadLines(sale.id) }.getOrElse {
+                                        localMessage = it.message ?: "明細取得に失敗しました"
+                                        emptyList()
+                                    }
+                                    quantities = emptyMap()
+                                    savedResult = null
+                                    requestId = UUID.randomUUID().toString()
+                                    localMessage = if (lines.isEmpty()) "返品可能な明細がありません" else null
+                                }
+                            }
+                        },
+                        enabled = directSaleId != null,
+                        colors = ButtonDefaults.buttonColors(containerColor = OpBlue),
+                    ) { Text("表示") }
+                }
+                Text(
+                    "表示 ${visibleSales.size}件 / 読込 ${sales.size}件（直近最大${SalesHistoryLookupPolicy.RECENT_LOAD_LIMIT}件）",
+                    color = Color.Gray,
+                    fontSize = 11.sp,
+                )
+                directSaleOverride?.takeIf { it.id == selectedSaleId }?.let { sale ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
+                        colors = CardDefaults.cardColors(containerColor = OpPaleBlue),
+                        border = BorderStroke(2.dp, OpBlue),
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(8.dp)) {
+                            Text("直接指定 No.${sale.id}", fontWeight = FontWeight.Bold, color = OpNavy)
+                            Text("${opDateTime(sale.createdAt)} / ${sale.operatorName} / ${sale.paymentLabel}", fontSize = 11.sp)
+                            Text(opYen(sale.totalAmount), fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(5.dp))
                 LazyColumn(Modifier.weight(1f)) {
-                    itemsIndexed(sales) { _, sale ->
+                    itemsIndexed(visibleSales) { _, sale ->
                         val completed = sale.id in reversedSaleIds
                         val selectedRow = sale.id == selectedSaleId
                         Row(
@@ -989,6 +1080,7 @@ private fun ReversalScreen(
                                 .background(if (selectedRow) OpPaleBlue else Color.Transparent)
                                 .clickable(enabled = !completed) {
                                     selectedSaleId = sale.id
+                                    directSaleOverride = null
                                     lines = runCatching { loadLines(sale.id) }.getOrElse {
                                         localMessage = it.message ?: "明細取得に失敗しました"
                                         emptyList()
@@ -996,8 +1088,9 @@ private fun ReversalScreen(
                                     quantities = emptyMap()
                                     savedResult = null
                                     requestId = UUID.randomUUID().toString()
+                                    localMessage = if (lines.isEmpty()) "返品可能な明細がありません" else null
                                 }
-                                .padding(horizontal = 7.dp, vertical = 9.dp),
+                                .padding(horizontal = 7.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
@@ -1009,7 +1102,7 @@ private fun ReversalScreen(
                         }
                     }
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(6.dp))
                 Text("最近の処理", fontWeight = FontWeight.Bold, color = OpNavy)
                 reversals.take(3).forEach { record ->
                     Text("${record.type.displayName} No.${record.originalSaleId}  -${opYen(record.grossAmount)}", fontSize = 12.sp)

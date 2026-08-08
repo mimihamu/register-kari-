@@ -46,12 +46,12 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.62 sources
+      - name: Verify cumulative v0.14-v0.63 sources
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 92' app/build.gradle.kts
-          grep -q 'versionName = "0.62.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 93' app/build.gradle.kts
+          grep -q 'versionName = "0.63.0-dev.1"' app/build.gradle.kts
           grep -q 'versionCode = 14' management-app/build.gradle.kts
           grep -q 'versionName = "0.14.0-dev.1"' management-app/build.gradle.kts
           grep -q 'versionCode = 7' customer-display/build.gradle.kts
@@ -77,6 +77,7 @@ jobs:
           test -s app/src/test/java/jp/co/tenposinfo/register/V060ReceiptVoucherOperationsLedgerTest.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V061ReceiptVoucherSaleContextNavigationTest.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V062SalesHistoryLookupTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V063ReversalSaleLookupTest.kt
           test -s management-app/src/test/java/jp/co/tenposinfo/register/plus/V044GoogleDriveAccountTest.kt
           test -s management-app/src/test/java/jp/co/tenposinfo/register/plus/V049GoogleDrivePlusSetupDiagnosticsTest.kt
           test -s management-app/src/test/java/jp/co/tenposinfo/register/plus/V050GoogleDriveCrossAppConnectionTest.kt
@@ -104,6 +105,8 @@ jobs:
           test -s docs/V0.61_RELEASE_NOTES.md
           test -s docs/V0.62_SALES_HISTORY_LOOKUP.md
           test -s docs/V0.62_RELEASE_NOTES.md
+          test -s docs/V0.63_REVERSAL_SALE_LOOKUP.md
+          test -s docs/V0.63_RELEASE_NOTES.md
           grep -q '^# つぐレジ$' README.md
           grep -q 'GoogleDriveEasyConnectActivity' app/src/main/AndroidManifest.xml
           grep -q 'GoogleDriveEasyConnectActivity' management-app/src/main/AndroidManifest.xml
@@ -148,6 +151,10 @@ jobs:
           grep -q 'SalesHistoryLookupPolicy.RECENT_LOAD_LIMIT' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
           grep -q '売上No.直接表示' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
           grep -q 'SalesHistoryLookupPolicy.includeRequestedSale' app/src/main/java/jp/co/tenposinfo/register/ReceiptVoucherActivity.kt
+          grep -q 'registerDatabase.listSales(SalesHistoryLookupPolicy.RECENT_LOAD_LIMIT)' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q '売上No.直接指定' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q '全量返品・取消済みです' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q '元売上の選択を解除しました' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
           ! grep -R -q --include='*.kt' 'putString("access_token"' app/src/main management-app/src/main
           ! grep -R -q --include='*.kt' 'putString("refresh_token"' app/src/main management-app/src/main
 
@@ -179,7 +186,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v0.62.0_dev1_sales_history_lookup_debug.apk
+          register_apk=artifacts/TSUGUREGI_v0.63.0_dev1_reversal_sale_lookup_debug.apk
           plus_apk=artifacts/TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
@@ -198,8 +205,8 @@ jobs:
             | awk -F': ' '/SHA1:/{print "DEVELOPMENT_SIGNING_SHA1=" $2} /SHA256:/{print "DEVELOPMENT_SIGNING_SHA256=" $2}' \
             | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.62.0-dev.1
-          REGISTER_VERSION_CODE=92
+          REGISTER_VERSION_NAME=0.63.0-dev.1
+          REGISTER_VERSION_CODE=93
           REGISTER_APPLICATION_ID_DEBUG=jp.co.tenposinfo.register.dev
           MANAGEMENT_APP_VERSION_NAME=0.14.0-dev.1
           MANAGEMENT_APP_VERSION_CODE=14
@@ -246,9 +253,14 @@ jobs:
           SALES_HISTORY_RECENT_LOAD_LIMIT=1000
           SALES_HISTORY_DIRECT_ID_LOOKUP=true
           RECEIPT_VOUCHER_OLD_SALE_CONTEXT_LOOKUP=true
+          REVERSAL_SALE_SEARCH=true
+          REVERSAL_SALE_RECENT_LOAD_LIMIT=1000
+          REVERSAL_SALE_DIRECT_ID_LOOKUP=true
+          REVERSAL_SAFETY_ENGINE_UNCHANGED=true
           GOOGLE_DRIVE_DIAGNOSTIC_TOKENS_INCLUDED=false
           GOOGLE_DRIVE_DIAGNOSTIC_SALES_JSON_INCLUDED=false
           GOOGLE_DRIVE_DIAGNOSTIC_CONTENT_URI_INCLUDED=false
+          REAL_DEVICE_REVERSAL_SALE_LOOKUP_VERIFICATION=required
           REAL_DEVICE_SALES_HISTORY_LOOKUP_VERIFICATION=required
           REAL_DEVICE_RECEIPT_VOUCHER_SALE_CONTEXT_VERIFICATION=required
           REAL_DEVICE_RECEIPT_VOUCHER_LEDGER_VERIFICATION=required
@@ -263,7 +275,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.62.0-dev1-sales-history-lookup-apks
+          name: TSUGUREGI-v0.63.0-dev1-reversal-sale-lookup-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
