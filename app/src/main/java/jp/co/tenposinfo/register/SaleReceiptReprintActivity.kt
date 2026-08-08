@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -45,6 +47,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.UUID
 
 private val SaleReceiptNavy = Color(0xFF173F6B)
 private val SaleReceiptBlue = Color(0xFF1976B9)
@@ -53,12 +59,13 @@ private val SaleReceiptBorder = Color(0xFFD5DEE7)
 private val SaleReceiptDanger = Color(0xFFC62828)
 private val SaleReceiptGreen = Color(0xFF2E7D32)
 private val SaleReceiptWarning = Color(0xFFFFF4D9)
+private val SaleReceiptPaleBlue = Color(0xFFEAF3FA)
 
 /**
- * v0.67 売上No.指定の通常レシート確認・再印字。
+ * v0.68 売上No.指定の通常レシート確認・再印字。
  *
- * MainActivityの売上詳細に依存せず、営業日DB検索など別画面から同じ売上No.を
- * 明示指定して開く。売上や税計算は更新せず、再印字要求のみ既存印刷キューへ追加する。
+ * 売上コンテキストを固定したまま、再印字要求をrequest UUIDで冪等化し、
+ * print_jobと追記専用監査履歴を同一SQLiteトランザクションで作成する。
  */
 class SaleReceiptReprintActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,18 +91,24 @@ private fun SaleReceiptReprintRoute(
     val context = LocalContext.current
     val appContext = context.applicationContext
     val database = remember { RegisterDatabase(appContext) }
+    val auditStore = remember { SaleReceiptReprintAuditStore(appContext) }
     var operator by remember { mutableStateOf(OperatorSessionRegistry.current(appContext)) }
     var refreshEpoch by remember { mutableIntStateOf(0) }
     var message by remember { mutableStateOf<String?>(null) }
     var confirmingReprint by remember { mutableStateOf(false) }
+    var pendingRequestId by remember { mutableStateOf<String?>(null) }
 
     DisposableEffect(Unit) {
-        onDispose { database.close() }
+        onDispose {
+            auditStore.close()
+            database.close()
+        }
     }
     LaunchedEffect(Unit) {
         while (true) {
             kotlinx.coroutines.delay(5_000L)
             operator = OperatorSessionRegistry.current(appContext)
+            refreshEpoch++
         }
     }
 
@@ -124,30 +137,50 @@ private fun SaleReceiptReprintRoute(
                         onClose = onClose,
                     )
                 } else {
+                    val history = remember(requestedSaleId, refreshEpoch) {
+                        auditStore.listForSale(requestedSaleId, limit = 20)
+                    }
                     SaleReceiptReprintScreen(
                         detail = detail,
                         paper = PrinterPaperSettingPolicy.currentPaper(appContext),
+                        history = history,
                         message = message,
                         confirmingReprint = confirmingReprint,
                         onRequestReprint = {
+                            pendingRequestId = UUID.randomUUID().toString()
                             confirmingReprint = true
                             message = null
                         },
                         onCancelReprint = {
+                            pendingRequestId = null
                             confirmingReprint = false
                             message = null
                         },
                         onConfirmReprint = {
+                            val requestId = pendingRequestId ?: UUID.randomUUID().toString().also {
+                                pendingRequestId = it
+                            }
                             runCatching {
-                                database.enqueueReprint(detail.summary.id)
+                                auditStore.request(
+                                    saleId = detail.summary.id,
+                                    operatorName = current.name,
+                                    requestId = requestId,
+                                )
+                            }.onSuccess { result ->
                                 AutomaticPrintScheduler.enqueueNow(appContext)
-                            }.onSuccess {
                                 confirmingReprint = false
-                                message = "売上No.${detail.summary.id} の再印字をキューへ登録しました"
+                                pendingRequestId = null
+                                message = if (result.newlyCreated) {
+                                    "再印字要求を記録し、印刷job No.${result.record.printJobId}をキューへ登録しました"
+                                } else {
+                                    "同じ再印字要求は二重登録せず、既存job No.${result.record.printJobId}を使用します"
+                                }
                                 refreshEpoch++
                             }.onFailure { error ->
                                 confirmingReprint = false
+                                pendingRequestId = null
                                 message = error.message ?: "再印字を登録できませんでした"
+                                refreshEpoch++
                             }
                         },
                         onOpenQueue = {
@@ -165,6 +198,7 @@ private fun SaleReceiptReprintRoute(
 private fun SaleReceiptReprintScreen(
     detail: SaleDetailRecord,
     paper: ReceiptPaper,
+    history: List<SaleReceiptReprintRequestRecord>,
     message: String?,
     confirmingReprint: Boolean,
     onRequestReprint: () -> Unit,
@@ -207,7 +241,7 @@ private fun SaleReceiptReprintScreen(
                         )
                         Spacer(Modifier.weight(1f))
                         Text(
-                            "印字履歴 ${detail.summary.printCount}回",
+                            "完了印字 ${detail.summary.printCount}回 / 再印字要求 ${history.size}件",
                             color = Color.Gray,
                             fontWeight = FontWeight.Bold,
                         )
@@ -232,29 +266,29 @@ private fun SaleReceiptReprintScreen(
             }
 
             Card(
-                modifier = Modifier.width(340.dp).fillMaxHeight(),
+                modifier = Modifier.width(400.dp).fillMaxHeight(),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 border = BorderStroke(1.dp, SaleReceiptBorder),
             ) {
                 Column(Modifier.fillMaxSize().padding(16.dp)) {
                     Text("再印字操作", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = SaleReceiptNavy)
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(8.dp))
                     Text("対象売上は売上No.${detail.summary.id}に固定されています。別売上へ自動切替しません。")
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(8.dp))
                     Text(
-                        "売上・税計算・支払データは変更せず、既存の再印字ジョブだけを追加します。",
+                        "再印字要求とprint_jobは同一トランザクションで追記し、request UUIDで二重登録を防止します。",
                         color = SaleReceiptGreen,
                         fontWeight = FontWeight.Bold,
                     )
                     if (!message.isNullOrBlank()) {
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(10.dp))
                         Text(
                             message,
-                            color = if (message.contains("登録しました")) SaleReceiptGreen else SaleReceiptDanger,
+                            color = if (message.contains("登録") || message.contains("二重登録せず")) SaleReceiptGreen else SaleReceiptDanger,
                             fontWeight = FontWeight.Bold,
                         )
                     }
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(10.dp))
                     if (confirmingReprint) {
                         Card(
                             colors = CardDefaults.cardColors(containerColor = SaleReceiptWarning),
@@ -262,15 +296,15 @@ private fun SaleReceiptReprintScreen(
                         ) {
                             Column(Modifier.fillMaxWidth().padding(12.dp)) {
                                 Text("再印字内容を確認", fontWeight = FontWeight.Bold, color = SaleReceiptNavy)
-                                Text("売上No.${detail.summary.id} を1枚、現在の${paper.widthMm}mm設定でキュー登録します。")
-                                Spacer(Modifier.height(10.dp))
+                                Text("売上No.${detail.summary.id} を1枚、現在の${paper.widthMm}mm設定で監査記録＋キュー登録します。")
+                                Spacer(Modifier.height(8.dp))
                                 Button(
                                     onClick = onConfirmReprint,
-                                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                                    modifier = Modifier.fillMaxWidth().height(48.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = SaleReceiptBlue),
                                 ) { Text("再印字を確定") }
                                 Spacer(Modifier.height(6.dp))
-                                OutlinedButton(onClick = onCancelReprint, modifier = Modifier.fillMaxWidth().height(46.dp)) {
+                                OutlinedButton(onClick = onCancelReprint, modifier = Modifier.fillMaxWidth().height(44.dp)) {
                                     Text("取消")
                                 }
                             }
@@ -278,19 +312,54 @@ private fun SaleReceiptReprintScreen(
                     } else {
                         Button(
                             onClick = onRequestReprint,
-                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                            modifier = Modifier.fillMaxWidth().height(50.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = SaleReceiptBlue),
                         ) { Text("再印字を確認") }
                     }
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedButton(onClick = onOpenQueue, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(onClick = onOpenQueue, modifier = Modifier.fillMaxWidth().height(46.dp)) {
                         Text("統合印刷キューを開く")
                     }
-                    Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.height(10.dp))
+                    Text("再印字要求履歴（追記専用）", color = SaleReceiptNavy, fontWeight = FontWeight.Bold)
+                    if (history.isEmpty()) {
+                        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            Text("再印字要求はありません", color = Color.Gray)
+                        }
+                    } else {
+                        LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                            items(history, key = { it.id }) { record ->
+                                Column(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .background(SaleReceiptPaleBlue, RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                ) {
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            saleReceiptHistoryDate(record.requestedAt),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        Text(record.printStatus.name, fontSize = 12.sp, color = saleReceiptStatusColor(record.printStatus))
+                                    }
+                                    Text(
+                                        "${record.operatorName} / ${record.paperWidthMm}mm / job No.${record.printJobId} / 試行${record.attemptCount}",
+                                        fontSize = 12.sp,
+                                    )
+                                    if (!record.lastError.isNullOrBlank()) {
+                                        Text(record.lastError.take(120), color = SaleReceiptDanger, fontSize = 11.sp)
+                                    }
+                                }
+                                Spacer(Modifier.height(5.dp))
+                            }
+                        }
+                    }
                     Text(
-                        "印刷FAILEDはここで自動再送しません。紙の状態を確認し、統合印刷キューから安全に操作します。",
+                        "FAILEDは自動再送せず、統合印刷キューから安全に操作します。監査履歴は削除しません。",
                         color = SaleReceiptDanger,
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                     )
                 }
             }
@@ -305,7 +374,7 @@ private fun SaleReceiptReprintScreen(
             }
             Spacer(Modifier.weight(1f))
             Text(
-                "構造化売上データからプレビュー生成 / 再印字はキュー登録のみ",
+                "構造化売上からプレビュー / 再印字要求は冪等・追記専用監査",
                 color = SaleReceiptGreen,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.End,
@@ -340,4 +409,14 @@ private fun SaleReceiptUnavailable(
         Spacer(Modifier.height(20.dp))
         OutlinedButton(onClick = onClose) { Text("戻る") }
     }
+}
+
+private fun saleReceiptHistoryDate(epochMillis: Long): String =
+    SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.JAPAN).format(Date(epochMillis))
+
+private fun saleReceiptStatusColor(status: PrintJobStatus): Color = when (status) {
+    PrintJobStatus.COMPLETED -> SaleReceiptGreen
+    PrintJobStatus.FAILED -> SaleReceiptDanger
+    PrintJobStatus.DISCARDED -> Color.Gray
+    else -> SaleReceiptNavy
 }
