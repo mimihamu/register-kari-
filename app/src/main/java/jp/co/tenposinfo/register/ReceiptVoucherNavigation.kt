@@ -3,6 +3,13 @@ package jp.co.tenposinfo.register
 import android.content.Context
 import android.content.Intent
 
+internal data class ReceiptVoucherSaleContext(
+    val requestedSaleId: Long?,
+    val selectedSaleId: Long?,
+    val selectionLocked: Boolean,
+    val requestedSaleUnavailable: Boolean,
+)
+
 internal object ReceiptVoucherNavigation {
     const val EXTRA_SALE_ID = "jp.co.tenposinfo.register.extra.RECEIPT_VOUCHER_SALE_ID"
 
@@ -21,8 +28,22 @@ internal object ReceiptVoucherNavigation {
         return value.takeIf { it > 0L }
     }
 
-    fun resolveInitialSaleId(requestedSaleId: Long?, availableSaleIds: Collection<Long>): Long? = when {
-        requestedSaleId != null && requestedSaleId in availableSaleIds -> requestedSaleId
-        else -> availableSaleIds.firstOrNull()
+    fun resolveSaleContext(
+        requestedSaleId: Long?,
+        availableSaleIds: Collection<Long>,
+    ): ReceiptVoucherSaleContext {
+        val selected = when {
+            requestedSaleId != null && requestedSaleId in availableSaleIds -> requestedSaleId
+            else -> availableSaleIds.firstOrNull()
+        }
+        return ReceiptVoucherSaleContext(
+            requestedSaleId = requestedSaleId,
+            selectedSaleId = selected,
+            selectionLocked = requestedSaleId != null && selected == requestedSaleId,
+            requestedSaleUnavailable = requestedSaleId != null && requestedSaleId !in availableSaleIds,
+        )
     }
+
+    fun resolveInitialSaleId(requestedSaleId: Long?, availableSaleIds: Collection<Long>): Long? =
+        resolveSaleContext(requestedSaleId, availableSaleIds).selectedSaleId
 }
