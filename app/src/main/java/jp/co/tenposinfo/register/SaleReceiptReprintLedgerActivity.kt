@@ -321,7 +321,7 @@ private fun SaleReceiptReprintLedgerScreen(
                 singleLine = true,
                 modifier = Modifier.width(170.dp),
             )
-            val applyCustomRange = {
+            val applyCustomRange: () -> Unit = {
                 runCatching {
                     SaleReceiptReprintLedgerPolicy.parseCustomRange(customStartDate, customEndDate)
                 }.onSuccess { range ->
@@ -340,6 +340,7 @@ private fun SaleReceiptReprintLedgerScreen(
                 }.onFailure { error ->
                     dateError = error.message ?: "任意期間を確認してください"
                 }
+                Unit
             }
             if (period == SaleReceiptReprintLedgerPeriod.CUSTOM) {
                 Button(
