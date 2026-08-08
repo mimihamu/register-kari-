@@ -1,0 +1,34 @@
+name: v0.66 finalize temp
+
+on:
+  push:
+    branches:
+      - develop/v0.66
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v0.66
+          fetch-depth: 0
+      - name: Apply v0.66 final references
+        run: python tools/v066_finalize.py
+      - name: Commit generated references
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/test management-app/src/test .github/workflows/build-apk.yml
+          git commit -m "v0.66 finalize cumulative version references"
+          git push origin HEAD:develop/v0.66
