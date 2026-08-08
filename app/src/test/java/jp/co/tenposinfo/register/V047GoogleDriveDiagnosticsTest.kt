@@ -46,13 +46,13 @@ class V047GoogleDriveDiagnosticsTest {
         assertTrue(upload.contains("const val TABLE = \"drive_api_uploads\""))
         assertTrue(manifest.contains("android:name=\".GoogleDriveDiagnosticsActivity\""))
         assertTrue(manifest.contains("android:name=\".GoogleDriveEasyConnectActivity\""))
-        assertTrue(build.contains("versionCode = 91"))
-        assertTrue(build.contains("versionName = \"0.61.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 92"))
+        assertTrue(build.contains("versionName = \"0.62.0-dev.1\""))
         assertTrue(docs.contains("アクセストークン"))
         assertTrue(docs.contains("売上JSON本文"))
         assertTrue(notes.contains("0.47.0-dev.1"))
         assertTrue(workflow.contains("V047GoogleDriveDiagnosticsTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.61.0_dev1_sale_context_receipt_voucher_navigation_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.62.0_dev1_sales_history_lookup_debug.apk"))
     }
 
     @Test
