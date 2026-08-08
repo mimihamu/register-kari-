@@ -39,7 +39,14 @@ class V067SaleReceiptReprintNavigationTest {
         assertTrue(activity.contains("current.allows(RegisterPermission.VIEW_SALES)"))
         assertTrue(activity.contains("ReceiptFactory.fromSale"))
         assertTrue(activity.contains("ReceiptRenderer.render"))
-        assertTrue(activity.contains("database.enqueueReprint(detail.summary.id)"))
+        // v0.68 strengthens the v0.67 queue path by creating the print job atomically
+        // with an append-only audit row. The cumulative v0.67 requirement is that a
+        // confirmed reprint still enters the established print queue, not that the UI
+        // must call RegisterDatabase.enqueueReprint() directly forever.
+        assertTrue(
+            activity.contains("database.enqueueReprint(detail.summary.id)") ||
+                activity.contains("auditStore.request("),
+        )
         assertTrue(activity.contains("AutomaticPrintScheduler.enqueueNow"))
         assertTrue(activity.contains("再印字を確認"))
         assertTrue(activity.contains("再印字を確定"))
