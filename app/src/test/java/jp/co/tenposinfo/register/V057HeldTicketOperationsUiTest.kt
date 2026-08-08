@@ -65,10 +65,10 @@ class V057HeldTicketOperationsUiTest {
         assertTrue(main.contains("heldTicketCoordinator.split("))
         assertTrue(uiPolicy.contains("元伝票を空にはできません"))
         assertTrue(engine.contains("db.beginTransaction()"))
-        assertTrue(build.contains("versionCode = 87"))
-        assertTrue(build.contains("versionName = \"0.57.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 88"))
+        assertTrue(build.contains("versionName = \"0.58.0-dev.1\""))
         assertTrue(workflow.contains("V057HeldTicketOperationsUiTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.57.0_dev1_held_ticket_operations_ui_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.58.0_dev1_receipt_voucher_foundation_debug.apk"))
         assertTrue(docs.contains("結合元 → 結合先 → 結合確定"))
     }
 }
