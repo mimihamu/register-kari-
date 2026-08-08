@@ -5,12 +5,12 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-enum class ReceiptVoucherPrintKind(val displayName: String) {
+internal enum class ReceiptVoucherPrintKind(val displayName: String) {
     ORIGINAL("初回発行"),
     REPRINT("再発行"),
 }
 
-data class ReceiptVoucherPrintEventRecord(
+internal data class ReceiptVoucherPrintEventRecord(
     val jobId: Long,
     val issuanceId: Long,
     val kind: ReceiptVoucherPrintKind,
@@ -28,7 +28,7 @@ data class ReceiptVoucherPrintEventRecord(
         get() = UnifiedPrintFailureClassifier.classify(lastError)
 }
 
-data class ReceiptVoucherLedgerEntry(
+internal data class ReceiptVoucherLedgerEntry(
     val receipt: ReceiptVoucherRecord,
     val printEvents: List<ReceiptVoucherPrintEventRecord>,
 ) {
@@ -52,7 +52,7 @@ data class ReceiptVoucherLedgerEntry(
         }
 }
 
-data class ReceiptVoucherLedgerSummary(
+internal data class ReceiptVoucherLedgerSummary(
     val receiptCount: Int,
     val printJobCount: Int,
     val actionRequiredReceipts: Int,
@@ -77,7 +77,7 @@ data class ReceiptVoucherLedgerSummary(
     }
 }
 
-enum class ReceiptVoucherLedgerFilter(val displayName: String) {
+internal enum class ReceiptVoucherLedgerFilter(val displayName: String) {
     ALL("すべて"),
     ACTION_REQUIRED("要対応"),
     ACTIVE("未完了"),
@@ -85,12 +85,12 @@ enum class ReceiptVoucherLedgerFilter(val displayName: String) {
     REPRINTED("再発行あり"),
 }
 
-data class ReceiptVoucherLedgerCriteria(
+internal data class ReceiptVoucherLedgerCriteria(
     val filter: ReceiptVoucherLedgerFilter = ReceiptVoucherLedgerFilter.ALL,
     val query: String = "",
 )
 
-object ReceiptVoucherLedgerPolicy {
+internal object ReceiptVoucherLedgerPolicy {
     fun filter(
         entries: List<ReceiptVoucherLedgerEntry>,
         criteria: ReceiptVoucherLedgerCriteria,
@@ -148,7 +148,7 @@ object ReceiptVoucherLedgerPolicy {
  * 領収書の発行履歴と既存の統合印刷キュー／再発行イベントを読み取り専用で結合する。
  * ここから元売上・発行履歴・再発行履歴を更新または削除しない。
  */
-class ReceiptVoucherOperationsStore(context: Context) : AutoCloseable {
+internal class ReceiptVoucherOperationsStore(context: Context) : AutoCloseable {
     private val appContext = context.applicationContext
     private val schemaGuard = ReceiptVoucherStore(appContext)
     private val database = RegisterDatabase(appContext)
@@ -260,7 +260,7 @@ class ReceiptVoucherOperationsStore(context: Context) : AutoCloseable {
     }
 }
 
-object ReceiptVoucherOperationsTimeFormatter {
+internal object ReceiptVoucherOperationsTimeFormatter {
     private val formatter = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss")
 
     fun format(epochMillis: Long): String = Instant.ofEpochMilli(epochMillis)
