@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -29,6 +30,12 @@ for base in [ROOT / "app/src/test", ROOT / "management-app/src/test"]:
         replace_all(path)
 
 workflow = ROOT / ".github/workflows/build-apk.yml"
+base_workflow = subprocess.check_output(
+    ["git", "show", "origin/develop/v0.65:.github/workflows/build-apk.yml"],
+    cwd=ROOT,
+    text=True,
+)
+workflow.write_text(base_workflow, encoding="utf-8")
 replace_all(workflow)
 text = workflow.read_text(encoding="utf-8")
 text = text.replace(
