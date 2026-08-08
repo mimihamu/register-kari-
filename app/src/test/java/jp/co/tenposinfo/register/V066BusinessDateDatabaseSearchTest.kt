@@ -93,10 +93,10 @@ class V066BusinessDateDatabaseSearchTest {
         assertTrue(policy.contains("buildDatabaseQuery"))
         assertTrue(policy.contains("escapeLike"))
         assertTrue(policy.contains("ESCAPE"))
-        assertTrue(build.contains("versionCode = 105"))
-        assertTrue(build.contains("versionName = \"0.75.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 106"))
+        assertTrue(build.contains("versionName = \"0.76.0-dev.1\""))
         assertTrue(workflow.contains("V066BusinessDateDatabaseSearchTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.75.0_dev1_sale_receipt_reprint_csv_export_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.76.0_dev1_business_session_sales_drilldown_debug.apk"))
         assertTrue(docs.isFile)
         assertTrue(notes.isFile)
     }

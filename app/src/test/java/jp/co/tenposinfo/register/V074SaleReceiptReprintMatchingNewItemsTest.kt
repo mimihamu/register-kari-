@@ -52,10 +52,10 @@ class V074SaleReceiptReprintMatchingNewItemsTest {
         assertFalse(stable.contains("UPDATE sale_receipt_reprint_requests"))
         assertFalse(stable.contains("DELETE FROM sale_receipt_reprint_requests"))
 
-        assertTrue(build.contains("versionCode = 105"))
-        assertTrue(build.contains("versionName = \"0.75.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 106"))
+        assertTrue(build.contains("versionName = \"0.76.0-dev.1\""))
         assertTrue(workflow.contains("V074SaleReceiptReprintMatchingNewItemsTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.75.0_dev1_sale_receipt_reprint_csv_export_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.76.0_dev1_business_session_sales_drilldown_debug.apk"))
         assertTrue(docs.isFile)
         assertTrue(notes.isFile)
     }

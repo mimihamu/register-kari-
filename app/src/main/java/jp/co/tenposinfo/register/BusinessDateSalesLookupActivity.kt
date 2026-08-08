@@ -74,9 +74,13 @@ class BusinessDateSalesLookupActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
+        val requestedContext = BusinessDateSalesLookupNavigation.requestedContext(intent)
         setContent {
             MaterialTheme {
-                BusinessDateSalesLookupRoute(onClose = { finish() })
+                BusinessDateSalesLookupRoute(
+                    requestedContext = requestedContext,
+                    onClose = { finish() },
+                )
             }
         }
     }
@@ -94,9 +98,11 @@ internal class BusinessDateSalesReadStore(context: Context) : AutoCloseable {
         val safeOffset = offset.coerceAtLeast(0)
         val safePageSize = pageSize.coerceIn(1, SalesHistoryLookupPolicy.DATABASE_PAGE_SIZE)
         val businessDateAvailable = SchemaMigration.hasColumn(db, "sales", "business_date")
+        val businessSessionIdAvailable = SchemaMigration.hasColumn(db, "sales", "business_session_id")
         val query = SalesHistoryLookupPolicy.buildDatabaseQuery(
             criteria = criteria,
             businessDateColumnAvailable = businessDateAvailable,
+            businessSessionIdColumnAvailable = businessSessionIdAvailable,
         ) ?: return BusinessDateSalesQueryPage(emptyList(), safeOffset, safePageSize, hasNext = false)
 
         val columns = attributionSelectColumns(db)
@@ -172,7 +178,10 @@ internal class BusinessDateSalesReadStore(context: Context) : AutoCloseable {
 }
 
 @Composable
-private fun BusinessDateSalesLookupRoute(onClose: () -> Unit) {
+private fun BusinessDateSalesLookupRoute(
+    requestedContext: BusinessDateSalesLookupContext?,
+    onClose: () -> Unit,
+) {
     val context = LocalContext.current
     val appContext = context.applicationContext
     val store = remember { BusinessDateSalesReadStore(appContext) }
@@ -198,6 +207,7 @@ private fun BusinessDateSalesLookupRoute(onClose: () -> Unit) {
         OperatorSessionRegistry.touch(appContext)
         BusinessDateSalesLookupScreen(
             store = store,
+            requestedContext = requestedContext,
             refreshEpoch = refreshEpoch,
             canReverse = current.allows(RegisterPermission.REVERSAL),
             onRefresh = { refreshEpoch++ },
@@ -221,6 +231,7 @@ private fun BusinessDateSalesLookupRoute(onClose: () -> Unit) {
 @Composable
 private fun BusinessDateSalesLookupScreen(
     store: BusinessDateSalesReadStore,
+    requestedContext: BusinessDateSalesLookupContext?,
     refreshEpoch: Int,
     canReverse: Boolean,
     onRefresh: () -> Unit,
@@ -230,13 +241,24 @@ private fun BusinessDateSalesLookupScreen(
     onOpenPrintQueue: () -> Unit,
     onClose: () -> Unit,
 ) {
+    var contextLocked by remember(requestedContext) { mutableStateOf(requestedContext != null) }
     var query by remember { mutableStateOf("") }
     var minAmountText by remember { mutableStateOf("") }
     var maxAmountText by remember { mutableStateOf("") }
-    var businessDateFrom by remember { mutableStateOf("") }
-    var businessDateTo by remember { mutableStateOf("") }
+    var businessDateFrom by remember(requestedContext) { mutableStateOf(requestedContext?.businessDate.orEmpty()) }
+    var businessDateTo by remember(requestedContext) { mutableStateOf(requestedContext?.businessDate.orEmpty()) }
     var directSaleIdText by remember { mutableStateOf("") }
-    var appliedCriteria by remember { mutableStateOf(SalesHistoryCriteria()) }
+    var appliedCriteria by remember(requestedContext) {
+        mutableStateOf(
+            requestedContext?.let { requested ->
+                SalesHistoryCriteria(
+                    businessDateFrom = requested.businessDate,
+                    businessDateTo = requested.businessDate,
+                    businessSessionId = requested.businessSessionId,
+                )
+            } ?: SalesHistoryCriteria(),
+        )
+    }
     var pageOffset by remember { mutableIntStateOf(0) }
     var selected by remember { mutableStateOf<BusinessDateSaleRecord?>(null) }
     var lookupMessage by remember { mutableStateOf<String?>(null) }
@@ -247,6 +269,7 @@ private fun BusinessDateSalesLookupScreen(
         maxAmount = maxAmountText.toLongOrNull(),
         businessDateFrom = businessDateFrom,
         businessDateTo = businessDateTo,
+        businessSessionId = if (contextLocked) requestedContext?.businessSessionId else null,
     )
     val validation = SalesHistoryLookupPolicy.validate(draftCriteria)
     val page = remember(appliedCriteria, pageOffset, refreshEpoch) {
@@ -260,6 +283,33 @@ private fun BusinessDateSalesLookupScreen(
     Column(Modifier.fillMaxSize()) {
         BusinessDateLookupHeader()
         Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
+            if (contextLocked && requestedContext != null) {
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "SCR-510連携: 営業日 ${requestedContext.businessDate} / 営業セッション No.${requestedContext.businessSessionId} 固定",
+                        color = BusinessLookupGreen,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            contextLocked = false
+                            directSaleIdText = ""
+                            appliedCriteria = SalesHistoryCriteria(
+                                businessDateFrom = requestedContext.businessDate,
+                                businessDateTo = requestedContext.businessDate,
+                            )
+                            pageOffset = 0
+                            selected = null
+                            lookupMessage = "営業セッション固定を解除し、同じ営業日の全売上を表示しました"
+                        },
+                    ) { Text("固定解除・同日全売上を表示") }
+                }
+            }
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -272,6 +322,7 @@ private fun BusinessDateSalesLookupScreen(
                         lookupMessage = null
                     },
                     label = { Text("営業日From") },
+                    enabled = !contextLocked,
                     placeholder = { Text("YYYY-MM-DD") },
                     singleLine = true,
                     modifier = Modifier.width(175.dp),
@@ -284,6 +335,7 @@ private fun BusinessDateSalesLookupScreen(
                         lookupMessage = null
                     },
                     label = { Text("営業日To") },
+                    enabled = !contextLocked,
                     placeholder = { Text("YYYY-MM-DD") },
                     singleLine = true,
                     modifier = Modifier.width(175.dp),
@@ -292,6 +344,7 @@ private fun BusinessDateSalesLookupScreen(
                     value = query,
                     onValueChange = { query = it.take(80) },
                     label = { Text("売上No.・担当・支払") },
+                    enabled = !contextLocked,
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                 )
@@ -299,6 +352,7 @@ private fun BusinessDateSalesLookupScreen(
                     value = minAmountText,
                     onValueChange = { minAmountText = it.filter(Char::isDigit).take(12) },
                     label = { Text("金額以上") },
+                    enabled = !contextLocked,
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.width(135.dp),
@@ -307,6 +361,7 @@ private fun BusinessDateSalesLookupScreen(
                     value = maxAmountText,
                     onValueChange = { maxAmountText = it.filter(Char::isDigit).take(12) },
                     label = { Text("金額以下") },
+                    enabled = !contextLocked,
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.width(135.dp),
@@ -318,7 +373,7 @@ private fun BusinessDateSalesLookupScreen(
                         selected = null
                         lookupMessage = null
                     },
-                    enabled = validation.valid,
+                    enabled = !contextLocked && validation.valid,
                     colors = ButtonDefaults.buttonColors(containerColor = BusinessLookupBlue),
                 ) { Text("検索") }
             }
@@ -349,6 +404,7 @@ private fun BusinessDateSalesLookupScreen(
                         lookupMessage = null
                     },
                     label = { Text("売上No.直接表示") },
+                    enabled = !contextLocked,
                     singleLine = true,
                     modifier = Modifier.width(205.dp),
                 )
@@ -364,10 +420,11 @@ private fun BusinessDateSalesLookupScreen(
                             lookupMessage = null
                         }
                     },
-                    enabled = directSaleId != null,
+                    enabled = !contextLocked && directSaleId != null,
                     colors = ButtonDefaults.buttonColors(containerColor = BusinessLookupBlue),
                 ) { Text("表示") }
                 OutlinedButton(
+                    enabled = !contextLocked,
                     onClick = {
                         query = ""
                         minAmountText = ""
@@ -386,6 +443,11 @@ private fun BusinessDateSalesLookupScreen(
             }
 
             when {
+                contextLocked && requestedContext != null -> Text(
+                    "営業日 ${requestedContext.businessDate} / セッションNo.${requestedContext.businessSessionId} の保存済み属性で固定DB検索中です。",
+                    color = BusinessLookupGreen,
+                    fontWeight = FontWeight.Bold,
+                )
                 !validation.valid -> Text(validation.message.orEmpty(), color = BusinessLookupDanger, fontWeight = FontWeight.Bold)
                 !lookupMessage.isNullOrBlank() -> Text(lookupMessage.orEmpty(), color = BusinessLookupDanger, fontWeight = FontWeight.Bold)
                 appliedCriteria.businessDateFrom.isNotBlank() || appliedCriteria.businessDateTo.isNotBlank() -> Text(

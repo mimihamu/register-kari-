@@ -245,6 +245,11 @@ private fun OperationsApp(
 
             OperationsScreen.DAILY_SALES -> DailySalesScreen(
                 summary = store.dailySummary(),
+                onOpenSalesDetail = { businessDate, businessSessionId ->
+                    context.startActivity(
+                        BusinessDateSalesLookupNavigation.intent(context, businessDate, businessSessionId),
+                    )
+                },
                 onBack = { screen = OperationsScreen.MENU },
             )
 
@@ -656,7 +661,11 @@ private fun BusinessDayScreen(
 }
 
 @Composable
-private fun DailySalesScreen(summary: DailyOperationsSummary, onBack: () -> Unit) {
+private fun DailySalesScreen(
+    summary: DailyOperationsSummary,
+    onOpenSalesDetail: (String, Long) -> Unit,
+    onBack: () -> Unit,
+) {
     Column(Modifier.fillMaxSize()) {
         OpHeader("SCR-510", "営業セッション売上簡易確認")
         Row(Modifier.weight(1f).padding(20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -678,6 +687,13 @@ private fun DailySalesScreen(summary: DailyOperationsSummary, onBack: () -> Unit
                     color = if (summary.settled) OpGreen else OpDanger,
                     fontWeight = FontWeight.Bold,
                 )
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    enabled = summary.businessSessionId > 0L,
+                    onClick = { onOpenSalesDetail(summary.businessDate, summary.businessSessionId) },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = OpBlue),
+                ) { Text("この営業セッションの売上明細", fontWeight = FontWeight.Bold) }
             }
             OpPanel(Modifier.weight(1f).fillMaxHeight()) {
                 Text("支払別・現金", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = OpNavy)
