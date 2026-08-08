@@ -23,8 +23,21 @@ internal data class BusinessDateSaleRecord(
     val businessSessionId: Long?,
 )
 
+internal data class BusinessDateSalesSqlQuery(
+    val whereSql: String,
+    val args: List<String>,
+)
+
+internal data class BusinessDateSalesQueryPage(
+    val records: List<BusinessDateSaleRecord>,
+    val offset: Int,
+    val pageSize: Int,
+    val hasNext: Boolean,
+)
+
 internal object SalesHistoryLookupPolicy {
     const val RECENT_LOAD_LIMIT = 1_000
+    const val DATABASE_PAGE_SIZE = 200
 
     fun validate(criteria: SalesHistoryCriteria): SalesHistoryCriteriaValidation {
         val min = criteria.minAmount
@@ -110,6 +123,57 @@ internal object SalesHistoryLookupPolicy {
         }
     }
 
+    fun buildDatabaseQuery(
+        criteria: SalesHistoryCriteria,
+        businessDateColumnAvailable: Boolean,
+    ): BusinessDateSalesSqlQuery? {
+        val validation = validate(criteria)
+        if (!validation.valid) return null
+        if (
+            !businessDateColumnAvailable &&
+            (validation.businessDateFrom != null || validation.businessDateTo != null)
+        ) {
+            return null
+        }
+
+        val clauses = mutableListOf<String>()
+        val args = mutableListOf<String>()
+        val query = criteria.query.trim().removePrefix("#").lowercase()
+        if (query.isNotBlank()) {
+            val pattern = "%${escapeLike(query)}%"
+            val searchable = mutableListOf(
+                "CAST(id AS TEXT) LIKE ? ESCAPE '\\'",
+                "LOWER(operator_name) LIKE ? ESCAPE '\\'",
+                "LOWER(payment_method) LIKE ? ESCAPE '\\'",
+            )
+            if (businessDateColumnAvailable) {
+                searchable += "LOWER(business_date) LIKE ? ESCAPE '\\'"
+            }
+            clauses += searchable.joinToString(" OR ", prefix = "(", postfix = ")")
+            repeat(searchable.size) { args += pattern }
+        }
+        criteria.minAmount?.let {
+            clauses += "total_amount >= ?"
+            args += it.toString()
+        }
+        criteria.maxAmount?.let {
+            clauses += "total_amount <= ?"
+            args += it.toString()
+        }
+        validation.businessDateFrom?.let {
+            clauses += "business_date >= ?"
+            args += it
+        }
+        validation.businessDateTo?.let {
+            clauses += "business_date <= ?"
+            args += it
+        }
+        return BusinessDateSalesSqlQuery(
+            whereSql = if (clauses.isEmpty()) "" else clauses.joinToString(" AND ", prefix = "WHERE "),
+            args = args,
+        )
+    }
+
     fun parseDirectSaleId(raw: String): Long? =
         raw.trim().removePrefix("#").takeIf { it.isNotBlank() && it.all(Char::isDigit) }
             ?.toLongOrNull()
@@ -121,6 +185,15 @@ internal object SalesHistoryLookupPolicy {
     ): List<SaleSummaryRecord> {
         if (requestedSale == null || recentSales.any { it.id == requestedSale.id }) return recentSales
         return listOf(requestedSale) + recentSales
+    }
+
+    private fun escapeLike(value: String): String = buildString(value.length) {
+        value.forEach { ch ->
+            when (ch) {
+                '\\', '%', '_' -> append('\\').append(ch)
+                else -> append(ch)
+            }
+        }
     }
 
     private fun parseBusinessDate(raw: String): LocalDate? =
