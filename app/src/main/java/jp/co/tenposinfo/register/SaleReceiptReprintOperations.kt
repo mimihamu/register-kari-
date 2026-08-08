@@ -2,7 +2,10 @@ package jp.co.tenposinfo.register
 
 import android.content.Context
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.ResolverStyle
 
 enum class SaleReceiptReprintLedgerFilter(val displayName: String) {
     ALL("すべて"),
@@ -17,7 +20,13 @@ enum class SaleReceiptReprintLedgerPeriod(val displayName: String) {
     TODAY("今日"),
     LAST_7_DAYS("7日以内"),
     LAST_30_DAYS("30日以内"),
+    CUSTOM("任意期間"),
 }
+
+data class SaleReceiptReprintCustomRange(
+    val startInclusive: Long?,
+    val endExclusive: Long?,
+)
 
 data class SaleReceiptReprintLedgerEntry(
     val auditId: Long,
@@ -40,6 +49,8 @@ data class SaleReceiptReprintLedgerEntry(
 data class SaleReceiptReprintLedgerCriteria(
     val filter: SaleReceiptReprintLedgerFilter = SaleReceiptReprintLedgerFilter.ALL,
     val period: SaleReceiptReprintLedgerPeriod = SaleReceiptReprintLedgerPeriod.ALL,
+    val customStartInclusive: Long? = null,
+    val customEndExclusive: Long? = null,
     val query: String = "",
 )
 
@@ -86,6 +97,8 @@ data class SaleReceiptReprintLedgerPage(
 object SaleReceiptReprintLedgerPolicy {
     const val DATABASE_PAGE_SIZE = 200
     private const val DAY_MILLIS = 24L * 60L * 60L * 1_000L
+    private val CUSTOM_DATE_FORMATTER = DateTimeFormatter.ofPattern("uuuu/M/d")
+        .withResolverStyle(ResolverStyle.STRICT)
 
     /** v0.69互換の純粋フィルタ。運用画面はSQLite直接検索を使用する。 */
     fun filter(
@@ -94,7 +107,7 @@ object SaleReceiptReprintLedgerPolicy {
         nowMillis: Long = System.currentTimeMillis(),
         zoneId: ZoneId = ZoneId.systemDefault(),
     ): List<SaleReceiptReprintLedgerEntry> {
-        val earliest = earliestRequestedAt(criteria.period, nowMillis, zoneId)
+        val range = requestedAtRange(criteria, nowMillis, zoneId)
         return entries.filter { entry ->
             val statusMatches = when (criteria.filter) {
                 SaleReceiptReprintLedgerFilter.ALL -> true
@@ -112,7 +125,8 @@ object SaleReceiptReprintLedgerPolicy {
                 SaleReceiptReprintLedgerFilter.DISCARDED -> entry.status == PrintJobStatus.DISCARDED
             }
             if (!statusMatches) return@filter false
-            if (earliest != null && entry.requestedAt < earliest) return@filter false
+            if (range.startInclusive != null && entry.requestedAt < range.startInclusive) return@filter false
+            if (range.endExclusive != null && entry.requestedAt >= range.endExclusive) return@filter false
 
             val query = criteria.query.trim()
             if (query.isEmpty()) return@filter true
@@ -163,9 +177,14 @@ object SaleReceiptReprintLedgerPolicy {
             }
         }
 
-        earliestRequestedAt(criteria.period, nowMillis, zoneId)?.let { earliest ->
+        val range = requestedAtRange(criteria, nowMillis, zoneId)
+        range.startInclusive?.let { start ->
             clauses += "r.requested_at >= ?"
-            args += earliest.toString()
+            args += start.toString()
+        }
+        range.endExclusive?.let { end ->
+            clauses += "r.requested_at < ?"
+            args += end.toString()
         }
 
         val query = criteria.query.trim().removePrefix("#").lowercase()
@@ -192,12 +211,31 @@ object SaleReceiptReprintLedgerPolicy {
         )
     }
 
+    fun parseCustomRange(
+        startText: String,
+        endText: String,
+        zoneId: ZoneId = ZoneId.systemDefault(),
+    ): SaleReceiptReprintCustomRange {
+        val startDate = parseOptionalDate(startText, "開始日")
+        val endDate = parseOptionalDate(endText, "終了日")
+        require(startDate != null || endDate != null) { "開始日または終了日を入力してください" }
+        require(startDate == null || endDate == null || !endDate.isBefore(startDate)) {
+            "終了日は開始日以降を指定してください"
+        }
+        return SaleReceiptReprintCustomRange(
+            startInclusive = startDate?.atStartOfDay(zoneId)?.toInstant()?.toEpochMilli(),
+            endExclusive = endDate?.plusDays(1)?.atStartOfDay(zoneId)?.toInstant()?.toEpochMilli(),
+        )
+    }
+
     internal fun earliestRequestedAt(
         period: SaleReceiptReprintLedgerPeriod,
         nowMillis: Long,
         zoneId: ZoneId,
     ): Long? = when (period) {
-        SaleReceiptReprintLedgerPeriod.ALL -> null
+        SaleReceiptReprintLedgerPeriod.ALL,
+        SaleReceiptReprintLedgerPeriod.CUSTOM,
+        -> null
         SaleReceiptReprintLedgerPeriod.TODAY -> Instant.ofEpochMilli(nowMillis)
             .atZone(zoneId)
             .toLocalDate()
@@ -206,6 +244,35 @@ object SaleReceiptReprintLedgerPolicy {
             .toEpochMilli()
         SaleReceiptReprintLedgerPeriod.LAST_7_DAYS -> (nowMillis - 7L * DAY_MILLIS).coerceAtLeast(0L)
         SaleReceiptReprintLedgerPeriod.LAST_30_DAYS -> (nowMillis - 30L * DAY_MILLIS).coerceAtLeast(0L)
+    }
+
+    private fun requestedAtRange(
+        criteria: SaleReceiptReprintLedgerCriteria,
+        nowMillis: Long,
+        zoneId: ZoneId,
+    ): SaleReceiptReprintCustomRange = if (criteria.period == SaleReceiptReprintLedgerPeriod.CUSTOM) {
+        require(criteria.customStartInclusive != null || criteria.customEndExclusive != null) {
+            "任意期間の開始または終了が必要です"
+        }
+        require(
+            criteria.customStartInclusive == null ||
+                criteria.customEndExclusive == null ||
+                criteria.customStartInclusive < criteria.customEndExclusive,
+        ) { "任意期間の範囲が不正です" }
+        SaleReceiptReprintCustomRange(criteria.customStartInclusive, criteria.customEndExclusive)
+    } else {
+        SaleReceiptReprintCustomRange(
+            startInclusive = earliestRequestedAt(criteria.period, nowMillis, zoneId),
+            endExclusive = null,
+        )
+    }
+
+    private fun parseOptionalDate(raw: String, label: String): LocalDate? {
+        val clean = raw.trim()
+        if (clean.isBlank()) return null
+        val normalized = clean.replace('-', '/')
+        return runCatching { LocalDate.parse(normalized, CUSTOM_DATE_FORMATTER) }
+            .getOrElse { throw IllegalArgumentException("$label は yyyy/MM/dd 形式で入力してください") }
     }
 
     private fun escapeLike(value: String): String = buildString(value.length) {

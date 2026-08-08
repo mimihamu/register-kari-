@@ -120,6 +120,10 @@ private fun SaleReceiptReprintLedgerScreen(
     var filter by remember { mutableStateOf(SaleReceiptReprintLedgerFilter.ALL) }
     var period by remember { mutableStateOf(SaleReceiptReprintLedgerPeriod.ALL) }
     var query by remember { mutableStateOf("") }
+    var customStartDate by remember { mutableStateOf("") }
+    var customEndDate by remember { mutableStateOf("") }
+    var customRange by remember { mutableStateOf<SaleReceiptReprintCustomRange?>(null) }
+    var dateError by remember { mutableStateOf<String?>(null) }
     var appliedCriteria by remember { mutableStateOf(SaleReceiptReprintLedgerCriteria()) }
     var pageOffset by remember { mutableIntStateOf(0) }
     var selectedId by remember { mutableStateOf<Long?>(null) }
@@ -175,9 +179,30 @@ private fun SaleReceiptReprintLedgerScreen(
             )
             Button(
                 onClick = {
-                    appliedCriteria = SaleReceiptReprintLedgerCriteria(filter = filter, period = period, query = query)
-                    pageOffset = 0
-                    selectedId = null
+                    if (period == SaleReceiptReprintLedgerPeriod.CUSTOM) {
+                        runCatching {
+                            SaleReceiptReprintLedgerPolicy.parseCustomRange(customStartDate, customEndDate)
+                        }.onSuccess { range ->
+                            customRange = range
+                            appliedCriteria = SaleReceiptReprintLedgerCriteria(
+                                filter = filter,
+                                period = SaleReceiptReprintLedgerPeriod.CUSTOM,
+                                customStartInclusive = range.startInclusive,
+                                customEndExclusive = range.endExclusive,
+                                query = query,
+                            )
+                            dateError = null
+                            pageOffset = 0
+                            selectedId = null
+                        }.onFailure { error ->
+                            dateError = error.message ?: "任意期間を確認してください"
+                        }
+                    } else {
+                        appliedCriteria = SaleReceiptReprintLedgerCriteria(filter = filter, period = period, query = query)
+                        dateError = null
+                        pageOffset = 0
+                        selectedId = null
+                    }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = ReprintLedgerBlue),
             ) { Text("検索") }
@@ -186,6 +211,10 @@ private fun SaleReceiptReprintLedgerScreen(
                     query = ""
                     filter = SaleReceiptReprintLedgerFilter.ALL
                     period = SaleReceiptReprintLedgerPeriod.ALL
+                    customStartDate = ""
+                    customEndDate = ""
+                    customRange = null
+                    dateError = null
                     appliedCriteria = SaleReceiptReprintLedgerCriteria()
                     pageOffset = 0
                     selectedId = null
@@ -203,7 +232,13 @@ private fun SaleReceiptReprintLedgerScreen(
                 val active = filter == item
                 val applyFilter = {
                     filter = item
-                    appliedCriteria = SaleReceiptReprintLedgerCriteria(filter = item, period = period, query = query)
+                    appliedCriteria = SaleReceiptReprintLedgerCriteria(
+                        filter = item,
+                        period = period,
+                        customStartInclusive = if (period == SaleReceiptReprintLedgerPeriod.CUSTOM) customRange?.startInclusive else null,
+                        customEndExclusive = if (period == SaleReceiptReprintLedgerPeriod.CUSTOM) customRange?.endExclusive else null,
+                        query = query,
+                    )
                     pageOffset = 0
                     selectedId = null
                 }
@@ -242,10 +277,12 @@ private fun SaleReceiptReprintLedgerScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("期間", color = Color.Gray, fontWeight = FontWeight.Bold)
-            SaleReceiptReprintLedgerPeriod.entries.forEach { item ->
+            SaleReceiptReprintLedgerPeriod.entries.filter { it != SaleReceiptReprintLedgerPeriod.CUSTOM }.forEach { item ->
                 val active = period == item
                 val applyPeriod = {
                     period = item
+                    customRange = null
+                    dateError = null
                     appliedCriteria = SaleReceiptReprintLedgerCriteria(filter = filter, period = item, query = query)
                     pageOffset = 0
                     selectedId = null
@@ -261,6 +298,63 @@ private fun SaleReceiptReprintLedgerScreen(
             }
             Spacer(Modifier.weight(1f))
             Text("期間変更時は先頭ページへ戻ります / 5秒更新は条件・ページを維持", color = Color.Gray, fontSize = 12.sp)
+        }
+
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("任意期間", color = Color.Gray, fontWeight = FontWeight.Bold)
+            OutlinedTextField(
+                value = customStartDate,
+                onValueChange = { customStartDate = it.take(10); dateError = null },
+                label = { Text("開始日 yyyy/MM/dd") },
+                singleLine = true,
+                modifier = Modifier.width(170.dp),
+            )
+            Text("～", color = Color.Gray)
+            OutlinedTextField(
+                value = customEndDate,
+                onValueChange = { customEndDate = it.take(10); dateError = null },
+                label = { Text("終了日 yyyy/MM/dd") },
+                singleLine = true,
+                modifier = Modifier.width(170.dp),
+            )
+            val applyCustomRange: () -> Unit = {
+                runCatching {
+                    SaleReceiptReprintLedgerPolicy.parseCustomRange(customStartDate, customEndDate)
+                }.onSuccess { range ->
+                    customRange = range
+                    period = SaleReceiptReprintLedgerPeriod.CUSTOM
+                    appliedCriteria = SaleReceiptReprintLedgerCriteria(
+                        filter = filter,
+                        period = SaleReceiptReprintLedgerPeriod.CUSTOM,
+                        customStartInclusive = range.startInclusive,
+                        customEndExclusive = range.endExclusive,
+                        query = query,
+                    )
+                    dateError = null
+                    pageOffset = 0
+                    selectedId = null
+                }.onFailure { error ->
+                    dateError = error.message ?: "任意期間を確認してください"
+                }
+                Unit
+            }
+            if (period == SaleReceiptReprintLedgerPeriod.CUSTOM) {
+                Button(
+                    onClick = applyCustomRange,
+                    colors = ButtonDefaults.buttonColors(containerColor = ReprintLedgerBlue),
+                ) { Text("任意期間を適用") }
+            } else {
+                OutlinedButton(onClick = applyCustomRange) { Text("任意期間を適用") }
+            }
+            dateError?.let { error ->
+                Text(error, color = ReprintLedgerDanger, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.weight(1f))
+            Text("開始/終了どちらか片方だけでも指定可", color = Color.Gray, fontSize = 12.sp)
         }
 
         Row(
