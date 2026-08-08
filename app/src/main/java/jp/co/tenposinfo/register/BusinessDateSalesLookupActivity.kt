@@ -24,8 +24,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -37,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -65,10 +64,11 @@ private val BusinessLookupDanger = Color(0xFFC62828)
 private val BusinessLookupGreen = Color(0xFF2E7D32)
 
 /**
- * v0.65 営業日別売上検索。
+ * v0.66 営業日別売上DB直接検索。
  *
  * salesのbusiness_date/business_session_idは読み取りのみ。旧DBに列がない場合も
- * PRAGMA table_infoによる存在確認だけを行い、ALTER/BACKFILLは実行しない。
+ * SchemaMigration.hasColumn()による存在確認だけを行い、ALTER/BACKFILLは実行しない。
+ * 値条件はselectionArgsへバインドし、ページ単位で取得する。
  */
 class BusinessDateSalesLookupActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -86,16 +86,35 @@ internal class BusinessDateSalesReadStore(context: Context) : AutoCloseable {
     private val database = RegisterDatabase(context.applicationContext)
     private val db: SQLiteDatabase get() = database.readableDatabase
 
-    fun listRecent(limit: Int = SalesHistoryLookupPolicy.RECENT_LOAD_LIMIT): List<BusinessDateSaleRecord> {
+    fun search(
+        criteria: SalesHistoryCriteria,
+        offset: Int = 0,
+        pageSize: Int = SalesHistoryLookupPolicy.DATABASE_PAGE_SIZE,
+    ): BusinessDateSalesQueryPage {
+        val safeOffset = offset.coerceAtLeast(0)
+        val safePageSize = pageSize.coerceIn(1, SalesHistoryLookupPolicy.DATABASE_PAGE_SIZE)
+        val businessDateAvailable = SchemaMigration.hasColumn(db, "sales", "business_date")
+        val query = SalesHistoryLookupPolicy.buildDatabaseQuery(
+            criteria = criteria,
+            businessDateColumnAvailable = businessDateAvailable,
+        ) ?: return BusinessDateSalesQueryPage(emptyList(), safeOffset, safePageSize, hasNext = false)
+
         val columns = attributionSelectColumns(db)
-        return db.rawQuery(
-            "SELECT $columns FROM sales ORDER BY created_at DESC LIMIT ?",
-            arrayOf(limit.coerceIn(1, SalesHistoryLookupPolicy.RECENT_LOAD_LIMIT).toString()),
+        val selectionArgs = query.args + listOf((safePageSize + 1).toString(), safeOffset.toString())
+        val rows = db.rawQuery(
+            "SELECT $columns FROM sales ${query.whereSql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+            selectionArgs.toTypedArray(),
         ).use { cursor ->
             buildList {
                 while (cursor.moveToNext()) add(cursor.toBusinessDateSaleRecord())
             }
         }
+        return BusinessDateSalesQueryPage(
+            records = rows.take(safePageSize),
+            offset = safeOffset,
+            pageSize = safePageSize,
+            hasNext = rows.size > safePageSize,
+        )
     }
 
     fun loadExact(saleId: Long): BusinessDateSaleRecord? {
@@ -163,7 +182,7 @@ private fun BusinessDateSalesLookupRoute(onClose: () -> Unit) {
     DisposableEffect(Unit) {
         onDispose { store.close() }
     }
-    androidx.compose.runtime.LaunchedEffect(Unit) {
+    LaunchedEffect(Unit) {
         while (true) {
             kotlinx.coroutines.delay(5_000L)
             operator = OperatorSessionRegistry.current(appContext)
@@ -177,10 +196,9 @@ private fun BusinessDateSalesLookupRoute(onClose: () -> Unit) {
             return@Surface
         }
         OperatorSessionRegistry.touch(appContext)
-        val sales = remember(refreshEpoch) { store.listRecent() }
         BusinessDateSalesLookupScreen(
-            sales = sales,
             store = store,
+            refreshEpoch = refreshEpoch,
             canReverse = current.allows(RegisterPermission.REVERSAL),
             onRefresh = { refreshEpoch++ },
             onOpenVoucher = { saleId ->
@@ -199,8 +217,8 @@ private fun BusinessDateSalesLookupRoute(onClose: () -> Unit) {
 
 @Composable
 private fun BusinessDateSalesLookupScreen(
-    sales: List<BusinessDateSaleRecord>,
     store: BusinessDateSalesReadStore,
+    refreshEpoch: Int,
     canReverse: Boolean,
     onRefresh: () -> Unit,
     onOpenVoucher: (Long) -> Unit,
@@ -214,20 +232,26 @@ private fun BusinessDateSalesLookupScreen(
     var businessDateFrom by remember { mutableStateOf("") }
     var businessDateTo by remember { mutableStateOf("") }
     var directSaleIdText by remember { mutableStateOf("") }
+    var appliedCriteria by remember { mutableStateOf(SalesHistoryCriteria()) }
+    var pageOffset by remember { mutableIntStateOf(0) }
     var selected by remember { mutableStateOf<BusinessDateSaleRecord?>(null) }
     var lookupMessage by remember { mutableStateOf<String?>(null) }
 
-    val criteria = SalesHistoryCriteria(
+    val draftCriteria = SalesHistoryCriteria(
         query = query,
         minAmount = minAmountText.toLongOrNull(),
         maxAmount = maxAmountText.toLongOrNull(),
         businessDateFrom = businessDateFrom,
         businessDateTo = businessDateTo,
     )
-    val validation = SalesHistoryLookupPolicy.validate(criteria)
-    val visible = SalesHistoryLookupPolicy.filterBusinessDate(sales, criteria)
+    val validation = SalesHistoryLookupPolicy.validate(draftCriteria)
+    val page = remember(appliedCriteria, pageOffset, refreshEpoch) {
+        store.search(appliedCriteria, pageOffset)
+    }
     val directSaleId = SalesHistoryLookupPolicy.parseDirectSaleId(directSaleIdText)
     val selectedDetail = selected?.let { store.loadDetail(it.summary.id) }
+    val resultFrom = if (page.records.isEmpty()) 0 else page.offset + 1
+    val resultTo = page.offset + page.records.size
 
     Column(Modifier.fillMaxSize()) {
         BusinessDateLookupHeader()
@@ -271,7 +295,7 @@ private fun BusinessDateSalesLookupScreen(
                     value = minAmountText,
                     onValueChange = { minAmountText = it.filter(Char::isDigit).take(12) },
                     label = { Text("金額以上") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.width(135.dp),
                 )
@@ -279,22 +303,41 @@ private fun BusinessDateSalesLookupScreen(
                     value = maxAmountText,
                     onValueChange = { maxAmountText = it.filter(Char::isDigit).take(12) },
                     label = { Text("金額以下") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.width(135.dp),
                 )
+                Button(
+                    onClick = {
+                        appliedCriteria = draftCriteria
+                        pageOffset = 0
+                        selected = null
+                        lookupMessage = null
+                    },
+                    enabled = validation.valid,
+                    colors = ButtonDefaults.buttonColors(containerColor = BusinessLookupBlue),
+                ) { Text("検索") }
             }
+
             Row(
                 Modifier.fillMaxWidth().padding(top = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "表示 ${visible.size}件 / 読込 ${sales.size}件（直近最大${SalesHistoryLookupPolicy.RECENT_LOAD_LIMIT}件）",
+                    "DB検索 $resultFrom～$resultTo件 / 1ページ最大${page.pageSize}件",
                     color = BusinessLookupNavy,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f),
                 )
+                OutlinedButton(
+                    onClick = { pageOffset = (pageOffset - page.pageSize).coerceAtLeast(0) },
+                    enabled = pageOffset > 0,
+                ) { Text("前へ") }
+                OutlinedButton(
+                    onClick = { pageOffset += page.pageSize },
+                    enabled = page.hasNext,
+                ) { Text("次へ") }
                 OutlinedTextField(
                     value = directSaleIdText,
                     onValueChange = {
@@ -328,17 +371,21 @@ private fun BusinessDateSalesLookupScreen(
                         businessDateFrom = ""
                         businessDateTo = ""
                         directSaleIdText = ""
+                        appliedCriteria = SalesHistoryCriteria()
+                        pageOffset = 0
+                        selected = null
                         lookupMessage = null
                     },
                 ) { Text("条件クリア") }
                 OutlinedButton(onClick = onRefresh) { Text("更新") }
                 OutlinedButton(onClick = onOpenPrintQueue) { Text("印刷キュー") }
             }
+
             when {
                 !validation.valid -> Text(validation.message.orEmpty(), color = BusinessLookupDanger, fontWeight = FontWeight.Bold)
                 !lookupMessage.isNullOrBlank() -> Text(lookupMessage.orEmpty(), color = BusinessLookupDanger, fontWeight = FontWeight.Bold)
-                businessDateFrom.isNotBlank() || businessDateTo.isNotBlank() -> Text(
-                    "営業日で検索中。売上時刻が0時を過ぎても、保存済み営業日に従います。",
+                appliedCriteria.businessDateFrom.isNotBlank() || appliedCriteria.businessDateTo.isNotBlank() -> Text(
+                    "営業日でDB検索中。売上時刻が0時を過ぎても、保存済みbusiness_dateに従います。",
                     color = BusinessLookupGreen,
                     fontWeight = FontWeight.Bold,
                 )
@@ -354,13 +401,13 @@ private fun BusinessDateSalesLookupScreen(
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 border = BorderStroke(1.dp, BusinessLookupBorder),
             ) {
-                if (visible.isEmpty()) {
+                if (page.records.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(if (validation.valid) "条件に一致する売上はありません" else "検索条件を修正してください", color = Color.Gray)
+                        Text("条件に一致する売上はありません", color = Color.Gray)
                     }
                 } else {
                     LazyColumn(Modifier.fillMaxSize().padding(8.dp)) {
-                        items(visible, key = { it.summary.id }) { record ->
+                        items(page.records, key = { it.summary.id }) { record ->
                             val sale = record.summary
                             val selectedRow = selected?.summary?.id == sale.id
                             Row(
@@ -410,13 +457,14 @@ private fun BusinessDateSalesLookupScreen(
                         Text("売上時刻 ${businessLookupDateTime(sale.createdAt)}", color = Color.Gray)
                         Text("担当 ${sale.operatorName} / ${sale.paymentLabel}", color = Color.Gray)
                         Spacer(Modifier.height(8.dp))
-                        BusinessLookupAmountRow("合計", sale.totalAmount, true)
-                        BusinessLookupAmountRow("消費税", sale.taxAmount)
-                        BusinessLookupAmountRow("お釣り", sale.changeAmount)
+                        BusinessDateLookupAmountRow("合計", sale.totalAmount, true)
+                        BusinessDateLookupAmountRow("消費税", sale.taxAmount)
+                        BusinessDateLookupAmountRow("お釣り", sale.changeAmount)
                         Spacer(Modifier.height(8.dp))
                         Text("明細", fontWeight = FontWeight.Bold, color = BusinessLookupNavy)
                         if (selectedDetail == null) {
                             Text("売上明細を取得できません", color = BusinessLookupDanger)
+                            Spacer(Modifier.weight(1f))
                         } else {
                             LazyColumn(Modifier.weight(1f)) {
                                 items(selectedDetail.items, key = { "${it.product.id}:${it.note}:${it.unitPrice}" }) { item ->
@@ -452,7 +500,7 @@ private fun BusinessDateSalesLookupScreen(
                 Text("レジ管理へ戻る", fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.weight(1f))
-            Text("営業日検索は読み取り専用です", color = BusinessLookupGreen, fontWeight = FontWeight.Bold)
+            Text("営業日検索は読み取り専用です（売上データを更新しません）", color = BusinessLookupGreen, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -480,7 +528,7 @@ private fun BusinessDateLookupHeader() {
         Spacer(Modifier.width(20.dp))
         Text("SCR-415  営業日別 売上検索", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.weight(1f))
-        Text("business_date基準", color = Color.White)
+        Text("SQLite直接検索 / business_date基準", color = Color.White)
     }
 }
 
