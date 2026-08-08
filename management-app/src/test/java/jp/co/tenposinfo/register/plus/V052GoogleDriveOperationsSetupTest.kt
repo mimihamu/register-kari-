@@ -108,7 +108,7 @@ class V052GoogleDriveOperationsSetupTest {
         assertTrue(build.contains("versionName = \"0.14.0-dev.1\""))
         assertTrue(workflow.contains("V052GoogleDriveOperationsSetupTest.kt"))
         assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk"))
-        assertTrue(workflow.contains("TSUGUREGI-v0.74.0-dev1-sale-receipt-reprint-matching-new-items-apks"))
+        assertTrue(workflow.contains("TSUGUREGI-v0.75.0-dev1-sale-receipt-reprint-csv-export-apks"))
         assertTrue(docs.contains("自動選択"))
         assertTrue(docs.contains("同時に自動実行しない"))
         assertTrue(notes.contains("0.52.0-dev.1"))
