@@ -55,7 +55,8 @@ class V068SaleReceiptReprintAuditTest {
         assertTrue(activity.contains("二重登録せず"))
         assertFalse(activity.contains("database.enqueueReprint(detail.summary.id)"))
 
-        assertTrue(main.contains("SaleReceiptNavigation.intent(context, lastSaleId)"))
+        assertTrue(main.contains("lastSaleId?.let { saleId"))
+        assertTrue(main.contains("SaleReceiptNavigation.intent(context, saleId)"))
         assertTrue(main.contains("SaleReceiptNavigation.intent(context, detail.summary.id)"))
         assertTrue(build.contains("versionCode = 98"))
         assertTrue(build.contains("versionName = \"0.68.0-dev.1\""))
