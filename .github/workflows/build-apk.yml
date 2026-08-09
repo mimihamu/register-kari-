@@ -348,7 +348,7 @@ jobs:
             | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
           REGISTER_VERSION_NAME=0.77.0-dev.1
-          REGISTER_VERSION_CODE=106
+          REGISTER_VERSION_CODE=107
           REGISTER_APPLICATION_ID_DEBUG=jp.co.tenposinfo.register.dev
           MANAGEMENT_APP_VERSION_NAME=0.14.0-dev.1
           MANAGEMENT_APP_VERSION_CODE=14
