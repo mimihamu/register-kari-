@@ -1,0 +1,28 @@
+name: Apply v0.78 settlement reconciliation
+
+on:
+  push:
+    branches:
+      - develop/v0.78
+  pull_request:
+    branches:
+      - develop/v0.77
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+      - name: Apply v0.78
+        shell: bash
+        run: python3 scripts/apply_v078.py
