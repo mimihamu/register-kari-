@@ -29,7 +29,7 @@ class V051GoogleDriveRecoveryFallbackTest {
         assertTrue(plusRecovery.contains("両アプリで同じDriveフォルダを選択してください"))
         assertTrue(docs.contains("同じGoogle Driveフォルダ"))
         assertTrue(workflow.contains("TSUGUREGI_v0.77.0_dev1_settlement_history_sales_drilldown_debug.apk"))
-        assertTrue(workflow.contains("TSUGUREGI-v0.76.0-dev1-business-session-sales-drilldown-apks"))
+        assertTrue(workflow.contains("TSUGUREGI-v0.77.0-dev1-settlement-history-sales-drilldown-apks"))
         assertFalse(File(root, "tools/v051_apply.py").exists())
         assertFalse(File(root, ".github/workflows/v051-apply-temp.yml").exists())
         assertFalse(File(root, "tools/build-apk-v051.generated.yml").exists())
