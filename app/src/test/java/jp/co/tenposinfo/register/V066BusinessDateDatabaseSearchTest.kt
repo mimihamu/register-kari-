@@ -93,10 +93,10 @@ class V066BusinessDateDatabaseSearchTest {
         assertTrue(policy.contains("buildDatabaseQuery"))
         assertTrue(policy.contains("escapeLike"))
         assertTrue(policy.contains("ESCAPE"))
-        assertTrue(build.contains("versionCode = 108"))
-        assertTrue(build.contains("versionName = \"0.78.0-dev.1\""))
+        assertTrue(build.contains("applicationId = \"jp.co.tenposinfo.register\""))
+        assertTrue(build.contains("compileSdk = 36"))
         assertTrue(workflow.contains("V066BusinessDateDatabaseSearchTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.78.0_dev1_settlement_reconciliation_debug.apk"))
+        assertTrue(workflow.contains(":app:assembleDebug"))
         assertTrue(docs.isFile)
         assertTrue(notes.isFile)
     }
