@@ -35,7 +35,7 @@ class V048GoogleDriveSettingsEntryTest {
         assertTrue(build.contains("versionName = \"0.77.0-dev.1\""))
         assertTrue(workflow.contains("V048GoogleDriveSettingsEntryTest.kt"))
         assertTrue(workflow.contains("TSUGUREGI_v0.77.0_dev1_settlement_history_sales_drilldown_debug.apk"))
-        assertTrue(workflow.contains("TSUGUREGI-v0.76.0-dev1-business-session-sales-drilldown-apks"))
+        assertTrue(workflow.contains("TSUGUREGI-v0.77.0-dev1-settlement-history-sales-drilldown-apks"))
         assertTrue(docs.contains("販売画面 → 各種設定 → 責任者認証 → Google Drive・同期"))
         assertTrue(notes.contains("0.48.0-dev.1"))
         assertFalse(File("../tools/v048_apply.py").exists())
