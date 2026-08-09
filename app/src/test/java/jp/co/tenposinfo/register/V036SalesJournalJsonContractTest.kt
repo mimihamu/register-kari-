@@ -110,7 +110,7 @@ class V036SalesJournalJsonContractTest {
         assertTrue(schema.contains("\"schemaVersion\""))
         assertTrue(schema.contains("\"duplicateImportKey\""))
         assertTrue(schema.contains("\"taxTotals\""))
-        assertTrue(build.contains("versionCode = 108"))
-        assertTrue(build.contains("versionName = \"0.78.0-dev.1\""))
+        assertTrue(build.contains("applicationId = \"jp.co.tenposinfo.register\""))
+        assertTrue(build.contains("compileSdk = 36"))
     }
 }
