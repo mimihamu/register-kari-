@@ -120,6 +120,24 @@ class SettlementReconciliationAuditCsvExporterV082(context: Context) : AutoClose
     private val database = RegisterDatabase(context.applicationContext)
     private val db = database.readableDatabase
 
+    fun count(
+        filter: SettlementReconciliationAuditFilterV081,
+        searchText: String,
+    ): Int {
+        val query = SettlementReconciliationAuditLedgerPolicyV081.query(filter, searchText)
+        return db.query(
+            "operation_audit",
+            arrayOf("COUNT(*)"),
+            query.selection,
+            query.args.toTypedArray(),
+            null,
+            null,
+            null,
+        ).use { cursor ->
+            if (cursor.moveToFirst()) cursor.getInt(0) else 0
+        }
+    }
+
     fun captureSnapshot(
         filter: SettlementReconciliationAuditFilterV081,
         searchText: String,
