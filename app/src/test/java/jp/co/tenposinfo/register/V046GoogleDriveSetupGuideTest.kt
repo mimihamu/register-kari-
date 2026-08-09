@@ -64,7 +64,7 @@ class V046GoogleDriveSetupGuideTest {
         assertTrue(build.contains("versionCode = 107"))
         assertTrue(build.contains("versionName = \"0.77.0-dev.1\""))
         assertTrue(workflow.contains("V046GoogleDriveSetupGuideTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI-v0.76.0-dev1-business-session-sales-drilldown-apks"))
+        assertTrue(workflow.contains("TSUGUREGI-v0.77.0-dev1-settlement-history-sales-drilldown-apks"))
         assertTrue(docs.contains("jp.co.tenposinfo.register.dev"))
         assertTrue(docs.contains("5C:CC:D8:26:5E:BF:69:FF:36:EC:9D:37:6E:8C:AC:2A:DE:DB:89:44"))
         assertTrue(notes.contains("初期設定ガイド"))
