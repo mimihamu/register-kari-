@@ -101,6 +101,7 @@ private fun OperationsApp(
     val context = LocalContext.current
     val appContext = context.applicationContext
     val store = remember { OperationsStore(appContext) }
+    val reconciliationAuditStore = remember { SettlementReconciliationAuditStoreV079(appContext) }
     val secureStore = remember { SecureOperationsCoordinator(appContext, store) }
     val registerDatabase = remember { RegisterDatabase(appContext) }
     var screen by remember { mutableStateOf(OperationsScreen.MENU) }
@@ -143,6 +144,7 @@ private fun OperationsApp(
 
     DisposableEffect(Unit) {
         onDispose {
+            reconciliationAuditStore.close()
             store.close()
             registerDatabase.close()
         }
@@ -317,9 +319,14 @@ private fun OperationsApp(
                     val latestRecord = store.settlementById(record.id)
                         ?: error("点検・精算履歴No.${record.id}が見つかりません")
                     check(latestRecord.businessSessionId == record.businessSessionId) { "営業セッションが一致しません" }
-                    SettlementReconciliationPolicyV078.compare(
+                    val reconciliationResult = SettlementReconciliationPolicyV078.compare(
                         latestRecord,
                         store.summaryForSession(latestRecord.businessSessionId),
+                    )
+                    reconciliationAuditStore.append(reconciliationResult, current.name)
+                    revision++
+                    reconciliationResult.copy(
+                        message = reconciliationResult.message + "\n整合確認を監査履歴へ記録しました。",
                     )
                 },
                 onOpenSalesDetail = { record ->
@@ -448,7 +455,7 @@ private fun OperationsMenuScreen(
                 } else {
                     OpAmountRow("営業日", summary.businessDate)
                     OpAmountRow("営業セッション", session?.let { "No.${it.id}" } ?: "開始前")
-                    OpAmountRow("営業状態", session?.status?.displayName ?: "営業開始前")
+                    OpAmountRow("営業状態", session?.status.displayName ?: "営業開始前")
                     OpAmountRow("開始釣銭", opYen(summary.openingCash))
                     OpAmountRow("純売上", opYen(summary.netSales), emphasized = true)
                     OpAmountRow("取引件数", "${summary.transactionCount}件")
