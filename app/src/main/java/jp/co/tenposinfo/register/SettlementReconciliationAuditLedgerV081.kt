@@ -101,7 +101,7 @@ data class SettlementReconciliationAuditQueryV081(
 
 object SettlementReconciliationAuditLedgerPolicyV081 {
     const val EVENT_PREFIX = "SETTLEMENT_RECONCILIATION_"
-    const val DEFAULT_LIMIT = 200
+    const val DEFAULT_LIMIT = 500
 
     fun canView(permissions: Set<RegisterPermission>): Boolean =
         RegisterPermission.VIEW_SALES in permissions &&
@@ -118,7 +118,9 @@ object SettlementReconciliationAuditLedgerPolicyV081 {
         if (search.isNotEmpty()) {
             selectionParts += "(CAST(reference_id AS TEXT) LIKE ? OR operator_name LIKE ? OR detail LIKE ?)"
             val pattern = "%$search%"
-            repeat(3) { args += pattern }
+            args.add(pattern)
+            args.add(pattern)
+            args.add(pattern)
         }
         return SettlementReconciliationAuditQueryV081(selectionParts.joinToString(" AND "), args)
     }
