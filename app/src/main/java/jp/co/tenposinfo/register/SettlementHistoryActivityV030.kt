@@ -410,6 +410,7 @@ private fun HistoryPreviewV030(
                     lineHeight = 17.sp,
                 )
             }
+            SettlementHistoryReconciliationActionV080(selected, permissions)
             val requiredPermission = SettlementHistoryPolicyV027.permissionFor(selected.type)
             val hasPermission = requiredPermission in permissions
             if (selected.type == SettlementReportType.Z_SETTLEMENT) {
