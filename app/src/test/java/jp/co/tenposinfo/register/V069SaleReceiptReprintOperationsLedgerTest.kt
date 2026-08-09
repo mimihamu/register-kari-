@@ -116,10 +116,10 @@ class V069SaleReceiptReprintOperationsLedgerTest {
         assertTrue(hub.contains("レシート再印字台帳"))
         assertTrue(manifest.contains(".SaleReceiptReprintLedgerActivity"))
 
-        assertTrue(build.contains("versionCode = 106"))
-        assertTrue(build.contains("versionName = \"0.76.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 107"))
+        assertTrue(build.contains("versionName = \"0.77.0-dev.1\""))
         assertTrue(workflow.contains("V069SaleReceiptReprintOperationsLedgerTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.76.0_dev1_business_session_sales_drilldown_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.77.0_dev1_settlement_history_sales_drilldown_debug.apk"))
         assertTrue(docs.isFile)
         assertTrue(notes.isFile)
     }

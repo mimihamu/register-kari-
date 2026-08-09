@@ -51,7 +51,7 @@ class V049GoogleDrivePlusSetupDiagnosticsTest {
         assertTrue(build.contains("versionName = \"0.14.0-dev.1\""))
         assertTrue(workflow.contains("V049GoogleDrivePlusSetupDiagnosticsTest.kt"))
         assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk"))
-        assertTrue(workflow.contains("TSUGUREGI-v0.76.0-dev1-business-session-sales-drilldown-apks"))
+        assertTrue(workflow.contains("TSUGUREGI-v0.77.0-dev1-settlement-history-sales-drilldown-apks"))
         assertTrue(docs.contains("つぐレジ＋用のAndroid OAuthクライアント"))
         assertFalse(File("../tools/v049_apply.py").exists())
         assertFalse(File("../.github/workflows/v049-apply-temp.yml").exists())

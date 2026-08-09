@@ -46,12 +46,12 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.76 sources
+      - name: Verify cumulative v0.14-v0.77 sources
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 106' app/build.gradle.kts
-          grep -q 'versionName = "0.76.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 107' app/build.gradle.kts
+          grep -q 'versionName = "0.77.0-dev.1"' app/build.gradle.kts
           grep -q 'versionCode = 14' management-app/build.gradle.kts
           grep -q 'versionName = "0.14.0-dev.1"' management-app/build.gradle.kts
           grep -q 'versionCode = 7' customer-display/build.gradle.kts
@@ -91,6 +91,13 @@ jobs:
           test -s app/src/test/java/jp/co/tenposinfo/register/V074SaleReceiptReprintMatchingNewItemsTest.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V075SaleReceiptReprintCsvExportTest.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V076BusinessSessionSalesDrilldownTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V077SettlementHistorySalesDrilldownTest.kt
+          grep -q 'onOpenSalesDetail: (SettlementRecord) -> Unit' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
+          grep -q 'この営業セッションの売上明細' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
+          grep -q 'RegisterPermission.VIEW_SALES in permissions' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
+          grep -q 'onOpenSalesDetail = { record ->' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q 'record.businessDate' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          grep -q 'record.businessSessionId' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SaleReceiptReprintStablePaging.kt
           grep -q 'captureSnapshot' app/src/main/java/jp/co/tenposinfo/register/SaleReceiptReprintStablePaging.kt
           grep -q 'searchStable' app/src/main/java/jp/co/tenposinfo/register/SaleReceiptReprintStablePaging.kt
@@ -206,6 +213,8 @@ jobs:
           test -s docs/V0.75_RELEASE_NOTES.md
           test -s docs/V0.76_BUSINESS_SESSION_SALES_DRILLDOWN.md
           test -s docs/V0.76_RELEASE_NOTES.md
+          test -s docs/V0.77_SETTLEMENT_HISTORY_SALES_DRILLDOWN.md
+          test -s docs/V0.77_RELEASE_NOTES.md
           grep -q '^# つぐレジ$' README.md
           grep -q 'GoogleDriveEasyConnectActivity' app/src/main/AndroidManifest.xml
           grep -q 'GoogleDriveEasyConnectActivity' management-app/src/main/AndroidManifest.xml
@@ -319,7 +328,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v0.76.0_dev1_business_session_sales_drilldown_debug.apk
+          register_apk=artifacts/TSUGUREGI_v0.77.0_dev1_settlement_history_sales_drilldown_debug.apk
           plus_apk=artifacts/TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
@@ -338,8 +347,8 @@ jobs:
             | awk -F': ' '/SHA1:/{print "DEVELOPMENT_SIGNING_SHA1=" $2} /SHA256:/{print "DEVELOPMENT_SIGNING_SHA256=" $2}' \
             | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.76.0-dev.1
-          REGISTER_VERSION_CODE=106
+          REGISTER_VERSION_NAME=0.77.0-dev.1
+          REGISTER_VERSION_CODE=107
           REGISTER_APPLICATION_ID_DEBUG=jp.co.tenposinfo.register.dev
           MANAGEMENT_APP_VERSION_NAME=0.14.0-dev.1
           MANAGEMENT_APP_VERSION_CODE=14
@@ -453,9 +462,15 @@ jobs:
           BUSINESS_SESSION_SALES_CONTEXT_LOCK=true
           BUSINESS_SESSION_SALES_EXPLICIT_UNLOCK=true
           BUSINESS_SESSION_SALES_LEGACY_FAIL_CLOSED=true
+          SETTLEMENT_HISTORY_SALES_DRILLDOWN=true
+          SETTLEMENT_HISTORY_SALES_EXACT_SESSION=true
+          SETTLEMENT_HISTORY_SALES_VIEW_SALES_GATE=true
+          SETTLEMENT_HISTORY_SALES_RUNTIME_PERMISSION_RECHECK=true
+          SETTLEMENT_HISTORY_SALES_READ_ONLY=true
           GOOGLE_DRIVE_DIAGNOSTIC_TOKENS_INCLUDED=false
           GOOGLE_DRIVE_DIAGNOSTIC_SALES_JSON_INCLUDED=false
           GOOGLE_DRIVE_DIAGNOSTIC_CONTENT_URI_INCLUDED=false
+          REAL_DEVICE_SETTLEMENT_HISTORY_SALES_DRILLDOWN_VERIFICATION=required
           REAL_DEVICE_BUSINESS_SESSION_SALES_DRILLDOWN_VERIFICATION=required
           REAL_DEVICE_SALE_RECEIPT_REPRINT_CSV_EXPORT_VERIFICATION=required
           REAL_DEVICE_SALE_RECEIPT_REPRINT_MATCHING_NEW_ITEMS_VERIFICATION=required
@@ -484,7 +499,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.76.0-dev1-business-session-sales-drilldown-apks
+          name: TSUGUREGI-v0.77.0-dev1-settlement-history-sales-drilldown-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30

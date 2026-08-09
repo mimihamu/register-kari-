@@ -65,6 +65,7 @@ internal fun SettlementHistoryScreenV027(
     message: String?,
     printerPaperWidthMm: Int,
     previewLoader: (Long) -> String,
+    onOpenSalesDetail: (SettlementRecord) -> Unit,
     onReprint: (SettlementRecord, String) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -243,6 +244,22 @@ internal fun SettlementHistoryScreenV027(
                         color = Color.DarkGray,
                         fontSize = 13.sp,
                     )
+                    Spacer(Modifier.height(8.dp))
+                    val canViewSales = RegisterPermission.VIEW_SALES in permissions
+                    OutlinedButton(
+                        onClick = { onOpenSalesDetail(selected) },
+                        enabled = canViewSales && selected.businessSessionId > 0L,
+                        modifier = Modifier.fillMaxWidth().height(46.dp),
+                    ) {
+                        Text("この営業セッションの売上明細", fontWeight = FontWeight.Bold)
+                    }
+                    if (!canViewSales) {
+                        Text(
+                            "売上参照の権限がありません",
+                            color = HistoryDanger,
+                            fontSize = 12.sp,
+                        )
+                    }
                 }
             }
 

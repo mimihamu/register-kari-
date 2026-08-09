@@ -308,6 +308,22 @@ private fun OperationsApp(
                 message = message,
                 printerPaperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext),
                 previewLoader = store::previewSettlement,
+                onOpenSalesDetail = { record ->
+                    val current = OperatorSessionRegistry.current(appContext)
+                    activeOperator = current
+                    if (current?.allows(RegisterPermission.VIEW_SALES) == true) {
+                        message = null
+                        context.startActivity(
+                            BusinessDateSalesLookupNavigation.intent(
+                                context,
+                                record.businessDate,
+                                record.businessSessionId,
+                            ),
+                        )
+                    } else {
+                        message = "売上参照の権限がありません"
+                    }
+                },
                 onReprint = { record, managerPin ->
                     val result = runCatching {
                         secureStore.reprintSettlement(record.id, managerPin)
