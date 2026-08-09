@@ -206,6 +206,11 @@
             android:screenOrientation="landscape" />
 
         <activity
+            android:name=".SettlementReconciliationAuditCsvExportActivityV082"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
             android:name=".SettlementHistoryActivityV030"
             android:exported="false"
             android:screenOrientation="landscape" />
