@@ -107,6 +107,20 @@ internal fun SettlementHistoryReconciliationActionV080(
         "過去の整合確認結果をOK / INFO / ALERT、レポートNo.、担当者、営業日・セッションで検索できます。",
         color = Color.DarkGray,
     )
+    Spacer(Modifier.height(6.dp))
+    OutlinedButton(
+        onClick = {
+            context.startActivity(Intent(context, SettlementReconciliationAuditCsvExportActivityV082::class.java))
+        },
+        enabled = SettlementReconciliationAuditLedgerPolicyV081.canView(permissions),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text("整合確認監査をCSV出力", fontWeight = FontWeight.Bold)
+    }
+    Text(
+        "現在条件を保存時点で固定し、監査・問い合わせ用CSVへ全件出力します。既存監査データは変更しません。",
+        color = Color.DarkGray,
+    )
 
     reconciliationError?.let { error ->
         Spacer(Modifier.height(4.dp))
