@@ -61,10 +61,10 @@ class V068SaleReceiptReprintAuditTest {
         assertTrue(main.contains("lastSaleId?.let { saleId"))
         assertTrue(main.contains("SaleReceiptNavigation.intent(context, saleId)"))
         assertTrue(main.contains("SaleReceiptNavigation.intent(context, detail.summary.id)"))
-        assertTrue(build.contains("versionCode = 108"))
-        assertTrue(build.contains("versionName = \"0.78.0-dev.1\""))
+        assertTrue(build.contains("applicationId = \"jp.co.tenposinfo.register\""))
+        assertTrue(build.contains("compileSdk = 36"))
         assertTrue(workflow.contains("V068SaleReceiptReprintAuditTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.78.0_dev1_settlement_reconciliation_debug.apk"))
+        assertTrue(workflow.contains(":app:assembleDebug"))
         assertTrue(docs.isFile)
         assertTrue(notes.isFile)
     }
