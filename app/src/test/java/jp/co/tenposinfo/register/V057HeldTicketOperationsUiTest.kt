@@ -65,10 +65,10 @@ class V057HeldTicketOperationsUiTest {
         assertTrue(main.contains("heldTicketCoordinator.split("))
         assertTrue(uiPolicy.contains("元伝票を空にはできません"))
         assertTrue(engine.contains("db.beginTransaction()"))
-        assertTrue(build.contains("versionCode = 108"))
-        assertTrue(build.contains("versionName = \"0.78.0-dev.1\""))
+        assertTrue(build.contains("applicationId = \"jp.co.tenposinfo.register\""))
+        assertTrue(build.contains("compileSdk = 36"))
         assertTrue(workflow.contains("V057HeldTicketOperationsUiTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.78.0_dev1_settlement_reconciliation_debug.apk"))
+        assertTrue(workflow.contains(":app:assembleDebug"))
         assertTrue(docs.contains("結合元 → 結合先 → 結合確定"))
     }
 }
