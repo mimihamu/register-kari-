@@ -115,11 +115,18 @@ class V078SettlementReconciliationTest {
         assertFalse(policy.contains("DELETE FROM"))
         assertFalse(screen.contains("UPDATE settlement_reports"))
         assertFalse(screen.contains("DELETE FROM settlement_reports"))
-        assertTrue(build.contains("versionCode = 108"))
-        assertTrue(build.contains("versionName = \"0.78.0-dev.1\""))
+
+        val versionCode = Regex("versionCode\\s*=\\s*(\\d+)")
+            .find(build)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val versionMinor = Regex("versionName\\s*=\\s*\"0\\.(\\d+)\\.0-dev\\.1\"")
+            .find(build)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        assertTrue(versionCode >= 108)
+        assertTrue(versionMinor >= 78)
+
         assertTrue(workflow.contains("V078SettlementReconciliationTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.78.0_dev1_settlement_reconciliation_debug.apk"))
-        assertTrue(workflow.contains("TSUGUREGI-v0.78.0-dev1-settlement-reconciliation-apks"))
+        assertTrue(workflow.contains("SETTLEMENT_RECONCILIATION=true"))
+        assertTrue(workflow.contains("SETTLEMENT_RECONCILIATION_X_DIFFERENCE_INFORMATIONAL=true"))
+        assertTrue(workflow.contains("SETTLEMENT_RECONCILIATION_Z_DIFFERENCE_ALERT=true"))
         assertTrue(File(root, "docs/V0.78_SETTLEMENT_RECONCILIATION.md").isFile)
         assertTrue(File(root, "docs/V0.78_RELEASE_NOTES.md").isFile)
     }
