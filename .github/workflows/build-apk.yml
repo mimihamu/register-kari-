@@ -46,12 +46,12 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.80 sources
+      - name: Verify cumulative v0.14-v0.81 sources
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 110' app/build.gradle.kts
-          grep -q 'versionName = "0.80.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 111' app/build.gradle.kts
+          grep -q 'versionName = "0.81.0-dev.1"' app/build.gradle.kts
           grep -q 'versionCode = 14' management-app/build.gradle.kts
           grep -q 'versionName = "0.14.0-dev.1"' management-app/build.gradle.kts
           grep -q 'versionCode = 7' customer-display/build.gradle.kts
@@ -95,9 +95,11 @@ jobs:
           test -s app/src/test/java/jp/co/tenposinfo/register/V078SettlementReconciliationTest.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V079SettlementReconciliationAuditTest.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V080ResponsiveSettlementReconciliationTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V081SettlementReconciliationAuditLedgerTest.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationV078.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationAuditV079.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryReconciliationV080.kt
+          test -s app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationAuditLedgerV081.kt
           grep -q '保存値と現在DBを照合' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
           grep -q 'SettlementReconciliationPolicyV078.compare' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
           grep -q 'store.settlementById(record.id)' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
@@ -115,6 +117,14 @@ jobs:
           grep -q '整合確認を監査履歴へ記録しました' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryReconciliationV080.kt
           ! grep -q 'UPDATE sales' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryReconciliationV080.kt
           ! grep -q 'DELETE FROM sales' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryReconciliationV080.kt
+          grep -q 'SettlementReconciliationAuditLedgerActivityV081::class.java' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryReconciliationV080.kt
+          grep -q 'SettlementReconciliationAuditLedgerActivityV081' app/src/main/AndroidManifest.xml
+          grep -q 'baseDatabase.readableDatabase' app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationAuditLedgerV081.kt
+          grep -q 'SETTLEMENT_RECONCILIATION_' app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationAuditLedgerV081.kt
+          ! grep -q 'insertOrThrow' app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationAuditLedgerV081.kt
+          ! grep -q 'execSQL' app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationAuditLedgerV081.kt
+          ! grep -q 'UPDATE operation_audit' app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationAuditLedgerV081.kt
+          ! grep -q 'DELETE FROM operation_audit' app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationAuditLedgerV081.kt
           grep -q 'onOpenSalesDetail: (SettlementRecord) -> Unit' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
           grep -q 'この営業セッションの売上明細' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
           grep -q 'RegisterPermission.VIEW_SALES in permissions' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
@@ -244,6 +254,8 @@ jobs:
           test -s docs/V0.79_RELEASE_NOTES.md
           test -s docs/V0.80_RESPONSIVE_SETTLEMENT_RECONCILIATION.md
           test -s docs/V0.80_RELEASE_NOTES.md
+          test -s docs/V0.81_SETTLEMENT_RECONCILIATION_AUDIT_LEDGER.md
+          test -s docs/V0.81_RELEASE_NOTES.md
           grep -q '^# つぐレジ$' README.md
           grep -q 'GoogleDriveEasyConnectActivity' app/src/main/AndroidManifest.xml
           grep -q 'GoogleDriveEasyConnectActivity' management-app/src/main/AndroidManifest.xml
@@ -357,7 +369,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v0.80.0_dev1_responsive_settlement_reconciliation_debug.apk
+          register_apk=artifacts/TSUGUREGI_v0.81.0_dev1_settlement_reconciliation_audit_ledger_debug.apk
           plus_apk=artifacts/TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
@@ -376,8 +388,8 @@ jobs:
             | awk -F': ' '/SHA1:/{print "DEVELOPMENT_SIGNING_SHA1=" $2} /SHA256:/{print "DEVELOPMENT_SIGNING_SHA256=" $2}' \
             | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.80.0-dev.1
-          REGISTER_VERSION_CODE=110
+          REGISTER_VERSION_NAME=0.81.0-dev.1
+          REGISTER_VERSION_CODE=111
           REGISTER_APPLICATION_ID_DEBUG=jp.co.tenposinfo.register.dev
           MANAGEMENT_APP_VERSION_NAME=0.14.0-dev.1
           MANAGEMENT_APP_VERSION_CODE=14
@@ -511,9 +523,14 @@ jobs:
           RESPONSIVE_SETTLEMENT_RECONCILIATION_RUNTIME_PERMISSION_RECHECK=true
           RESPONSIVE_SETTLEMENT_RECONCILIATION_AUDIT_APPEND_ONLY=true
           RESPONSIVE_SETTLEMENT_RECONCILIATION_FAIL_CLOSED=true
+          SETTLEMENT_RECONCILIATION_AUDIT_LEDGER=true
+          SETTLEMENT_RECONCILIATION_AUDIT_LEDGER_READ_ONLY=true
+          SETTLEMENT_RECONCILIATION_AUDIT_LEDGER_FILTERS=true
+          SETTLEMENT_RECONCILIATION_AUDIT_LEDGER_RUNTIME_PERMISSION_RECHECK=true
           GOOGLE_DRIVE_DIAGNOSTIC_TOKENS_INCLUDED=false
           GOOGLE_DRIVE_DIAGNOSTIC_SALES_JSON_INCLUDED=false
           GOOGLE_DRIVE_DIAGNOSTIC_CONTENT_URI_INCLUDED=false
+          REAL_DEVICE_SETTLEMENT_RECONCILIATION_AUDIT_LEDGER_VERIFICATION=required
           REAL_DEVICE_RESPONSIVE_SETTLEMENT_RECONCILIATION_VERIFICATION=required
           REAL_DEVICE_SETTLEMENT_RECONCILIATION_AUDIT_VERIFICATION=required
           REAL_DEVICE_SETTLEMENT_RECONCILIATION_VERIFICATION=required
@@ -546,7 +563,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.80.0-dev1-responsive-settlement-reconciliation-apks
+          name: TSUGUREGI-v0.81.0-dev1-settlement-reconciliation-audit-ledger-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30

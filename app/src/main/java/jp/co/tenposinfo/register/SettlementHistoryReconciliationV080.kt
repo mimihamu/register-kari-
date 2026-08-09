@@ -1,5 +1,6 @@
 package jp.co.tenposinfo.register
 
+import android.content.Intent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -90,6 +91,20 @@ internal fun SettlementHistoryReconciliationActionV080(
             RegisterPermission.VIEW_SALES !in permissions -> "整合確認には売上参照権限が必要です。"
             else -> "${SettlementHistoryPolicyV027.permissionFor(selected.type).displayName}の権限が必要です。"
         },
+        color = Color.DarkGray,
+    )
+    Spacer(Modifier.height(6.dp))
+    OutlinedButton(
+        onClick = {
+            context.startActivity(Intent(context, SettlementReconciliationAuditLedgerActivityV081::class.java))
+        },
+        enabled = SettlementReconciliationAuditLedgerPolicyV081.canView(permissions),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text("整合確認監査台帳を開く", fontWeight = FontWeight.Bold)
+    }
+    Text(
+        "過去の整合確認結果をOK / INFO / ALERT、レポートNo.、担当者、営業日・セッションで検索できます。",
         color = Color.DarkGray,
     )
 
