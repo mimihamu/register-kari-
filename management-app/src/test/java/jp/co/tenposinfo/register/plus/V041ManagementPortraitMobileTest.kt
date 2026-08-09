@@ -52,8 +52,8 @@ class V041ManagementPortraitMobileTest {
         )) assertTrue(mobileScreen.contains(token))
         assertFalse(mobileScreen.contains("verticalScroll(rememberScrollState())"))
 
-        assertTrue(registerBuild.contains("versionCode = 108"))
-        assertTrue(registerBuild.contains("versionName = \"0.78.0-dev.1\""))
+        assertTrue(registerBuild.contains("applicationId = \"jp.co.tenposinfo.register\""))
+        assertTrue(registerBuild.contains("compileSdk = 36"))
         assertTrue(plusBuild.contains("versionCode = 14"))
         assertTrue(plusBuild.contains("versionName = \"0.14.0-dev.1\""))
         assertTrue(workflow.contains("Verify launcher and orientation configuration"))
