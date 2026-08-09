@@ -20,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -65,6 +66,7 @@ internal fun SettlementHistoryScreenV027(
     message: String?,
     printerPaperWidthMm: Int,
     previewLoader: (Long) -> String,
+    reconciliationLoader: (SettlementRecord) -> SettlementReconciliationResult,
     onOpenSalesDetail: (SettlementRecord) -> Unit,
     onReprint: (SettlementRecord, String) -> Unit,
     onBack: () -> Unit,
@@ -75,6 +77,8 @@ internal fun SettlementHistoryScreenV027(
     var selectedType by remember { mutableStateOf<SettlementReportType?>(null) }
     var selectedReportId by remember { mutableStateOf<Long?>(settlements.firstOrNull()?.id) }
     var managerPin by remember { mutableStateOf("") }
+    var reconciliation by remember { mutableStateOf<SettlementReconciliationResult?>(null) }
+    var reconciliationError by remember { mutableStateOf<String?>(null) }
     @Suppress("UNUSED_VARIABLE") val refresh = revision
 
     val filtered = SettlementHistoryPolicyV027.filter(
@@ -89,6 +93,8 @@ internal fun SettlementHistoryScreenV027(
             selectedReportId = filtered.firstOrNull()?.id
             managerPin = ""
         }
+        reconciliation = null
+        reconciliationError = null
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -246,6 +252,8 @@ internal fun SettlementHistoryScreenV027(
                     )
                     Spacer(Modifier.height(8.dp))
                     val canViewSales = RegisterPermission.VIEW_SALES in permissions
+                    val reportPermission = SettlementHistoryPolicyV027.permissionFor(selected.type)
+                    val canReconcile = canViewSales && reportPermission in permissions
                     OutlinedButton(
                         onClick = { onOpenSalesDetail(selected) },
                         enabled = canViewSales && selected.businessSessionId > 0L,
@@ -253,9 +261,36 @@ internal fun SettlementHistoryScreenV027(
                     ) {
                         Text("この営業セッションの売上明細", fontWeight = FontWeight.Bold)
                     }
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedButton(
+                        onClick = {
+                            runCatching { reconciliationLoader(selected) }
+                                .onSuccess { result ->
+                                    reconciliation = result
+                                    reconciliationError = null
+                                }
+                                .onFailure { error ->
+                                    reconciliation = null
+                                    reconciliationError = error.message ?: "整合確認に失敗しました"
+                                }
+                        },
+                        enabled = canReconcile && selected.businessSessionId > 0L,
+                        modifier = Modifier.fillMaxWidth().height(46.dp),
+                    ) {
+                        Text("保存値と現在DBを照合", fontWeight = FontWeight.Bold)
+                    }
+                    reconciliationError?.let { error ->
+                        Text(error, color = HistoryDanger, fontSize = 12.sp)
+                    }
                     if (!canViewSales) {
                         Text(
                             "売上参照の権限がありません",
+                            color = HistoryDanger,
+                            fontSize = 12.sp,
+                        )
+                    } else if (reportPermission !in permissions) {
+                        Text(
+                            "${reportPermission.displayName}の権限がありません",
                             color = HistoryDanger,
                             fontSize = 12.sp,
                         )
@@ -362,6 +397,62 @@ internal fun SettlementHistoryScreenV027(
                 Text("レジ管理へ戻る", fontWeight = FontWeight.Bold)
             }
         }
+    }
+
+    reconciliation?.let { result ->
+        AlertDialog(
+            onDismissRequest = { reconciliation = null },
+            title = { Text("保存値と現在DBの整合確認") },
+            text = {
+                Column(
+                    Modifier.fillMaxWidth().height(420.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        "${result.reportType.displayName} No.${result.reportId} / ${result.businessDate} / セッションNo.${result.businessSessionId}",
+                        fontWeight = FontWeight.Bold,
+                        color = HistoryNavy,
+                    )
+                    Text(
+                        result.message,
+                        color = when (result.severity) {
+                            SettlementReconciliationSeverity.OK -> HistoryGreen
+                            SettlementReconciliationSeverity.INFO -> Color.DarkGray
+                            SettlementReconciliationSeverity.ALERT -> HistoryDanger
+                        },
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        if (result.fullSnapshot) "保存snapshot: 完全保存" else "保存snapshot: 旧形式（比較範囲限定）",
+                        color = Color.Gray,
+                        fontSize = 12.sp,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    result.fields.forEach { field ->
+                        Row(Modifier.fillMaxWidth()) {
+                            Text(field.label, Modifier.width(120.dp), fontWeight = FontWeight.SemiBold)
+                            Text("保存 ${field.savedValue}", Modifier.weight(1f), fontSize = 13.sp)
+                            Text(
+                                "現在 ${field.currentValue}",
+                                Modifier.weight(1f),
+                                color = if (field.matches) HistoryGreen else HistoryDanger,
+                                fontWeight = if (field.matches) FontWeight.Normal else FontWeight.Bold,
+                                fontSize = 13.sp,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "未印刷・未会計伝票は営業セッション単位で現在値を再現できないため照合対象外です。",
+                        color = Color.Gray,
+                        fontSize = 12.sp,
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = { reconciliation = null }) { Text("閉じる") }
+            },
+        )
     }
 }
 

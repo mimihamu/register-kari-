@@ -86,10 +86,10 @@ class V076BusinessSessionSalesDrilldownTest {
         assertFalse(lookup.contains("UPDATE sales"))
         assertFalse(lookup.contains("ALTER TABLE"))
 
-        assertTrue(build.contains("versionCode = 107"))
-        assertTrue(build.contains("versionName = \"0.77.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 108"))
+        assertTrue(build.contains("versionName = \"0.78.0-dev.1\""))
         assertTrue(workflow.contains("V076BusinessSessionSalesDrilldownTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.77.0_dev1_settlement_history_sales_drilldown_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_v0.78.0_dev1_settlement_reconciliation_debug.apk"))
         assertTrue(docs.isFile)
         assertTrue(notes.isFile)
     }

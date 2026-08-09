@@ -308,6 +308,20 @@ private fun OperationsApp(
                 message = message,
                 printerPaperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext),
                 previewLoader = store::previewSettlement,
+                reconciliationLoader = { record ->
+                    val current = OperatorSessionRegistry.current(appContext)
+                    activeOperator = current
+                    val reportPermission = SettlementHistoryPolicyV027.permissionFor(record.type)
+                    check(current?.allows(RegisterPermission.VIEW_SALES) == true) { "売上参照の権限がありません" }
+                    check(current.allows(reportPermission)) { "${reportPermission.displayName}の権限がありません" }
+                    val latestRecord = store.settlementById(record.id)
+                        ?: error("点検・精算履歴No.${record.id}が見つかりません")
+                    check(latestRecord.businessSessionId == record.businessSessionId) { "営業セッションが一致しません" }
+                    SettlementReconciliationPolicyV078.compare(
+                        latestRecord,
+                        store.summaryForSession(latestRecord.businessSessionId),
+                    )
+                },
                 onOpenSalesDetail = { record ->
                     val current = OperatorSessionRegistry.current(appContext)
                     activeOperator = current

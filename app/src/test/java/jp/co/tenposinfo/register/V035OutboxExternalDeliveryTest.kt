@@ -85,8 +85,8 @@ class V035OutboxExternalDeliveryTest {
         assertTrue(manifest.contains("android:name=\".OutboxDeliverySettingsActivity\""))
         assertTrue(manifest.contains("android:name=\".GoogleDriveSetupGuideActivity\""))
         assertTrue(manifest.contains("android:name=\".GoogleDriveAccountActivity\""))
-        assertTrue(build.contains("versionCode = 107"))
-        assertTrue(build.contains("versionName = \"0.77.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 108"))
+        assertTrue(build.contains("versionName = \"0.78.0-dev.1\""))
         assertFalse(manifest.contains("<activity-alias"))
     }
 }
