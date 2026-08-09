@@ -87,11 +87,11 @@ class V079SettlementReconciliationAuditTest {
         assertTrue(operations.contains("reconciliationAuditStore.append(reconciliationResult, current.name)"))
         assertTrue(operations.contains("reconciliationAuditStore.close()"))
 
-        assertTrue(build.contains("versionCode = 109"))
-        assertTrue(build.contains("versionName = \"0.79.0-dev.1\""))
+        // Cumulative development: v0.79 owns the audit semantics, not the current release number.
+        assertTrue(build.contains("applicationId = \"jp.co.tenposinfo.register\""))
+        assertTrue(build.contains("compileSdk = 36"))
         assertTrue(workflow.contains("V079SettlementReconciliationAuditTest.kt"))
-        assertTrue(workflow.contains("TSUGUREGI_v0.79.0_dev1_settlement_reconciliation_audit_debug.apk"))
-        assertTrue(workflow.contains("TSUGUREGI-v0.79.0-dev1-settlement-reconciliation-audit-apks"))
+        assertTrue(workflow.contains("SETTLEMENT_RECONCILIATION_AUDIT=true"))
         assertTrue(File(root, "docs/V0.79_SETTLEMENT_RECONCILIATION_AUDIT.md").isFile)
         assertTrue(File(root, "docs/V0.79_RELEASE_NOTES.md").isFile)
     }
