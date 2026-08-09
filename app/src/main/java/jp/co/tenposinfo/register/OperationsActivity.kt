@@ -455,7 +455,7 @@ private fun OperationsMenuScreen(
                 } else {
                     OpAmountRow("営業日", summary.businessDate)
                     OpAmountRow("営業セッション", session?.let { "No.${it.id}" } ?: "開始前")
-                    OpAmountRow("営業状態", session?.status.displayName ?: "営業開始前")
+                    OpAmountRow("営業状態", session?.status?.displayName ?: "営業開始前")
                     OpAmountRow("開始釣銭", opYen(summary.openingCash))
                     OpAmountRow("純売上", opYen(summary.netSales), emphasized = true)
                     OpAmountRow("取引件数", "${summary.transactionCount}件")
