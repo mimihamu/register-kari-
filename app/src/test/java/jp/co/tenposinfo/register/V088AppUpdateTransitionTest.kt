@@ -1,12 +1,11 @@
 package jp.co.tenposinfo.register
 
 import java.io.File
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
 
 class V088AppUpdateTransitionTest {
     private val root = File(System.getProperty("user.dir")).let { current ->
@@ -39,7 +38,7 @@ class V088AppUpdateTransitionTest {
         )
 
         assertTrue(decision.trackingRequired)
-        val pending = assertNotNull(decision.pending)
+        val pending = requireNotNull(decision.pending)
         assertNull(pending.source)
         assertEquals(current, pending.target)
         assertEquals(20L, pending.startedAt)
@@ -52,7 +51,7 @@ class V088AppUpdateTransitionTest {
         val current = AppReleaseIdentityV088("0.88.0-dev.1", 118)
         val decision = AppUpdateTransitionPolicyV088.begin(old, null, current, 30L)
 
-        val pending = assertNotNull(decision.pending)
+        val pending = requireNotNull(decision.pending)
         assertEquals(old, pending.source)
         assertEquals(current, pending.target)
         assertEquals(1, pending.attemptCount)
@@ -66,7 +65,7 @@ class V088AppUpdateTransitionTest {
         val existing = PendingAppStartupV088(old, current, startedAt = 40L, attemptCount = 1)
         val decision = AppUpdateTransitionPolicyV088.begin(old, existing, current, now = 99L)
 
-        val pending = assertNotNull(decision.pending)
+        val pending = requireNotNull(decision.pending)
         assertEquals(40L, pending.startedAt)
         assertEquals(2, pending.attemptCount)
         assertNull(decision.displacedIncomplete)
@@ -81,7 +80,7 @@ class V088AppUpdateTransitionTest {
         val decision = AppUpdateTransitionPolicyV088.begin(lastSuccessful, existing, newTarget, 60L)
 
         assertEquals(existing, decision.displacedIncomplete)
-        val pending = assertNotNull(decision.pending)
+        val pending = requireNotNull(decision.pending)
         assertEquals(lastSuccessful, pending.source)
         assertEquals(newTarget, pending.target)
         assertEquals(1, pending.attemptCount)
@@ -106,6 +105,7 @@ class V088AppUpdateTransitionTest {
         assertTrue(source.contains("APP_UPDATE_PREVIOUS_STARTUP_INCOMPLETE"))
         assertTrue(source.contains("editor.commit()"))
         assertTrue(source.contains("PRAGMA user_version"))
+        assertTrue(source.contains("tsuguregi-update-v088"))
 
         assertFalse(source.contains("DELETE FROM sales", ignoreCase = true))
         assertFalse(source.contains("UPDATE sales", ignoreCase = true))
