@@ -19,7 +19,7 @@
             android:name=".DataRestoreBootstrapProvider"
             android:authorities="${applicationId}.data-restore-bootstrap"
             android:exported="false"
-            android:initOrder="10" />
+            android:initOrder="1000" />
 
         <provider
             android:name=".CatalogBootstrapProvider"

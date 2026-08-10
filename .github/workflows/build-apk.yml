@@ -46,12 +46,12 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.82 sources
+      - name: Verify cumulative v0.14-v0.83 sources
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 112' app/build.gradle.kts
-          grep -q 'versionName = "0.82.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 113' app/build.gradle.kts
+          grep -q 'versionName = "0.83.0-dev.1"' app/build.gradle.kts
           grep -q 'versionCode = 14' management-app/build.gradle.kts
           grep -q 'versionName = "0.14.0-dev.1"' management-app/build.gradle.kts
           grep -q 'versionCode = 7' customer-display/build.gradle.kts
@@ -97,12 +97,17 @@ jobs:
           test -s app/src/test/java/jp/co/tenposinfo/register/V080ResponsiveSettlementReconciliationTest.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V081SettlementReconciliationAuditLedgerTest.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V082SettlementReconciliationAuditCsvExportTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V083RestoreBootstrapOrderTest.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationV078.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationAuditV079.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryReconciliationV080.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationAuditLedgerV081.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationAuditCsvExportV082.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationAuditCsvExportActivityV082.kt
+          grep -q 'android:name=".DataRestoreBootstrapProvider"' app/src/main/AndroidManifest.xml
+          grep -q 'android:initOrder="1000"' app/src/main/AndroidManifest.xml
+          grep -q 'PendingRestoreApplier::applyIfPresent' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
+          grep -q 'DataProtectionManager.atomicReplace(pending, database)' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
           grep -q '保存値と現在DBを照合' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
           grep -q 'SettlementReconciliationPolicyV078.compare' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
           grep -q 'store.settlementById(record.id)' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
@@ -272,6 +277,8 @@ jobs:
           test -s docs/V0.81_RELEASE_NOTES.md
           test -s docs/V0.82_SETTLEMENT_RECONCILIATION_AUDIT_CSV_EXPORT.md
           test -s docs/V0.82_RELEASE_NOTES.md
+          test -s docs/V0.83_RESTORE_BOOTSTRAP_ORDER.md
+          test -s docs/V0.83_RELEASE_NOTES.md
           grep -q '^# つぐレジ$' README.md
           grep -q 'GoogleDriveEasyConnectActivity' app/src/main/AndroidManifest.xml
           grep -q 'GoogleDriveEasyConnectActivity' management-app/src/main/AndroidManifest.xml
@@ -385,7 +392,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v0.82.0_dev1_settlement_reconciliation_audit_csv_export_debug.apk
+          register_apk=artifacts/TSUGUREGI_v0.83.0_dev1_restore_bootstrap_order_debug.apk
           plus_apk=artifacts/TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
@@ -404,8 +411,8 @@ jobs:
             | awk -F': ' '/SHA1:/{print "DEVELOPMENT_SIGNING_SHA1=" $2} /SHA256:/{print "DEVELOPMENT_SIGNING_SHA256=" $2}' \
             | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.82.0-dev.1
-          REGISTER_VERSION_CODE=112
+          REGISTER_VERSION_NAME=0.83.0-dev.1
+          REGISTER_VERSION_CODE=113
           REGISTER_APPLICATION_ID_DEBUG=jp.co.tenposinfo.register.dev
           MANAGEMENT_APP_VERSION_NAME=0.14.0-dev.1
           MANAGEMENT_APP_VERSION_CODE=14
@@ -550,9 +557,13 @@ jobs:
           SETTLEMENT_RECONCILIATION_AUDIT_CSV_SAF=true
           SETTLEMENT_RECONCILIATION_AUDIT_CSV_PERMISSION_RECHECK=true
           SETTLEMENT_RECONCILIATION_AUDIT_CSV_READ_ONLY=true
+          RESTORE_BOOTSTRAP_FIRST=true
+          RESTORE_BOOTSTRAP_INIT_ORDER=1000
+          RESTORE_BOOTSTRAP_ORDER_REGRESSION_TEST=true
           GOOGLE_DRIVE_DIAGNOSTIC_TOKENS_INCLUDED=false
           GOOGLE_DRIVE_DIAGNOSTIC_SALES_JSON_INCLUDED=false
           GOOGLE_DRIVE_DIAGNOSTIC_CONTENT_URI_INCLUDED=false
+          REAL_DEVICE_RESTORE_BOOTSTRAP_ORDER_VERIFICATION=required
           REAL_DEVICE_SETTLEMENT_RECONCILIATION_AUDIT_CSV_EXPORT_VERIFICATION=required
           REAL_DEVICE_SETTLEMENT_RECONCILIATION_AUDIT_LEDGER_VERIFICATION=required
           REAL_DEVICE_RESPONSIVE_SETTLEMENT_RECONCILIATION_VERIFICATION=required
@@ -587,7 +598,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.82.0-dev1-settlement-reconciliation-audit-csv-export-apks
+          name: TSUGUREGI-v0.83.0-dev1-restore-bootstrap-order-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
