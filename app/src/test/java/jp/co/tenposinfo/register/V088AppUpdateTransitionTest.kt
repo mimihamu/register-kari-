@@ -87,15 +87,16 @@ class V088AppUpdateTransitionTest {
     }
 
     @Test
-    fun startupTrackingIsAfterRestoreBeforeNormalProvidersAndReadOnlyForBusinessData() {
+    fun startupTrackingIsStillAfterRestoreBeforeNormalProvidersAndReadOnlyForBusinessData() {
         val manifest = File(root, "app/src/main/AndroidManifest.xml").readText()
         val source = File(
             root,
-            "app/src/main/java/jp/co/tenposinfo/register/AppUpdateTransitionV088.kt",
+            "app/src/main/java/jp/co/tenposinfo/register/AppUpdateTransitionV089.kt",
         ).readText()
 
         assertTrue(manifest.contains("android:name=\".DataRestoreBootstrapProviderV086\""))
-        assertTrue(manifest.contains("android:name=\".AppUpdateTransitionBootstrapProviderV088\""))
+        assertTrue(manifest.contains("android:name=\".AppUpdateTransitionBootstrapProviderV089\""))
+        assertFalse(manifest.contains("android:name=\".AppUpdateTransitionBootstrapProviderV088\""))
         assertTrue(manifest.contains("android:initOrder=\"1000\""))
         assertTrue(manifest.contains("android:initOrder=\"900\""))
         assertTrue(source.contains("beginAfterRestore"))
@@ -105,7 +106,8 @@ class V088AppUpdateTransitionTest {
         assertTrue(source.contains("APP_UPDATE_PREVIOUS_STARTUP_INCOMPLETE"))
         assertTrue(source.contains("editor.commit()"))
         assertTrue(source.contains("PRAGMA user_version"))
-        assertTrue(source.contains("tsuguregi-update-v088"))
+        assertTrue(source.contains("tsuguregi-update-v089"))
+        assertTrue(source.contains("app_update_transition_v088"))
 
         assertFalse(source.contains("DELETE FROM sales", ignoreCase = true))
         assertFalse(source.contains("UPDATE sales", ignoreCase = true))
