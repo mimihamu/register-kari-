@@ -34,7 +34,7 @@ class V050GoogleDriveCrossAppConnectionTest {
         assertFalse(source.contains("putString(\"refresh_token\""))
         assertTrue(build.contains("versionCode = 14"))
         assertTrue(build.contains("versionName = \"0.14.0-dev.1\""))
-        assertTrue(workflow.contains("V050GoogleDriveCrossAppConnectionTest.kt"))
+        assertTrue(workflow.contains(":management-app:testDebugUnitTest"))
         assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk"))
         assertTrue(workflow.contains(":app:assembleDebug"))
         assertTrue(docs.contains("別Android OAuthクライアント"))
