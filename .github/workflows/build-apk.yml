@@ -46,12 +46,12 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.83 sources
+      - name: Verify cumulative v0.14-v0.84 sources
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 113' app/build.gradle.kts
-          grep -q 'versionName = "0.83.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 114' app/build.gradle.kts
+          grep -q 'versionName = "0.84.0-dev.1"' app/build.gradle.kts
           grep -q 'versionCode = 14' management-app/build.gradle.kts
           grep -q 'versionName = "0.14.0-dev.1"' management-app/build.gradle.kts
           grep -q 'versionCode = 7' customer-display/build.gradle.kts
@@ -98,6 +98,17 @@ jobs:
           test -s app/src/test/java/jp/co/tenposinfo/register/V081SettlementReconciliationAuditLedgerTest.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V082SettlementReconciliationAuditCsvExportTest.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V083RestoreBootstrapOrderTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V084LegacyDatabaseMigrationSafetyTest.kt
+          test -s app/src/main/java/jp/co/tenposinfo/register/LegacyDatabaseMigrationV084.kt
+          grep -q 'LegacyDatabaseMigrationV084.migrate(db, oldVersion)' app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt
+          grep -q 'ensureLegacyBaseTables(db)' app/src/main/java/jp/co/tenposinfo/register/LegacyDatabaseMigrationV084.kt
+          grep -q 'addColumnIfMissing' app/src/main/java/jp/co/tenposinfo/register/LegacyDatabaseMigrationV084.kt
+          grep -q 'PRAGMA table_info' app/src/main/java/jp/co/tenposinfo/register/LegacyDatabaseMigrationV084.kt
+          ! grep -q 'dropAllTables' app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt
+          ! grep -q 'DROP TABLE IF EXISTS sales' app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt app/src/main/java/jp/co/tenposinfo/register/LegacyDatabaseMigrationV084.kt
+          ! grep -q 'DROP TABLE IF EXISTS sale_items' app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt app/src/main/java/jp/co/tenposinfo/register/LegacyDatabaseMigrationV084.kt
+          ! grep -q 'DROP TABLE IF EXISTS held_tickets' app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt app/src/main/java/jp/co/tenposinfo/register/LegacyDatabaseMigrationV084.kt
+          ! grep -q 'DROP TABLE IF EXISTS products' app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt app/src/main/java/jp/co/tenposinfo/register/LegacyDatabaseMigrationV084.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationV078.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationAuditV079.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryReconciliationV080.kt
@@ -279,6 +290,8 @@ jobs:
           test -s docs/V0.82_RELEASE_NOTES.md
           test -s docs/V0.83_RESTORE_BOOTSTRAP_ORDER.md
           test -s docs/V0.83_RELEASE_NOTES.md
+          test -s docs/V0.84_LEGACY_DATABASE_MIGRATION_SAFETY.md
+          test -s docs/V0.84_RELEASE_NOTES.md
           grep -q '^# つぐレジ$' README.md
           grep -q 'GoogleDriveEasyConnectActivity' app/src/main/AndroidManifest.xml
           grep -q 'GoogleDriveEasyConnectActivity' management-app/src/main/AndroidManifest.xml
@@ -392,7 +405,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v0.83.0_dev1_restore_bootstrap_order_debug.apk
+          register_apk=artifacts/TSUGUREGI_v0.84.0_dev1_legacy_database_migration_safety_debug.apk
           plus_apk=artifacts/TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
@@ -411,8 +424,8 @@ jobs:
             | awk -F': ' '/SHA1:/{print "DEVELOPMENT_SIGNING_SHA1=" $2} /SHA256:/{print "DEVELOPMENT_SIGNING_SHA256=" $2}' \
             | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.83.0-dev.1
-          REGISTER_VERSION_CODE=113
+          REGISTER_VERSION_NAME=0.84.0-dev.1
+          REGISTER_VERSION_CODE=114
           REGISTER_APPLICATION_ID_DEBUG=jp.co.tenposinfo.register.dev
           MANAGEMENT_APP_VERSION_NAME=0.14.0-dev.1
           MANAGEMENT_APP_VERSION_CODE=14
@@ -560,9 +573,14 @@ jobs:
           RESTORE_BOOTSTRAP_FIRST=true
           RESTORE_BOOTSTRAP_INIT_ORDER=1000
           RESTORE_BOOTSTRAP_ORDER_REGRESSION_TEST=true
+          LEGACY_DATABASE_MIGRATION_NON_DESTRUCTIVE=true
+          LEGACY_DATABASE_MIGRATION_BUSINESS_TABLE_DROP=false
+          LEGACY_DATABASE_MIGRATION_COLUMN_GUARDS=true
+          LEGACY_DATABASE_MIGRATION_CART_ROW_PRESERVATION=true
           GOOGLE_DRIVE_DIAGNOSTIC_TOKENS_INCLUDED=false
           GOOGLE_DRIVE_DIAGNOSTIC_SALES_JSON_INCLUDED=false
           GOOGLE_DRIVE_DIAGNOSTIC_CONTENT_URI_INCLUDED=false
+          REAL_DEVICE_LEGACY_DATABASE_UPGRADE_VERIFICATION=required
           REAL_DEVICE_RESTORE_BOOTSTRAP_ORDER_VERIFICATION=required
           REAL_DEVICE_SETTLEMENT_RECONCILIATION_AUDIT_CSV_EXPORT_VERIFICATION=required
           REAL_DEVICE_SETTLEMENT_RECONCILIATION_AUDIT_LEDGER_VERIFICATION=required
@@ -598,7 +616,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.83.0-dev1-restore-bootstrap-order-apks
+          name: TSUGUREGI-v0.84.0-dev1-legacy-database-migration-safety-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
