@@ -14,6 +14,7 @@ import android.os.Bundle
 class CatalogBootstrapProvider : ContentProvider() {
     override fun onCreate(): Boolean {
         val appContext = context?.applicationContext ?: return false
+        DatabaseStartupSchemaBootstrapV085.ensureBeforeUi(appContext)
         TaxInvoiceSettingsRegistry.initialize(appContext)
         val token = runCatching {
             CatalogMasterStore(appContext).use { it.synchronizeEffectiveProducts() }
