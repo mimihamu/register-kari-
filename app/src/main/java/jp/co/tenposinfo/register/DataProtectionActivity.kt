@@ -215,6 +215,8 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                             }
                         } else Spacer(Modifier.weight(1f))
 
+                        AppUpdateDiagnosticsPanelV090(appContext)
+
                         Text("自動バックアップ", fontWeight = FontWeight.Bold, color = DpNavy)
                         Text(
                             "Z精算後: 常時有効 / 定期: ${if (autoSettings.periodicEnabled) "${autoSettings.cadence.displayName} ${autoSettings.preferredHour}時台" else "OFF"}",
