@@ -26,7 +26,7 @@ class V083RestoreBootstrapOrderTest {
     fun restoreProviderRunsBeforeEveryOtherAppBootstrapProvider() {
         val manifest = File("src/main/AndroidManifest.xml").readText()
         val providers = providerOrders(manifest)
-        val restore = providers.firstOrNull { it.name == ".DataRestoreBootstrapProvider" }
+        val restore = providers.firstOrNull { it.name == ".DataRestoreBootstrapProviderV086" }
         assertNotNull(restore)
         restore!!
 
@@ -34,37 +34,41 @@ class V083RestoreBootstrapOrderTest {
         assertTrue(others.isNotEmpty())
         assertEquals(1000, restore.initOrder)
         assertTrue(
-            "DataRestoreBootstrapProvider must have the highest initOrder because Android initializes higher initOrder first",
+            "registered restore provider must have the highest initOrder because Android initializes higher initOrder first",
             others.all { restore.initOrder > it.initOrder },
         )
     }
 
     @Test
     fun restoreBootstrapStillAppliesPendingRestoreBeforeNormalDatabaseUse() {
-        val source = File("src/main/java/jp/co/tenposinfo/register/DataProtection.kt").readText()
+        val source = File("src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt").readText()
         val manifest = File("src/main/AndroidManifest.xml").readText()
 
-        assertTrue(source.contains("class DataRestoreBootstrapProvider : ContentProvider()"))
-        assertTrue(source.contains("PendingRestoreApplier::applyIfPresent"))
+        assertTrue(source.contains("class DataRestoreBootstrapProviderV086 : ContentProvider()"))
+        assertTrue(source.contains("PendingRestoreApplierV086::applyIfPresent"))
+        assertTrue(source.contains("RestoreRollbackSafetyV086.createVerifiedSnapshot"))
+        assertTrue(source.contains("PRAGMA wal_checkpoint(FULL)"))
         assertTrue(source.contains("DataProtectionManager.atomicReplace(pending, database)"))
         assertTrue(source.contains("verifyRestoredDatabase(database)"))
-        assertTrue(source.contains("if (hadCurrent && rollback.isFile) rollback.copyTo(database, overwrite = true)"))
-        assertTrue(manifest.contains("android:name=\".DataRestoreBootstrapProvider\""))
+        assertTrue(source.contains("RestoreRollbackSafetyV086.restoreVerifiedSnapshot(rollback, database)"))
+        assertTrue(manifest.contains("android:name=\".DataRestoreBootstrapProviderV086\""))
         assertTrue(manifest.contains("android:initOrder=\"1000\""))
+        assertFalse(manifest.contains("android:name=\".DataRestoreBootstrapProvider\""))
     }
 
     @Test
     fun restoreOrderingChangeDoesNotAlterBusinessDataPolicies() {
-        val source = File("src/main/java/jp/co/tenposinfo/register/DataProtection.kt").readText()
+        val protection = File("src/main/java/jp/co/tenposinfo/register/DataProtection.kt").readText()
+        val safeRestore = File("src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt").readText()
         val root = File("..")
         val workflow = File(root, ".github/workflows/build-apk.yml").readText()
 
-        assertTrue(source.contains("DATA_RESTORE_STAGED"))
-        assertTrue(source.contains("DATA_RESTORE_APPLIED"))
-        assertTrue(source.contains("DATA_RESTORE_CANCELLED"))
-        assertFalse(source.contains("DELETE FROM sales"))
-        assertFalse(source.contains("DELETE FROM sales_journal"))
-        assertFalse(source.contains("DELETE FROM sync_outbox"))
+        assertTrue(protection.contains("DATA_RESTORE_STAGED"))
+        assertTrue(safeRestore.contains("DATA_RESTORE_APPLIED"))
+        assertTrue(protection.contains("DATA_RESTORE_CANCELLED"))
+        assertFalse(safeRestore.contains("DELETE FROM sales"))
+        assertFalse(safeRestore.contains("DELETE FROM sales_journal"))
+        assertFalse(safeRestore.contains("DELETE FROM sync_outbox"))
         assertTrue(workflow.contains("V083RestoreBootstrapOrderTest.kt"))
         assertTrue(workflow.contains(":app:testDebugUnitTest"))
     }

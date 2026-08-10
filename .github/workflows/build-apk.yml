@@ -46,12 +46,12 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.85 sources
+      - name: Verify cumulative v0.14-v0.86 sources
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 115' app/build.gradle.kts
-          grep -q 'versionName = "0.85.0-dev.1"' app/build.gradle.kts
+          grep -q 'versionCode = 116' app/build.gradle.kts
+          grep -q 'versionName = "0.86.0-dev.1"' app/build.gradle.kts
           grep -q 'versionCode = 14' management-app/build.gradle.kts
           grep -q 'versionName = "0.14.0-dev.1"' management-app/build.gradle.kts
           grep -q 'versionCode = 7' customer-display/build.gradle.kts
@@ -100,8 +100,10 @@ jobs:
           test -s app/src/test/java/jp/co/tenposinfo/register/V083RestoreBootstrapOrderTest.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V084LegacyDatabaseMigrationSafetyTest.kt
           test -s app/src/test/java/jp/co/tenposinfo/register/V085StartupSchemaBootstrapTest.kt
+          test -s app/src/test/java/jp/co/tenposinfo/register/V086RestoreRollbackSafetyTest.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/LegacyDatabaseMigrationV084.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/DatabaseStartupSchemaBootstrapV085.kt
+          test -s app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt
           grep -q 'LegacyDatabaseMigrationV084.migrate(db, oldVersion)' app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt
           grep -q 'ensureLegacyBaseTables(db)' app/src/main/java/jp/co/tenposinfo/register/LegacyDatabaseMigrationV084.kt
           grep -q 'addColumnIfMissing' app/src/main/java/jp/co/tenposinfo/register/LegacyDatabaseMigrationV084.kt
@@ -124,16 +126,25 @@ jobs:
           ! grep -q 'DROP TABLE' app/src/main/java/jp/co/tenposinfo/register/DatabaseStartupSchemaBootstrapV085.kt
           ! grep -q 'DELETE FROM' app/src/main/java/jp/co/tenposinfo/register/DatabaseStartupSchemaBootstrapV085.kt
           ! grep -q 'UPDATE sales' app/src/main/java/jp/co/tenposinfo/register/DatabaseStartupSchemaBootstrapV085.kt
+          grep -q 'android:name=".DataRestoreBootstrapProviderV086"' app/src/main/AndroidManifest.xml
+          grep -q 'android:initOrder="1000"' app/src/main/AndroidManifest.xml
+          ! grep -q 'android:name=".DataRestoreBootstrapProvider"' app/src/main/AndroidManifest.xml
+          grep -q 'PendingRestoreApplierV086::applyIfPresent' app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt
+          grep -q 'PRAGMA wal_checkpoint(FULL)' app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt
+          grep -q 'RestoreRollbackSafetyV086.createVerifiedSnapshot' app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt
+          grep -q 'RestoreRollbackSafetyV086.restoreVerifiedSnapshot' app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt
+          grep -q 'DataProtectionManager.atomicReplace(pending, database)' app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt
+          grep -q '復元中止・元DB保持' app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt
+          grep -q 'rollback-sha256=' app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt
+          ! grep -q 'DELETE FROM sales' app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt
+          ! grep -q 'DELETE FROM sales_journal' app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt
+          ! grep -q 'DELETE FROM sync_outbox' app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationV078.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationAuditV079.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryReconciliationV080.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationAuditLedgerV081.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationAuditCsvExportV082.kt
           test -s app/src/main/java/jp/co/tenposinfo/register/SettlementReconciliationAuditCsvExportActivityV082.kt
-          grep -q 'android:name=".DataRestoreBootstrapProvider"' app/src/main/AndroidManifest.xml
-          grep -q 'android:initOrder="1000"' app/src/main/AndroidManifest.xml
-          grep -q 'PendingRestoreApplier::applyIfPresent' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
-          grep -q 'DataProtectionManager.atomicReplace(pending, database)' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
           grep -q '保存値と現在DBを照合' app/src/main/java/jp/co/tenposinfo/register/SettlementHistoryScreenV027.kt
           grep -q 'SettlementReconciliationPolicyV078.compare' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
           grep -q 'store.settlementById(record.id)' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
@@ -309,6 +320,8 @@ jobs:
           test -s docs/V0.84_RELEASE_NOTES.md
           test -s docs/V0.85_STARTUP_SCHEMA_BOOTSTRAP.md
           test -s docs/V0.85_RELEASE_NOTES.md
+          test -s docs/V0.86_RESTORE_ROLLBACK_SAFETY.md
+          test -s docs/V0.86_RELEASE_NOTES.md
           grep -q '^# つぐレジ$' README.md
           grep -q 'GoogleDriveEasyConnectActivity' app/src/main/AndroidManifest.xml
           grep -q 'GoogleDriveEasyConnectActivity' management-app/src/main/AndroidManifest.xml
@@ -422,7 +435,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v0.85.0_dev1_startup_schema_bootstrap_debug.apk
+          register_apk=artifacts/TSUGUREGI_v0.86.0_dev1_restore_rollback_safety_debug.apk
           plus_apk=artifacts/TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
@@ -441,8 +454,8 @@ jobs:
             | awk -F': ' '/SHA1:/{print "DEVELOPMENT_SIGNING_SHA1=" $2} /SHA256:/{print "DEVELOPMENT_SIGNING_SHA256=" $2}' \
             | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.85.0-dev.1
-          REGISTER_VERSION_CODE=115
+          REGISTER_VERSION_NAME=0.86.0-dev.1
+          REGISTER_VERSION_CODE=116
           REGISTER_APPLICATION_ID_DEBUG=jp.co.tenposinfo.register.dev
           MANAGEMENT_APP_VERSION_NAME=0.14.0-dev.1
           MANAGEMENT_APP_VERSION_CODE=14
@@ -602,9 +615,15 @@ jobs:
           STARTUP_SCHEMA_BOOTSTRAP_RECEIPT_REPRINT=true
           STARTUP_SCHEMA_BOOTSTRAP_FAIL_CLOSED=true
           STARTUP_SCHEMA_BOOTSTRAP_BUSINESS_DATA_DELETE=false
+          RESTORE_ROLLBACK_WAL_CHECKPOINT=true
+          RESTORE_ROLLBACK_VERIFIED_SNAPSHOT=true
+          RESTORE_ROLLBACK_PRE_REPLACEMENT_FAIL_CLOSED=true
+          RESTORE_ROLLBACK_SHA256_VERIFIED=true
+          RESTORE_ROLLBACK_AUTO_DELETE=false
           GOOGLE_DRIVE_DIAGNOSTIC_TOKENS_INCLUDED=false
           GOOGLE_DRIVE_DIAGNOSTIC_SALES_JSON_INCLUDED=false
           GOOGLE_DRIVE_DIAGNOSTIC_CONTENT_URI_INCLUDED=false
+          REAL_DEVICE_RESTORE_ROLLBACK_SAFETY_VERIFICATION=required
           REAL_DEVICE_STARTUP_SCHEMA_BOOTSTRAP_VERIFICATION=required
           REAL_DEVICE_LEGACY_DATABASE_UPGRADE_VERIFICATION=required
           REAL_DEVICE_RESTORE_BOOTSTRAP_ORDER_VERIFICATION=required
@@ -642,7 +661,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.85.0-dev1-startup-schema-bootstrap-apks
+          name: TSUGUREGI-v0.86.0-dev1-restore-rollback-safety-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
