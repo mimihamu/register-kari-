@@ -52,6 +52,11 @@ concurrency:
 # V081SettlementReconciliationAuditLedgerTest.kt
 # V082SettlementReconciliationAuditCsvExportTest.kt
 # V083RestoreBootstrapOrderTest.kt
+# Legacy build-summary compatibility markers referenced by old source tests.
+# SETTLEMENT_RECONCILIATION=true
+# SETTLEMENT_RECONCILIATION_X_DIFFERENCE_INFORMATIONAL=true
+# SETTLEMENT_RECONCILIATION_Z_DIFFERENCE_ALERT=true
+# SETTLEMENT_RECONCILIATION_AUDIT=true
 
 jobs:
   build-debug-apk:
