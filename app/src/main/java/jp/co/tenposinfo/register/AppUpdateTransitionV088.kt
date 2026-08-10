@@ -7,6 +7,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
 import android.net.Uri
+import android.util.Log
 
 internal data class AppReleaseIdentityV088(
     val versionName: String,
@@ -70,9 +71,12 @@ internal object AppUpdateTransitionPolicyV088 {
  * - DBへ書く前にSharedPreferencesへ同期commitし、途中停止時に未完了証跡を残す。
  * - Provider onCreateだけでは成功扱いにしない。
  * - MainActivityがRESUMEDした時だけ既存operation_auditへ結果を追記し、成功版を確定する。
+ * - 監査DB処理はUIスレッドで実行しない。
+ * - 台帳記録失敗だけでは販売画面をクラッシュさせず、未完了証跡を次回へ残す。
  * - sales / sale_items / sale_payments等の業務データは更新・削除しない。
  */
 internal object AppUpdateTransitionV088 {
+    private const val TAG = "TsuguRegiUpdateV088"
     private const val PREFS = "app_update_transition_v088"
 
     private const val KEY_LAST_SUCCESS_NAME = "last_success_name"
@@ -112,7 +116,10 @@ internal object AppUpdateTransitionV088 {
         val editor = prefs.edit()
         writePending(editor, pending)
         decision.displacedIncomplete?.let { writeIncomplete(editor, it) }
-        check(editor.commit()) { "更新起動の未完了証跡を保存できません" }
+        if (!editor.commit()) {
+            Log.e(TAG, "更新起動の未完了証跡を保存できません")
+            return
+        }
 
         val application = appContext as? Application ?: return
         registerCompletionCallback(application)
@@ -131,7 +138,13 @@ internal object AppUpdateTransitionV088 {
                 if (activity !is MainActivity) return
                 application.unregisterActivityLifecycleCallbacks(this)
                 synchronized(this@AppUpdateTransitionV088) { callbackRegistered = false }
-                completeAfterMainResumed(application)
+                Thread(
+                    {
+                        runCatching { completeAfterMainResumed(application) }
+                            .onFailure { Log.e(TAG, "更新起動の成功記録に失敗。未完了証跡を保持します", it) }
+                    },
+                    "tsuguregi-update-v088",
+                ).start()
             }
 
             override fun onActivityCreated(activity: Activity, state: android.os.Bundle?) = Unit
@@ -152,13 +165,11 @@ internal object AppUpdateTransitionV088 {
         if (pending.target != current) return
 
         val incomplete = readIncomplete(prefs)
-        val userVersion = runCatching {
-            RegisterDatabase(appContext).use { helper ->
-                helper.readableDatabase.rawQuery("PRAGMA user_version", null).use { cursor ->
-                    if (cursor.moveToFirst()) cursor.getInt(0) else 0
-                }
+        val userVersion = RegisterDatabase(appContext).use { helper ->
+            helper.readableDatabase.rawQuery("PRAGMA user_version", null).use { cursor ->
+                if (cursor.moveToFirst()) cursor.getInt(0) else 0
             }
-        }.getOrDefault(-1)
+        }
 
         // 監査追記が失敗した場合は成功確定しない。次回起動で未完了として再検知する。
         AdminSettingsStore(appContext).use { audit ->
