@@ -62,7 +62,7 @@ class V055GoogleDriveOperationsDashboardTest {
         assertFalse(runtime.contains("DELETE FROM import_rejections"))
         assertFalse(source.contains("forceReimport = true"))
         assertTrue(docs.contains("隔離履歴は削除しない"))
-        assertTrue(workflow.contains("V055GoogleDriveOperationsDashboardTest.kt"))
+        assertTrue(workflow.contains(":management-app:testDebugUnitTest"))
         assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk"))
     }
 }
