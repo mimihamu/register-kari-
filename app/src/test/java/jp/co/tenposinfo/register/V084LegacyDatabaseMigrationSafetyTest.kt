@@ -36,11 +36,11 @@ class V084LegacyDatabaseMigrationSafetyTest {
         assertTrue(migration.contains("addColumnIfMissing"))
         assertTrue(migration.contains("hasColumn(db, \"cart_items\", \"line_no\")"))
         assertTrue(migration.contains("hasColumn(db, table, column)"))
-        assertTrue(migration.contains("PRAGMA table_info($table)"))
-        assertTrue(migration.contains("ALTER TABLE cart_items RENAME TO $CART_MIGRATION_TEMP"))
+        assertTrue(migration.contains("PRAGMA table_info(\$table)"))
+        assertTrue(migration.contains("ALTER TABLE cart_items RENAME TO \$CART_MIGRATION_TEMP"))
         assertTrue(migration.contains("SELECT rowid, product_id, product_name, unit_price, tax_category"))
-        assertTrue(migration.contains("FROM $CART_MIGRATION_TEMP"))
-        assertTrue(migration.contains("DROP TABLE $CART_MIGRATION_TEMP"))
+        assertTrue(migration.contains("FROM \$CART_MIGRATION_TEMP"))
+        assertTrue(migration.contains("DROP TABLE \$CART_MIGRATION_TEMP"))
 
         // DROPを許すのは、コピー成功後の一時移行テーブルだけ。
         val dropLines = migration.lineSequence().filter { it.contains("DROP TABLE") }.toList()
