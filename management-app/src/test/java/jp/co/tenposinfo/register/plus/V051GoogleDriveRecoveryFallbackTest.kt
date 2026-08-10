@@ -74,7 +74,7 @@ class V051GoogleDriveRecoveryFallbackTest {
         assertTrue(registerBuild.contains("compileSdk = 36"))
         assertTrue(plusBuild.contains("versionCode = 14"))
         assertTrue(plusBuild.contains("versionName = \"0.14.0-dev.1\""))
-        assertTrue(workflow.contains("V051GoogleDriveRecoveryFallbackTest.kt"))
+        assertTrue(workflow.contains(":management-app:testDebugUnitTest"))
         assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk"))
         assertTrue(docs.contains("Drive API自動同期を停止"))
         assertFalse(recovery.contains("putString(\"access_token\""))
