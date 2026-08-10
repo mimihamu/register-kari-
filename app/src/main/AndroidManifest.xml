@@ -16,7 +16,7 @@
         android:usesCleartextTraffic="true">
 
         <provider
-            android:name=".DataRestoreBootstrapProvider"
+            android:name=".DataRestoreBootstrapProviderV086"
             android:authorities="${applicationId}.data-restore-bootstrap"
             android:exported="false"
             android:initOrder="1000" />
