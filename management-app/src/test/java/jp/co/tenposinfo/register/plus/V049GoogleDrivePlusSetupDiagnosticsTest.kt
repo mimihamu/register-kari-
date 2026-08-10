@@ -49,7 +49,7 @@ class V049GoogleDrivePlusSetupDiagnosticsTest {
         assertTrue(manifest.contains("android:screenOrientation=\"sensorPortrait\""))
         assertTrue(build.contains("versionCode = 14"))
         assertTrue(build.contains("versionName = \"0.14.0-dev.1\""))
-        assertTrue(workflow.contains("V049GoogleDrivePlusSetupDiagnosticsTest.kt"))
+        assertTrue(workflow.contains(":management-app:testDebugUnitTest"))
         assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk"))
         assertTrue(workflow.contains(":app:assembleDebug"))
         assertTrue(docs.contains("つぐレジ＋用のAndroid OAuthクライアント"))

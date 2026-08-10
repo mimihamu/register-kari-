@@ -49,7 +49,7 @@ class V044GoogleDriveAccountTest {
         assertTrue(docs.contains("jp.co.tenposinfo.register.plus"))
         assertTrue(notes.contains("0.6.0-dev.1"))
         assertTrue(notes.contains("Drive API接続確認"))
-        assertTrue(workflow.contains("management-app/src/test/java/jp/co/tenposinfo/register/plus/V044GoogleDriveAccountTest.kt"))
+        assertTrue(workflow.contains(":management-app:testDebugUnitTest"))
         assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk"))
     }
 }

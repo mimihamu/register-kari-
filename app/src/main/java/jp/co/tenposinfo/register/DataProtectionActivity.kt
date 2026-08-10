@@ -89,6 +89,7 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
     var autoSettings by remember { mutableStateOf(autoSettingsStore.load()) }
     var selected by remember { mutableStateOf<String?>(null) }
     var pending by remember { mutableStateOf(manager.pendingRestoreStatus()) }
+    var rollbackInventory by remember { mutableStateOf(RestoreRollbackInventoryV086(0, null)) }
     var pin by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("診断を実行してください") }
     var busy by remember { mutableStateOf(false) }
@@ -103,6 +104,7 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
             autoStatus = autoStatusStore.load()
             autoSettings = autoSettingsStore.load()
             pending = manager.pendingRestoreStatus()
+            rollbackInventory = withContext(Dispatchers.IO) { RestoreRollbackSafetyV086.inventory(appContext) }
             busy = false
         }
     }
@@ -146,6 +148,7 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
     LaunchedEffect(Unit) {
         backups = withContext(Dispatchers.IO) { manager.listBackups() }
         metadataByFile = withContext(Dispatchers.IO) { metadataStore.readAll() }
+        rollbackInventory = withContext(Dispatchers.IO) { RestoreRollbackSafetyV086.inventory(appContext) }
         autoStatus = autoStatusStore.load()
         autoSettings = autoSettingsStore.load()
         report = withContext(Dispatchers.IO) { manager.diagnose() }
@@ -157,6 +160,9 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
             if (event == Lifecycle.Event.ON_RESUME) {
                 autoStatus = autoStatusStore.load()
                 autoSettings = autoSettingsStore.load()
+                scope.launch {
+                    rollbackInventory = withContext(Dispatchers.IO) { RestoreRollbackSafetyV086.inventory(appContext) }
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -288,6 +294,36 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                         }
                         if (pending.staged) Text("復元予約済み: ${pending.backupFileName}\nアプリを完全終了して再起動すると適用します。", color = DpDanger, fontWeight = FontWeight.Bold)
                         pending.lastResult?.let { Text(it, color = Color.DarkGray, fontSize = 13.sp) }
+                        Spacer(Modifier.height(8.dp))
+                        Text("復元前ロールバック", fontWeight = FontWeight.Bold, color = DpNavy)
+                        when {
+                            rollbackInventory.count == 0 -> Text("保管なし。まだ復元を適用していない端末では正常です。", color = Color.DarkGray, fontSize = 13.sp)
+                            rollbackInventory.latestError != null -> {
+                                Text("保管 ${rollbackInventory.count}件 / 最新ロールバック検証NG", color = DpDanger, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text(rollbackInventory.latestError.orEmpty(), color = DpDanger, fontSize = 12.sp)
+                            }
+                            rollbackInventory.latest != null -> {
+                                val latestRollback = rollbackInventory.latest!!
+                                Text("保管 ${rollbackInventory.count}件 / 最新ロールバック検証OK", color = DpGreen, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("${latestRollback.file.name} / ${formatTime(latestRollback.createdAt)}", fontSize = 12.sp)
+                                Text("${latestRollback.sizeBytes} bytes / SHA-256 ${latestRollback.sha256.take(16)}…", fontSize = 12.sp)
+                                Text("ロールバックDBは自動削除しません。", color = Color.DarkGray, fontSize = 12.sp)
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                runTask {
+                                    val inventory = withContext(Dispatchers.IO) { RestoreRollbackSafetyV086.inventory(appContext) }
+                                    rollbackInventory = inventory
+                                    when {
+                                        inventory.count == 0 -> "復元前ロールバックは保管されていません"
+                                        inventory.latestError != null -> "ロールバック検証エラー: ${inventory.latestError}"
+                                        else -> "最新ロールバックを再検証しました: ${inventory.latest?.file?.name}"
+                                    }
+                                }
+                            },
+                            enabled = !busy,
+                        ) { Text("ロールバック再検証") }
                         Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(
