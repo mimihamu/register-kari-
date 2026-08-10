@@ -22,7 +22,7 @@
             android:initOrder="1000" />
 
         <provider
-            android:name=".AppUpdateTransitionBootstrapProviderV088"
+            android:name=".AppUpdateTransitionBootstrapProviderV089"
             android:authorities="${applicationId}.app-update-transition-bootstrap"
             android:exported="false"
             android:initOrder="900" />
