@@ -22,6 +22,12 @@
             android:initOrder="1000" />
 
         <provider
+            android:name=".AppUpdateTransitionBootstrapProviderV088"
+            android:authorities="${applicationId}.app-update-transition-bootstrap"
+            android:exported="false"
+            android:initOrder="900" />
+
+        <provider
             android:name=".CatalogBootstrapProvider"
             android:authorities="${applicationId}.catalog-bootstrap"
             android:exported="false"
