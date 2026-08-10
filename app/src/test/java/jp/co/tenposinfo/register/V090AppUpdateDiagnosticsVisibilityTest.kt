@@ -86,16 +86,23 @@ class V090AppUpdateDiagnosticsVisibilityTest {
             root,
             "app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt",
         ).readText()
-        assertTrue(screen.contains("var updateDiagnostics by remember"))
-        assertTrue(screen.contains("AppUpdateDiagnosticsV090.read(appContext)"))
-        assertTrue(screen.contains("アプリ更新状態"))
-        assertTrue(screen.contains("起動成功確定済み"))
-        assertTrue(screen.contains("DB健全性NG・更新成功未確定"))
-        assertTrue(screen.contains("起動成功確認中"))
-        assertTrue(screen.contains("最終成功版"))
-        assertTrue(screen.contains("起動試行"))
-        assertFalse(screen.contains("更新状態を削除"))
-        assertFalse(screen.contains("更新成功を強制"))
+        val panel = File(
+            root,
+            "app/src/main/java/jp/co/tenposinfo/register/AppUpdateDiagnosticsPanelV090.kt",
+        ).readText()
+        assertTrue(screen.contains("AppUpdateDiagnosticsPanelV090(appContext)"))
+        assertTrue(panel.contains("var diagnostics by remember"))
+        assertTrue(panel.contains("AppUpdateDiagnosticsV090.read(appContext)"))
+        assertTrue(panel.contains("Lifecycle.Event.ON_RESUME"))
+        assertTrue(panel.contains("アプリ更新状態"))
+        assertTrue(panel.contains("起動成功確定済み"))
+        assertTrue(panel.contains("DB健全性NG・更新成功未確定"))
+        assertTrue(panel.contains("起動成功確認中"))
+        assertTrue(panel.contains("最終成功版"))
+        assertTrue(panel.contains("起動試行"))
+        assertFalse(panel.contains("更新状態を削除"))
+        assertFalse(panel.contains("更新成功を強制"))
+        assertFalse(panel.contains(".edit()"))
     }
 
     @Test
