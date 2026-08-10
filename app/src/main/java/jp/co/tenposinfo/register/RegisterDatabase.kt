@@ -34,25 +34,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion < 2) {
-            dropAllTables(db)
-            onCreate(db)
-            return
-        }
-        if (oldVersion < 3) {
-            db.execSQL("ALTER TABLE cart_items ADD COLUMN discount_amount INTEGER NOT NULL DEFAULT 0")
-            db.execSQL("ALTER TABLE cart_items ADD COLUMN note TEXT NOT NULL DEFAULT ''")
-            db.execSQL("ALTER TABLE held_ticket_items ADD COLUMN discount_amount INTEGER NOT NULL DEFAULT 0")
-            db.execSQL("ALTER TABLE held_ticket_items ADD COLUMN note TEXT NOT NULL DEFAULT ''")
-            db.execSQL("ALTER TABLE sale_items ADD COLUMN discount_amount INTEGER NOT NULL DEFAULT 0")
-            db.execSQL("ALTER TABLE sale_items ADD COLUMN note TEXT NOT NULL DEFAULT ''")
-            createSalePaymentsTable(db)
-        }
-        if (oldVersion < 4) {
-            migrateCartToLineNumber(db)
-            db.execSQL("ALTER TABLE sales ADD COLUMN print_count INTEGER NOT NULL DEFAULT 0")
-            createPrintJobsTable(db)
-        }
+        LegacyDatabaseMigrationV084.migrate(db, oldVersion)
     }
 
     override fun onConfigure(db: SQLiteDatabase) {
@@ -787,17 +769,6 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             """.trimIndent(),
         )
         db.execSQL("DROP TABLE cart_items_v3")
-    }
-
-    private fun dropAllTables(db: SQLiteDatabase) {
-        db.execSQL("DROP TABLE IF EXISTS print_jobs")
-        db.execSQL("DROP TABLE IF EXISTS sale_payments")
-        db.execSQL("DROP TABLE IF EXISTS sale_items")
-        db.execSQL("DROP TABLE IF EXISTS sales")
-        db.execSQL("DROP TABLE IF EXISTS held_ticket_items")
-        db.execSQL("DROP TABLE IF EXISTS held_tickets")
-        db.execSQL("DROP TABLE IF EXISTS cart_items")
-        db.execSQL("DROP TABLE IF EXISTS products")
     }
 
     private fun insertSeedProducts(db: SQLiteDatabase) {
