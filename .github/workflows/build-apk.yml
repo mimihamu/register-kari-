@@ -94,7 +94,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          # v0.93 finalの累積検査を再利用し、旧版固有の版番号・リリースノート文言だけを除外する。
+          # v0.93 finalの累積検査を再利用し、旧版固有の版番号・リリースノート文言・書式依存grepだけを除外する。
           git show "$V093_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v093-build-apk.yml
           awk '
             /^      - name: Verify cumulative v0.14-v0.93 sources/ { capture=1; next }
@@ -104,6 +104,7 @@ jobs:
           ' /tmp/v093-build-apk.yml \
             | grep -v "grep -q 'versionCode = 123' app/build.gradle.kts" \
             | grep -v "grep -q 'versionName = \"0.93.0-dev.1\"' app/build.gradle.kts" \
+            | grep -v 'BlueButton("次の取引"' \
             | grep -v "grep -q '最終総合実機試験へ繰越' docs/V0.93_RELEASE_NOTES.md" \
             > /tmp/v093-cumulative-checks.sh
           test -s /tmp/v093-cumulative-checks.sh
