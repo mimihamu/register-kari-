@@ -90,7 +90,7 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.91 sources
+      - name: Verify cumulative v0.14-v0.92 sources
         shell: bash
         env:
           V090_FINAL_HEAD: 2ca9a2faa263f469788eaad903309f9e3ddcd545
@@ -100,7 +100,7 @@ jobs:
 
           # v0.90の確定済み累積検査をそのまま再実行する。
           # YAMLの実ステップ行だけを境界にし、内側AWKの文字列では終了しない。
-          # v0.90当時の現行版番号だけはv0.91で置き換えるため除外する。
+          # v0.90当時の現行版番号だけは現在版で置き換えるため除外する。
           git show "$V090_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v090-build-apk.yml
           awk '
             /^      - name: Verify cumulative v0.14-v0.90 sources/ { capture=1; next }
@@ -114,9 +114,7 @@ jobs:
           test -s /tmp/v090-cumulative-checks.sh
           bash -euxo pipefail /tmp/v090-cumulative-checks.sh
 
-          # v0.91 release identity + SCR-767 responsive acceptance.
-          grep -q 'versionCode = 121' app/build.gradle.kts
-          grep -q 'versionName = "0.91.0-dev.1"' app/build.gradle.kts
+          # v0.91 SCR-767 responsive acceptance remains cumulative.
           test -s app/src/test/java/jp/co/tenposinfo/register/V091DataProtectionResponsiveTest.kt
           test -s docs/V0.91_DATA_PROTECTION_RESPONSIVE.md
           test -s docs/V0.91_RELEASE_NOTES.md
@@ -137,6 +135,29 @@ jobs:
           ! grep -qi 'DELETE FROM sales' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
           ! grep -qi 'UPDATE sales' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
           ! grep -qi 'DROP TABLE' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+
+          # v0.92 release identity + built APK integrity gate source acceptance.
+          grep -q 'versionCode = 122' app/build.gradle.kts
+          grep -q 'versionName = "0.92.0-dev.1"' app/build.gradle.kts
+          test -s ci/verify-apk-release-integrity.sh
+          test -s app/src/test/java/jp/co/tenposinfo/register/V092ApkReleaseIntegrityGateTest.kt
+          test -s docs/V0.92_APK_RELEASE_INTEGRITY_GATE.md
+          test -s docs/V0.92_RELEASE_NOTES.md
+          grep -q 'jp.co.tenposinfo.register.dev' ci/verify-apk-release-integrity.sh
+          grep -q 'jp.co.tenposinfo.register.plus.dev' ci/verify-apk-release-integrity.sh
+          grep -q 'jp.co.tenposinfo.register.cd.dev' ci/verify-apk-release-integrity.sh
+          grep -q 'apkanalyzer' ci/verify-apk-release-integrity.sh
+          grep -q 'manifest_value min-sdk' ci/verify-apk-release-integrity.sh
+          grep -q 'manifest_value target-sdk' ci/verify-apk-release-integrity.sh
+          grep -q 'aapt2' ci/verify-apk-release-integrity.sh
+          grep -q 'apksigner' ci/verify-apk-release-integrity.sh
+          grep -q 'unzip -tq' ci/verify-apk-release-integrity.sh
+          grep -q 'APK Signature Scheme v2' ci/verify-apk-release-integrity.sh
+          grep -q '752c4f56263c8887ada96184d25fad200aff0e84a80c67eda60c7607da3ac9e4' ci/verify-apk-release-integrity.sh
+          grep -q '最終総合実機試験へ繰越' docs/V0.92_RELEASE_NOTES.md
+          ! grep -qi 'DELETE FROM' ci/verify-apk-release-integrity.sh
+          ! grep -qi 'UPDATE sales' ci/verify-apk-release-integrity.sh
+          ! grep -qi 'DROP TABLE' ci/verify-apk-release-integrity.sh
 
       - name: Verify launcher and orientation configuration
         shell: bash
@@ -161,6 +182,18 @@ jobs:
       - name: Build debug APKs
         run: gradle --no-daemon :app:assembleDebug :customer-display:assembleDebug :management-app:assembleDebug
 
+      - name: Verify built APK release identity and integrity
+        shell: bash
+        env:
+          POS_VERSION_CODE: 122
+          POS_VERSION_NAME: 0.92.0-dev.1
+          BUILD_TOOLS_VERSION: 36.0.0
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          bash ci/verify-apk-release-integrity.sh
+          cat artifacts/apk-integrity-summary.txt
+
       - name: Prepare named APKs and SHA-256
         shell: bash
         env:
@@ -168,7 +201,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v0.91.0_dev1_data_protection_responsive_debug.apk
+          register_apk=artifacts/TSUGUREGI_v0.92.0_dev1_apk_release_integrity_gate_debug.apk
           plus_apk=artifacts/TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
@@ -199,14 +232,22 @@ jobs:
             >> artifacts/build-summary.txt
 
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.91.0-dev.1
-          REGISTER_VERSION_CODE=121
+          REGISTER_VERSION_NAME=0.92.0-dev.1
+          REGISTER_VERSION_CODE=122
           DATA_PROTECTION_RESPONSIVE=true
           DATA_PROTECTION_COMPACT_INDEPENDENT_SCROLL=true
           DATA_PROTECTION_SHARED_RESPONSIVE_METRICS=true
           DATA_PROTECTION_RESTORE_CONTROLS_PRESERVED=true
+          APK_RELEASE_INTEGRITY_GATE=true
+          APK_RELEASE_IDENTITY_FROM_BUILT_APK=true
+          APK_RELEASE_MANIFEST_APKANALYZER=true
+          APK_RELEASE_ZIP_INTEGRITY=true
+          APK_RELEASE_SIGNATURE_V2_REQUIRED=true
+          APK_RELEASE_SIGNING_CERT_SHA256_REQUIRED=true
+          APK_RELEASE_SINGLE_LAUNCHER_REQUIRED=true
           REAL_DEVICE_VERIFICATION_BATCH_MODE=final-integrated-acceptance
           REAL_DEVICE_DATA_PROTECTION_RESPONSIVE_VERIFICATION=deferred-final-acceptance
+          REAL_DEVICE_APK_INSTALL_VERIFICATION=deferred-final-acceptance
           EOF
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
@@ -214,7 +255,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.91.0-dev1-data-protection-responsive-apks
+          name: TSUGUREGI-v0.92.0-dev1-apk-release-integrity-gate-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
