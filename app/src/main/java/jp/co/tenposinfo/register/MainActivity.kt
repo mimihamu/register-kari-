@@ -2242,115 +2242,220 @@ private fun SalesHistoryScreen(
     val visibleSales = SalesHistoryLookupPolicy.filter(sales, criteria)
     val directSaleId = SalesHistoryLookupPolicy.parseDirectSaleId(directSaleIdText)
     val amountRangeInvalid = criteria.minAmount != null && criteria.maxAmount != null && criteria.minAmount > criteria.maxAmount
+    val historyResponsive = rememberRegisterResponsiveMetrics()
+    val historyFilterScroll = rememberScrollState()
+    val filterModifier = Modifier
+        .fillMaxWidth()
+        .then(
+  if (historyResponsive.isCompact) {
+      Modifier.heightIn(max = 190.dp).verticalScroll(historyFilterScroll)
+  } else {
+      Modifier
+  },
+        )
+        .padding(
+  horizontal = historyResponsive.screenPaddingDp.dp,
+  vertical = if (historyResponsive.isCompact) 5.dp else 8.dp,
+        )
 
     Column(Modifier.fillMaxSize()) {
         Header("SCR-400", "売上一覧・検索")
-        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it.take(80) },
-                    label = { Text("売上No.・担当・支払") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-                OutlinedTextField(
-                    value = minAmountText,
-                    onValueChange = { minAmountText = it.filter(Char::isDigit).take(12) },
-                    label = { Text("金額以上") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.width(150.dp),
-                )
-                OutlinedTextField(
-                    value = maxAmountText,
-                    onValueChange = { maxAmountText = it.filter(Char::isDigit).take(12) },
-                    label = { Text("金額以下") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.width(150.dp),
-                )
-                OutlinedButton(
-                    onClick = {
-                        query = ""
-                        minAmountText = ""
-                        maxAmountText = ""
-                    },
-                ) { Text("条件クリア") }
-                OutlinedButton(onClick = onQueue) { Text("統合印刷キュー") }
-            }
-            Row(
-                Modifier.fillMaxWidth().padding(top = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    "表示 ${visibleSales.size}件 / 読込 ${sales.size}件（直近最大${SalesHistoryLookupPolicy.RECENT_LOAD_LIMIT}件）",
-                    fontWeight = FontWeight.Bold,
-                    color = Navy,
-                    modifier = Modifier.weight(1f),
-                )
-                OutlinedTextField(
-                    value = directSaleIdText,
-                    onValueChange = {
-                        directSaleIdText = it.filter { ch -> ch.isDigit() || ch == '#' }.take(20)
-                        lookupMessage = null
-                    },
-                    label = { Text("売上No.直接表示") },
-                    singleLine = true,
-                    modifier = Modifier.width(210.dp),
-                )
-                Button(
-                    onClick = {
-                        val saleId = directSaleId ?: return@Button
-                        if (!onDirectLookup(saleId)) {
-                            lookupMessage = "売上No.$saleId は見つかりません"
-                        }
-                    },
-                    enabled = directSaleId != null,
-                    colors = ButtonDefaults.buttonColors(containerColor = Blue),
-                ) { Text("表示") }
-            }
-            if (amountRangeInvalid) {
-                Text("金額範囲は『以上 ≤ 以下』になるよう入力してください", color = Danger, fontWeight = FontWeight.Bold)
-            } else if (!lookupMessage.isNullOrBlank()) {
-                Text(lookupMessage.orEmpty(), color = Danger, fontWeight = FontWeight.Bold)
-            }
+        Column(filterModifier) {
+  if (historyResponsive.isCompact) {
+      Row(
+          Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
+          OutlinedTextField(
+              value = query,
+              onValueChange = { query = it.take(80) },
+              label = { Text("売上No.・担当・支払") },
+              singleLine = true,
+              modifier = Modifier.weight(1f),
+          )
+          OutlinedButton(
+              onClick = {
+                  query = ""
+                  minAmountText = ""
+                  maxAmountText = ""
+              },
+              modifier = Modifier.width(96.dp).height(48.dp),
+          ) { Text("クリア", fontSize = 12.sp, maxLines = 1) }
+          OutlinedButton(
+              onClick = onQueue,
+              modifier = Modifier.width(132.dp).height(48.dp),
+          ) { Text("印刷キュー", fontSize = 12.sp, maxLines = 1) }
+      }
+      Spacer(Modifier.height(5.dp))
+      Row(
+          Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
+          OutlinedTextField(
+              value = minAmountText,
+              onValueChange = { minAmountText = it.filter(Char::isDigit).take(12) },
+              label = { Text("金額以上") },
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+              singleLine = true,
+              modifier = Modifier.weight(1f),
+          )
+          OutlinedTextField(
+              value = maxAmountText,
+              onValueChange = { maxAmountText = it.filter(Char::isDigit).take(12) },
+              label = { Text("金額以下") },
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+              singleLine = true,
+              modifier = Modifier.weight(1f),
+          )
+      }
+  } else {
+      Row(
+          Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+          OutlinedTextField(
+              value = query,
+              onValueChange = { query = it.take(80) },
+              label = { Text("売上No.・担当・支払") },
+              singleLine = true,
+              modifier = Modifier.weight(1f),
+          )
+          OutlinedTextField(
+              value = minAmountText,
+              onValueChange = { minAmountText = it.filter(Char::isDigit).take(12) },
+              label = { Text("金額以上") },
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+              singleLine = true,
+              modifier = Modifier.width(150.dp),
+          )
+          OutlinedTextField(
+              value = maxAmountText,
+              onValueChange = { maxAmountText = it.filter(Char::isDigit).take(12) },
+              label = { Text("金額以下") },
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+              singleLine = true,
+              modifier = Modifier.width(150.dp),
+          )
+          OutlinedButton(
+              onClick = {
+                  query = ""
+                  minAmountText = ""
+                  maxAmountText = ""
+              },
+          ) { Text("条件クリア") }
+          OutlinedButton(onClick = onQueue) { Text("統合印刷キュー") }
+      }
+  }
+  Row(
+      Modifier.fillMaxWidth().padding(top = if (historyResponsive.isCompact) 5.dp else 6.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(if (historyResponsive.isCompact) 6.dp else 8.dp),
+  ) {
+      Text(
+          "表示 ${visibleSales.size}件 / 読込 ${sales.size}件（最大${SalesHistoryLookupPolicy.RECENT_LOAD_LIMIT}件）",
+          fontWeight = FontWeight.Bold,
+          color = Navy,
+          fontSize = if (historyResponsive.isCompact) 12.sp else 14.sp,
+          maxLines = 1,
+          modifier = Modifier.weight(1f),
+      )
+      OutlinedTextField(
+          value = directSaleIdText,
+          onValueChange = {
+              directSaleIdText = it.filter { ch -> ch.isDigit() || ch == '#' }.take(20)
+              lookupMessage = null
+          },
+          label = { Text("売上No.直接表示") },
+          singleLine = true,
+          modifier = if (historyResponsive.isCompact) Modifier.width(175.dp) else Modifier.width(210.dp),
+      )
+      Button(
+          onClick = {
+              val saleId = directSaleId ?: return@Button
+              if (!onDirectLookup(saleId)) {
+                  lookupMessage = "売上No.$saleId は見つかりません"
+              }
+          },
+          enabled = directSaleId != null,
+          modifier = if (historyResponsive.isCompact) Modifier.height(48.dp) else Modifier,
+          colors = ButtonDefaults.buttonColors(containerColor = Blue),
+      ) { Text("表示", fontSize = if (historyResponsive.isCompact) 12.sp else 14.sp, maxLines = 1) }
+  }
+  if (amountRangeInvalid) {
+      Text(
+          "金額範囲は『以上 ≤ 以下』になるよう入力してください",
+          color = Danger,
+          fontWeight = FontWeight.Bold,
+          fontSize = if (historyResponsive.isCompact) 12.sp else 14.sp,
+      )
+  } else if (!lookupMessage.isNullOrBlank()) {
+      Text(
+          lookupMessage.orEmpty(),
+          color = Danger,
+          fontWeight = FontWeight.Bold,
+          fontSize = if (historyResponsive.isCompact) 12.sp else 14.sp,
+      )
+  }
         }
-        CardPanel(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp)) {
-            when {
-                sales.isEmpty() -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("売上はまだありません", color = Color.Gray, fontSize = 22.sp)
-                    }
-                }
-                visibleSales.isEmpty() -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("条件に一致する売上はありません", color = Color.Gray, fontSize = 22.sp)
-                    }
-                }
-                else -> {
-                    LazyColumn {
-                        itemsIndexed(visibleSales) { _, sale ->
-                            Row(
-                                Modifier.fillMaxWidth().clickable { onOpen(sale) }.padding(vertical = 11.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text("#${sale.id}", Modifier.width(80.dp), fontWeight = FontWeight.Bold)
-                                Text(formatDate(sale.createdAt), Modifier.width(165.dp))
-                                Text(sale.operatorName, Modifier.width(100.dp))
-                                Text(sale.paymentLabel, Modifier.weight(1f))
-                                Text("印字 ${sale.printCount}回", Modifier.width(85.dp), color = Color.Gray)
-                                Text(yen(sale.totalAmount), Modifier.width(130.dp), textAlign = TextAlign.End, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-            }
+        CardPanel(
+  Modifier
+      .weight(1f)
+      .fillMaxWidth()
+      .padding(horizontal = historyResponsive.screenPaddingDp.dp),
+        ) {
+  when {
+      sales.isEmpty() -> {
+          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+              Text("売上はまだありません", color = Color.Gray, fontSize = if (historyResponsive.isCompact) 19.sp else 22.sp)
+          }
+      }
+      visibleSales.isEmpty() -> {
+          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+              Text("条件に一致する売上はありません", color = Color.Gray, fontSize = if (historyResponsive.isCompact) 19.sp else 22.sp)
+          }
+      }
+      else -> {
+          LazyColumn {
+              itemsIndexed(visibleSales) { _, sale ->
+                  if (historyResponsive.isCompact) {
+                      Column(
+                          Modifier
+                              .fillMaxWidth()
+                              .clickable { onOpen(sale) }
+                              .padding(vertical = 7.dp),
+                      ) {
+                          Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                              Text("#${sale.id}", fontWeight = FontWeight.Bold, color = Navy, maxLines = 1)
+                              Spacer(Modifier.width(8.dp))
+                              Text(formatDate(sale.createdAt), modifier = Modifier.weight(1f), fontSize = 12.sp, maxLines = 1)
+                              Text(yen(sale.totalAmount), fontWeight = FontWeight.Bold, maxLines = 1)
+                          }
+                          Spacer(Modifier.height(2.dp))
+                          Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                              Text(sale.operatorName, modifier = Modifier.weight(0.8f), fontSize = 11.sp, maxLines = 1)
+                              Text(sale.paymentLabel, modifier = Modifier.weight(1f), fontSize = 11.sp, maxLines = 1)
+                              Text("印字 ${sale.printCount}回", color = Color.Gray, fontSize = 11.sp, maxLines = 1)
+                          }
+                      }
+                  } else {
+                      Row(
+                          Modifier.fillMaxWidth().clickable { onOpen(sale) }.padding(vertical = 11.dp),
+                          verticalAlignment = Alignment.CenterVertically,
+                      ) {
+                          Text("#${sale.id}", Modifier.width(80.dp), fontWeight = FontWeight.Bold)
+                          Text(formatDate(sale.createdAt), Modifier.width(165.dp))
+                          Text(sale.operatorName, Modifier.width(100.dp))
+                          Text(sale.paymentLabel, Modifier.weight(1f))
+                          Text("印字 ${sale.printCount}回", Modifier.width(85.dp), color = Color.Gray)
+                          Text(yen(sale.totalAmount), Modifier.width(130.dp), textAlign = TextAlign.End, fontWeight = FontWeight.Bold)
+                      }
+                  }
+              }
+          }
+      }
+  }
         }
         BottomActions(onBack, "販売へ戻る", onBack)
     }
@@ -2365,51 +2470,94 @@ private fun SaleDetailScreen(
     onReverse: () -> Unit,
     onBack: () -> Unit,
 ) {
+    val detailResponsive = rememberRegisterResponsiveMetrics()
+    val detailSummaryScroll = rememberScrollState()
     Column(Modifier.fillMaxSize()) {
         Header("SCR-410", "売上詳細")
-        Row(Modifier.weight(1f).padding(18.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-            CardPanel(Modifier.weight(1f).fillMaxHeight()) {
-                Text("売上 #${detail.summary.id}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Navy)
-                Text("${formatDate(detail.summary.createdAt)} / 担当 ${detail.summary.operatorName}", color = Color.Gray)
-                Spacer(Modifier.height(12.dp))
-                LazyColumn(Modifier.weight(1f)) {
-                    itemsIndexed(detail.items) { _, item ->
-                        Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                            AmountRow("${item.product.name} ${item.product.taxSymbol} × ${item.quantity}", yen(item.baseAmount))
-                            if (item.discountAmount > 0) Text("値引 -${yen(item.discountAmount)}", color = Danger, fontSize = 12.sp)
-                            if (item.note.isNotBlank()) Text("メモ ${item.note}", color = Color.Gray, fontSize = 12.sp)
-                        }
-                    }
-                }
-            }
-            CardPanel(Modifier.width(380.dp).fillMaxHeight()) {
-                AmountRow("税抜", yen(detail.taxSummary.netAmount))
-                AmountRow("消費税", yen(detail.taxSummary.taxAmount))
-                AmountRow("合計", yen(detail.taxSummary.grossAmount), emphasized = true)
-                Spacer(Modifier.height(10.dp))
-                detail.taxSummary.buckets.forEach { bucket ->
-                    val label = if (bucket.taxable) "${bucket.ratePercent}%対象" else "非課税"
-                    AmountRow(label, "${yen(bucket.grossAmount)} / 税 ${yen(bucket.taxAmount)}")
-                }
-                Spacer(Modifier.height(14.dp))
-                Text("支払", fontWeight = FontWeight.Bold)
-                detail.payments.forEach { payment ->
-                    AmountRow(payment.method.displayName, yen(payment.receivedAmount))
-                }
-                AmountRow("お釣り", yen(detail.summary.changeAmount))
-                Spacer(Modifier.weight(1f))
-                BlueButton("レシート／再印字", onReceipt, Modifier.fillMaxWidth().height(52.dp))
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick = onVoucher, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                    Text("この売上で領収書発行")
-                }
-                if (canReverse) {
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedButton(onClick = onReverse, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                        Text("この売上を返品・取消", color = Danger, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
+        Row(
+  Modifier.weight(1f).padding(detailResponsive.screenPaddingDp.dp),
+  horizontalArrangement = Arrangement.spacedBy(detailResponsive.panelGapDp.dp),
+        ) {
+  CardPanel(
+      Modifier
+          .weight(if (detailResponsive.isCompact) 1.1f else 1f)
+          .fillMaxHeight(),
+  ) {
+      Text(
+          "売上 #${detail.summary.id}",
+          fontSize = if (detailResponsive.isCompact) 20.sp else 24.sp,
+          fontWeight = FontWeight.Bold,
+          color = Navy,
+          maxLines = 1,
+      )
+      Text(
+          "${formatDate(detail.summary.createdAt)} / 担当 ${detail.summary.operatorName}",
+          color = Color.Gray,
+          fontSize = if (detailResponsive.isCompact) 12.sp else 14.sp,
+          maxLines = 1,
+      )
+      Spacer(Modifier.height(if (detailResponsive.isCompact) 7.dp else 12.dp))
+      LazyColumn(Modifier.weight(1f)) {
+          itemsIndexed(detail.items) { _, item ->
+              Column(Modifier.fillMaxWidth().padding(vertical = if (detailResponsive.isCompact) 4.dp else 6.dp)) {
+                  AmountRow("${item.product.name} ${item.product.taxSymbol} × ${item.quantity}", yen(item.baseAmount))
+                  if (item.discountAmount > 0) Text("値引 -${yen(item.discountAmount)}", color = Danger, fontSize = 12.sp)
+                  if (item.note.isNotBlank()) Text("メモ ${item.note}", color = Color.Gray, fontSize = 12.sp)
+              }
+          }
+      }
+  }
+  val detailSummaryModifier = if (detailResponsive.isCompact) {
+      Modifier.weight(0.9f)
+  } else {
+      Modifier.width(380.dp)
+  }
+  CardPanel(detailSummaryModifier.fillMaxHeight()) {
+      Column(Modifier.weight(1f).verticalScroll(detailSummaryScroll)) {
+          AmountRow("税抜", yen(detail.taxSummary.netAmount))
+          AmountRow("消費税", yen(detail.taxSummary.taxAmount))
+          AmountRow("合計", yen(detail.taxSummary.grossAmount), emphasized = true)
+          Spacer(Modifier.height(if (detailResponsive.isCompact) 6.dp else 10.dp))
+          detail.taxSummary.buckets.forEach { bucket ->
+              val label = if (bucket.taxable) "${bucket.ratePercent}%対象" else "非課税"
+              AmountRow(label, "${yen(bucket.grossAmount)} / 税 ${yen(bucket.taxAmount)}")
+          }
+          Spacer(Modifier.height(if (detailResponsive.isCompact) 8.dp else 14.dp))
+          Text("支払", fontWeight = FontWeight.Bold, fontSize = if (detailResponsive.isCompact) 14.sp else 16.sp)
+          detail.payments.forEach { payment ->
+              AmountRow(payment.method.displayName, yen(payment.receivedAmount))
+          }
+          AmountRow("お釣り", yen(detail.summary.changeAmount))
+      }
+      Spacer(Modifier.height(detailResponsive.panelGapDp.dp))
+      BlueButton(
+          "レシート／再印字",
+          onReceipt,
+          Modifier.fillMaxWidth().height(if (detailResponsive.isCompact) 46.dp else 52.dp),
+      )
+      Spacer(Modifier.height(if (detailResponsive.isCompact) 5.dp else 8.dp))
+      OutlinedButton(
+          onClick = onVoucher,
+          modifier = Modifier.fillMaxWidth().height(if (detailResponsive.isCompact) 46.dp else 52.dp),
+      ) {
+          Text("この売上で領収書発行", fontSize = if (detailResponsive.isCompact) 12.sp else 14.sp, maxLines = 1)
+      }
+      if (canReverse) {
+          Spacer(Modifier.height(if (detailResponsive.isCompact) 5.dp else 8.dp))
+          OutlinedButton(
+              onClick = onReverse,
+              modifier = Modifier.fillMaxWidth().height(if (detailResponsive.isCompact) 46.dp else 52.dp),
+          ) {
+              Text(
+                  "この売上を返品・取消",
+                  color = Danger,
+                  fontWeight = FontWeight.Bold,
+                  fontSize = if (detailResponsive.isCompact) 12.sp else 14.sp,
+                  maxLines = 1,
+              )
+          }
+      }
+  }
         }
         BottomActions(onBack, "一覧へ戻る", onBack)
     }
