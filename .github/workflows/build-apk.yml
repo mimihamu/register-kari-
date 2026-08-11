@@ -146,6 +146,9 @@ jobs:
           grep -q 'jp.co.tenposinfo.register.dev' ci/verify-apk-release-integrity.sh
           grep -q 'jp.co.tenposinfo.register.plus.dev' ci/verify-apk-release-integrity.sh
           grep -q 'jp.co.tenposinfo.register.cd.dev' ci/verify-apk-release-integrity.sh
+          grep -q 'apkanalyzer' ci/verify-apk-release-integrity.sh
+          grep -q 'manifest_value min-sdk' ci/verify-apk-release-integrity.sh
+          grep -q 'manifest_value target-sdk' ci/verify-apk-release-integrity.sh
           grep -q 'aapt2' ci/verify-apk-release-integrity.sh
           grep -q 'apksigner' ci/verify-apk-release-integrity.sh
           grep -q 'unzip -tq' ci/verify-apk-release-integrity.sh
@@ -237,6 +240,7 @@ jobs:
           DATA_PROTECTION_RESTORE_CONTROLS_PRESERVED=true
           APK_RELEASE_INTEGRITY_GATE=true
           APK_RELEASE_IDENTITY_FROM_BUILT_APK=true
+          APK_RELEASE_MANIFEST_APKANALYZER=true
           APK_RELEASE_ZIP_INTEGRITY=true
           APK_RELEASE_SIGNATURE_V2_REQUIRED=true
           APK_RELEASE_SIGNING_CERT_SHA256_REQUIRED=true
