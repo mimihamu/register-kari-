@@ -1,0 +1,67 @@
+name: v0.93 guarded complete-screen scope fix
+
+on:
+  push:
+    branches:
+      - develop/v0.93
+
+permissions:
+  contents: write
+
+jobs:
+  fix-complete-scope:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v0.93
+          fetch-depth: 0
+
+      - name: Apply exact scope fix
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt')
+          text = path.read_text(encoding='utf-8')
+          old = '''    val bodyModifier = Modifier
+        .weight(1f)
+        .fillMaxWidth()
+        .padding(if (responsive.isCompact) responsive.screenPaddingDp.dp else 24.dp)
+        .then(
+            if (responsive.isCompact) Modifier.verticalScroll(compactScroll) else Modifier,
+        )
+    Column(Modifier.fillMaxSize()) {
+        Header("SCR-320", "会計完了")
+        Column(
+            bodyModifier,
+'''
+          new = '''    val bodyModifier = Modifier
+        .fillMaxWidth()
+        .padding(if (responsive.isCompact) responsive.screenPaddingDp.dp else 24.dp)
+        .then(
+            if (responsive.isCompact) Modifier.verticalScroll(compactScroll) else Modifier,
+        )
+    Column(Modifier.fillMaxSize()) {
+        Header("SCR-320", "会計完了")
+        Column(
+            Modifier.weight(1f).then(bodyModifier),
+'''
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'expected exact CompleteScreen modifier block once, found {count}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          git diff --check
+          test "$(git diff --name-only)" = "app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt"
+          grep -q 'Modifier.weight(1f).then(bodyModifier)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+
+      - name: Commit scope fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          git commit -m "fix(v0.93): keep completion weight inside ColumnScope"
+          git push origin HEAD:develop/v0.93
