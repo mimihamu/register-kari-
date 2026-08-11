@@ -85,7 +85,7 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.95 sources
+      - name: Verify cumulative v0.14-v0.96 sources
         shell: bash
         env:
           V090_FINAL_HEAD: 2ca9a2faa263f469788eaad903309f9e3ddcd545
@@ -176,8 +176,6 @@ jobs:
           ! grep -Fqi 'DROP TABLE' docs/V0.94_STARTUP_DIAGNOSTIC_RESPONSIVE.md
 
           # v0.95 sales edit responsive acceptance. Detailed layout is enforced by JUnit.
-          grep -Fq 'versionCode = 125' app/build.gradle.kts
-          grep -Fq 'versionName = "0.95.0-dev.1"' app/build.gradle.kts
           test -s app/src/test/java/jp/co/tenposinfo/register/V095SalesEditResponsiveTest.kt
           test -s docs/V0.95_SALES_EDIT_RESPONSIVE.md
           test -s docs/V0.95_RELEASE_NOTES.md
@@ -195,6 +193,25 @@ jobs:
           ! grep -Fqi 'DELETE FROM' docs/V0.95_SALES_EDIT_RESPONSIVE.md
           ! grep -Fqi 'UPDATE sales' docs/V0.95_SALES_EDIT_RESPONSIVE.md
           ! grep -Fqi 'DROP TABLE' docs/V0.95_SALES_EDIT_RESPONSIVE.md
+
+          # v0.96 held-ticket responsive acceptance. Detailed layout is enforced by JUnit.
+          grep -Fq 'versionCode = 126' app/build.gradle.kts
+          grep -Fq 'versionName = "0.96.0-dev.1"' app/build.gradle.kts
+          test -s app/src/test/java/jp/co/tenposinfo/register/V096HeldTicketResponsiveTest.kt
+          test -s docs/V0.96_HELD_TICKET_RESPONSIVE.md
+          test -s docs/V0.96_RELEASE_NOTES.md
+          grep -Fq 'val ticketResponsive = rememberRegisterResponsiveMetrics()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'val splitSummaryScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'Modifier.weight(1.25f).height(42.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'Modifier.weight(0.8f)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'Modifier.width(350.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'Modifier.width(if (responsive.isCompact) 108.dp else 130.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'onMerge(source, ticket)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'HeldTicketOperationsUiPolicy.validateSplit(items, rawQuantities, newName)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq '最終総合実機試験へ繰越' docs/V0.96_RELEASE_NOTES.md
+          ! grep -Fqi 'DELETE FROM' docs/V0.96_HELD_TICKET_RESPONSIVE.md
+          ! grep -Fqi 'UPDATE sales' docs/V0.96_HELD_TICKET_RESPONSIVE.md
+          ! grep -Fqi 'DROP TABLE' docs/V0.96_HELD_TICKET_RESPONSIVE.md
 
       - name: Verify launcher and orientation configuration
         shell: bash
@@ -222,8 +239,8 @@ jobs:
       - name: Verify built APK release identity and integrity
         shell: bash
         env:
-          POS_VERSION_CODE: 125
-          POS_VERSION_NAME: 0.95.0-dev.1
+          POS_VERSION_CODE: 126
+          POS_VERSION_NAME: 0.96.0-dev.1
           BUILD_TOOLS_VERSION: 36.0.0
         run: |
           set -euo pipefail
@@ -238,7 +255,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v0.95.0_dev1_sales_edit_responsive_debug.apk
+          register_apk=artifacts/TSUGUREGI_v0.96.0_dev1_held_ticket_responsive_debug.apk
           plus_apk=artifacts/TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
@@ -269,8 +286,8 @@ jobs:
             >> artifacts/build-summary.txt
 
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.95.0-dev.1
-          REGISTER_VERSION_CODE=125
+          REGISTER_VERSION_NAME=0.96.0-dev.1
+          REGISTER_VERSION_CODE=126
           DATA_PROTECTION_RESPONSIVE=true
           APK_RELEASE_INTEGRITY_GATE=true
           MAIN_FLOW_RESPONSIVE=true
@@ -286,6 +303,13 @@ jobs:
           REAL_DEVICE_VERIFICATION_BATCH_MODE=final-integrated-acceptance
           REAL_DEVICE_STARTUP_DIAGNOSTIC_VERIFICATION=deferred-final-acceptance
           REAL_DEVICE_SALES_EDIT_VERIFICATION=deferred-final-acceptance
+          HELD_TICKET_RESPONSIVE=true
+          TICKET_LIST_RESPONSIVE=true
+          TICKET_SPLIT_RESPONSIVE=true
+          HELD_TICKET_COMPACT_ACTION_ROWS=true
+          HELD_TICKET_SPLIT_SCROLL_FALLBACK=true
+          HELD_TICKET_NORMAL_LAYOUT_PRESERVED=true
+          REAL_DEVICE_HELD_TICKET_VERIFICATION=deferred-final-acceptance
           REAL_DEVICE_APK_INSTALL_VERIFICATION=deferred-final-acceptance
           EOF
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
@@ -294,7 +318,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.95.0-dev1-sales-edit-responsive-apks
+          name: TSUGUREGI-v0.96.0-dev1-held-ticket-responsive-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
