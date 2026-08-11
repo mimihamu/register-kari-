@@ -16,7 +16,7 @@ class V100JapanesePrinterEncodingTest {
     @Test
     fun epsonJapanProfileSelectsShiftJisKanjiSystemAfterInitialize() {
         assertEquals("Shift_JIS", PrinterProfile.EPSON_TM_JAPAN.charsetName)
-        assertEquals(1, PrinterProfile.EPSON_TM_JAPAN.kanjiCodeSystem)
+        assertEquals(1, PrinterProfile.EPSON_TM_JAPAN.kanjiCodeSystem!!)
         assertArrayEquals(
             byteArrayOf(
                 0x1B, 0x40,
@@ -104,6 +104,23 @@ class V100JapanesePrinterEncodingTest {
         assertEquals(0, initializeIndex)
         assertTrue(kanjiSystemIndex > initializeIndex)
         assertTrue(japaneseIndex > kanjiSystemIndex)
+    }
+
+    @Test
+    fun existingSoakTestProvidesOneSheetJapanesePhysicalRetestPath() {
+        assertEquals(1, PrinterSoakTestPolicy.MIN_PRINTS)
+        val text = PrinterSoakTestPolicy.pageText(
+            sequence = 1,
+            total = 1,
+            configuration = epson,
+            startedAt = 0L,
+        )
+        assertTrue(text.contains("つぐレジ 連続印刷試験"))
+        assertTrue(text.contains("あいうえお アイウエオ"))
+        assertTrue(text.contains("日本語印字・通信・連続動作確認"))
+        val payload = PrinterCommandEncoder.encodeText(text, epson, appendCut = false)
+        assertTrue(payload.containsBytes(byteArrayOf(0x1C, 0x43, 0x01)))
+        assertTrue(payload.containsBytes(byteArrayOf(0x93.toByte(), 0xFA.toByte()))) // 日
     }
 }
 
