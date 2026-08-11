@@ -746,25 +746,47 @@ private fun LoginScreen(
 ) {
     var selectedId by remember(operators) { mutableStateOf(operators.firstOrNull()?.id) }
     var pin by remember { mutableStateOf("") }
+    val responsive = rememberRegisterResponsiveMetrics()
+    val operatorScroll = rememberScrollState()
+    val pinScroll = rememberScrollState()
+    val outerPaddingDp = if (responsive.isCompact) responsive.screenPaddingDp else 28
+    val panelGapDp = if (responsive.isCompact) responsive.panelGapDp else 28
+    val operatorGapDp = if (responsive.isCompact) 6 else 16
+    val operatorButtonHeightDp = if (responsive.isCompact) 58 else 82
+    val pinPanelWidthDp = if (responsive.isCompact) 260 else 390
     Column(modifier = Modifier.fillMaxSize()) {
         Header("SCR-010", "担当者選択／ログイン")
         Row(
-            modifier = Modifier.fillMaxSize().padding(28.dp),
-            horizontalArrangement = Arrangement.spacedBy(28.dp),
+            modifier = Modifier.fillMaxSize().padding(outerPaddingDp.dp),
+            horizontalArrangement = Arrangement.spacedBy(panelGapDp.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("担当者を選択", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Navy)
-                Spacer(Modifier.height(18.dp))
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .verticalScroll(operatorScroll),
+            ) {
+                Text(
+                    "担当者を選択",
+                    fontSize = if (responsive.isCompact) 19.sp else 25.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Navy,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.height(if (responsive.isCompact) 8.dp else 18.dp))
                 if (operators.isEmpty()) {
                     Text("有効な担当者が登録されていません", color = Danger, fontWeight = FontWeight.Bold)
                 }
                 for (rowStart in operators.indices step 3) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(operatorGapDp.dp),
+                    ) {
                         for (index in rowStart until minOf(rowStart + 3, operators.size)) {
                             val operator = operators[index]
                             OutlinedButton(
                                 onClick = { selectedId = operator.id; pin = "" },
-                                modifier = Modifier.weight(1f).height(82.dp),
+                                modifier = Modifier.weight(1f).height(operatorButtonHeightDp.dp),
                                 border = BorderStroke(
                                     if (selectedId == operator.id) 3.dp else 1.dp,
                                     if (selectedId == operator.id) Danger else Border,
@@ -772,33 +794,61 @@ private fun LoginScreen(
                             ) {
                                 Text(
                                     if (operator.name == operator.role.displayName) operator.name else "${operator.name}\n${operator.role.displayName}",
-                                    fontSize = 19.sp,
+                                    fontSize = if (responsive.isCompact) 14.sp else 19.sp,
                                     textAlign = TextAlign.Center,
                                     fontWeight = FontWeight.Bold,
                                     color = Navy,
+                                    maxLines = 2,
                                 )
                             }
                         }
                         for (unused in minOf(rowStart + 3, operators.size) until rowStart + 3) Spacer(Modifier.weight(1f))
                     }
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(operatorGapDp.dp))
                 }
             }
-            CardPanel(Modifier.width(390.dp).fillMaxHeight()) {
-                Text("PIN入力", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Navy)
-                Spacer(Modifier.height(12.dp))
-                ValueBox(if (pin.isEmpty()) "PINを入力" else "●".repeat(pin.length))
-                if (message != null) {
-                    Spacer(Modifier.height(10.dp))
-                    Text(message, color = Danger, fontWeight = FontWeight.Bold)
+            CardPanel(Modifier.width(pinPanelWidthDp.dp).fillMaxHeight()) {
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (responsive.isCompact) Modifier.verticalScroll(pinScroll) else Modifier,
+                        ),
+                ) {
+                    Text(
+                        "PIN入力",
+                        fontSize = if (responsive.isCompact) 18.sp else 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Navy,
+                        maxLines = 1,
+                    )
+                    Spacer(Modifier.height(if (responsive.isCompact) 6.dp else 12.dp))
+                    ValueBox(
+                        if (pin.isEmpty()) "PINを入力" else "●".repeat(pin.length),
+                        compact = responsive.isCompact,
+                        heightDp = if (responsive.isCompact) RegisterLayoutPolicy.COMPACT_VALUE_HEIGHT_DP else null,
+                    )
+                    if (message != null) {
+                        Spacer(Modifier.height(if (responsive.isCompact) 6.dp else 10.dp))
+                        Text(
+                            message,
+                            color = Danger,
+                            fontSize = if (responsive.isCompact) 12.sp else 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                        )
+                    }
+                    Spacer(Modifier.height(if (responsive.isCompact) 6.dp else 14.dp))
+                    NumberPad(
+                        onDigit = { if (pin.length < 8) pin += it },
+                        onClear = { pin = "" },
+                        bottomActionLabel = "ログイン",
+                        onBottomAction = { selectedId?.let { onLogin(it, pin) } },
+                        compact = responsive.isCompact,
+                        buttonHeightDp = if (responsive.isCompact) RegisterLayoutPolicy.COMPACT_KEY_HEIGHT_DP else null,
+                        rowGapDp = if (responsive.isCompact) RegisterLayoutPolicy.COMPACT_KEY_GAP_DP else null,
+                    )
                 }
-                Spacer(Modifier.height(14.dp))
-                NumberPad(
-                    onDigit = { if (pin.length < 8) pin += it },
-                    onClear = { pin = "" },
-                    bottomActionLabel = "ログイン",
-                    onBottomAction = { selectedId?.let { onLogin(it, pin) } },
-                )
             }
         }
     }
@@ -1742,28 +1792,95 @@ private fun CompleteScreen(
     onQueue: () -> Unit,
     onNext: () -> Unit,
 ) {
+    val responsive = rememberRegisterResponsiveMetrics()
+    val compactScroll = rememberScrollState()
+    val bodyModifier = Modifier
+        .weight(1f)
+        .fillMaxWidth()
+        .padding(if (responsive.isCompact) responsive.screenPaddingDp.dp else 24.dp)
+        .then(
+            if (responsive.isCompact) Modifier.verticalScroll(compactScroll) else Modifier,
+        )
     Column(Modifier.fillMaxSize()) {
         Header("SCR-320", "会計完了")
         Column(
-            Modifier.weight(1f).fillMaxWidth().padding(24.dp),
+            bodyModifier,
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+            verticalArrangement = if (responsive.isCompact) Arrangement.Top else Arrangement.Center,
         ) {
-            Text("会計が完了しました", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Navy)
-            Spacer(Modifier.height(20.dp))
-            CardPanel(Modifier.width(620.dp).height(200.dp)) {
+            Text(
+                "会計が完了しました",
+                fontSize = if (responsive.isCompact) 22.sp else 32.sp,
+                fontWeight = FontWeight.Bold,
+                color = Navy,
+                maxLines = 1,
+            )
+            Spacer(Modifier.height(if (responsive.isCompact) 8.dp else 20.dp))
+            CardPanel(
+                if (responsive.isCompact) {
+                    Modifier.fillMaxWidth().height(190.dp)
+                } else {
+                    Modifier.width(620.dp).height(200.dp)
+                },
+            ) {
                 AmountRow("売上番号", detail?.summary?.id?.toString() ?: "-")
                 AmountRow("合計", yen(detail?.summary?.totalAmount ?: 0), emphasized = true)
                 AmountRow("お釣り", yen(detail?.summary?.changeAmount ?: 0), emphasized = true)
-                Text("売上・支払・印刷キューを同一トランザクションで保存済み", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                Text(
+                    "売上・支払・印刷キューを同一トランザクションで保存済み",
+                    color = Color(0xFF2E7D32),
+                    fontSize = if (responsive.isCompact) 12.sp else 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                )
             }
-            Spacer(Modifier.height(20.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = onReceipt, enabled = detail != null) { Text("レシート確認") }
-                OutlinedButton(onClick = onVoucher, enabled = detail != null) { Text("領収書発行") }
-                OutlinedButton(onClick = onQueue) { Text("統合印刷キュー") }
-                OutlinedButton(onClick = onHistory) { Text("売上一覧") }
-                BlueButton("次の取引", onNext, Modifier.width(180.dp).height(54.dp))
+            Spacer(Modifier.height(if (responsive.isCompact) 8.dp else 20.dp))
+            if (responsive.isCompact) {
+                Column(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
+                    ) {
+                        OutlinedButton(
+                            onClick = onReceipt,
+                            enabled = detail != null,
+                            modifier = Modifier.weight(1f).height(42.dp),
+                        ) { Text("レシート", maxLines = 1) }
+                        OutlinedButton(
+                            onClick = onVoucher,
+                            enabled = detail != null,
+                            modifier = Modifier.weight(1f).height(42.dp),
+                        ) { Text("領収書", maxLines = 1) }
+                    }
+                    Spacer(Modifier.height(responsive.panelGapDp.dp))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
+                    ) {
+                        OutlinedButton(
+                            onClick = onQueue,
+                            modifier = Modifier.weight(1f).height(42.dp),
+                        ) { Text("印刷キュー", maxLines = 1) }
+                        OutlinedButton(
+                            onClick = onHistory,
+                            modifier = Modifier.weight(1f).height(42.dp),
+                        ) { Text("売上一覧", maxLines = 1) }
+                    }
+                    Spacer(Modifier.height(responsive.panelGapDp.dp))
+                    BlueButton(
+                        "次の取引",
+                        onNext,
+                        Modifier.fillMaxWidth().height(50.dp),
+                    )
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(onClick = onReceipt, enabled = detail != null) { Text("レシート確認") }
+                    OutlinedButton(onClick = onVoucher, enabled = detail != null) { Text("領収書発行") }
+                    OutlinedButton(onClick = onQueue) { Text("統合印刷キュー") }
+                    OutlinedButton(onClick = onHistory) { Text("売上一覧") }
+                    BlueButton("次の取引", onNext, Modifier.width(180.dp).height(54.dp))
+                }
             }
         }
     }
