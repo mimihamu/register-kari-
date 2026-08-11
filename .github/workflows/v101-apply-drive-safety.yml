@@ -5,7 +5,7 @@ on:
     branches:
       - develop/v1.01
     paths:
-      - ci/v101-apply-trigger-2.txt
+      - ci/v101-apply-trigger-3.txt
 
 permissions:
   contents: write
@@ -24,15 +24,44 @@ jobs:
         run: |
           set -euo pipefail
           git show fdc760999295977bd9979f9737e7a44380dbcaac:.github/workflows/v101-apply-drive-safety.yml > /tmp/v101-source.yml
-          awk '
-            /python3 <<'\''PY'\''/ { capture=1; next }
-            capture && /^          PY$/ { exit }
-            capture {
-              if (substr($0, 1, 10) == "          ") print substr($0, 11)
-              else print
-            }
-          ' /tmp/v101-source.yml > /tmp/v101_apply.py
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('/tmp/v101-source.yml').read_text(encoding='utf-8').splitlines()
+          captured = []
+          active = False
+          delimiter = None
+          for line in source:
+              if not active:
+                  if "python3 <<'PY'" in line:
+                      active = True
+                  continue
+              if line == '          PY':
+                  break
+              captured.append(line)
+
+          restored = []
+          triple = None
+          for raw in captured:
+              if triple is None:
+                  line = raw[10:] if raw.startswith('          ') else raw
+                  restored.append(line)
+                  for candidate in ("'''", '\"\"\"'):
+                      if line.count(candidate) % 2 == 1:
+                          triple = candidate
+                          break
+              else:
+                  if raw.count(triple) % 2 == 1:
+                      line = raw[10:] if raw.startswith('          ') else raw
+                      restored.append(line)
+                      triple = None
+                  else:
+                      restored.append(raw)
+
+          target = Path('/tmp/v101_apply.py')
+          target.write_text('\n'.join(restored) + '\n', encoding='utf-8')
+          PY
           test -s /tmp/v101_apply.py
+          python3 -m py_compile /tmp/v101_apply.py
           python3 /tmp/v101_apply.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
