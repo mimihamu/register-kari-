@@ -88,44 +88,94 @@ jobs:
       - name: Verify cumulative v0.14-v0.94 sources
         shell: bash
         env:
-          V093_FINAL_HEAD: 5c8d0d95175bb7dd6cf8b70f52b31162c415a5e7
           V090_FINAL_HEAD: 2ca9a2faa263f469788eaad903309f9e3ddcd545
           V086_FINAL_HEAD: aef6c08d75d057b67662e9612238edba15fc6489
         run: |
           set -euo pipefail
 
-          # v0.93 finalの累積検査を再利用し、旧版固有の版番号・リリースノート文言・書式依存grepだけを除外する。
-          git show "$V093_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v093-build-apk.yml
+          # v0.90までの確定済み累積検査を再実行する。
+          git show "$V090_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v090-build-apk.yml
           awk '
-            /^      - name: Verify cumulative v0.14-v0.93 sources/ { capture=1; next }
+            /^      - name: Verify cumulative v0.14-v0.90 sources/ { capture=1; next }
             capture && /^      - name: Verify launcher and orientation configuration/ { exit }
             capture && /^        run: \|/ { inrun=1; next }
             capture && inrun { sub(/^          /, ""); print }
-          ' /tmp/v093-build-apk.yml \
-            | grep -v "grep -q 'versionCode = 123' app/build.gradle.kts" \
-            | grep -v "grep -q 'versionName = \"0.93.0-dev.1\"' app/build.gradle.kts" \
-            | grep -v 'BlueButton("次の取引"' \
-            | grep -v "grep -q '最終総合実機試験へ繰越' docs/V0.93_RELEASE_NOTES.md" \
-            > /tmp/v093-cumulative-checks.sh
-          test -s /tmp/v093-cumulative-checks.sh
-          bash -euxo pipefail /tmp/v093-cumulative-checks.sh
+          ' /tmp/v090-build-apk.yml \
+            | grep -v "grep -q 'versionCode = 120' app/build.gradle.kts" \
+            | grep -v "grep -q 'versionName = \"0.90.0-dev.1\"' app/build.gradle.kts" \
+            > /tmp/v090-cumulative-checks.sh
+          test -s /tmp/v090-cumulative-checks.sh
+          bash -euxo pipefail /tmp/v090-cumulative-checks.sh
+
+          # v0.91 data-protection responsive acceptance remains cumulative.
+          test -s app/src/test/java/jp/co/tenposinfo/register/V091DataProtectionResponsiveTest.kt
+          test -s docs/V0.91_DATA_PROTECTION_RESPONSIVE.md
+          test -s docs/V0.91_RELEASE_NOTES.md
+          grep -Fq 'val responsive = rememberRegisterResponsiveMetrics()' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -Fq 'val leftScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -Fq 'val rightScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -Fq 'Modifier.verticalScroll(leftScroll)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -Fq 'Modifier.verticalScroll(rightScroll)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -Fq 'Modifier.width(if (responsive.isCompact) 360.dp else 470.dp)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -Fq 'heightIn(min = 80.dp, max = 150.dp)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -Fq 'AppUpdateDiagnosticsPanelV090(appContext)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -Fq '復元・取消用 責任者PIN' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -Fq '次回起動時に復元' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -Fq '予約取消' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          ! grep -Fqi 'DELETE FROM sales' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          ! grep -Fqi 'UPDATE sales' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          ! grep -Fqi 'DROP TABLE' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+
+          # v0.92 built APK integrity gate remains cumulative.
+          test -s ci/verify-apk-release-integrity.sh
+          test -s app/src/test/java/jp/co/tenposinfo/register/V092ApkReleaseIntegrityGateTest.kt
+          test -s docs/V0.92_APK_RELEASE_INTEGRITY_GATE.md
+          test -s docs/V0.92_RELEASE_NOTES.md
+          grep -Fq 'jp.co.tenposinfo.register.dev' ci/verify-apk-release-integrity.sh
+          grep -Fq 'jp.co.tenposinfo.register.plus.dev' ci/verify-apk-release-integrity.sh
+          grep -Fq 'jp.co.tenposinfo.register.cd.dev' ci/verify-apk-release-integrity.sh
+          grep -Fq 'apkanalyzer' ci/verify-apk-release-integrity.sh
+          grep -Fq 'manifest_value min-sdk' ci/verify-apk-release-integrity.sh
+          grep -Fq 'manifest_value target-sdk' ci/verify-apk-release-integrity.sh
+          grep -Fq 'aapt2' ci/verify-apk-release-integrity.sh
+          grep -Fq 'apksigner' ci/verify-apk-release-integrity.sh
+          grep -Fq 'unzip -tq' ci/verify-apk-release-integrity.sh
+          grep -Fq 'APK Signature Scheme v2' ci/verify-apk-release-integrity.sh
+          grep -Fq '752c4f56263c8887ada96184d25fad200aff0e84a80c67eda60c7607da3ac9e4' ci/verify-apk-release-integrity.sh
+          ! grep -Fqi 'DELETE FROM' ci/verify-apk-release-integrity.sh
+          ! grep -Fqi 'UPDATE sales' ci/verify-apk-release-integrity.sh
+          ! grep -Fqi 'DROP TABLE' ci/verify-apk-release-integrity.sh
+
+          # v0.93 login + complete responsive acceptance. Detailed layout is enforced by JUnit.
+          test -s app/src/test/java/jp/co/tenposinfo/register/V093MainFlowResponsiveTest.kt
+          test -s docs/V0.93_MAIN_FLOW_RESPONSIVE.md
+          test -s docs/V0.93_RELEASE_NOTES.md
+          grep -Fq 'val operatorScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'val pinScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'val pinPanelWidthDp = if (responsive.isCompact) 260 else 390' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'val compactScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'SaleReceiptNavigation.intent(context, saleId)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'ReceiptVoucherNavigation.issuanceIntent(context, lastSaleId)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'onHistory = { screen = AppScreen.SALES_HISTORY }' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'onQueue = { openUnifiedPrintQueue() }' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'onNext = { screen = AppScreen.SALES }' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
 
           # v0.94 startup diagnostic responsive acceptance.
-          grep -q 'versionCode = 124' app/build.gradle.kts
-          grep -q 'versionName = "0.94.0-dev.1"' app/build.gradle.kts
+          grep -Fq 'versionCode = 124' app/build.gradle.kts
+          grep -Fq 'versionName = "0.94.0-dev.1"' app/build.gradle.kts
           test -s app/src/test/java/jp/co/tenposinfo/register/V094StartupDiagnosticResponsiveTest.kt
           test -s docs/V0.94_STARTUP_DIAGNOSTIC_RESPONSIVE.md
           test -s docs/V0.94_RELEASE_NOTES.md
-          grep -q 'val diagnosticScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'Modifier.verticalScroll(diagnosticScroll)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'Modifier.fillMaxWidth().heightIn(min = 250.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'Modifier.width(700.dp).height(RegisterLayoutPolicy.DIAGNOSTIC_CARD_HEIGHT_DP.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'Modifier.width(340.dp).height(54.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q 'onComplete = { screen = AppScreen.LOGIN }' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -q '最終総合実機試験へ繰越' docs/V0.94_RELEASE_NOTES.md
-          ! grep -qi 'DELETE FROM' docs/V0.94_STARTUP_DIAGNOSTIC_RESPONSIVE.md
-          ! grep -qi 'UPDATE sales' docs/V0.94_STARTUP_DIAGNOSTIC_RESPONSIVE.md
-          ! grep -qi 'DROP TABLE' docs/V0.94_STARTUP_DIAGNOSTIC_RESPONSIVE.md
+          grep -Fq 'val diagnosticScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq '.verticalScroll(diagnosticScroll)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'Modifier.fillMaxWidth().heightIn(min = 250.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'Modifier.width(700.dp).height(RegisterLayoutPolicy.DIAGNOSTIC_CARD_HEIGHT_DP.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'Modifier.width(340.dp).height(54.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'onComplete = { screen = AppScreen.LOGIN }' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq '最終総合実機試験へ繰越' docs/V0.94_RELEASE_NOTES.md
+          ! grep -Fqi 'DELETE FROM' docs/V0.94_STARTUP_DIAGNOSTIC_RESPONSIVE.md
+          ! grep -Fqi 'UPDATE sales' docs/V0.94_STARTUP_DIAGNOSTIC_RESPONSIVE.md
+          ! grep -Fqi 'DROP TABLE' docs/V0.94_STARTUP_DIAGNOSTIC_RESPONSIVE.md
 
       - name: Verify launcher and orientation configuration
         shell: bash
