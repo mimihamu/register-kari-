@@ -98,18 +98,32 @@ class V101GoogleDriveReauthorizationSafetyTest {
     }
 
     @Test
-    fun releaseVersionsDocsAndDataSafetyAreCurrent() {
+    fun releaseVersionsDocsAndDataSafetyAreHistoricalAndCurrentCodeRemainsSafe() {
         val registerGradle = File(root, "app/build.gradle.kts").readText()
         val plusGradle = File(root, "management-app/build.gradle.kts").readText()
         val requirements = File(root, "docs/V1.01_GOOGLE_DRIVE_REAUTHORIZATION_SAFETY.md")
         val notes = File(root, "docs/V1.01_RELEASE_NOTES.md")
         val source = File(root, "app/src/main/java/jp/co/tenposinfo/register/GoogleDriveDirectUpload.kt").readText()
-        assertTrue(registerGradle.contains("versionCode = 131"))
-        assertTrue(registerGradle.contains("versionName = \"1.01.0-dev.1\""))
-        assertTrue(plusGradle.contains("versionCode = 15"))
-        assertTrue(plusGradle.contains("versionName = \"0.15.0-dev.1\""))
+        val registerCode = Regex("versionCode = (\\d+)").find(registerGradle)?.groupValues?.get(1)?.toInt()
+            ?: error("register versionCode not found")
+        val registerName = Regex("versionName = \"([^\"]+)\"").find(registerGradle)?.groupValues?.get(1)
+            ?: error("register versionName not found")
+        val plusCode = Regex("versionCode = (\\d+)").find(plusGradle)?.groupValues?.get(1)?.toInt()
+            ?: error("plus versionCode not found")
+        val plusName = Regex("versionName = \"([^\"]+)\"").find(plusGradle)?.groupValues?.get(1)
+            ?: error("plus versionName not found")
+
+        assertTrue(registerCode >= 131)
+        assertTrue(registerName.matches(Regex("\\d+\\.\\d+\\.\\d+-dev\\.\\d+")))
+        assertTrue(plusCode >= 15)
+        assertTrue(plusName.matches(Regex("\\d+\\.\\d+\\.\\d+-dev\\.\\d+")))
         assertTrue(requirements.isFile)
         assertTrue(notes.isFile)
+        val historicalNotes = notes.readText()
+        assertTrue(historicalNotes.contains("versionCode `131`"))
+        assertTrue(historicalNotes.contains("versionName `1.01.0-dev.1`"))
+        assertTrue(historicalNotes.contains("versionCode `15`"))
+        assertTrue(historicalNotes.contains("versionName `0.15.0-dev.1`"))
         assertFalse(source.contains("DELETE FROM sales", ignoreCase = true))
         assertFalse(source.contains("DROP TABLE sales", ignoreCase = true))
     }
