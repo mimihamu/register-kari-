@@ -106,7 +106,7 @@ jobs:
           set -euo pipefail
 
           # v1.00 finalの累積ソースゲートを固定SHAから再実行する。
-          # 現行版へ上がる2行だけを除外し、v1.00までの安全性チェックを維持する。
+          # 現行版へ上がるPOS/Plus版番号チェックだけを除外し、v1.00までの安全性チェックを維持する。
           git show "$V100_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v100-build-apk.yml
           awk '
             /^      - name: Verify cumulative v0.14-v1.00 sources/ { capture=1; next }
@@ -116,6 +116,8 @@ jobs:
           ' /tmp/v100-build-apk.yml \
             | grep -vF "grep -Fq 'versionCode = 130' app/build.gradle.kts" \
             | grep -vF "grep -Fq 'versionName = \"1.00.0-dev.1\"' app/build.gradle.kts" \
+            | grep -vF "grep -q 'versionCode = 14' management-app/build.gradle.kts" \
+            | grep -vF "grep -q 'versionName = \"0.14.0-dev.1\"' management-app/build.gradle.kts" \
             > /tmp/v100-cumulative-checks.sh
           test -s /tmp/v100-cumulative-checks.sh
           bash -euxo pipefail /tmp/v100-cumulative-checks.sh
