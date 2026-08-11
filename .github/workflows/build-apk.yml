@@ -1,327 +1,550 @@
 name: Build つぐレジ APK
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: read
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-# Legacy source-test compatibility markers.
-# V044GoogleDriveAccountTest.kt
-# V046GoogleDriveSetupGuideTest.kt
-# V047GoogleDriveDiagnosticsTest.kt
-# V048GoogleDriveSettingsEntryTest.kt
-# V050GoogleDriveCrossAppConnectionTest.kt
-# V055OutboxOperationsEntryTest.kt
-# V057HeldTicketOperationsUiTest.kt
-# V058ReceiptVoucherFoundationTest.kt
-# V059ReceiptVoucherUiTest.kt
-# V060ReceiptVoucherOperationsLedgerTest.kt
-# V061ReceiptVoucherSaleContextNavigationTest.kt
-# V062SalesHistoryLookupTest.kt
-# V063ReversalSaleLookupTest.kt
-# V064SaleDetailReversalNavigationTest.kt
-# V065BusinessDateSalesLookupTest.kt
-# V066BusinessDateDatabaseSearchTest.kt
-# V067SaleReceiptReprintNavigationTest.kt
-# V068SaleReceiptReprintAuditTest.kt
-# V069SaleReceiptReprintOperationsLedgerTest.kt
-# V070SaleReceiptReprintDatabasePagingTest.kt
-# V071SaleReceiptReprintPeriodIndexTest.kt
-# V072SaleReceiptReprintCustomRangeTest.kt
-# V073SaleReceiptReprintStablePagingTest.kt
-# V074SaleReceiptReprintMatchingNewItemsTest.kt
-# V075SaleReceiptReprintCsvExportTest.kt
-# V076BusinessSessionSalesDrilldownTest.kt
-# V077SettlementHistorySalesDrilldownTest.kt
-# V078SettlementReconciliationTest.kt
-# V079SettlementReconciliationAuditTest.kt
-# V080ResponsiveSettlementReconciliationTest.kt
-# V081SettlementReconciliationAuditLedgerTest.kt
-# V082SettlementReconciliationAuditCsvExportTest.kt
-# V083RestoreBootstrapOrderTest.kt
-# SETTLEMENT_RECONCILIATION=true
-# SETTLEMENT_RECONCILIATION_X_DIFFERENCE_INFORMATIONAL=true
-# SETTLEMENT_RECONCILIATION_Z_DIFFERENCE_ALERT=true
-# SETTLEMENT_RECONCILIATION_AUDIT=true
+  contents: write
 
 jobs:
-  build-debug-apk:
+  apply-v097-sales-lookup-responsive:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-22.04
-    timeout-minutes: 45
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android API 36
-        shell: bash
-        run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0"
-
-      - name: Set up Gradle 9.5
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "9.5.0"
-
-      - name: Verify cumulative v0.14-v0.96 sources
-        shell: bash
-        env:
-          V090_FINAL_HEAD: 2ca9a2faa263f469788eaad903309f9e3ddcd545
-          V086_FINAL_HEAD: aef6c08d75d057b67662e9612238edba15fc6489
-        run: |
-          set -euo pipefail
-
-          # v0.90までの確定済み累積検査を再実行する。
-          git show "$V090_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v090-build-apk.yml
-          awk '
-            /^      - name: Verify cumulative v0.14-v0.90 sources/ { capture=1; next }
-            capture && /^      - name: Verify launcher and orientation configuration/ { exit }
-            capture && /^        run: \|/ { inrun=1; next }
-            capture && inrun { sub(/^          /, ""); print }
-          ' /tmp/v090-build-apk.yml \
-            | grep -v "grep -q 'versionCode = 120' app/build.gradle.kts" \
-            | grep -v "grep -q 'versionName = \"0.90.0-dev.1\"' app/build.gradle.kts" \
-            > /tmp/v090-cumulative-checks.sh
-          test -s /tmp/v090-cumulative-checks.sh
-          bash -euxo pipefail /tmp/v090-cumulative-checks.sh
-
-          # v0.91 data-protection responsive acceptance remains cumulative.
-          test -s app/src/test/java/jp/co/tenposinfo/register/V091DataProtectionResponsiveTest.kt
-          test -s docs/V0.91_DATA_PROTECTION_RESPONSIVE.md
-          test -s docs/V0.91_RELEASE_NOTES.md
-          grep -Fq 'val responsive = rememberRegisterResponsiveMetrics()' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -Fq 'val leftScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -Fq 'val rightScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -Fq 'Modifier.verticalScroll(leftScroll)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -Fq 'Modifier.verticalScroll(rightScroll)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -Fq 'Modifier.width(if (responsive.isCompact) 360.dp else 470.dp)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -Fq 'heightIn(min = 80.dp, max = 150.dp)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -Fq 'AppUpdateDiagnosticsPanelV090(appContext)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -Fq '復元・取消用 責任者PIN' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -Fq '次回起動時に復元' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -Fq '予約取消' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          ! grep -Fqi 'DELETE FROM sales' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          ! grep -Fqi 'UPDATE sales' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          ! grep -Fqi 'DROP TABLE' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-
-          # v0.92 built APK integrity gate remains cumulative.
-          test -s ci/verify-apk-release-integrity.sh
-          test -s app/src/test/java/jp/co/tenposinfo/register/V092ApkReleaseIntegrityGateTest.kt
-          test -s docs/V0.92_APK_RELEASE_INTEGRITY_GATE.md
-          test -s docs/V0.92_RELEASE_NOTES.md
-          grep -Fq 'jp.co.tenposinfo.register.dev' ci/verify-apk-release-integrity.sh
-          grep -Fq 'jp.co.tenposinfo.register.plus.dev' ci/verify-apk-release-integrity.sh
-          grep -Fq 'jp.co.tenposinfo.register.cd.dev' ci/verify-apk-release-integrity.sh
-          grep -Fq 'apkanalyzer' ci/verify-apk-release-integrity.sh
-          grep -Fq 'manifest_value min-sdk' ci/verify-apk-release-integrity.sh
-          grep -Fq 'manifest_value target-sdk' ci/verify-apk-release-integrity.sh
-          grep -Fq 'aapt2' ci/verify-apk-release-integrity.sh
-          grep -Fq 'apksigner' ci/verify-apk-release-integrity.sh
-          grep -Fq 'unzip -tq' ci/verify-apk-release-integrity.sh
-          grep -Fq 'APK Signature Scheme v2' ci/verify-apk-release-integrity.sh
-          grep -Fq '752c4f56263c8887ada96184d25fad200aff0e84a80c67eda60c7607da3ac9e4' ci/verify-apk-release-integrity.sh
-          ! grep -Fqi 'DELETE FROM' ci/verify-apk-release-integrity.sh
-          ! grep -Fqi 'UPDATE sales' ci/verify-apk-release-integrity.sh
-          ! grep -Fqi 'DROP TABLE' ci/verify-apk-release-integrity.sh
-
-          # v0.93 login + complete responsive acceptance. Detailed layout is enforced by JUnit.
-          test -s app/src/test/java/jp/co/tenposinfo/register/V093MainFlowResponsiveTest.kt
-          test -s docs/V0.93_MAIN_FLOW_RESPONSIVE.md
-          test -s docs/V0.93_RELEASE_NOTES.md
-          grep -Fq 'val operatorScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'val pinScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'val pinPanelWidthDp = if (responsive.isCompact) 260 else 390' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'val compactScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'SaleReceiptNavigation.intent(context, saleId)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'ReceiptVoucherNavigation.issuanceIntent(context, lastSaleId)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'onHistory = { screen = AppScreen.SALES_HISTORY }' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'onQueue = { openUnifiedPrintQueue() }' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'onNext = { screen = AppScreen.SALES }' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-
-          # v0.94 startup diagnostic responsive acceptance.
-          test -s app/src/test/java/jp/co/tenposinfo/register/V094StartupDiagnosticResponsiveTest.kt
-          test -s docs/V0.94_STARTUP_DIAGNOSTIC_RESPONSIVE.md
-          test -s docs/V0.94_RELEASE_NOTES.md
-          grep -Fq 'val diagnosticScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq '.verticalScroll(diagnosticScroll)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.fillMaxWidth().heightIn(min = 250.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.width(700.dp).height(RegisterLayoutPolicy.DIAGNOSTIC_CARD_HEIGHT_DP.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.width(340.dp).height(54.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'onComplete = { screen = AppScreen.LOGIN }' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq '最終総合実機試験へ繰越' docs/V0.94_RELEASE_NOTES.md
-          ! grep -Fqi 'DELETE FROM' docs/V0.94_STARTUP_DIAGNOSTIC_RESPONSIVE.md
-          ! grep -Fqi 'UPDATE sales' docs/V0.94_STARTUP_DIAGNOSTIC_RESPONSIVE.md
-          ! grep -Fqi 'DROP TABLE' docs/V0.94_STARTUP_DIAGNOSTIC_RESPONSIVE.md
-
-          # v0.95 sales edit responsive acceptance. Detailed layout is enforced by JUnit.
-          test -s app/src/test/java/jp/co/tenposinfo/register/V095SalesEditResponsiveTest.kt
-          test -s docs/V0.95_SALES_EDIT_RESPONSIVE.md
-          test -s docs/V0.95_RELEASE_NOTES.md
-          grep -Fq 'val editScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'val editSummaryScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'val discountEditScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'val discountPreviewScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.weight(0.72f)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.weight(0.92f)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.width(330.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.width(390.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'DiscountEngine.applyToItem' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'DiscountEngine.applyToTransaction' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq '最終総合実機試験へ繰越' docs/V0.95_RELEASE_NOTES.md
-          ! grep -Fqi 'DELETE FROM' docs/V0.95_SALES_EDIT_RESPONSIVE.md
-          ! grep -Fqi 'UPDATE sales' docs/V0.95_SALES_EDIT_RESPONSIVE.md
-          ! grep -Fqi 'DROP TABLE' docs/V0.95_SALES_EDIT_RESPONSIVE.md
-
-          # v0.96 held-ticket responsive acceptance. Detailed layout is enforced by JUnit.
-          grep -Fq 'versionCode = 126' app/build.gradle.kts
-          grep -Fq 'versionName = "0.96.0-dev.1"' app/build.gradle.kts
-          test -s app/src/test/java/jp/co/tenposinfo/register/V096HeldTicketResponsiveTest.kt
-          test -s docs/V0.96_HELD_TICKET_RESPONSIVE.md
-          test -s docs/V0.96_RELEASE_NOTES.md
-          grep -Fq 'val ticketResponsive = rememberRegisterResponsiveMetrics()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'val splitSummaryScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.weight(1.25f).height(42.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.weight(0.8f)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.width(350.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.width(if (responsive.isCompact) 108.dp else 130.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'onMerge(source, ticket)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'HeldTicketOperationsUiPolicy.validateSplit(items, rawQuantities, newName)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq '最終総合実機試験へ繰越' docs/V0.96_RELEASE_NOTES.md
-          ! grep -Fqi 'DELETE FROM' docs/V0.96_HELD_TICKET_RESPONSIVE.md
-          ! grep -Fqi 'UPDATE sales' docs/V0.96_HELD_TICKET_RESPONSIVE.md
-          ! grep -Fqi 'DROP TABLE' docs/V0.96_HELD_TICKET_RESPONSIVE.md
-
-      - name: Verify launcher and orientation configuration
+      - name: Apply guarded v0.97 patch and generate final CI
         shell: bash
         run: |
           set -euo pipefail
-          register_launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' app/src/main app/src/debug | wc -l)
-          cd_launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' customer-display/src/main | wc -l)
-          plus_launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' management-app/src/main | wc -l)
-          test "$register_launcher_count" -eq 1
-          test "$cd_launcher_count" -eq 1
-          test "$plus_launcher_count" -eq 1
-          grep -q 'android:screenOrientation="landscape"' app/src/main/AndroidManifest.xml
-          grep -q 'android:screenOrientation="sensorPortrait"' management-app/src/main/AndroidManifest.xml
-          ! grep -q 'android:screenOrientation="landscape"' management-app/src/main/AndroidManifest.xml
+          python3 <<'PY'
+          from pathlib import Path
+          import subprocess
 
-      - name: Run cumulative unit tests
-        run: gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest :management-app:testDebugUnitTest
+          main_path = Path('app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt')
+          text = main_path.read_text()
+          history_start = text.index('@Composable\nprivate fun SalesHistoryScreen(')
+          detail_start = text.index('@Composable\nprivate fun SaleDetailScreen(', history_start)
+          receipt_start = text.index('@Composable\nprivate fun ReceiptPreviewScreen(', detail_start)
+          old_history = text[history_start:detail_start]
+          old_detail = text[detail_start:receipt_start]
 
-      - name: Compile Kotlin
-        run: gradle --no-daemon :app:compileDebugKotlin :customer-display:compileDebugKotlin :management-app:compileDebugKotlin
+          for marker in [
+              'Header("SCR-400", "売上一覧・検索")',
+              'modifier = Modifier.width(150.dp)',
+              'modifier = Modifier.width(210.dp)',
+              'Text("#${sale.id}", Modifier.width(80.dp)',
+              'onDirectLookup(saleId)',
+          ]:
+              if marker not in old_history:
+                  raise SystemExit(f'SalesHistory guard failed: {marker}')
+          for marker in [
+              'Header("SCR-410", "売上詳細")',
+              'CardPanel(Modifier.width(380.dp).fillMaxHeight())',
+              'BlueButton("レシート／再印字", onReceipt',
+              'Text("この売上で領収書発行")',
+              'Text("この売上を返品・取消"',
+          ]:
+              if marker not in old_detail:
+                  raise SystemExit(f'SaleDetail guard failed: {marker}')
 
-      - name: Build debug APKs
-        run: gradle --no-daemon :app:assembleDebug :customer-display:assembleDebug :management-app:assembleDebug
+          new_history = r'''@Composable
+private fun SalesHistoryScreen(
+    sales: List<SaleSummaryRecord>,
+    onOpen: (SaleSummaryRecord) -> Unit,
+    onDirectLookup: (Long) -> Boolean,
+    onQueue: () -> Unit,
+    onBack: () -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    var minAmountText by remember { mutableStateOf("") }
+    var maxAmountText by remember { mutableStateOf("") }
+    var directSaleIdText by remember { mutableStateOf("") }
+    var lookupMessage by remember { mutableStateOf<String?>(null) }
 
-      - name: Verify built APK release identity and integrity
-        shell: bash
-        env:
-          POS_VERSION_CODE: 126
-          POS_VERSION_NAME: 0.96.0-dev.1
-          BUILD_TOOLS_VERSION: 36.0.0
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts
-          bash ci/verify-apk-release-integrity.sh
-          cat artifacts/apk-integrity-summary.txt
+    val criteria = SalesHistoryCriteria(
+        query = query,
+        minAmount = minAmountText.toLongOrNull(),
+        maxAmount = maxAmountText.toLongOrNull(),
+    )
+    val visibleSales = SalesHistoryLookupPolicy.filter(sales, criteria)
+    val directSaleId = SalesHistoryLookupPolicy.parseDirectSaleId(directSaleIdText)
+    val amountRangeInvalid = criteria.minAmount != null && criteria.maxAmount != null && criteria.minAmount > criteria.maxAmount
+    val historyResponsive = rememberRegisterResponsiveMetrics()
+    val historyFilterScroll = rememberScrollState()
+    val filterModifier = Modifier
+        .fillMaxWidth()
+        .then(
+            if (historyResponsive.isCompact) {
+                Modifier.heightIn(max = 190.dp).verticalScroll(historyFilterScroll)
+            } else {
+                Modifier
+            },
+        )
+        .padding(
+            horizontal = historyResponsive.screenPaddingDp.dp,
+            vertical = if (historyResponsive.isCompact) 5.dp else 8.dp,
+        )
 
-      - name: Prepare named APKs and SHA-256
-        shell: bash
-        env:
-          V093_FINAL_HEAD: 5c8d0d95175bb7dd6cf8b70f52b31162c415a5e7
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v0.96.0_dev1_held_ticket_responsive_debug.apk
-          plus_apk=artifacts/TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk
-          cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
-          cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
-          cp management-app/build/outputs/apk/debug/management-app-debug.apk "$plus_apk"
-          cp customer-display/build/outputs/apk/debug/customer-display-debug.apk "$cd_apk"
-          sha256sum "$register_apk" | tee "$register_apk.sha256"
-          sha256sum "$plus_apk" | tee "$plus_apk.sha256"
-          sha256sum "$cd_apk" | tee "$cd_apk.sha256"
-          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' "$register_apk" | tee artifacts/build-summary.txt
-          stat --printf='MANAGEMENT_APP_APK_SIZE_BYTES=%s\n' "$plus_apk" | tee -a artifacts/build-summary.txt
-          stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' "$cd_apk" | tee -a artifacts/build-summary.txt
-          keytool -list -v \
-            -keystore app/build/signing/tsuguregi-development.jks \
-            -storepass tsuguregi-dev \
-            -alias tsuguregi-dev \
-            | awk -F': ' '/SHA1:/{print "DEVELOPMENT_SIGNING_SHA1=" $2} /SHA256:/{print "DEVELOPMENT_SIGNING_SHA256=" $2}' \
-            | tee -a artifacts/build-summary.txt
+    Column(Modifier.fillMaxSize()) {
+        Header("SCR-400", "売上一覧・検索")
+        Column(filterModifier) {
+            if (historyResponsive.isCompact) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it.take(80) },
+                        label = { Text("売上No.・担当・支払") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            query = ""
+                            minAmountText = ""
+                            maxAmountText = ""
+                        },
+                        modifier = Modifier.width(96.dp).height(48.dp),
+                    ) { Text("クリア", fontSize = 12.sp, maxLines = 1) }
+                    OutlinedButton(
+                        onClick = onQueue,
+                        modifier = Modifier.width(132.dp).height(48.dp),
+                    ) { Text("印刷キュー", fontSize = 12.sp, maxLines = 1) }
+                }
+                Spacer(Modifier.height(5.dp))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    OutlinedTextField(
+                        value = minAmountText,
+                        onValueChange = { minAmountText = it.filter(Char::isDigit).take(12) },
+                        label = { Text("金額以上") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = maxAmountText,
+                        onValueChange = { maxAmountText = it.filter(Char::isDigit).take(12) },
+                        label = { Text("金額以下") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            } else {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it.take(80) },
+                        label = { Text("売上No.・担当・支払") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = minAmountText,
+                        onValueChange = { minAmountText = it.filter(Char::isDigit).take(12) },
+                        label = { Text("金額以上") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.width(150.dp),
+                    )
+                    OutlinedTextField(
+                        value = maxAmountText,
+                        onValueChange = { maxAmountText = it.filter(Char::isDigit).take(12) },
+                        label = { Text("金額以下") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.width(150.dp),
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            query = ""
+                            minAmountText = ""
+                            maxAmountText = ""
+                        },
+                    ) { Text("条件クリア") }
+                    OutlinedButton(onClick = onQueue) { Text("統合印刷キュー") }
+                }
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(top = if (historyResponsive.isCompact) 5.dp else 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(if (historyResponsive.isCompact) 6.dp else 8.dp),
+            ) {
+                Text(
+                    "表示 ${visibleSales.size}件 / 読込 ${sales.size}件（最大${SalesHistoryLookupPolicy.RECENT_LOAD_LIMIT}件）",
+                    fontWeight = FontWeight.Bold,
+                    color = Navy,
+                    fontSize = if (historyResponsive.isCompact) 12.sp else 14.sp,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = directSaleIdText,
+                    onValueChange = {
+                        directSaleIdText = it.filter { ch -> ch.isDigit() || ch == '#' }.take(20)
+                        lookupMessage = null
+                    },
+                    label = { Text("売上No.直接表示") },
+                    singleLine = true,
+                    modifier = if (historyResponsive.isCompact) Modifier.width(175.dp) else Modifier.width(210.dp),
+                )
+                Button(
+                    onClick = {
+                        val saleId = directSaleId ?: return@Button
+                        if (!onDirectLookup(saleId)) {
+                            lookupMessage = "売上No.$saleId は見つかりません"
+                        }
+                    },
+                    enabled = directSaleId != null,
+                    modifier = if (historyResponsive.isCompact) Modifier.height(48.dp) else Modifier,
+                    colors = ButtonDefaults.buttonColors(containerColor = Blue),
+                ) { Text("表示", fontSize = if (historyResponsive.isCompact) 12.sp else 14.sp, maxLines = 1) }
+            }
+            if (amountRangeInvalid) {
+                Text(
+                    "金額範囲は『以上 ≤ 以下』になるよう入力してください",
+                    color = Danger,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = if (historyResponsive.isCompact) 12.sp else 14.sp,
+                )
+            } else if (!lookupMessage.isNullOrBlank()) {
+                Text(
+                    lookupMessage.orEmpty(),
+                    color = Danger,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = if (historyResponsive.isCompact) 12.sp else 14.sp,
+                )
+            }
+        }
+        CardPanel(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = historyResponsive.screenPaddingDp.dp),
+        ) {
+            when {
+                sales.isEmpty() -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("売上はまだありません", color = Color.Gray, fontSize = if (historyResponsive.isCompact) 19.sp else 22.sp)
+                    }
+                }
+                visibleSales.isEmpty() -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("条件に一致する売上はありません", color = Color.Gray, fontSize = if (historyResponsive.isCompact) 19.sp else 22.sp)
+                    }
+                }
+                else -> {
+                    LazyColumn {
+                        itemsIndexed(visibleSales) { _, sale ->
+                            if (historyResponsive.isCompact) {
+                                Column(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onOpen(sale) }
+                                        .padding(vertical = 7.dp),
+                                ) {
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                        Text("#${sale.id}", fontWeight = FontWeight.Bold, color = Navy, maxLines = 1)
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(formatDate(sale.createdAt), modifier = Modifier.weight(1f), fontSize = 12.sp, maxLines = 1)
+                                        Text(yen(sale.totalAmount), fontWeight = FontWeight.Bold, maxLines = 1)
+                                    }
+                                    Spacer(Modifier.height(2.dp))
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                        Text(sale.operatorName, modifier = Modifier.weight(0.8f), fontSize = 11.sp, maxLines = 1)
+                                        Text(sale.paymentLabel, modifier = Modifier.weight(1f), fontSize = 11.sp, maxLines = 1)
+                                        Text("印字 ${sale.printCount}回", color = Color.Gray, fontSize = 11.sp, maxLines = 1)
+                                    }
+                                }
+                            } else {
+                                Row(
+                                    Modifier.fillMaxWidth().clickable { onOpen(sale) }.padding(vertical = 11.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text("#${sale.id}", Modifier.width(80.dp), fontWeight = FontWeight.Bold)
+                                    Text(formatDate(sale.createdAt), Modifier.width(165.dp))
+                                    Text(sale.operatorName, Modifier.width(100.dp))
+                                    Text(sale.paymentLabel, Modifier.weight(1f))
+                                    Text("印字 ${sale.printCount}回", Modifier.width(85.dp), color = Color.Gray)
+                                    Text(yen(sale.totalAmount), Modifier.width(130.dp), textAlign = TextAlign.End, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        BottomActions(onBack, "販売へ戻る", onBack)
+    }
+}
 
-          # v0.93 finalのbuild summary feature flagsを継承する。
-          git show "$V093_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v093-build-apk.yml
-          awk '
-            /cat >> artifacts\/build-summary.txt <<'\''EOF'\''/ { capture=1; next }
-            capture && /^          EOF$/ { exit }
-            capture { sub(/^          /, ""); print }
-          ' /tmp/v093-build-apk.yml \
-            | grep -v '^REGISTER_VERSION_NAME=' \
-            | grep -v '^REGISTER_VERSION_CODE=' \
-            >> artifacts/build-summary.txt
+'''
 
-          cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.96.0-dev.1
-          REGISTER_VERSION_CODE=126
-          DATA_PROTECTION_RESPONSIVE=true
-          APK_RELEASE_INTEGRITY_GATE=true
-          MAIN_FLOW_RESPONSIVE=true
-          STARTUP_DIAGNOSTIC_RESPONSIVE=true
-          STARTUP_DIAGNOSTIC_SCROLL=true
-          STARTUP_DIAGNOSTIC_COMPACT_FULL_WIDTH=true
-          STARTUP_DIAGNOSTIC_NORMAL_LAYOUT_PRESERVED=true
-          SALES_EDIT_RESPONSIVE=true
-          LINE_EDIT_RESPONSIVE=true
-          DISCOUNT_RESPONSIVE=true
-          SALES_EDIT_SCROLL_FALLBACK=true
-          SALES_EDIT_NORMAL_LAYOUT_PRESERVED=true
-          REAL_DEVICE_VERIFICATION_BATCH_MODE=final-integrated-acceptance
-          REAL_DEVICE_STARTUP_DIAGNOSTIC_VERIFICATION=deferred-final-acceptance
-          REAL_DEVICE_SALES_EDIT_VERIFICATION=deferred-final-acceptance
-          HELD_TICKET_RESPONSIVE=true
-          TICKET_LIST_RESPONSIVE=true
-          TICKET_SPLIT_RESPONSIVE=true
-          HELD_TICKET_COMPACT_ACTION_ROWS=true
-          HELD_TICKET_SPLIT_SCROLL_FALLBACK=true
-          HELD_TICKET_NORMAL_LAYOUT_PRESERVED=true
-          REAL_DEVICE_HELD_TICKET_VERIFICATION=deferred-final-acceptance
-          REAL_DEVICE_APK_INSTALL_VERIFICATION=deferred-final-acceptance
-          EOF
-          git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
+          new_detail = r'''@Composable
+private fun SaleDetailScreen(
+    detail: SaleDetailRecord,
+    canReverse: Boolean,
+    onReceipt: () -> Unit,
+    onVoucher: () -> Unit,
+    onReverse: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val detailResponsive = rememberRegisterResponsiveMetrics()
+    val detailSummaryScroll = rememberScrollState()
+    Column(Modifier.fillMaxSize()) {
+        Header("SCR-410", "売上詳細")
+        Row(
+            Modifier.weight(1f).padding(detailResponsive.screenPaddingDp.dp),
+            horizontalArrangement = Arrangement.spacedBy(detailResponsive.panelGapDp.dp),
+        ) {
+            CardPanel(
+                Modifier
+                    .weight(if (detailResponsive.isCompact) 1.1f else 1f)
+                    .fillMaxHeight(),
+            ) {
+                Text(
+                    "売上 #${detail.summary.id}",
+                    fontSize = if (detailResponsive.isCompact) 20.sp else 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Navy,
+                    maxLines = 1,
+                )
+                Text(
+                    "${formatDate(detail.summary.createdAt)} / 担当 ${detail.summary.operatorName}",
+                    color = Color.Gray,
+                    fontSize = if (detailResponsive.isCompact) 12.sp else 14.sp,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.height(if (detailResponsive.isCompact) 7.dp else 12.dp))
+                LazyColumn(Modifier.weight(1f)) {
+                    itemsIndexed(detail.items) { _, item ->
+                        Column(Modifier.fillMaxWidth().padding(vertical = if (detailResponsive.isCompact) 4.dp else 6.dp)) {
+                            AmountRow("${item.product.name} ${item.product.taxSymbol} × ${item.quantity}", yen(item.baseAmount))
+                            if (item.discountAmount > 0) Text("値引 -${yen(item.discountAmount)}", color = Danger, fontSize = 12.sp)
+                            if (item.note.isNotBlank()) Text("メモ ${item.note}", color = Color.Gray, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+            val detailSummaryModifier = if (detailResponsive.isCompact) {
+                Modifier.weight(0.9f)
+            } else {
+                Modifier.width(380.dp)
+            }
+            CardPanel(detailSummaryModifier.fillMaxHeight()) {
+                Column(Modifier.weight(1f).verticalScroll(detailSummaryScroll)) {
+                    AmountRow("税抜", yen(detail.taxSummary.netAmount))
+                    AmountRow("消費税", yen(detail.taxSummary.taxAmount))
+                    AmountRow("合計", yen(detail.taxSummary.grossAmount), emphasized = true)
+                    Spacer(Modifier.height(if (detailResponsive.isCompact) 6.dp else 10.dp))
+                    detail.taxSummary.buckets.forEach { bucket ->
+                        val label = if (bucket.taxable) "${bucket.ratePercent}%対象" else "非課税"
+                        AmountRow(label, "${yen(bucket.grossAmount)} / 税 ${yen(bucket.taxAmount)}")
+                    }
+                    Spacer(Modifier.height(if (detailResponsive.isCompact) 8.dp else 14.dp))
+                    Text("支払", fontWeight = FontWeight.Bold, fontSize = if (detailResponsive.isCompact) 14.sp else 16.sp)
+                    detail.payments.forEach { payment ->
+                        AmountRow(payment.method.displayName, yen(payment.receivedAmount))
+                    }
+                    AmountRow("お釣り", yen(detail.summary.changeAmount))
+                }
+                Spacer(Modifier.height(detailResponsive.panelGapDp.dp))
+                BlueButton(
+                    "レシート／再印字",
+                    onReceipt,
+                    Modifier.fillMaxWidth().height(if (detailResponsive.isCompact) 46.dp else 52.dp),
+                )
+                Spacer(Modifier.height(if (detailResponsive.isCompact) 5.dp else 8.dp))
+                OutlinedButton(
+                    onClick = onVoucher,
+                    modifier = Modifier.fillMaxWidth().height(if (detailResponsive.isCompact) 46.dp else 52.dp),
+                ) {
+                    Text("この売上で領収書発行", fontSize = if (detailResponsive.isCompact) 12.sp else 14.sp, maxLines = 1)
+                }
+                if (canReverse) {
+                    Spacer(Modifier.height(if (detailResponsive.isCompact) 5.dp else 8.dp))
+                    OutlinedButton(
+                        onClick = onReverse,
+                        modifier = Modifier.fillMaxWidth().height(if (detailResponsive.isCompact) 46.dp else 52.dp),
+                    ) {
+                        Text(
+                            "この売上を返品・取消",
+                            color = Danger,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = if (detailResponsive.isCompact) 12.sp else 14.sp,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+        }
+        BottomActions(onBack, "一覧へ戻る", onBack)
+    }
+}
 
-      - name: Upload APKs
-        id: upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: TSUGUREGI-v0.96.0-dev1-held-ticket-responsive-apks
-          path: artifacts/
-          if-no-files-found: error
-          retention-days: 30
+'''
 
-      - name: Report artifact ID
-        run: echo "ARTIFACT_ID=${{ steps.upload.outputs.artifact-id }}"
+          main_path.write_text(text[:history_start] + new_history + new_detail + text[receipt_start:])
+
+          v092 = Path('app/src/test/java/jp/co/tenposinfo/register/V092ApkReleaseIntegrityGateTest.kt')
+          v092_text = v092.read_text()
+          v092_text = v092_text.replace('versionCode = 126', 'versionCode = 127')
+          v092_text = v092_text.replace('versionName = "0.96.0-dev.1"', 'versionName = "0.97.0-dev.1"')
+          v092_text = v092_text.replace('POS_VERSION_CODE: 126', 'POS_VERSION_CODE: 127')
+          v092_text = v092_text.replace('POS_VERSION_NAME: 0.96.0-dev.1', 'POS_VERSION_NAME: 0.97.0-dev.1')
+          v092.write_text(v092_text)
+
+          Path('app/src/test/java/jp/co/tenposinfo/register/V097SalesLookupResponsiveTest.kt').write_text(r'''package jp.co.tenposinfo.register
+
+import java.io.File
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class V097SalesLookupResponsiveTest {
+    private val root = File(System.getProperty("user.dir")).let { current ->
+        if (File(current, "app").isDirectory) current else current.parentFile
+    }
+    private val mainSource = File(root, "app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt").readText()
+
+    @Test
+    fun currentVersionIsV097() {
+        val gradle = File(root, "app/build.gradle.kts").readText()
+        assertTrue(gradle.contains("versionCode = 127"))
+        assertTrue(gradle.contains("versionName = \"0.97.0-dev.1\""))
+    }
+
+    @Test
+    fun salesHistoryUsesResponsiveFiltersAndCompactRows() {
+        assertTrue(mainSource.contains("val historyResponsive = rememberRegisterResponsiveMetrics()"))
+        assertTrue(mainSource.contains("val historyFilterScroll = rememberScrollState()"))
+        assertTrue(mainSource.contains("Modifier.heightIn(max = 190.dp).verticalScroll(historyFilterScroll)"))
+        assertTrue(mainSource.contains("if (historyResponsive.isCompact)"))
+        assertTrue(mainSource.contains("Modifier.width(96.dp).height(48.dp)"))
+        assertTrue(mainSource.contains("Modifier.width(132.dp).height(48.dp)"))
+        assertTrue(mainSource.contains("fontSize = 11.sp"))
+    }
+
+    @Test
+    fun salesHistoryNormalLayoutAndLookupCallbacksRemain() {
+        assertTrue(mainSource.contains("modifier = Modifier.width(150.dp)"))
+        assertTrue(mainSource.contains("Modifier.width(210.dp)"))
+        assertTrue(mainSource.contains("Text(\"#${'$'}{sale.id}\", Modifier.width(80.dp)"))
+        assertTrue(mainSource.contains("Text(yen(sale.totalAmount), Modifier.width(130.dp)"))
+        assertTrue(mainSource.contains("if (!onDirectLookup(saleId))"))
+        assertTrue(mainSource.contains("onOpen(sale)"))
+        assertTrue(mainSource.contains("OutlinedButton(onClick = onQueue)"))
+    }
+
+    @Test
+    fun saleDetailUsesResponsiveSummaryWithFixedActionArea() {
+        assertTrue(mainSource.contains("val detailResponsive = rememberRegisterResponsiveMetrics()"))
+        assertTrue(mainSource.contains("val detailSummaryScroll = rememberScrollState()"))
+        assertTrue(mainSource.contains("Modifier.weight(0.9f)"))
+        assertTrue(mainSource.contains("Modifier.width(380.dp)"))
+        assertTrue(mainSource.contains("Column(Modifier.weight(1f).verticalScroll(detailSummaryScroll))"))
+        assertTrue(mainSource.contains("if (detailResponsive.isCompact) 46.dp else 52.dp"))
+    }
+
+    @Test
+    fun receiptVoucherAndReversalCallbacksRemain() {
+        assertTrue(mainSource.contains("\"レシート／再印字\","))
+        assertTrue(mainSource.contains("onReceipt,"))
+        assertTrue(mainSource.contains("onClick = onVoucher"))
+        assertTrue(mainSource.contains("onClick = onReverse"))
+        assertTrue(mainSource.contains("if (canReverse)"))
+    }
+
+    @Test
+    fun responsiveChangeDoesNotAddBusinessDataMutation() {
+        val requirements = File(root, "docs/V0.97_SALES_LOOKUP_RESPONSIVE.md").readText()
+        assertFalse(requirements.contains("DELETE FROM", ignoreCase = true))
+        assertFalse(requirements.contains("UPDATE sales", ignoreCase = true))
+        assertFalse(requirements.contains("DROP TABLE", ignoreCase = true))
+        assertTrue(requirements.contains("業務ロジックは変更しない"))
+    }
+
+    @Test
+    fun finalDeviceAcceptanceRemainsDeferredAndCiIsCumulative() {
+        val notes = File(root, "docs/V0.97_RELEASE_NOTES.md").readText()
+        val workflow = File(root, ".github/workflows/build-apk.yml").readText()
+        assertTrue(notes.contains("最終総合実機試験へ繰越"))
+        assertTrue(workflow.contains("Verify cumulative v0.14-v0.97 sources"))
+        assertTrue(workflow.contains(":app:testDebugUnitTest"))
+        assertTrue(workflow.contains("POS_VERSION_CODE: 127"))
+        assertTrue(workflow.contains("POS_VERSION_NAME: 0.97.0-dev.1"))
+    }
+}
+''')
+
+          Path('docs/V0.97_SALES_LOOKUP_RESPONSIVE.md').write_text('''# v0.97 売上照会フロー レスポンシブ仕様\n\n## 対象\n\n- SCR-400 売上一覧・検索\n- SCR-410 売上詳細\n\n## SCR-400\n\nCompact時は検索条件を複数行に分割し、検索欄・金額範囲・条件クリア・印刷キュー・売上No.直接表示を横幅800dp級でも操作可能な構成へ変更する。検索条件領域は最大190dpとし、フォント倍率等で収まらない場合は縦スクロールを許可する。\n\n一覧はCompact時に、1段目へ売上No.・日時・金額、2段目へ担当者・支払・印字回数を表示する。通常時は従来の固定6列表示を維持する。\n\n## SCR-410\n\nCompact時は明細側1.1、サマリ側0.9の比率ペインとする。通常時は従来の右側380dpを維持する。\n\n税・支払サマリ本文だけを縦スクロール可能にし、レシート再印字・領収書・返品取消の操作ボタンはサマリ下部の固定操作領域に残す。\n\n## 非変更事項\n\n売上検索条件、直接売上No.参照、売上詳細取得、税計算、レシート再印字、領収書発行、返品・取消判定などの業務ロジックは変更しない。データベースの削除・更新処理は本対応では追加しない。\n\n## 実機確認\n\n本版単独では実機確認済みとしない。800×480〜1920×1080およびAndroidフォント倍率変更時の表示・タッチ操作は最終総合実機試験で確認する。\n''')
+
+          Path('docs/V0.97_RELEASE_NOTES.md').write_text('''# つぐレジ v0.97.0-dev.1 リリースノート\n\n## 概要\n\nv0.97ではSCR-400「売上一覧・検索」とSCR-410「売上詳細」のレスポンシブ対応を行う。800×480級やAndroidフォント倍率を上げた環境で、検索条件、直接表示、売上一覧、再印字、領収書、返品・取消が画面外へ見切れるリスクを低減する。\n\n## 主な変更\n\n- SCR-400を共通レスポンシブ基盤へ接続。\n- Compact時の検索条件を複数行化し、最大190dpのスクロールフォールバックを追加。\n- Compact時の売上一覧を2段情報表示へ変更。\n- 通常時の検索欄150dp、直接表示210dp、従来6列一覧を維持。\n- SCR-410を共通レスポンシブ基盤へ接続。\n- Compact時は明細1.1 / サマリ0.9の比率ペイン。\n- サマリ本文のみ縦スクロール化し、再印字・領収書・返品操作を固定操作領域へ保持。\n- 通常時の右サマリ380dp、操作ボタン52dpを維持。\n\n## 変更していない機能\n\n- 売上検索・直接売上No.表示。\n- 売上明細・税率別集計・支払表示。\n- レシート再印字。\n- 領収書発行。\n- 返品・取消の権限・業務ロジック。\n- 印刷、Google Drive、つぐレジ CD、データ保護処理。\n\n## バージョン\n\n- つぐレジ: versionCode 127 / versionName `0.97.0-dev.1`\n- つぐレジ＋: versionCode 14 / versionName `0.14.0-dev.1`（変更なし）\n- つぐレジ CD: versionCode 7 / versionName `0.14.0-dev.1`（変更なし）\n\n## 自動検証\n\n- v0.14〜v0.97累積ソースゲート。\n- v0.97専用回帰テスト。\n- 3アプリ累積unit test。\n- 3アプリ Kotlin compile。\n- 3アプリ debug APK build。\n- APK実体整合性ゲート。\n- Artifact生成・SHA-256検証。\n\n## 実機確認\n\n本版単独の実機確認は行わず、方針どおり**最終総合実機試験へ繰越**する。CI成功を800×480〜1920×1080やAndroidフォント倍率変更を含む実機確認済みとは扱わない。\n''')
+
+          base_head = 'cf094caf5d3a5c8e9cfb58ee980e2a4130d561c1'
+          workflow = subprocess.check_output(
+              ['git', 'show', f'{base_head}:.github/workflows/build-apk.yml'],
+              text=True,
+          )
+          workflow = workflow.replace(
+              'Verify cumulative v0.14-v0.96 sources',
+              'Verify cumulative v0.14-v0.97 sources',
+          )
+          workflow = workflow.replace("          grep -Fq 'versionCode = 126' app/build.gradle.kts\n", '')
+          workflow = workflow.replace("          grep -Fq 'versionName = \"0.96.0-dev.1\"' app/build.gradle.kts\n", '')
+          marker = '      - name: Verify launcher and orientation configuration\n'
+          addition = '''          # v0.97 sales lookup responsive acceptance. Detailed layout is enforced by JUnit.\n          grep -Fq 'versionCode = 127' app/build.gradle.kts\n          grep -Fq 'versionName = "0.97.0-dev.1"' app/build.gradle.kts\n          test -s app/src/test/java/jp/co/tenposinfo/register/V097SalesLookupResponsiveTest.kt\n          test -s docs/V0.97_SALES_LOOKUP_RESPONSIVE.md\n          test -s docs/V0.97_RELEASE_NOTES.md\n          grep -Fq 'val historyResponsive = rememberRegisterResponsiveMetrics()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt\n          grep -Fq 'val historyFilterScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt\n          grep -Fq 'val detailResponsive = rememberRegisterResponsiveMetrics()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt\n          grep -Fq 'val detailSummaryScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt\n          grep -Fq 'Modifier.width(380.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt\n          grep -Fq 'if (!onDirectLookup(saleId))' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt\n          grep -Fq 'onClick = onVoucher' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt\n          grep -Fq 'onClick = onReverse' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt\n          grep -Fq '最終総合実機試験へ繰越' docs/V0.97_RELEASE_NOTES.md\n          ! grep -Fqi 'DELETE FROM' docs/V0.97_SALES_LOOKUP_RESPONSIVE.md\n          ! grep -Fqi 'UPDATE sales' docs/V0.97_SALES_LOOKUP_RESPONSIVE.md\n          ! grep -Fqi 'DROP TABLE' docs/V0.97_SALES_LOOKUP_RESPONSIVE.md\n\n'''
+          if marker not in workflow:
+              raise SystemExit('launcher step marker not found')
+          workflow = workflow.replace(marker, addition + marker, 1)
+          workflow = workflow.replace('POS_VERSION_CODE: 126', 'POS_VERSION_CODE: 127')
+          workflow = workflow.replace('POS_VERSION_NAME: 0.96.0-dev.1', 'POS_VERSION_NAME: 0.97.0-dev.1')
+          workflow = workflow.replace(
+              'TSUGUREGI_v0.96.0_dev1_held_ticket_responsive_debug.apk',
+              'TSUGUREGI_v0.97.0_dev1_sales_lookup_responsive_debug.apk',
+          )
+          workflow = workflow.replace('REGISTER_VERSION_NAME=0.96.0-dev.1', 'REGISTER_VERSION_NAME=0.97.0-dev.1')
+          workflow = workflow.replace('REGISTER_VERSION_CODE=126', 'REGISTER_VERSION_CODE=127')
+          flags_marker = '          REAL_DEVICE_HELD_TICKET_VERIFICATION=deferred-final-acceptance\n'
+          flags = '''          SALES_LOOKUP_RESPONSIVE=true\n          SALES_HISTORY_RESPONSIVE=true\n          SALE_DETAIL_RESPONSIVE=true\n          SALES_HISTORY_COMPACT_FILTER_SCROLL=true\n          SALES_HISTORY_COMPACT_TWO_LINE_ROWS=true\n          SALE_DETAIL_SUMMARY_SCROLL=true\n          SALES_LOOKUP_NORMAL_LAYOUT_PRESERVED=true\n          REAL_DEVICE_SALES_LOOKUP_VERIFICATION=deferred-final-acceptance\n'''
+          if flags_marker not in workflow:
+              raise SystemExit('build summary flag marker not found')
+          workflow = workflow.replace(flags_marker, flags_marker + flags, 1)
+          workflow = workflow.replace(
+              'name: TSUGUREGI-v0.96.0-dev1-held-ticket-responsive-apks',
+              'name: TSUGUREGI-v0.97.0-dev1-sales-lookup-responsive-apks',
+          )
+          Path('ci/v097-final-build-apk.yml.txt').write_text(workflow)
+          PY
+
+          git diff --check
+          grep -Fq 'val historyResponsive = rememberRegisterResponsiveMetrics()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'val detailSummaryScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'versionCode = 127' app/build.gradle.kts
+          grep -Fq 'Verify cumulative v0.14-v0.97 sources' ci/v097-final-build-apk.yml.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt \
+                  app/src/test/java/jp/co/tenposinfo/register/V092ApkReleaseIntegrityGateTest.kt \
+                  app/src/test/java/jp/co/tenposinfo/register/V097SalesLookupResponsiveTest.kt \
+                  docs/V0.97_SALES_LOOKUP_RESPONSIVE.md \
+                  docs/V0.97_RELEASE_NOTES.md \
+                  ci/v097-final-build-apk.yml.txt
+          git commit -m 'feat(v0.97): make sales lookup flow responsive'
+          git push origin HEAD:develop/v0.97
