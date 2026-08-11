@@ -1,0 +1,51 @@
+name: v0.93 guarded touch-target patch
+
+on:
+  push:
+    branches:
+      - develop/v0.93
+
+permissions:
+  contents: write
+
+jobs:
+  patch-touch-targets:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v0.93
+          fetch-depth: 0
+
+      - name: Patch complete-screen touch targets
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt')
+          text = path.read_text(encoding='utf-8')
+          start = text.index('private fun CompleteScreen(')
+          end = text.index('private fun SalesHistoryScreen(', start)
+          block = text[start:end]
+          if block.count('Modifier.weight(1f).height(42.dp)') != 4:
+              raise SystemExit('expected four compact 42dp action buttons')
+          if block.count('Modifier.fillMaxWidth().height(50.dp)') != 1:
+              raise SystemExit('expected one compact 50dp next button')
+          block = block.replace('Modifier.weight(1f).height(42.dp)', 'Modifier.weight(1f).height(48.dp)')
+          block = block.replace('Modifier.fillMaxWidth().height(50.dp)', 'Modifier.fillMaxWidth().height(54.dp)')
+          path.write_text(text[:start] + block + text[end:], encoding='utf-8')
+          PY
+          git diff --check
+          test "$(git diff --name-only)" = "app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt"
+          grep -q 'Modifier.weight(1f).height(48.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'Modifier.fillMaxWidth().height(54.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+
+      - name: Commit touch-target patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          git commit -m "fix(v0.93): keep compact completion actions tappable"
+          git push origin HEAD:develop/v0.93
