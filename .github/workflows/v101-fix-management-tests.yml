@@ -1,0 +1,32 @@
+name: v1.01 Fix Management Tests
+
+on:
+  push:
+    branches:
+      - develop/v1.01
+    paths:
+      - ci/v101-fix-management-tests-trigger.txt
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.01
+          fetch-depth: 0
+      - name: Patch stale Plus release assertions
+        run: python3 tools/v101_fix_management_tests.py
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add management-app/src/test/java/jp/co/tenposinfo/register/plus
+          git commit -m "v1.01 旧Plusテストを現行版番号非依存化"
+          git push origin HEAD:develop/v1.01
