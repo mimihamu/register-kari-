@@ -64,6 +64,8 @@ class V093MainFlowResponsiveTest {
         assertTrue(source.contains("val responsive = rememberRegisterResponsiveMetrics()"))
         assertTrue(source.contains("val compactScroll = rememberScrollState()"))
         assertTrue(source.contains("if (responsive.isCompact) Modifier.verticalScroll(compactScroll)"))
+        assertTrue(source.contains("Modifier.weight(1f).then(bodyModifier)"))
+        assertFalse(source.contains("val bodyModifier = Modifier\n        .weight(1f)"))
         assertTrue(source.contains("if (responsive.isCompact) {"))
         assertTrue(source.contains("Text(\"レシート\", maxLines = 1)"))
         assertTrue(source.contains("Text(\"領収書\", maxLines = 1)"))
