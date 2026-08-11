@@ -110,6 +110,9 @@ internal object AutomaticPrintWorkerRunGate {
  *
  * 1件でも送信に失敗したrunでは後続ジョブへ進まない。
  * これにより紙の排出結果を確認する前に別帳票が続けて送られることを防ぐ。
+ *
+ * v0.99では候補選択から状態遷移・TCP送信完了までをendpoint送信ゲート内で実行する。
+ * 手動印刷と同じジョブを同時に選択して順番に二重送信する競合も防止する。
  */
 class AutomaticPrintWorker(
     appContext: Context,
@@ -159,11 +162,6 @@ class AutomaticPrintWorker(
         }
         if (!preflightAllowed) return androidx.work.ListenableWorker.Result.retry()
 
-        val gateway = TcpEscPosPrinterGateway(
-            host = configuration.host,
-            port = configuration.port,
-            timeoutMillis = configuration.timeoutMillis,
-        )
         var attempted = 0
         var failures = 0
         var pendingAfterBatch = false
@@ -171,19 +169,40 @@ class AutomaticPrintWorker(
         val database = RegisterDatabase(applicationContext)
         val operations = AdvancedOperationsStore(applicationContext)
         try {
-            val saleProcessor = PrintQueueProcessor(database, gateway)
             while (!AutomaticPrintQueuePolicy.batchLimitReached(attempted)) {
-                val candidate = AutomaticPrintQueuePolicy.oldestCandidate(
-                    saleJob = database.nextPrintableJob(),
-                    documentJobs = operations.listDocumentPrintJobs(500),
-                ) ?: break
+                val dispatch = runCatching {
+                    PrinterEndpointSendGate.withPermit(
+                        host = configuration.host,
+                        port = configuration.port,
+                        waitMillis = configuration.timeoutMillis.toLong(),
+                    ) {
+                        val candidate = AutomaticPrintQueuePolicy.oldestCandidate(
+                            saleJob = database.nextPrintableJob(),
+                            documentJobs = operations.listDocumentPrintJobs(500),
+                        ) ?: return@withPermit null
 
-                attempted++
-                val success = when (candidate.source) {
-                    AutomaticPrintCandidateSource.SALE_RECEIPT -> saleProcessor.processNext()
-                    AutomaticPrintCandidateSource.DOCUMENT ->
-                        operations.processDocumentPrint(candidate.sourceId, gateway).isSuccess
+                        val gateway = TcpEscPosPrinterGateway(
+                            host = configuration.host,
+                            port = configuration.port,
+                            timeoutMillis = configuration.timeoutMillis,
+                        )
+                        val success = when (candidate.source) {
+                            AutomaticPrintCandidateSource.SALE_RECEIPT ->
+                                PrintQueueProcessor(database, gateway).processNext()
+                            AutomaticPrintCandidateSource.DOCUMENT ->
+                                operations.processDocumentPrint(candidate.sourceId, gateway).isSuccess
+                        }
+                        candidate to success
+                    }
+                }.getOrElse {
+                    failures++
+                    pendingAfterBatch = true
+                    null
                 }
+
+                if (dispatch == null) break
+                attempted++
+                val success = dispatch.second
                 if (AutomaticPrintQueuePolicy.shouldStopAfterAttempt(success)) {
                     failures++
                     break

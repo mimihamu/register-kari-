@@ -300,9 +300,19 @@ class TcpEscPosPrinterGateway(
     private val port: Int = 9100,
     private val timeoutMillis: Int = 5_000,
 ) : PrinterGateway {
-    override fun send(payload: ByteArray): Result<Unit> {
+    override fun send(payload: ByteArray): Result<Unit> = runCatching {
+        PrinterEndpointSendGate.withPermit(
+            host = host,
+            port = port,
+            waitMillis = timeoutMillis.toLong(),
+        ) {
+            sendExclusive(payload)
+        }
+    }
+
+    private fun sendExclusive(payload: ByteArray) {
         var phase = PrinterDeliveryPhase.CONNECTING
-        return runCatching {
+        try {
             Socket().use { socket ->
                 socket.connect(InetSocketAddress(host, port), timeoutMillis)
                 socket.soTimeout = timeoutMillis
@@ -314,7 +324,7 @@ class TcpEscPosPrinterGateway(
                     phase = PrinterDeliveryPhase.FLUSHED
                 }
             }
-        }.recoverCatching { error ->
+        } catch (error: Throwable) {
             if (error is PrinterTransportException) throw error
             throw PrinterTransportException(phase, error)
         }
