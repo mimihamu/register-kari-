@@ -13,8 +13,10 @@ import java.security.MessageDigest
 import java.util.Base64
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 internal object CustomerDisplayWebSocketHandshake {
     private const val MAGIC = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -23,6 +25,69 @@ internal object CustomerDisplayWebSocketHandshake {
         val digest = MessageDigest.getInstance("SHA-1")
             .digest((key.trim() + MAGIC).toByteArray(StandardCharsets.ISO_8859_1))
         return Base64.getEncoder().encodeToString(digest)
+    }
+}
+
+/**
+ * Keeps socket I/O away from the cashier/cart polling thread.
+ *
+ * A stalled customer display may block its own writer thread, but it must never block another
+ * display or the POS poller. While a writer is busy only the newest snapshot is retained, so a
+ * dead/slow peer cannot create an unbounded backlog of obsolete SALES snapshots.
+ */
+internal class CustomerDisplayLatestSendDispatcher(
+    private val executor: Executor,
+    private val send: (String) -> Unit,
+    private val onFailure: (Throwable) -> Unit = {},
+) : AutoCloseable {
+    private val closed = AtomicBoolean(false)
+    private val drainScheduled = AtomicBoolean(false)
+    private val latestPayload = AtomicReference<String?>(null)
+
+    fun offer(payload: String): Boolean {
+        if (closed.get()) return false
+        latestPayload.set(payload)
+        if (closed.get()) {
+            latestPayload.set(null)
+            return false
+        }
+        scheduleDrain()
+        return true
+    }
+
+    override fun close() {
+        closed.set(true)
+        latestPayload.set(null)
+    }
+
+    private fun scheduleDrain() {
+        if (!drainScheduled.compareAndSet(false, true)) return
+        try {
+            executor.execute(::drain)
+        } catch (error: Throwable) {
+            drainScheduled.set(false)
+            fail(error)
+        }
+    }
+
+    private fun drain() {
+        try {
+            while (!closed.get()) {
+                val payload = latestPayload.getAndSet(null) ?: return
+                send(payload)
+            }
+        } catch (error: Throwable) {
+            fail(error)
+        } finally {
+            drainScheduled.set(false)
+            if (!closed.get() && latestPayload.get() != null) scheduleDrain()
+        }
+    }
+
+    private fun fail(error: Throwable) {
+        if (!closed.compareAndSet(false, true)) return
+        latestPayload.set(null)
+        runCatching { onFailure(error) }
     }
 }
 
@@ -114,7 +179,7 @@ internal class CustomerDisplayWebSocketServer(
             output.write(response.toByteArray(StandardCharsets.ISO_8859_1))
             output.flush()
 
-            connection = ClientConnection(socket)
+            connection = ClientConnection(socket, executor)
             clients += connection
             notifyClientCount()
             connection.sendText(latestPayload())
@@ -228,14 +293,22 @@ internal class CustomerDisplayWebSocketServer(
         }
     }
 
-    private class ClientConnection(val socket: Socket) {
+    private class ClientConnection(
+        val socket: Socket,
+        executor: Executor,
+    ) {
         private val writeLock = Any()
+        private val textDispatcher = CustomerDisplayLatestSendDispatcher(
+            executor = executor,
+            send = { payload ->
+                synchronized(writeLock) {
+                    writeFrame(socket.getOutputStream(), 0x1, payload.toByteArray(StandardCharsets.UTF_8))
+                }
+            },
+            onFailure = { closeTransport() },
+        )
 
-        fun sendText(payload: String): Boolean = runCatching {
-            synchronized(writeLock) {
-                writeFrame(socket.getOutputStream(), 0x1, payload.toByteArray(StandardCharsets.UTF_8))
-            }
-        }.isSuccess
+        fun sendText(payload: String): Boolean = textDispatcher.offer(payload)
 
         fun sendControl(opcode: Int, payload: ByteArray): Boolean = runCatching {
             synchronized(writeLock) {
@@ -243,7 +316,14 @@ internal class CustomerDisplayWebSocketServer(
             }
         }.isSuccess
 
+        override fun toString(): String = "CustomerDisplayClient(${socket.remoteSocketAddress})"
+
         fun close() {
+            textDispatcher.close()
+            closeTransport()
+        }
+
+        private fun closeTransport() {
             runCatching { socket.close() }
         }
 
