@@ -5,7 +5,7 @@ on:
     branches:
       - develop/v1.01
     paths:
-      - ci/v101-apply-trigger-4.txt
+      - ci/v101-apply-trigger-5.txt
 
 permissions:
   contents: write
@@ -19,57 +19,66 @@ jobs:
         with:
           ref: develop/v1.01
           fetch-depth: 0
-      - name: Apply v1.01 source patch
+      - name: Apply v1.01 review fixes
         shell: bash
         run: |
           set -euo pipefail
-          git show fdc760999295977bd9979f9737e7a44380dbcaac:.github/workflows/v101-apply-drive-safety.yml > /tmp/v101-source.yml
           python3 - <<'PY'
           from pathlib import Path
-          source = Path('/tmp/v101-source.yml').read_text(encoding='utf-8').splitlines()
-          captured = []
-          active = False
-          for line in source:
-              if not active:
-                  if "python3 <<'PY'" in line:
-                      active = True
-                  continue
-              if line == '          PY':
-                  break
-              captured.append(line)
 
-          restored = []
-          triple = None
-          for raw in captured:
-              if triple is None:
-                  line = raw[10:] if raw.startswith('          ') else raw
-                  restored.append(line)
-                  for candidate in ("'''", '\"\"\"'):
-                      if line.count(candidate) % 2 == 1:
-                          triple = candidate
-                          break
-              else:
-                  if raw.count(triple) % 2 == 1:
-                      line = raw[10:] if raw.startswith('          ') else raw
-                      restored.append(line)
-                      triple = None
-                  else:
-                      restored.append(raw)
+          def replace_once(path, old, new, label):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1, found {count}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
 
-          script = '\n'.join(restored) + '\n'
-          script = script.replace(
-              "if text.count(setup_anchor) != 2:\n    raise SystemExit(f'EasyConnect successful connection anchors: expected 2, found {text.count(setup_anchor)}')\ntext = text.replace(setup_anchor, setup_new)",
-              "if text.count(setup_anchor) != 1:\n    raise SystemExit(f'EasyConnect successful connection anchors: expected 1, found {text.count(setup_anchor)}')\ntext = text.replace(setup_anchor, setup_new, 1)",
+          replace_once(
+              'app/src/main/java/jp/co/tenposinfo/register/GoogleDriveEasyConnectActivity.kt',
+              '''                    val connection = GoogleDriveConnectionTestCoordinator(applicationContext)
+                        .createOrUpdate(token)
+                    val staged = JournalOutboxStore(applicationContext).use { it.stagePending(500) }
+''',
+              '''                    val connection = GoogleDriveConnectionTestCoordinator(applicationContext)
+                        .createOrUpdate(token)
+                    GoogleDriveDirectUploadStatusStore(applicationContext).clearBlocker()
+                    val staged = JournalOutboxStore(applicationContext).use { it.stagePending(500) }
+''',
+              'Easy Connect manual sync blocker clear',
           )
-          target = Path('/tmp/v101_apply.py')
-          target.write_text(script, encoding='utf-8')
+
+          replace_once(
+              'app/src/test/java/jp/co/tenposinfo/register/V101GoogleDriveReauthorizationSafetyTest.kt',
+              '''        assertTrue(source.contains("GoogleDriveDirectUploadStatusStore(applicationContext).clearBlocker()"))
+''',
+              '''        val easyConnect = File(root, "app/src/main/java/jp/co/tenposinfo/register/GoogleDriveEasyConnectActivity.kt").readText()
+        assertEquals(
+            2,
+            Regex("GoogleDriveDirectUploadStatusStore\\\\(applicationContext\\\\)\\\\.clearBlocker\\\\(\\\\)")
+                .findAll(easyConnect)
+                .count(),
+        )
+''',
+              'POS test both reconnect paths',
+          )
+
+          plus = Path('management-app/src/test/java/jp/co/tenposinfo/register/plus/V101GoogleDriveTransientImportSafetyTest.kt')
+          text = plus.read_text(encoding='utf-8')
+          broken = '''        val retryBodyEnd = source.indexOf("}
+            }", retryStart).takeIf { it > retryStart } ?: source.length
+'''
+          fixed = '''        val retryBodyEnd = source.indexOf("}\\n            }", retryStart).takeIf { it > retryStart } ?: source.length
+'''
+          if broken not in text:
+              raise SystemExit('Plus test newline anchor not found')
+          plus.write_text(text.replace(broken, fixed, 1), encoding='utf-8')
           PY
-          test -s /tmp/v101_apply.py
-          grep -Fq 'expected 1' /tmp/v101_apply.py
-          python3 -m py_compile /tmp/v101_apply.py
-          python3 /tmp/v101_apply.py
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app management-app docs ci/v101-final-build-apk.yml.txt
-          git commit -m "v1.01 Google Drive再認可・一時障害安全化"
+          git add app/src/main/java/jp/co/tenposinfo/register/GoogleDriveEasyConnectActivity.kt \
+                  app/src/test/java/jp/co/tenposinfo/register/V101GoogleDriveReauthorizationSafetyTest.kt \
+                  management-app/src/test/java/jp/co/tenposinfo/register/plus/V101GoogleDriveTransientImportSafetyTest.kt
+          git commit -m "v1.01 Drive再開経路と回帰テストを補強"
           git push origin HEAD:develop/v1.01
