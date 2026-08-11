@@ -44,6 +44,13 @@ expect_equal() {
     fi
 }
 
+print_badging_diagnostic() {
+    local key="$1"
+    local badging="$2"
+    echo "$key aapt2 badging diagnostic (package/sdk/launcher lines):"
+    grep -Ei "^(package:|sdkVersion:|targetSdkVersion:|launchable-activity:)|sdk" <<<"$badging" | head -n 40 || true
+}
+
 verify_apk() {
     local key="$1"
     local apk="$2"
@@ -75,6 +82,9 @@ verify_apk() {
     actual_target_sdk="$(sed -n "s/^targetSdkVersion:'\([^']*\)'.*/\1/p" <<<"$badging" | head -n 1)"
 
     echo "$key APK observed: package='${actual_package:-<empty>}' versionCode='${actual_code:-<empty>}' versionName='${actual_name:-<empty>}' minSdk='${actual_min_sdk:-<empty>}' targetSdk='${actual_target_sdk:-<empty>}'"
+    if [[ -z "$actual_min_sdk" || -z "$actual_target_sdk" ]]; then
+        print_badging_diagnostic "$key" "$badging"
+    fi
 
     expect_equal "$key" package "$expected_package" "$actual_package"
     expect_equal "$key" versionCode "$expected_code" "$actual_code"
