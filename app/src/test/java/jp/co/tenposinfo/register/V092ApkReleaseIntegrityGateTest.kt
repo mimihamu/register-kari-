@@ -42,7 +42,9 @@ class V092ApkReleaseIntegrityGateTest {
         assertTrue(source.contains("sdkVersion:'"))
         assertTrue(source.contains("targetSdkVersion:'"))
         assertTrue(source.contains("^launchable-activity:"))
-        assertTrue(source.contains("Verified using v2 scheme (APK Signature Scheme v2): true"))
+        assertTrue(source.contains("Verified using v2 scheme (APK Signature Scheme v2):"))
+        assertTrue(source.contains("signature_v2"))
+        assertTrue(source.contains("expect_equal \"\$key\" signatureV2 \"true\""))
         assertTrue(source.contains("Signer #1 certificate SHA-256 digest:"))
         assertTrue(source.contains("752c4f56263c8887ada96184d25fad200aff0e84a80c67eda60c7607da3ac9e4"))
     }
