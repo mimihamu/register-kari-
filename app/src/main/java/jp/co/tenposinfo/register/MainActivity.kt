@@ -1795,7 +1795,6 @@ private fun CompleteScreen(
     val responsive = rememberRegisterResponsiveMetrics()
     val compactScroll = rememberScrollState()
     val bodyModifier = Modifier
-        .weight(1f)
         .fillMaxWidth()
         .padding(if (responsive.isCompact) responsive.screenPaddingDp.dp else 24.dp)
         .then(
@@ -1804,7 +1803,7 @@ private fun CompleteScreen(
     Column(Modifier.fillMaxSize()) {
         Header("SCR-320", "会計完了")
         Column(
-            bodyModifier,
+            Modifier.weight(1f).then(bodyModifier),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = if (responsive.isCompact) Arrangement.Top else Arrangement.Center,
         ) {
