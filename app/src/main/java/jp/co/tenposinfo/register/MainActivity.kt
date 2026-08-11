@@ -708,24 +708,50 @@ private fun Header(screenId: String, title: String) {
 
 @Composable
 private fun DiagnosticScreen(restoredCount: Int, pendingPrints: Int, onComplete: () -> Unit) {
+    val responsive = rememberRegisterResponsiveMetrics()
+    val diagnosticScroll = rememberScrollState()
     Column(modifier = Modifier.fillMaxSize()) {
         Header("SCR-001", "起動・自己診断")
         Column(
-            modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 24.dp, vertical = 18.dp),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(diagnosticScroll)
+                .padding(responsive.screenPaddingDp.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+            verticalArrangement = if (responsive.isCompact) Arrangement.Top else Arrangement.Center,
         ) {
-            Text("起動チェックを実行しました", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Navy)
-            Spacer(Modifier.height(14.dp))
-            CardPanel(Modifier.width(700.dp).height(RegisterLayoutPolicy.DIAGNOSTIC_CARD_HEIGHT_DP.dp)) {
+            Text(
+                "起動チェックを実行しました",
+                fontSize = if (responsive.isCompact) 22.sp else 30.sp,
+                fontWeight = FontWeight.Bold,
+                color = Navy,
+                maxLines = 1,
+            )
+            Spacer(Modifier.height(if (responsive.isCompact) 8.dp else 14.dp))
+            CardPanel(
+                if (responsive.isCompact) {
+                    Modifier.fillMaxWidth().heightIn(min = 250.dp)
+                } else {
+                    Modifier.width(700.dp).height(RegisterLayoutPolicy.DIAGNOSTIC_CARD_HEIGHT_DP.dp)
+                },
+            ) {
                 StatusRow("データベース", "正常（税率・商品改定・同期保護対応）")
                 StatusRow("作業中取引", if (restoredCount > 0) "${restoredCount}点を復元" else "なし")
                 StatusRow("印刷キュー", if (pendingPrints > 0) "${pendingPrints}件待機" else "待機なし")
                 StatusRow("プリンタ", "未設定でも販売可能")
                 StatusRow("Google Drive", "未接続でも販売可能")
             }
-            Spacer(Modifier.height(14.dp))
-            BlueButton("診断完了・担当者選択へ", onComplete, Modifier.width(340.dp).height(54.dp))
+            Spacer(Modifier.height(if (responsive.isCompact) 8.dp else 14.dp))
+            BlueButton(
+                "診断完了・担当者選択へ",
+                onComplete,
+                if (responsive.isCompact) {
+                    Modifier.fillMaxWidth().height(54.dp)
+                } else {
+                    Modifier.width(340.dp).height(54.dp)
+                },
+            )
         }
     }
 }
