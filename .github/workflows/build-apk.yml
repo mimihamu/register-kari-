@@ -1,7 +1,9 @@
 name: v0.93 one-time CompleteScreen repair
 
 on:
-  pull_request:
+  push:
+    branches:
+      - develop/v0.93
   workflow_dispatch:
 
 permissions:
@@ -9,27 +11,33 @@ permissions:
 
 jobs:
   repair:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop/v0.93'
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout PR head
+      - name: Checkout branch head
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: develop/v0.93
           fetch-depth: 0
 
       - name: Apply exact guarded scope repair
         shell: bash
         run: |
           set -euo pipefail
-          python3 -c 'from pathlib import Path; p=Path("app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt"); t=p.read_text(encoding="utf-8"); s=t.index("private fun CompleteScreen("); e=t.index("private fun SalesHistoryScreen(", s); b=t[s:e]; a="    val bodyModifier = Modifier\n        .weight(1f)\n        .fillMaxWidth()"; c="    val bodyModifier = Modifier\n        .fillMaxWidth()"; d="        Column(\n            bodyModifier,\n"; f="        Column(\n            Modifier.weight(1f).then(bodyModifier),\n"; assert b.count(a) == 1 and b.count(d) == 1, "unexpected CompleteScreen source"; b=b.replace(a,c,1).replace(d,f,1); p.write_text(t[:s]+b+t[e:], encoding="utf-8")'
+          python3 -c 'from pathlib import Path; p=Path("app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt"); t=p.read_text(encoding="utf-8"); s=t.index("private fun CompleteScreen("); e=t.index("private fun SalesHistoryScreen(", s); b=t[s:e]; a="    val bodyModifier = Modifier\n        .weight(1f)\n        .fillMaxWidth()"; c="    val bodyModifier = Modifier\n        .fillMaxWidth()"; d="        Column(\n            bodyModifier,\n"; f="        Column(\n            Modifier.weight(1f).then(bodyModifier),\n"; fixed="Modifier.weight(1f).then(bodyModifier)" in b and a not in b; assert (b.count(a) == 1 and b.count(d) == 1) or fixed, "unexpected CompleteScreen source"; p.write_text(t[:s]+b.replace(a,c,1).replace(d,f,1)+t[e:], encoding="utf-8") if not fixed else None'
+          if git diff --quiet -- app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt; then
+            echo "CompleteScreen scope repair already applied"
+            exit 0
+          fi
           git diff --check
           test "$(git diff --name-only)" = "app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt"
           grep -q 'Modifier.weight(1f).then(bodyModifier)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
 
-      - name: Commit scope repair
+      - name: Commit scope repair when changed
         shell: bash
         run: |
+          if git diff --quiet -- app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt; then
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
