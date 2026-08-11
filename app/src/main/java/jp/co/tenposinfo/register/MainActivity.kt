@@ -1844,12 +1844,12 @@ private fun CompleteScreen(
                         OutlinedButton(
                             onClick = onReceipt,
                             enabled = detail != null,
-                            modifier = Modifier.weight(1f).height(42.dp),
+                            modifier = Modifier.weight(1f).height(48.dp),
                         ) { Text("レシート", maxLines = 1) }
                         OutlinedButton(
                             onClick = onVoucher,
                             enabled = detail != null,
-                            modifier = Modifier.weight(1f).height(42.dp),
+                            modifier = Modifier.weight(1f).height(48.dp),
                         ) { Text("領収書", maxLines = 1) }
                     }
                     Spacer(Modifier.height(responsive.panelGapDp.dp))
@@ -1859,18 +1859,18 @@ private fun CompleteScreen(
                     ) {
                         OutlinedButton(
                             onClick = onQueue,
-                            modifier = Modifier.weight(1f).height(42.dp),
+                            modifier = Modifier.weight(1f).height(48.dp),
                         ) { Text("印刷キュー", maxLines = 1) }
                         OutlinedButton(
                             onClick = onHistory,
-                            modifier = Modifier.weight(1f).height(42.dp),
+                            modifier = Modifier.weight(1f).height(48.dp),
                         ) { Text("売上一覧", maxLines = 1) }
                     }
                     Spacer(Modifier.height(responsive.panelGapDp.dp))
                     BlueButton(
                         "次の取引",
                         onNext,
-                        Modifier.fillMaxWidth().height(50.dp),
+                        Modifier.fillMaxWidth().height(54.dp),
                     )
                 }
             } else {
