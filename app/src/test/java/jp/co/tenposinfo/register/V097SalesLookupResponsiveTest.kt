@@ -15,7 +15,7 @@ class V097SalesLookupResponsiveTest {
     fun v097ReleaseIdentityRemainsDocumented() {
         val notes = File(root, "docs/V0.97_RELEASE_NOTES.md").readText()
         assertTrue(notes.contains("0.97.0-dev.1"))
-        assertTrue(notes.contains("versionCode `127`"))
+        assertTrue(notes.contains("versionCode 127"))
     }
 
     @Test
