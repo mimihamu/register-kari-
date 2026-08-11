@@ -21,7 +21,16 @@ class V012PrinterProfileTest {
             cutMode = PrinterCutMode.PARTIAL,
         )
         val payload = PrinterCommandEncoder.encodeText("印字テスト", config)
-        assertTrue(payload.startsWith(byteArrayOf(0x1B, 0x40, 0x1B, 0x74, 0x01)))
+        assertTrue(
+            payload.startsWith(
+                byteArrayOf(
+                    0x1B, 0x40,
+                    0x1B, 0x74, 0x01,
+                    0x1C, 0x43, 0x01,
+                    0x1B, 0x61, 0x00,
+                ),
+            ),
+        )
         assertTrue(payload.endsWith(byteArrayOf(0x1D, 0x56, 0x42, 0x00)))
     }
 

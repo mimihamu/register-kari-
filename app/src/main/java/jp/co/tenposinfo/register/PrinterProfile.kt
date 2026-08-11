@@ -18,12 +18,16 @@ enum class PrinterProfile(
     val description: String,
     val charsetName: String = "MS932",
     val codeTable: Int = 1,
+    /** EPSON日本語仕様のFS C n。nullは機種依存コマンドを送信しない。 */
+    val kanjiCodeSystem: Int? = null,
     val supportsDrawer: Boolean = true,
     val statusProtocol: PrinterStatusProtocol = PrinterStatusProtocol.ESC_POS_DLE_EOT_COMPATIBLE,
 ) {
     EPSON_TM_JAPAN(
         displayName = "EPSON TM（日本語）",
-        description = "TM-m30II／TM-T88系などのESC/POS対応機。DLE EOT状態取得を使用",
+        description = "TM-m30II／TM-T88系などのESC/POS対応機。Shift JIS漢字体系とDLE EOT状態取得を使用",
+        charsetName = "Shift_JIS",
+        kanjiCodeSystem = 1,
         statusProtocol = PrinterStatusProtocol.EPSON_DLE_EOT,
     ),
     STAR_ESC_POS(
@@ -70,9 +74,7 @@ object PrinterCommandEncoder {
         appendCut: Boolean = true,
     ): ByteArray {
         val output = ByteArrayOutputStream()
-        output.write(byteArrayOf(0x1B, 0x40))
-        output.write(byteArrayOf(0x1B, 0x74, configuration.profile.codeTable.toByte()))
-        output.write(byteArrayOf(0x1B, 0x61, 0x00))
+        output.write(beginDocument(configuration))
         if (openDrawer && configuration.drawerEnabled && configuration.profile.supportsDrawer) {
             output.write(
                 PrinterPulsePolicy.command(
@@ -87,6 +89,22 @@ object PrinterCommandEncoder {
             output.write(byteArrayOf(0x0A, 0x0A, 0x0A))
             output.write(cutCommand(configuration.cutMode))
         }
+        return output.toByteArray()
+    }
+
+    /**
+     * ESC @ は漢字コード体系も初期化するため、機種初期化の直後にプロファイル固有設定を再指定する。
+     * EPSON日本語プロファイルはFS C 1でShift JIS漢字コード体系を選択する。
+     * Shift JIS体系ではプリンターが先頭バイトから2バイト文字を判定するためFS &は送信しない。
+     */
+    fun beginDocument(configuration: PrinterConfiguration): ByteArray {
+        val output = ByteArrayOutputStream()
+        output.write(byteArrayOf(0x1B, 0x40))
+        output.write(byteArrayOf(0x1B, 0x74, configuration.profile.codeTable.toByte()))
+        configuration.profile.kanjiCodeSystem?.let { codeSystem ->
+            output.write(byteArrayOf(0x1C, 0x43, codeSystem.toByte()))
+        }
+        output.write(byteArrayOf(0x1B, 0x61, 0x00))
         return output.toByteArray()
     }
 
