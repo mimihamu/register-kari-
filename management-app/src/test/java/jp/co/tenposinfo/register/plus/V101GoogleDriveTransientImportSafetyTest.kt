@@ -62,8 +62,7 @@ class V101GoogleDriveTransientImportSafetyTest {
         assertTrue(retryStart > rejectStart)
         val rejectBody = source.substring(rejectStart, retryStart)
         assertTrue(rejectBody.contains("ImportRejectionCode.READ_ERROR"))
-        val retryBodyEnd = source.indexOf("}
-            }", retryStart).takeIf { it > retryStart } ?: source.length
+        val retryBodyEnd = source.indexOf("}\n            }", retryStart).takeIf { it > retryStart } ?: source.length
         val retryBody = source.substring(retryStart, retryBodyEnd)
         assertFalse(retryBody.contains("ImportRejectionCode.READ_ERROR"))
     }
