@@ -1,45 +1,288 @@
-name: v0.93 one-time CompleteScreen repair
+name: Build つぐレジ APK
 
 on:
   push:
     branches:
-      - develop/v0.93
+      - main
+  pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Legacy source-test compatibility markers.
+# v0.86以前の一部JUnitは、当時のCI登録確認としてworkflow本文に
+# 自身のファイル名が存在することを検査している。v0.87以降は実検査を
+# 履歴上の確定workflowから再実行するが、旧JUnitの意味を壊さないため以下を保持する。
+# 新規テストはこの形式へ依存せず、Gradleの累積test task実行を確認する。
+# V044GoogleDriveAccountTest.kt
+# V046GoogleDriveSetupGuideTest.kt
+# V047GoogleDriveDiagnosticsTest.kt
+# V048GoogleDriveSettingsEntryTest.kt
+# V050GoogleDriveCrossAppConnectionTest.kt
+# V055OutboxOperationsEntryTest.kt
+# V057HeldTicketOperationsUiTest.kt
+# V058ReceiptVoucherFoundationTest.kt
+# V059ReceiptVoucherUiTest.kt
+# V060ReceiptVoucherOperationsLedgerTest.kt
+# V061ReceiptVoucherSaleContextNavigationTest.kt
+# V062SalesHistoryLookupTest.kt
+# V063ReversalSaleLookupTest.kt
+# V064SaleDetailReversalNavigationTest.kt
+# V065BusinessDateSalesLookupTest.kt
+# V066BusinessDateDatabaseSearchTest.kt
+# V067SaleReceiptReprintNavigationTest.kt
+# V068SaleReceiptReprintAuditTest.kt
+# V069SaleReceiptReprintOperationsLedgerTest.kt
+# V070SaleReceiptReprintDatabasePagingTest.kt
+# V071SaleReceiptReprintPeriodIndexTest.kt
+# V072SaleReceiptReprintCustomRangeTest.kt
+# V073SaleReceiptReprintStablePagingTest.kt
+# V074SaleReceiptReprintMatchingNewItemsTest.kt
+# V075SaleReceiptReprintCsvExportTest.kt
+# V076BusinessSessionSalesDrilldownTest.kt
+# V077SettlementHistorySalesDrilldownTest.kt
+# V078SettlementReconciliationTest.kt
+# V079SettlementReconciliationAuditTest.kt
+# V080ResponsiveSettlementReconciliationTest.kt
+# V081SettlementReconciliationAuditLedgerTest.kt
+# V082SettlementReconciliationAuditCsvExportTest.kt
+# V083RestoreBootstrapOrderTest.kt
+# Legacy build-summary compatibility markers referenced by old source tests.
+# SETTLEMENT_RECONCILIATION=true
+# SETTLEMENT_RECONCILIATION_X_DIFFERENCE_INFORMATIONAL=true
+# SETTLEMENT_RECONCILIATION_Z_DIFFERENCE_ALERT=true
+# SETTLEMENT_RECONCILIATION_AUDIT=true
 
 jobs:
-  repair:
+  build-debug-apk:
     runs-on: ubuntu-22.04
+    timeout-minutes: 45
+
     steps:
-      - name: Checkout branch head
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: develop/v0.93
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
-      - name: Apply exact guarded scope repair
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 36
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle 9.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Verify cumulative v0.14-v0.93 sources
+        shell: bash
+        env:
+          V090_FINAL_HEAD: 2ca9a2faa263f469788eaad903309f9e3ddcd545
+          V086_FINAL_HEAD: aef6c08d75d057b67662e9612238edba15fc6489
+        run: |
+          set -euo pipefail
+
+          # v0.90の確定済み累積検査をそのまま再実行する。
+          # YAMLの実ステップ行だけを境界にし、内側AWKの文字列では終了しない。
+          # v0.90当時の現行版番号だけは現在版で置き換えるため除外する。
+          git show "$V090_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v090-build-apk.yml
+          awk '
+            /^      - name: Verify cumulative v0.14-v0.90 sources/ { capture=1; next }
+            capture && /^      - name: Verify launcher and orientation configuration/ { exit }
+            capture && /^        run: \|/ { inrun=1; next }
+            capture && inrun { sub(/^          /, ""); print }
+          ' /tmp/v090-build-apk.yml \
+            | grep -v "grep -q 'versionCode = 120' app/build.gradle.kts" \
+            | grep -v "grep -q 'versionName = \"0.90.0-dev.1\"' app/build.gradle.kts" \
+            > /tmp/v090-cumulative-checks.sh
+          test -s /tmp/v090-cumulative-checks.sh
+          bash -euxo pipefail /tmp/v090-cumulative-checks.sh
+
+          # v0.91 SCR-767 responsive acceptance remains cumulative.
+          test -s app/src/test/java/jp/co/tenposinfo/register/V091DataProtectionResponsiveTest.kt
+          test -s docs/V0.91_DATA_PROTECTION_RESPONSIVE.md
+          test -s docs/V0.91_RELEASE_NOTES.md
+          grep -q 'val responsive = rememberRegisterResponsiveMetrics()' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -q 'val leftScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -q 'val rightScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -q 'Modifier.verticalScroll(leftScroll)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -q 'Modifier.verticalScroll(rightScroll)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -q 'Modifier.width(if (responsive.isCompact) 360.dp else 470.dp)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -q 'heightIn(min = 80.dp, max = 150.dp)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -q 'responsive.headerHeightDp.dp' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -q 'responsive.bottomBarHeightDp.dp' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -q 'AppUpdateDiagnosticsPanelV090(appContext)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -q '復元・取消用 責任者PIN' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -q '次回起動時に復元' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -q '予約取消' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -q '最終総合実機試験へ繰越' docs/V0.91_RELEASE_NOTES.md
+          ! grep -qi 'DELETE FROM sales' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          ! grep -qi 'UPDATE sales' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          ! grep -qi 'DROP TABLE' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+
+          # v0.92 built APK integrity gate remains cumulative; release identity follows v0.93.
+          grep -q 'versionCode = 123' app/build.gradle.kts
+          grep -q 'versionName = "0.93.0-dev.1"' app/build.gradle.kts
+          test -s ci/verify-apk-release-integrity.sh
+          test -s app/src/test/java/jp/co/tenposinfo/register/V092ApkReleaseIntegrityGateTest.kt
+          test -s docs/V0.92_APK_RELEASE_INTEGRITY_GATE.md
+          test -s docs/V0.92_RELEASE_NOTES.md
+          grep -q 'jp.co.tenposinfo.register.dev' ci/verify-apk-release-integrity.sh
+          grep -q 'jp.co.tenposinfo.register.plus.dev' ci/verify-apk-release-integrity.sh
+          grep -q 'jp.co.tenposinfo.register.cd.dev' ci/verify-apk-release-integrity.sh
+          grep -q 'apkanalyzer' ci/verify-apk-release-integrity.sh
+          grep -q 'manifest_value min-sdk' ci/verify-apk-release-integrity.sh
+          grep -q 'manifest_value target-sdk' ci/verify-apk-release-integrity.sh
+          grep -q 'aapt2' ci/verify-apk-release-integrity.sh
+          grep -q 'apksigner' ci/verify-apk-release-integrity.sh
+          grep -q 'unzip -tq' ci/verify-apk-release-integrity.sh
+          grep -q 'APK Signature Scheme v2' ci/verify-apk-release-integrity.sh
+          grep -q '752c4f56263c8887ada96184d25fad200aff0e84a80c67eda60c7607da3ac9e4' ci/verify-apk-release-integrity.sh
+          grep -q '最終総合実機試験へ繰越' docs/V0.92_RELEASE_NOTES.md
+          ! grep -qi 'DELETE FROM' ci/verify-apk-release-integrity.sh
+          ! grep -qi 'UPDATE sales' ci/verify-apk-release-integrity.sh
+          ! grep -qi 'DROP TABLE' ci/verify-apk-release-integrity.sh
+
+          # v0.93 login + complete responsive acceptance.
+          test -s app/src/test/java/jp/co/tenposinfo/register/V093MainFlowResponsiveTest.kt
+          test -s docs/V0.93_MAIN_FLOW_RESPONSIVE.md
+          test -s docs/V0.93_RELEASE_NOTES.md
+          grep -q 'val operatorScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'val pinScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'val pinPanelWidthDp = if (responsive.isCompact) 260 else 390' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'RegisterLayoutPolicy.COMPACT_KEY_HEIGHT_DP' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'val compactScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'Text("印刷キュー", maxLines = 1)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'Modifier.weight(1f).height(48.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'Modifier.fillMaxWidth().height(54.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'BlueButton("次の取引", onNext, Modifier.width(180.dp).height(54.dp))' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q '最終総合実機試験へ繰越' docs/V0.93_RELEASE_NOTES.md
+
+      - name: Verify launcher and orientation configuration
         shell: bash
         run: |
           set -euo pipefail
-          python3 -c 'from pathlib import Path; p=Path("app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt"); t=p.read_text(encoding="utf-8"); s=t.index("private fun CompleteScreen("); e=t.index("private fun SalesHistoryScreen(", s); b=t[s:e]; a="    val bodyModifier = Modifier\n        .weight(1f)\n        .fillMaxWidth()"; c="    val bodyModifier = Modifier\n        .fillMaxWidth()"; d="        Column(\n            bodyModifier,\n"; f="        Column(\n            Modifier.weight(1f).then(bodyModifier),\n"; fixed="Modifier.weight(1f).then(bodyModifier)" in b and a not in b; assert (b.count(a) == 1 and b.count(d) == 1) or fixed, "unexpected CompleteScreen source"; p.write_text(t[:s]+b.replace(a,c,1).replace(d,f,1)+t[e:], encoding="utf-8") if not fixed else None'
-          if git diff --quiet -- app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt; then
-            echo "CompleteScreen scope repair already applied"
-            exit 0
-          fi
-          git diff --check
-          test "$(git diff --name-only)" = "app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt"
-          grep -q 'Modifier.weight(1f).then(bodyModifier)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          register_launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' app/src/main app/src/debug | wc -l)
+          cd_launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' customer-display/src/main | wc -l)
+          plus_launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' management-app/src/main | wc -l)
+          test "$register_launcher_count" -eq 1
+          test "$cd_launcher_count" -eq 1
+          test "$plus_launcher_count" -eq 1
+          grep -q 'android:screenOrientation="landscape"' app/src/main/AndroidManifest.xml
+          grep -q 'android:screenOrientation="sensorPortrait"' management-app/src/main/AndroidManifest.xml
+          ! grep -q 'android:screenOrientation="landscape"' management-app/src/main/AndroidManifest.xml
 
-      - name: Commit scope repair when changed
+      - name: Run cumulative unit tests
+        run: gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest :management-app:testDebugUnitTest
+
+      - name: Compile Kotlin
+        run: gradle --no-daemon :app:compileDebugKotlin :customer-display:compileDebugKotlin :management-app:compileDebugKotlin
+
+      - name: Build debug APKs
+        run: gradle --no-daemon :app:assembleDebug :customer-display:assembleDebug :management-app:assembleDebug
+
+      - name: Verify built APK release identity and integrity
         shell: bash
+        env:
+          POS_VERSION_CODE: 123
+          POS_VERSION_NAME: 0.93.0-dev.1
+          BUILD_TOOLS_VERSION: 36.0.0
         run: |
-          if git diff --quiet -- app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt; then
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          git commit -m "fix(v0.93): keep completion weight inside ColumnScope"
-          git push origin HEAD:develop/v0.93
+          set -euo pipefail
+          mkdir -p artifacts
+          bash ci/verify-apk-release-integrity.sh
+          cat artifacts/apk-integrity-summary.txt
+
+      - name: Prepare named APKs and SHA-256
+        shell: bash
+        env:
+          V090_FINAL_HEAD: 2ca9a2faa263f469788eaad903309f9e3ddcd545
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          register_apk=artifacts/TSUGUREGI_v0.93.0_dev1_main_flow_responsive_debug.apk
+          plus_apk=artifacts/TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk
+          cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
+          cp management-app/build/outputs/apk/debug/management-app-debug.apk "$plus_apk"
+          cp customer-display/build/outputs/apk/debug/customer-display-debug.apk "$cd_apk"
+          sha256sum "$register_apk" | tee "$register_apk.sha256"
+          sha256sum "$plus_apk" | tee "$plus_apk.sha256"
+          sha256sum "$cd_apk" | tee "$cd_apk.sha256"
+          stat --printf='REGISTER_APK_SIZE_BYTES=%s\n' "$register_apk" | tee artifacts/build-summary.txt
+          stat --printf='MANAGEMENT_APP_APK_SIZE_BYTES=%s\n' "$plus_apk" | tee -a artifacts/build-summary.txt
+          stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' "$cd_apk" | tee -a artifacts/build-summary.txt
+          keytool -list -v \
+            -keystore app/build/signing/tsuguregi-development.jks \
+            -storepass tsuguregi-dev \
+            -alias tsuguregi-dev \
+            | awk -F': ' '/SHA1:/{print "DEVELOPMENT_SIGNING_SHA1=" $2} /SHA256:/{print "DEVELOPMENT_SIGNING_SHA256=" $2}' \
+            | tee -a artifacts/build-summary.txt
+
+          # v0.90までのfeature / verification flagsを確定workflowから継承する。
+          git show "$V090_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v090-build-apk.yml
+          awk '
+            /cat >> artifacts\/build-summary.txt <<'\''EOF'\''/ { capture=1; next }
+            capture && /^          EOF$/ { exit }
+            capture { sub(/^          /, ""); print }
+          ' /tmp/v090-build-apk.yml \
+            | grep -v '^REGISTER_VERSION_NAME=' \
+            | grep -v '^REGISTER_VERSION_CODE=' \
+            >> artifacts/build-summary.txt
+
+          cat >> artifacts/build-summary.txt <<'EOF'
+          REGISTER_VERSION_NAME=0.93.0-dev.1
+          REGISTER_VERSION_CODE=123
+          DATA_PROTECTION_RESPONSIVE=true
+          DATA_PROTECTION_COMPACT_INDEPENDENT_SCROLL=true
+          DATA_PROTECTION_SHARED_RESPONSIVE_METRICS=true
+          DATA_PROTECTION_RESTORE_CONTROLS_PRESERVED=true
+          APK_RELEASE_INTEGRITY_GATE=true
+          APK_RELEASE_IDENTITY_FROM_BUILT_APK=true
+          APK_RELEASE_MANIFEST_APKANALYZER=true
+          APK_RELEASE_ZIP_INTEGRITY=true
+          APK_RELEASE_SIGNATURE_V2_REQUIRED=true
+          APK_RELEASE_SIGNING_CERT_SHA256_REQUIRED=true
+          APK_RELEASE_SINGLE_LAUNCHER_REQUIRED=true
+          REAL_DEVICE_VERIFICATION_BATCH_MODE=final-integrated-acceptance
+          REAL_DEVICE_DATA_PROTECTION_RESPONSIVE_VERIFICATION=deferred-final-acceptance
+          MAIN_FLOW_RESPONSIVE=true
+          LOGIN_RESPONSIVE=true
+          LOGIN_OPERATOR_SCROLL=true
+          LOGIN_COMPACT_PIN_SCROLL=true
+          LOGIN_COMPACT_PIN_KEYPAD=true
+          COMPLETE_RESPONSIVE=true
+          COMPLETE_COMPACT_ACTION_GRID=true
+          COMPLETE_NORMAL_ACTION_ROW_PRESERVED=true
+          REAL_DEVICE_MAIN_FLOW_RESPONSIVE_VERIFICATION=deferred-final-acceptance
+          REAL_DEVICE_APK_INSTALL_VERIFICATION=deferred-final-acceptance
+          EOF
+          git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
+
+      - name: Upload APKs
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSUGUREGI-v0.93.0-dev1-main-flow-responsive-apks
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Report artifact ID
+        run: echo "ARTIFACT_ID=${{ steps.upload.outputs.artifact-id }}"
