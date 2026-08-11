@@ -18,7 +18,7 @@ class V092ApkReleaseIntegrityGateTest {
 
         assertTrue(register.contains("applicationId = \"jp.co.tenposinfo.register\""))
         assertTrue(register.contains("versionCode = 127"))
-        assertTrue(register.contains("versionName = \"0.96.0-dev.1\""))
+        assertTrue(register.contains("versionName = \"0.97.0-dev.1\""))
         assertTrue(register.contains("applicationIdSuffix = \".dev\""))
 
         assertTrue(plus.contains("applicationId = \"jp.co.tenposinfo.register.plus\""))
