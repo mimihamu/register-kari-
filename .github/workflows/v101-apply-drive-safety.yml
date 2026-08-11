@@ -5,7 +5,7 @@ on:
     branches:
       - develop/v1.01
     paths:
-      - ci/v101-apply-trigger-3.txt
+      - ci/v101-apply-trigger-4.txt
 
 permissions:
   contents: write
@@ -29,7 +29,6 @@ jobs:
           source = Path('/tmp/v101-source.yml').read_text(encoding='utf-8').splitlines()
           captured = []
           active = False
-          delimiter = None
           for line in source:
               if not active:
                   if "python3 <<'PY'" in line:
@@ -57,10 +56,16 @@ jobs:
                   else:
                       restored.append(raw)
 
+          script = '\n'.join(restored) + '\n'
+          script = script.replace(
+              "if text.count(setup_anchor) != 2:\n    raise SystemExit(f'EasyConnect successful connection anchors: expected 2, found {text.count(setup_anchor)}')\ntext = text.replace(setup_anchor, setup_new)",
+              "if text.count(setup_anchor) != 1:\n    raise SystemExit(f'EasyConnect successful connection anchors: expected 1, found {text.count(setup_anchor)}')\ntext = text.replace(setup_anchor, setup_new, 1)",
+          )
           target = Path('/tmp/v101_apply.py')
-          target.write_text('\n'.join(restored) + '\n', encoding='utf-8')
+          target.write_text(script, encoding='utf-8')
           PY
           test -s /tmp/v101_apply.py
+          grep -Fq 'expected 1' /tmp/v101_apply.py
           python3 -m py_compile /tmp/v101_apply.py
           python3 /tmp/v101_apply.py
           git config user.name "github-actions[bot]"
