@@ -118,10 +118,13 @@ class V078SettlementReconciliationTest {
 
         val versionCode = Regex("versionCode\\s*=\\s*(\\d+)")
             .find(build)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-        val versionMinor = Regex("versionName\\s*=\\s*\"0\\.(\\d+)\\.0-dev\\.1\"")
-            .find(build)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val versionMatch = Regex("versionName\\s*=\\s*\"(\\d+)\\.(\\d+)\\.0-dev\\.1\"")
+            .find(build)
+        val versionMajor = versionMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val versionMinor = versionMatch?.groupValues?.get(2)?.toIntOrNull() ?: 0
+        val versionOrder = versionMajor * 1_000 + versionMinor
         assertTrue(versionCode >= 108)
-        assertTrue(versionMinor >= 78)
+        assertTrue(versionOrder >= 78)
 
         assertTrue(workflow.contains("V078SettlementReconciliationTest.kt"))
         assertTrue(workflow.contains("SETTLEMENT_RECONCILIATION=true"))
