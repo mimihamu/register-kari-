@@ -94,6 +94,7 @@ jobs:
         shell: bash
         env:
           V090_FINAL_HEAD: 2ca9a2faa263f469788eaad903309f9e3ddcd545
+          V086_FINAL_HEAD: aef6c08d75d057b67662e9612238edba15fc6489
         run: |
           set -euo pipefail
 
