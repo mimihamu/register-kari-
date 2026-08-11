@@ -90,7 +90,7 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.92 sources
+      - name: Verify cumulative v0.14-v0.93 sources
         shell: bash
         env:
           V090_FINAL_HEAD: 2ca9a2faa263f469788eaad903309f9e3ddcd545
@@ -136,9 +136,9 @@ jobs:
           ! grep -qi 'UPDATE sales' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
           ! grep -qi 'DROP TABLE' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
 
-          # v0.92 release identity + built APK integrity gate source acceptance.
-          grep -q 'versionCode = 122' app/build.gradle.kts
-          grep -q 'versionName = "0.92.0-dev.1"' app/build.gradle.kts
+          # v0.92 built APK integrity gate remains cumulative; release identity follows v0.93.
+          grep -q 'versionCode = 123' app/build.gradle.kts
+          grep -q 'versionName = "0.93.0-dev.1"' app/build.gradle.kts
           test -s ci/verify-apk-release-integrity.sh
           test -s app/src/test/java/jp/co/tenposinfo/register/V092ApkReleaseIntegrityGateTest.kt
           test -s docs/V0.92_APK_RELEASE_INTEGRITY_GATE.md
@@ -158,6 +158,21 @@ jobs:
           ! grep -qi 'DELETE FROM' ci/verify-apk-release-integrity.sh
           ! grep -qi 'UPDATE sales' ci/verify-apk-release-integrity.sh
           ! grep -qi 'DROP TABLE' ci/verify-apk-release-integrity.sh
+
+          # v0.93 login + complete responsive acceptance.
+          test -s app/src/test/java/jp/co/tenposinfo/register/V093MainFlowResponsiveTest.kt
+          test -s docs/V0.93_MAIN_FLOW_RESPONSIVE.md
+          test -s docs/V0.93_RELEASE_NOTES.md
+          grep -q 'val operatorScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'val pinScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'val pinPanelWidthDp = if (responsive.isCompact) 260 else 390' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'RegisterLayoutPolicy.COMPACT_KEY_HEIGHT_DP' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'val compactScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'Text("印刷キュー", maxLines = 1)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'Modifier.weight(1f).height(48.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'Modifier.fillMaxWidth().height(54.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q 'BlueButton("次の取引", onNext, Modifier.width(180.dp).height(54.dp))' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -q '最終総合実機試験へ繰越' docs/V0.93_RELEASE_NOTES.md
 
       - name: Verify launcher and orientation configuration
         shell: bash
@@ -185,8 +200,8 @@ jobs:
       - name: Verify built APK release identity and integrity
         shell: bash
         env:
-          POS_VERSION_CODE: 122
-          POS_VERSION_NAME: 0.92.0-dev.1
+          POS_VERSION_CODE: 123
+          POS_VERSION_NAME: 0.93.0-dev.1
           BUILD_TOOLS_VERSION: 36.0.0
         run: |
           set -euo pipefail
@@ -201,7 +216,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v0.92.0_dev1_apk_release_integrity_gate_debug.apk
+          register_apk=artifacts/TSUGUREGI_v0.93.0_dev1_main_flow_responsive_debug.apk
           plus_apk=artifacts/TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
@@ -232,8 +247,8 @@ jobs:
             >> artifacts/build-summary.txt
 
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.92.0-dev.1
-          REGISTER_VERSION_CODE=122
+          REGISTER_VERSION_NAME=0.93.0-dev.1
+          REGISTER_VERSION_CODE=123
           DATA_PROTECTION_RESPONSIVE=true
           DATA_PROTECTION_COMPACT_INDEPENDENT_SCROLL=true
           DATA_PROTECTION_SHARED_RESPONSIVE_METRICS=true
@@ -247,6 +262,15 @@ jobs:
           APK_RELEASE_SINGLE_LAUNCHER_REQUIRED=true
           REAL_DEVICE_VERIFICATION_BATCH_MODE=final-integrated-acceptance
           REAL_DEVICE_DATA_PROTECTION_RESPONSIVE_VERIFICATION=deferred-final-acceptance
+          MAIN_FLOW_RESPONSIVE=true
+          LOGIN_RESPONSIVE=true
+          LOGIN_OPERATOR_SCROLL=true
+          LOGIN_COMPACT_PIN_SCROLL=true
+          LOGIN_COMPACT_PIN_KEYPAD=true
+          COMPLETE_RESPONSIVE=true
+          COMPLETE_COMPACT_ACTION_GRID=true
+          COMPLETE_NORMAL_ACTION_ROW_PRESERVED=true
+          REAL_DEVICE_MAIN_FLOW_RESPONSIVE_VERIFICATION=deferred-final-acceptance
           REAL_DEVICE_APK_INSTALL_VERIFICATION=deferred-final-acceptance
           EOF
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
@@ -255,7 +279,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.92.0-dev1-apk-release-integrity-gate-apks
+          name: TSUGUREGI-v0.93.0-dev1-main-flow-responsive-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
