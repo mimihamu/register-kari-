@@ -21,8 +21,18 @@ fail() {
     exit 1
 }
 
-for tool in "$AAPT2" "$APKSIGNER"; do
-    test -x "$tool" || fail "required Android build tool not found: $tool"
+find_apkanalyzer() {
+    if command -v apkanalyzer >/dev/null 2>&1; then
+        command -v apkanalyzer
+        return 0
+    fi
+    find "$ANDROID_HOME/cmdline-tools" -type f -path '*/bin/apkanalyzer' -perm -u+x -print 2>/dev/null | head -n 1
+}
+
+APK_ANALYZER="${APK_ANALYZER:-$(find_apkanalyzer)}"
+
+for tool in "$AAPT2" "$APKSIGNER" "$APK_ANALYZER"; do
+    test -n "$tool" && test -x "$tool" || fail "required Android SDK tool not found: ${tool:-apkanalyzer}"
 done
 command -v unzip >/dev/null 2>&1 || fail "unzip is required"
 command -v sha256sum >/dev/null 2>&1 || fail "sha256sum is required"
@@ -32,6 +42,10 @@ mkdir -p "$OUTPUT_DIR"
 
 normalize_sha256() {
     tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]'
+}
+
+normalize_scalar() {
+    tr -d '\r\n'
 }
 
 expect_equal() {
@@ -44,11 +58,15 @@ expect_equal() {
     fi
 }
 
-print_badging_diagnostic() {
-    local key="$1"
-    local badging="$2"
-    echo "$key aapt2 badging diagnostic (package/sdk/launcher lines):"
-    grep -Ei "^(package:|sdkVersion:|targetSdkVersion:|launchable-activity:)|sdk" <<<"$badging" | head -n 40 || true
+manifest_value() {
+    local verb="$1"
+    local apk="$2"
+    local value
+    if ! value="$($APK_ANALYZER manifest "$verb" "$apk" 2>&1)"; then
+        echo "$value" >&2
+        fail "apkanalyzer manifest $verb failed for $apk"
+    fi
+    normalize_scalar <<<"$value"
 }
 
 verify_apk() {
@@ -66,31 +84,26 @@ verify_apk() {
         fail "$key APK ZIP integrity check failed: $apk"
     fi
 
-    local badging
-    if ! badging="$($AAPT2 dump badging "$apk" 2>&1)"; then
-        echo "$badging" >&2
-        fail "$key aapt2 dump badging failed"
-    fi
-
-    local package_line
-    package_line="$(grep -m1 '^package:' <<<"$badging" || true)"
     local actual_package actual_code actual_name actual_min_sdk actual_target_sdk
-    actual_package="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" <<<"$package_line")"
-    actual_code="$(sed -n "s/.* versionCode='\([^']*\)'.*/\1/p" <<<"$package_line")"
-    actual_name="$(sed -n "s/.* versionName='\([^']*\)'.*/\1/p" <<<"$package_line")"
-    actual_min_sdk="$(sed -n "s/^sdkVersion:'\([^']*\)'.*/\1/p" <<<"$badging" | head -n 1)"
-    actual_target_sdk="$(sed -n "s/^targetSdkVersion:'\([^']*\)'.*/\1/p" <<<"$badging" | head -n 1)"
+    actual_package="$(manifest_value application-id "$apk")"
+    actual_code="$(manifest_value version-code "$apk")"
+    actual_name="$(manifest_value version-name "$apk")"
+    actual_min_sdk="$(manifest_value min-sdk "$apk")"
+    actual_target_sdk="$(manifest_value target-sdk "$apk")"
 
     echo "$key APK observed: package='${actual_package:-<empty>}' versionCode='${actual_code:-<empty>}' versionName='${actual_name:-<empty>}' minSdk='${actual_min_sdk:-<empty>}' targetSdk='${actual_target_sdk:-<empty>}'"
-    if [[ -z "$actual_min_sdk" || -z "$actual_target_sdk" ]]; then
-        print_badging_diagnostic "$key" "$badging"
-    fi
 
     expect_equal "$key" package "$expected_package" "$actual_package"
     expect_equal "$key" versionCode "$expected_code" "$actual_code"
     expect_equal "$key" versionName "$expected_name" "$actual_name"
     expect_equal "$key" minSdk "$expected_min_sdk" "$actual_min_sdk"
     expect_equal "$key" targetSdk "$expected_target_sdk" "$actual_target_sdk"
+
+    local badging
+    if ! badging="$($AAPT2 dump badging "$apk" 2>&1)"; then
+        echo "$badging" >&2
+        fail "$key aapt2 dump badging failed"
+    fi
 
     local launcher_count launchable
     launcher_count="$(grep -c '^launchable-activity:' <<<"$badging" || true)"
