@@ -1,0 +1,50 @@
+name: v0.97 apply sales lookup patch on push
+
+on:
+  push:
+    branches:
+      - develop/v0.97
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v0.97
+          fetch-depth: 0
+
+      - name: Extract and execute guarded patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/build-apk.yml').read_text()
+          start = source.index("          python3 <<'PY'\n") + len("          python3 <<'PY'\n")
+          end = source.index("\n          PY\n", start)
+          block = source[start:end]
+          lines = []
+          for line in block.splitlines():
+              lines.append(line[10:] if line.startswith('          ') else line)
+          Path('/tmp/v097_apply.py').write_text('\n'.join(lines) + '\n')
+          PY
+          python3 /tmp/v097_apply.py
+          git diff --check
+          grep -Fq 'val historyResponsive = rememberRegisterResponsiveMetrics()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'val detailSummaryScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'Verify cumulative v0.14-v0.97 sources' ci/v097-final-build-apk.yml.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt \
+                  app/src/test/java/jp/co/tenposinfo/register/V092ApkReleaseIntegrityGateTest.kt \
+                  app/src/test/java/jp/co/tenposinfo/register/V097SalesLookupResponsiveTest.kt \
+                  docs/V0.97_SALES_LOOKUP_RESPONSIVE.md \
+                  docs/V0.97_RELEASE_NOTES.md \
+                  ci/v097-final-build-apk.yml.txt
+          git commit -m 'feat(v0.97): make sales lookup flow responsive'
+          git push origin HEAD:develop/v0.97
