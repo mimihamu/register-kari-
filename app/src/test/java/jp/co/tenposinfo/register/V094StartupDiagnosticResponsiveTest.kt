@@ -28,7 +28,7 @@ class V094StartupDiagnosticResponsiveTest {
 
         assertTrue(source.contains("val responsive = rememberRegisterResponsiveMetrics()"))
         assertTrue(source.contains("val diagnosticScroll = rememberScrollState()"))
-        assertTrue(source.contains("Modifier.verticalScroll(diagnosticScroll)"))
+        assertTrue(source.contains(".verticalScroll(diagnosticScroll)"))
         assertTrue(source.contains("responsive.screenPaddingDp.dp"))
         assertTrue(source.contains("if (responsive.isCompact) Arrangement.Top else Arrangement.Center"))
     }
