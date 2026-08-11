@@ -156,7 +156,7 @@ class V098AutomaticPrintDispatchSafetyTest {
         val notes = File(root, "docs/V0.98_RELEASE_NOTES.md").readText()
         val requirements = File(root, "docs/V0.98_AUTOMATIC_PRINT_DISPATCH_SAFETY.md").readText()
 
-        assertTrue(notes.contains("versionCode 128"))
+        assertTrue(notes.contains("versionCode `128`"))
         assertTrue(notes.contains("0.98.0-dev.1"))
         assertTrue(workflow.contains("AUTOMATIC_PRINT_DISPATCH_SAFETY=true"))
         assertTrue(workflow.contains("AUTOMATIC_PRINT_GLOBAL_BATCH_LIMIT=20"))
