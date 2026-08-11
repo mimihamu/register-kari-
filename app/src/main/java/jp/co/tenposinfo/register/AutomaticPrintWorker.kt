@@ -202,7 +202,8 @@ class AutomaticPrintWorker(
 
                 if (dispatch == null) break
                 attempted++
-                if (AutomaticPrintQueuePolicy.shouldStopAfterAttempt(dispatch.second)) {
+                val success = dispatch.second
+                if (AutomaticPrintQueuePolicy.shouldStopAfterAttempt(success)) {
                     failures++
                     break
                 }
