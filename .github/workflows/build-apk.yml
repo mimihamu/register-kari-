@@ -53,6 +53,8 @@ concurrency:
 # V098AutomaticPrintDispatchSafetyTest.kt
 # V099PrinterEndpointSerializationTest.kt
 # V100JapanesePrinterEncodingTest.kt
+# V101GoogleDriveReauthorizationSafetyTest.kt
+# V101GoogleDriveTransientImportSafetyTest.kt
 # SETTLEMENT_RECONCILIATION=true
 # SETTLEMENT_RECONCILIATION_X_DIFFERENCE_INFORMATIONAL=true
 # SETTLEMENT_RECONCILIATION_Z_DIFFERENCE_ALERT=true
@@ -90,9 +92,10 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v1.00 sources
+      - name: Verify cumulative v0.14-v1.01 sources
         shell: bash
         env:
+          V100_FINAL_HEAD: d4ebe92517a00e2cc6b41b97e02ac13010428580
           V099_FINAL_HEAD: 45e19c082f640623a91bc38609d471e873ec6ece
           V098_FINAL_HEAD: 8990d93c007bc0b57afed7f28695454a8535dd90
           V097_FINAL_HEAD: c216ab8a37c6db23ebcde673cd08fc9d6f4c328d
@@ -102,41 +105,45 @@ jobs:
         run: |
           set -euo pipefail
 
-          # v0.99 finalの累積ソースゲートを固定SHAから再実行する。
-          # 現行版へ上がる2行だけを除外し、v0.99までの機能・安全性チェックを維持する。
-          git show "$V099_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v099-build-apk.yml
+          # v1.00 finalの累積ソースゲートを固定SHAから再実行する。
+          # 現行版へ上がる2行だけを除外し、v1.00までの安全性チェックを維持する。
+          git show "$V100_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v100-build-apk.yml
           awk '
-            /^      - name: Verify cumulative v0.14-v0.99 sources/ { capture=1; next }
+            /^      - name: Verify cumulative v0.14-v1.00 sources/ { capture=1; next }
             capture && /^      - name: Verify launcher and orientation configuration/ { exit }
             capture && /^        run: \|/ { inrun=1; next }
             capture && inrun { sub(/^          /, ""); print }
-          ' /tmp/v099-build-apk.yml \
-            | grep -vF "grep -Fq 'versionCode = 129' app/build.gradle.kts" \
-            | grep -vF "grep -Fq 'versionName = \"0.99.0-dev.1\"' app/build.gradle.kts" \
-            > /tmp/v099-cumulative-checks.sh
-          test -s /tmp/v099-cumulative-checks.sh
-          bash -euxo pipefail /tmp/v099-cumulative-checks.sh
+          ' /tmp/v100-build-apk.yml \
+            | grep -vF "grep -Fq 'versionCode = 130' app/build.gradle.kts" \
+            | grep -vF "grep -Fq 'versionName = \"1.00.0-dev.1\"' app/build.gradle.kts" \
+            > /tmp/v100-cumulative-checks.sh
+          test -s /tmp/v100-cumulative-checks.sh
+          bash -euxo pipefail /tmp/v100-cumulative-checks.sh
 
-          # v1.00 EPSON Japanese printer encoding acceptance.
-          grep -Fq 'versionCode = 130' app/build.gradle.kts
-          grep -Fq 'versionName = "1.00.0-dev.1"' app/build.gradle.kts
-          test -s app/src/test/java/jp/co/tenposinfo/register/V100JapanesePrinterEncodingTest.kt
-          test -s docs/V1.00_JAPANESE_PRINTER_ENCODING.md
-          test -s docs/V1.00_RELEASE_NOTES.md
-          grep -Fq 'kanjiCodeSystem' app/src/main/java/jp/co/tenposinfo/register/PrinterProfile.kt
-          grep -Fq 'charsetName = "Shift_JIS"' app/src/main/java/jp/co/tenposinfo/register/PrinterProfile.kt
-          grep -Fq 'kanjiCodeSystem = 1' app/src/main/java/jp/co/tenposinfo/register/PrinterProfile.kt
-          grep -Fq 'fun beginDocument(configuration: PrinterConfiguration)' app/src/main/java/jp/co/tenposinfo/register/PrinterProfile.kt
-          grep -Fq '0x1C, 0x43, codeSystem.toByte()' app/src/main/java/jp/co/tenposinfo/register/PrinterProfile.kt
-          grep -Fq 'PrinterCommandEncoder.beginDocument(epson)' app/src/test/java/jp/co/tenposinfo/register/V100JapanesePrinterEncodingTest.kt
-          grep -Fq '0x1C, 0x43, 0x01' app/src/test/java/jp/co/tenposinfo/register/V100JapanesePrinterEncodingTest.kt
-          grep -Fq 'つぐレジ 連続印刷試験' app/src/main/java/jp/co/tenposinfo/register/PrinterSoakTestPolicy.kt
-          grep -Fq 'const val MIN_PRINTS = 1' app/src/main/java/jp/co/tenposinfo/register/PrinterSoakTestPolicy.kt
-          grep -Fq 'Shift_JIS' docs/V1.00_JAPANESE_PRINTER_ENCODING.md
-          grep -Fq '実プリンターで再印刷するまで未確認' docs/V1.00_RELEASE_NOTES.md
-          ! grep -Fqi 'DELETE FROM sales' app/src/main/java/jp/co/tenposinfo/register/PrinterProfile.kt
-          ! grep -Fqi 'UPDATE sales' app/src/main/java/jp/co/tenposinfo/register/PrinterProfile.kt
-          ! grep -Fqi 'DROP TABLE' app/src/main/java/jp/co/tenposinfo/register/PrinterProfile.kt
+          # v1.01 Google Drive real-account interruption safety acceptance.
+          grep -Fq 'versionCode = 131' app/build.gradle.kts
+          grep -Fq 'versionName = "1.01.0-dev.1"' app/build.gradle.kts
+          grep -Fq 'versionCode = 15' management-app/build.gradle.kts
+          grep -Fq 'versionName = "0.15.0-dev.1"' management-app/build.gradle.kts
+          test -s app/src/test/java/jp/co/tenposinfo/register/V101GoogleDriveReauthorizationSafetyTest.kt
+          test -s management-app/src/test/java/jp/co/tenposinfo/register/plus/V101GoogleDriveTransientImportSafetyTest.kt
+          test -s docs/V1.01_GOOGLE_DRIVE_REAUTHORIZATION_SAFETY.md
+          test -s docs/V1.01_RELEASE_NOTES.md
+          grep -Fq 'enum class GoogleDriveCandidateFailureDisposition' app/src/main/java/jp/co/tenposinfo/register/GoogleDriveDirectUpload.kt
+          grep -Fq 'GoogleDriveCandidateFailureDisposition.BLOCK_QUEUE' app/src/main/java/jp/co/tenposinfo/register/GoogleDriveDirectUpload.kt
+          grep -Fq 'blockedCategory = category' app/src/main/java/jp/co/tenposinfo/register/GoogleDriveDirectUpload.kt
+          grep -Fq '売上JSONは永久失敗にせず' app/src/main/java/jp/co/tenposinfo/register/GoogleDriveDirectUpload.kt
+          grep -Fq 'fun clearBlocker()' app/src/main/java/jp/co/tenposinfo/register/GoogleDriveDirectUpload.kt
+          grep -Fq 'state.upload.blockedCategory == null' app/src/main/java/jp/co/tenposinfo/register/GoogleDriveEasyConnectActivity.kt
+          grep -Fq '再接続が必要' app/src/main/java/jp/co/tenposinfo/register/GoogleDriveEasyConnectActivity.kt
+          grep -Fq 'enum class GoogleDriveRemoteFileFailureDisposition' management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt
+          grep -Fq 'GoogleDriveRemoteFileFailureDisposition.RETRY_BATCH' management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt
+          grep -Fq 'throw GoogleDriveSyncBatchException(' management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt
+          grep -Fq 'ImportRejectionCode.READ_ERROR' management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt
+          grep -Fq '最終総合実機試験へ繰越' docs/V1.01_RELEASE_NOTES.md
+          ! grep -Fqi 'DELETE FROM sales' app/src/main/java/jp/co/tenposinfo/register/GoogleDriveDirectUpload.kt
+          ! grep -Fqi 'DROP TABLE sales' app/src/main/java/jp/co/tenposinfo/register/GoogleDriveDirectUpload.kt
+          ! grep -Fqi 'DELETE FROM imported_sales' management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt
 
       - name: Verify launcher and orientation configuration
         shell: bash
@@ -164,8 +171,10 @@ jobs:
       - name: Verify built APK release identity and integrity
         shell: bash
         env:
-          POS_VERSION_CODE: 130
-          POS_VERSION_NAME: 1.00.0-dev.1
+          POS_VERSION_CODE: 131
+          POS_VERSION_NAME: 1.01.0-dev.1
+          PLUS_VERSION_CODE: 15
+          PLUS_VERSION_NAME: 0.15.0-dev.1
           BUILD_TOOLS_VERSION: 36.0.0
         run: |
           set -euo pipefail
@@ -180,8 +189,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v1.00.0_dev1_japanese_printer_encoding_debug.apk
-          plus_apk=artifacts/TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk
+          register_apk=artifacts/TSUGUREGI_v1.01.0_dev1_drive_reauthorization_safety_debug.apk
+          plus_apk=artifacts/TSUGUREGI_PLUS_v0.15.0_dev1_drive_transient_import_safety_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
           cp management-app/build/outputs/apk/debug/management-app-debug.apk "$plus_apk"
@@ -211,8 +220,10 @@ jobs:
             >> artifacts/build-summary.txt
 
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=1.00.0-dev.1
-          REGISTER_VERSION_CODE=130
+          REGISTER_VERSION_NAME=1.01.0-dev.1
+          REGISTER_VERSION_CODE=131
+          MANAGEMENT_APP_VERSION_NAME=0.15.0-dev.1
+          MANAGEMENT_APP_VERSION_CODE=15
           DATA_PROTECTION_RESPONSIVE=true
           APK_RELEASE_INTEGRITY_GATE=true
           MAIN_FLOW_RESPONSIVE=true
@@ -262,6 +273,12 @@ jobs:
           GENERIC_PRINTER_PROFILE_UNCHANGED=true
           JAPANESE_PRINTER_SINGLE_SHEET_RETEST_PATH=true
           REAL_DEVICE_JAPANESE_PRINT_VERIFICATION=required-user-retest
+          GOOGLE_DRIVE_REAUTHORIZATION_SAFETY=true
+          GOOGLE_DRIVE_BLOCKER_PRESERVES_SALE_JSON=true
+          GOOGLE_DRIVE_TRANSIENT_UPLOAD_FAIL_FAST=true
+          GOOGLE_DRIVE_PLUS_TRANSIENT_DOWNLOAD_NOT_QUARANTINED=true
+          GOOGLE_DRIVE_RECONNECT_STATUS_VISIBLE=true
+          REAL_ACCOUNT_GOOGLE_DRIVE_VERIFICATION=deferred-final-acceptance
           REAL_DEVICE_PRINTER_ENDPOINT_SERIALIZATION_VERIFICATION=deferred-final-acceptance
           REAL_DEVICE_PRINTER_VERIFICATION=deferred-final-acceptance
           REAL_DEVICE_APK_INSTALL_VERIFICATION=deferred-final-acceptance
@@ -272,7 +289,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v1.00.0-dev1-japanese-printer-encoding-apks
+          name: TSUGUREGI-v1.01.0-dev1-drive-reauthorization-safety-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
