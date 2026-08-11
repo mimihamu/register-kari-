@@ -163,15 +163,18 @@ class V099PrinterEndpointSerializationTest {
     }
 
     @Test
-    fun currentReleaseAndCiDocumentDuplicatePrevention() {
+    fun v099ReleaseAndCurrentCiKeepDuplicatePrevention() {
         val gradle = File(root, "app/build.gradle.kts").readText()
         val workflow = File(root, ".github/workflows/build-apk.yml").readText()
         val notes = File(root, "docs/V0.99_RELEASE_NOTES.md").readText()
         val requirements = File(root, "docs/V0.99_PRINTER_ENDPOINT_SERIALIZATION.md").readText()
 
-        assertTrue(gradle.contains("versionCode = 129"))
-        assertTrue(gradle.contains("versionName = \"0.99.0-dev.1\""))
-        assertTrue(workflow.contains("Verify cumulative v0.14-v0.99 sources"))
+        val currentVersionCode = Regex("versionCode\\s*=\\s*(\\d+)")
+            .find(gradle)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        assertTrue(currentVersionCode >= 129)
+        assertTrue(notes.contains("versionCode 129") || notes.contains("versionCode `129`"))
+        assertTrue(notes.contains("0.99.0-dev.1"))
+        assertTrue(workflow.contains("V099PrinterEndpointSerializationTest.kt"))
         assertTrue(workflow.contains("PRINTER_ENDPOINT_SERIALIZATION=true"))
         assertTrue(workflow.contains("PRINTER_JOB_STALE_STATE_REVALIDATION=true"))
         assertTrue(workflow.contains("PRINTER_AUTO_MANUAL_DUPLICATE_PREVENTION=true"))
