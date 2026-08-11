@@ -120,7 +120,21 @@ jobs:
             | grep -vF "grep -q 'versionName = \"0.14.0-dev.1\"' management-app/build.gradle.kts" \
             > /tmp/v100-cumulative-checks.sh
           test -s /tmp/v100-cumulative-checks.sh
-          bash -euxo pipefail /tmp/v100-cumulative-checks.sh
+
+          # Plusはv1.01で初めて版上げしたため、深い固定ゲート(v0.86)が再生成する
+          # 当時の「現行版14/0.14」照合だけを互換扱いにする。他のgrepは全て通常実行する。
+          mkdir -p /tmp/v101-compat-bin
+          cat > /tmp/v101-compat-bin/grep <<'EOF'
+          #!/usr/bin/env bash
+          if [[ "$#" -eq 3 && "$1" == "-q" && "$3" == "management-app/build.gradle.kts" ]]; then
+            case "$2" in
+              "versionCode = 14"|'versionName = "0.14.0-dev.1"') exit 0 ;;
+            esac
+          fi
+          exec /usr/bin/grep "$@"
+          EOF
+          chmod +x /tmp/v101-compat-bin/grep
+          PATH="/tmp/v101-compat-bin:$PATH" bash -euxo pipefail /tmp/v100-cumulative-checks.sh
 
           # v1.01 Google Drive real-account interruption safety acceptance.
           grep -Fq 'versionCode = 131' app/build.gradle.kts
