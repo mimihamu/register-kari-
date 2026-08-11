@@ -55,6 +55,7 @@ concurrency:
 # V100JapanesePrinterEncodingTest.kt
 # V101GoogleDriveReauthorizationSafetyTest.kt
 # V101GoogleDriveTransientImportSafetyTest.kt
+# V102CustomerDisplaySendIsolationTest.kt
 # SETTLEMENT_RECONCILIATION=true
 # SETTLEMENT_RECONCILIATION_X_DIFFERENCE_INFORMATIONAL=true
 # SETTLEMENT_RECONCILIATION_Z_DIFFERENCE_ALERT=true
@@ -92,9 +93,10 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v1.01 sources
+      - name: Verify cumulative v0.14-v1.02 sources
         shell: bash
         env:
+          V101_FINAL_HEAD: 754ba393923e1717244a6b940587bc754ecbf6dc
           V100_FINAL_HEAD: d4ebe92517a00e2cc6b41b97e02ac13010428580
           V099_FINAL_HEAD: 45e19c082f640623a91bc38609d471e873ec6ece
           V098_FINAL_HEAD: 8990d93c007bc0b57afed7f28695454a8535dd90
@@ -105,61 +107,42 @@ jobs:
         run: |
           set -euo pipefail
 
-          # v1.00 finalの累積ソースゲートを固定SHAから再実行する。
-          # 現行版へ上がるPOS/Plus版番号チェックだけを除外し、v1.00までの安全性チェックを維持する。
-          git show "$V100_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v100-build-apk.yml
+          # v1.01 finalの累積ソースゲートを固定SHAから再実行する。
+          # 現行版へ上がるPOS版番号チェックだけを除外し、v1.01までの安全性チェックを維持する。
+          git show "$V101_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v101-build-apk.yml
           awk '
-            /^      - name: Verify cumulative v0.14-v1.00 sources/ { capture=1; next }
+            /^      - name: Verify cumulative v0.14-v1.01 sources/ { capture=1; next }
             capture && /^      - name: Verify launcher and orientation configuration/ { exit }
             capture && /^        run: \|/ { inrun=1; next }
             capture && inrun { sub(/^          /, ""); print }
-          ' /tmp/v100-build-apk.yml \
-            | grep -vF "grep -Fq 'versionCode = 130' app/build.gradle.kts" \
-            | grep -vF "grep -Fq 'versionName = \"1.00.0-dev.1\"' app/build.gradle.kts" \
-            | grep -vF "grep -q 'versionCode = 14' management-app/build.gradle.kts" \
-            | grep -vF "grep -q 'versionName = \"0.14.0-dev.1\"' management-app/build.gradle.kts" \
-            > /tmp/v100-cumulative-checks.sh
-          test -s /tmp/v100-cumulative-checks.sh
+          ' /tmp/v101-build-apk.yml \
+            | grep -vF "grep -Fq 'versionCode = 131' app/build.gradle.kts" \
+            | grep -vF "grep -Fq 'versionName = \"1.01.0-dev.1\"' app/build.gradle.kts" \
+            > /tmp/v101-cumulative-checks.sh
+          test -s /tmp/v101-cumulative-checks.sh
+          bash -euxo pipefail /tmp/v101-cumulative-checks.sh
 
-          # Plusはv1.01で初めて版上げしたため、深い固定ゲート(v0.86)が再生成する
-          # 当時の「現行版14/0.14」照合だけを互換扱いにする。他のgrepは全て通常実行する。
-          mkdir -p /tmp/v101-compat-bin
-          cat > /tmp/v101-compat-bin/grep <<'EOF'
-          #!/usr/bin/env bash
-          if [[ "$#" -eq 3 && "$1" == "-q" && "$3" == "management-app/build.gradle.kts" ]]; then
-            case "$2" in
-              "versionCode = 14"|'versionName = "0.14.0-dev.1"') exit 0 ;;
-            esac
-          fi
-          exec /usr/bin/grep "$@"
-          EOF
-          chmod +x /tmp/v101-compat-bin/grep
-          PATH="/tmp/v101-compat-bin:$PATH" bash -euxo pipefail /tmp/v100-cumulative-checks.sh
-
-          # v1.01 Google Drive real-account interruption safety acceptance.
-          grep -Fq 'versionCode = 131' app/build.gradle.kts
-          grep -Fq 'versionName = "1.01.0-dev.1"' app/build.gradle.kts
+          # v1.02 customer display socket-write isolation acceptance.
+          grep -Fq 'versionCode = 132' app/build.gradle.kts
+          grep -Fq 'versionName = "1.02.0-dev.1"' app/build.gradle.kts
           grep -Fq 'versionCode = 15' management-app/build.gradle.kts
           grep -Fq 'versionName = "0.15.0-dev.1"' management-app/build.gradle.kts
-          test -s app/src/test/java/jp/co/tenposinfo/register/V101GoogleDriveReauthorizationSafetyTest.kt
-          test -s management-app/src/test/java/jp/co/tenposinfo/register/plus/V101GoogleDriveTransientImportSafetyTest.kt
-          test -s docs/V1.01_GOOGLE_DRIVE_REAUTHORIZATION_SAFETY.md
-          test -s docs/V1.01_RELEASE_NOTES.md
-          grep -Fq 'enum class GoogleDriveCandidateFailureDisposition' app/src/main/java/jp/co/tenposinfo/register/GoogleDriveDirectUpload.kt
-          grep -Fq 'GoogleDriveCandidateFailureDisposition.BLOCK_QUEUE' app/src/main/java/jp/co/tenposinfo/register/GoogleDriveDirectUpload.kt
-          grep -Fq 'blockedCategory = category' app/src/main/java/jp/co/tenposinfo/register/GoogleDriveDirectUpload.kt
-          grep -Fq '売上JSONは永久失敗にせず' app/src/main/java/jp/co/tenposinfo/register/GoogleDriveDirectUpload.kt
-          grep -Fq 'fun clearBlocker()' app/src/main/java/jp/co/tenposinfo/register/GoogleDriveDirectUpload.kt
-          grep -Fq 'state.upload.blockedCategory == null' app/src/main/java/jp/co/tenposinfo/register/GoogleDriveEasyConnectActivity.kt
-          grep -Fq '再接続が必要' app/src/main/java/jp/co/tenposinfo/register/GoogleDriveEasyConnectActivity.kt
-          grep -Fq 'enum class GoogleDriveRemoteFileFailureDisposition' management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt
-          grep -Fq 'GoogleDriveRemoteFileFailureDisposition.RETRY_BATCH' management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt
-          grep -Fq 'throw GoogleDriveSyncBatchException(' management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt
-          grep -Fq 'ImportRejectionCode.READ_ERROR' management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt
-          grep -Fq '最終総合実機試験へ繰越' docs/V1.01_RELEASE_NOTES.md
-          ! grep -Fqi 'DELETE FROM sales' app/src/main/java/jp/co/tenposinfo/register/GoogleDriveDirectUpload.kt
-          ! grep -Fqi 'DROP TABLE sales' app/src/main/java/jp/co/tenposinfo/register/GoogleDriveDirectUpload.kt
-          ! grep -Fqi 'DELETE FROM imported_sales' management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt
+          grep -Fq 'versionCode = 7' customer-display/build.gradle.kts
+          grep -Fq 'versionName = "0.14.0-dev.1"' customer-display/build.gradle.kts
+          test -s app/src/test/java/jp/co/tenposinfo/register/V102CustomerDisplaySendIsolationTest.kt
+          test -s docs/V1.02_CUSTOMER_DISPLAY_SEND_ISOLATION.md
+          test -s docs/V1.02_RELEASE_NOTES.md
+          grep -Fq 'class CustomerDisplayLatestSendDispatcher' app/src/main/java/jp/co/tenposinfo/register/CustomerDisplayWebSocketServer.kt
+          grep -Fq 'private val latestPayload = AtomicReference<String?>(null)' app/src/main/java/jp/co/tenposinfo/register/CustomerDisplayWebSocketServer.kt
+          grep -Fq 'executor.execute(::drain)' app/src/main/java/jp/co/tenposinfo/register/CustomerDisplayWebSocketServer.kt
+          grep -Fq 'latestPayload.set(payload)' app/src/main/java/jp/co/tenposinfo/register/CustomerDisplayWebSocketServer.kt
+          grep -Fq 'connection.sendText(payload)' app/src/main/java/jp/co/tenposinfo/register/CustomerDisplayWebSocketServer.kt
+          grep -Fq 'CustomerDisplayLatestSendDispatcher(' app/src/main/java/jp/co/tenposinfo/register/CustomerDisplayWebSocketServer.kt
+          grep -Fq 'stalledWriterDoesNotBlockProducerAndOnlyLatestPendingSnapshotIsSent' app/src/test/java/jp/co/tenposinfo/register/V102CustomerDisplaySendIsolationTest.kt
+          grep -Fq 'stalledDisplayDoesNotPreventAnotherDisplayFromSending' app/src/test/java/jp/co/tenposinfo/register/V102CustomerDisplaySendIsolationTest.kt
+          grep -Fq '最終総合実機試験へ繰越' docs/V1.02_RELEASE_NOTES.md
+          ! grep -Fqi 'DELETE FROM sales' app/src/main/java/jp/co/tenposinfo/register/CustomerDisplayWebSocketServer.kt
+          ! grep -Fqi 'DROP TABLE' app/src/main/java/jp/co/tenposinfo/register/CustomerDisplayWebSocketServer.kt
 
       - name: Verify launcher and orientation configuration
         shell: bash
@@ -187,8 +170,8 @@ jobs:
       - name: Verify built APK release identity and integrity
         shell: bash
         env:
-          POS_VERSION_CODE: 131
-          POS_VERSION_NAME: 1.01.0-dev.1
+          POS_VERSION_CODE: 132
+          POS_VERSION_NAME: 1.02.0-dev.1
           PLUS_VERSION_CODE: 15
           PLUS_VERSION_NAME: 0.15.0-dev.1
           BUILD_TOOLS_VERSION: 36.0.0
@@ -205,7 +188,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v1.01.0_dev1_drive_reauthorization_safety_debug.apk
+          register_apk=artifacts/TSUGUREGI_v1.02.0_dev1_customer_display_send_isolation_debug.apk
           plus_apk=artifacts/TSUGUREGI_PLUS_v0.15.0_dev1_drive_transient_import_safety_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
@@ -236,8 +219,8 @@ jobs:
             >> artifacts/build-summary.txt
 
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=1.01.0-dev.1
-          REGISTER_VERSION_CODE=131
+          REGISTER_VERSION_NAME=1.02.0-dev.1
+          REGISTER_VERSION_CODE=132
           MANAGEMENT_APP_VERSION_NAME=0.15.0-dev.1
           MANAGEMENT_APP_VERSION_CODE=15
           DATA_PROTECTION_RESPONSIVE=true
@@ -295,6 +278,11 @@ jobs:
           GOOGLE_DRIVE_PLUS_TRANSIENT_DOWNLOAD_NOT_QUARANTINED=true
           GOOGLE_DRIVE_RECONNECT_STATUS_VISIBLE=true
           REAL_ACCOUNT_GOOGLE_DRIVE_VERIFICATION=deferred-final-acceptance
+          CUSTOMER_DISPLAY_SEND_ISOLATION=true
+          CUSTOMER_DISPLAY_LATEST_PENDING_COALESCE=true
+          CUSTOMER_DISPLAY_MULTI_CLIENT_FAILURE_ISOLATION=true
+          CUSTOMER_DISPLAY_UNBOUNDED_BACKLOG_PREVENTION=true
+          REAL_DEVICE_CUSTOMER_DISPLAY_VERIFICATION=deferred-final-acceptance
           REAL_DEVICE_PRINTER_ENDPOINT_SERIALIZATION_VERIFICATION=deferred-final-acceptance
           REAL_DEVICE_PRINTER_VERIFICATION=deferred-final-acceptance
           REAL_DEVICE_APK_INSTALL_VERIFICATION=deferred-final-acceptance
@@ -305,7 +293,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v1.01.0-dev1-drive-reauthorization-safety-apks
+          name: TSUGUREGI-v1.02.0-dev1-customer-display-send-isolation-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
