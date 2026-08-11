@@ -10,7 +10,7 @@ import org.junit.Test
 
 class V101GoogleDriveTransientImportSafetyTest {
     private val root = File(System.getProperty("user.dir")).let { current ->
-        if (File(current, "management-app").isDirectory) current.parentFile else current
+        if (File(current, "management-app").isDirectory) current else current.parentFile
     }
 
     @Test

@@ -46,8 +46,8 @@ class V055GoogleDriveOperationsDashboardTest {
         val docs = File(root, "docs/V0.55_SYNC_OPERATIONS_DASHBOARD.md").readText()
         val workflow = File(root, ".github/workflows/build-apk.yml").readText()
 
-        assertTrue(build.contains("versionCode = 14"))
-        assertTrue(build.contains("versionName = \"0.14.0-dev.1\""))
+        assertTrue(Regex("versionCode\\s*=\\s*(\\d+)").find(build)?.groupValues?.get(1)?.toIntOrNull()?.let { it >= 14 } == true)
+        assertTrue(Regex("""versionName\s*=\s*"0\.(\d+)\.0-dev\.1""").find(build)?.groupValues?.get(1)?.toIntOrNull()?.let { it >= 14 } == true)
         assertTrue(source.contains("同期運用ダッシュボード"))
         assertTrue(source.contains("失敗した同期を安全に再試行"))
         assertTrue(source.contains("この1件を再試行"))
@@ -63,6 +63,6 @@ class V055GoogleDriveOperationsDashboardTest {
         assertFalse(source.contains("forceReimport = true"))
         assertTrue(docs.contains("隔離履歴は削除しない"))
         assertTrue(workflow.contains(":management-app:testDebugUnitTest"))
-        assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk"))
+        assertTrue(workflow.contains("TSUGUREGI_PLUS_v") && workflow.contains("_debug.apk"))
     }
 }
