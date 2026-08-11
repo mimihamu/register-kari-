@@ -9,10 +9,17 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 object AutomaticPrintPolicy {
-    fun shouldRetry(configurationUsable: Boolean, attempted: Int, failures: Int): Boolean =
-        configurationUsable && attempted > 0 && failures > 0
+    fun shouldRetry(
+        configurationUsable: Boolean,
+        attempted: Int,
+        failures: Int,
+        pendingAfterBatch: Boolean = false,
+    ): Boolean = configurationUsable && (
+        (attempted > 0 && failures > 0) || pendingAfterBatch
+    )
 }
 
 object AutomaticPrinterPreflightPolicy {
@@ -23,11 +30,86 @@ object AutomaticPrinterPreflightPolicy {
         !enabled || PrinterStatusCapabilityRegistry.forProfile(profile).automaticQueryAllowed
 }
 
+enum class AutomaticPrintCandidateSource {
+    SALE_RECEIPT,
+    DOCUMENT,
+}
+
+data class AutomaticPrintCandidate(
+    val source: AutomaticPrintCandidateSource,
+    val sourceId: Long,
+    val createdAt: Long,
+)
+
 /**
- * 設定済みTCPプリンターへ、売上レシートと業務帳票の待機ジョブを順番に送信する。
+ * 売上レシートと業務帳票を1本の送信順序として扱う。
+ * 失敗後に別種別の帳票へ進まず、1回のWorker全体で送信量を制限する。
+ */
+object AutomaticPrintQueuePolicy {
+    const val MAX_JOBS_PER_RUN = 20
+
+    fun oldestCandidate(
+        saleJob: PrintJobRecord?,
+        documentJobs: List<DocumentPrintJobRecord>,
+    ): AutomaticPrintCandidate? {
+        val sale = saleJob?.takeIf(::isPrintable)?.let {
+            AutomaticPrintCandidate(
+                source = AutomaticPrintCandidateSource.SALE_RECEIPT,
+                sourceId = it.id,
+                createdAt = it.createdAt,
+            )
+        }
+        val document = documentJobs.asSequence()
+            .filter(::isPrintable)
+            .minWithOrNull(compareBy<DocumentPrintJobRecord> { it.createdAt }.thenBy { it.id })
+            ?.let {
+                AutomaticPrintCandidate(
+                    source = AutomaticPrintCandidateSource.DOCUMENT,
+                    sourceId = it.id,
+                    createdAt = it.createdAt,
+                )
+            }
+        return listOfNotNull(sale, document)
+            .minWithOrNull(
+                compareBy<AutomaticPrintCandidate> { it.createdAt }
+                    .thenBy { it.source.ordinal }
+                    .thenBy { it.sourceId },
+            )
+    }
+
+    fun shouldStopAfterAttempt(success: Boolean): Boolean = !success
+
+    fun batchLimitReached(attempted: Int): Boolean = attempted >= MAX_JOBS_PER_RUN
+
+    private fun isPrintable(job: PrintJobRecord): Boolean =
+        job.status == PrintJobStatus.PENDING || job.status == PrintJobStatus.RETRY
+
+    private fun isPrintable(job: DocumentPrintJobRecord): Boolean =
+        job.status == PrintJobStatus.PENDING || job.status == PrintJobStatus.RETRY
+}
+
+/**
+ * periodicとimmediateのWorkManager要求が重なっても、同一プロセス内では1本だけ送信処理を走らせる。
+ * 手動印刷の既存安全確認とは独立した、自動Worker同士の重複実行防止ゲート。
+ */
+internal object AutomaticPrintWorkerRunGate {
+    private val running = AtomicBoolean(false)
+
+    fun tryAcquire(): Boolean = running.compareAndSet(false, true)
+
+    fun release() {
+        running.set(false)
+    }
+}
+
+/**
+ * 設定済みTCPプリンターへ、売上レシートと業務帳票の待機ジョブを古い順に送信する。
  * 印刷前状態確認が有効な場合は、メーカー仕様を確認済みの状態方式だけを使用する。
  * 未検証のSTAR／汎用互換方式ではジョブ状態を変更せず再試行待ちとし、
  * 自動印刷前診断を無効にするまで送信を開始しない。
+ *
+ * 1件でも送信に失敗したrunでは後続ジョブへ進まない。
+ * これにより紙の排出結果を確認する前に別帳票が続けて送られることを防ぐ。
  */
 class AutomaticPrintWorker(
     appContext: Context,
@@ -42,6 +124,17 @@ class AutomaticPrintWorker(
         }
         if (!configuration.usable) return androidx.work.ListenableWorker.Result.success()
 
+        if (!AutomaticPrintWorkerRunGate.tryAcquire()) {
+            return androidx.work.ListenableWorker.Result.retry()
+        }
+        return try {
+            runSingleFlight(configuration)
+        } finally {
+            AutomaticPrintWorkerRunGate.release()
+        }
+    }
+
+    private fun runSingleFlight(configuration: PrinterConfiguration): androidx.work.ListenableWorker.Result {
         val preflightAllowed = PrinterMonitoringStore(applicationContext).use { monitoringStore ->
             val runtime = monitoringStore.loadSettings()
             if (!runtime.preflightEnabled) {
@@ -73,47 +166,53 @@ class AutomaticPrintWorker(
         )
         var attempted = 0
         var failures = 0
+        var pendingAfterBatch = false
 
         val database = RegisterDatabase(applicationContext)
+        val operations = AdvancedOperationsStore(applicationContext)
         try {
-            val processor = PrintQueueProcessor(database, gateway)
-            var index = 0
-            while (index < MAX_JOBS_PER_RUN && database.nextPrintableJob() != null) {
+            val saleProcessor = PrintQueueProcessor(database, gateway)
+            while (!AutomaticPrintQueuePolicy.batchLimitReached(attempted)) {
+                val candidate = AutomaticPrintQueuePolicy.oldestCandidate(
+                    saleJob = database.nextPrintableJob(),
+                    documentJobs = operations.listDocumentPrintJobs(500),
+                ) ?: break
+
                 attempted++
-                if (!processor.processNext()) {
+                val success = when (candidate.source) {
+                    AutomaticPrintCandidateSource.SALE_RECEIPT -> saleProcessor.processNext()
+                    AutomaticPrintCandidateSource.DOCUMENT ->
+                        operations.processDocumentPrint(candidate.sourceId, gateway).isSuccess
+                }
+                if (AutomaticPrintQueuePolicy.shouldStopAfterAttempt(success)) {
                     failures++
                     break
                 }
-                index++
             }
-        } finally {
-            database.close()
-        }
 
-        val operations = AdvancedOperationsStore(applicationContext)
-        try {
-            val jobs = operations.listDocumentPrintJobs(500)
-            var processed = 0
-            for (job in jobs) {
-                if (processed >= MAX_JOBS_PER_RUN) break
-                if (job.status != PrintJobStatus.PENDING && job.status != PrintJobStatus.RETRY) continue
-                attempted++
-                processed++
-                if (operations.processDocumentPrint(job.id, gateway).isFailure) failures++
+            if (AutomaticPrintQueuePolicy.batchLimitReached(attempted) && failures == 0) {
+                pendingAfterBatch = AutomaticPrintQueuePolicy.oldestCandidate(
+                    saleJob = database.nextPrintableJob(),
+                    documentJobs = operations.listDocumentPrintJobs(500),
+                ) != null
             }
         } finally {
             operations.close()
+            database.close()
         }
 
-        return if (AutomaticPrintPolicy.shouldRetry(configuration.usable, attempted, failures)) {
+        return if (
+            AutomaticPrintPolicy.shouldRetry(
+                configurationUsable = configuration.usable,
+                attempted = attempted,
+                failures = failures,
+                pendingAfterBatch = pendingAfterBatch,
+            )
+        ) {
             androidx.work.ListenableWorker.Result.retry()
         } else {
             androidx.work.ListenableWorker.Result.success()
         }
-    }
-
-    private companion object {
-        const val MAX_JOBS_PER_RUN = 20
     }
 }
 

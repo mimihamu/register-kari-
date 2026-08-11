@@ -12,10 +12,10 @@ class V097SalesLookupResponsiveTest {
     private val mainSource = File(root, "app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt").readText()
 
     @Test
-    fun currentVersionIsV097() {
-        val gradle = File(root, "app/build.gradle.kts").readText()
-        assertTrue(gradle.contains("versionCode = 127"))
-        assertTrue(gradle.contains("versionName = \"0.97.0-dev.1\""))
+    fun v097ReleaseIdentityRemainsDocumented() {
+        val notes = File(root, "docs/V0.97_RELEASE_NOTES.md").readText()
+        assertTrue(notes.contains("0.97.0-dev.1"))
+        assertTrue(notes.contains("versionCode 127"))
     }
 
     @Test
@@ -73,9 +73,10 @@ class V097SalesLookupResponsiveTest {
         val notes = File(root, "docs/V0.97_RELEASE_NOTES.md").readText()
         val workflow = File(root, ".github/workflows/build-apk.yml").readText()
         assertTrue(notes.contains("最終総合実機試験へ繰越"))
-        assertTrue(workflow.contains("Verify cumulative v0.14-v0.97 sources"))
+        assertTrue(workflow.contains("V097SalesLookupResponsiveTest.kt"))
         assertTrue(workflow.contains(":app:testDebugUnitTest"))
-        assertTrue(workflow.contains("POS_VERSION_CODE: 127"))
-        assertTrue(workflow.contains("POS_VERSION_NAME: 0.97.0-dev.1"))
+        assertTrue(workflow.contains("SALES_LOOKUP_RESPONSIVE=true"))
+        assertTrue(workflow.contains("SALES_HISTORY_RESPONSIVE=true"))
+        assertTrue(workflow.contains("SALE_DETAIL_RESPONSIVE=true"))
     }
 }

@@ -10,15 +10,25 @@ class V092ApkReleaseIntegrityGateTest {
         if (File(current, "app").isDirectory) current else current.parentFile
     }
 
+    private fun registerVersion(): Pair<String, String> {
+        val register = File(root, "app/build.gradle.kts").readText()
+        val code = Regex("versionCode = (\\d+)").find(register)?.groupValues?.get(1)
+            ?: error("register versionCode not found")
+        val name = Regex("versionName = \\\"([^\\\"]+)\\\"").find(register)?.groupValues?.get(1)
+            ?: error("register versionName not found")
+        return code to name
+    }
+
     @Test
     fun releaseIdentityTracksCurrentRegisterAndCompanionAppsStayPinned() {
         val register = File(root, "app/build.gradle.kts").readText()
         val plus = File(root, "management-app/build.gradle.kts").readText()
         val cd = File(root, "customer-display/build.gradle.kts").readText()
+        val (registerCode, registerName) = registerVersion()
 
         assertTrue(register.contains("applicationId = \"jp.co.tenposinfo.register\""))
-        assertTrue(register.contains("versionCode = 127"))
-        assertTrue(register.contains("versionName = \"0.97.0-dev.1\""))
+        assertTrue(registerCode.toInt() > 0)
+        assertTrue(registerName.matches(Regex("\\d+\\.\\d+\\.\\d+-dev\\.\\d+")))
         assertTrue(register.contains("applicationIdSuffix = \".dev\""))
 
         assertTrue(plus.contains("applicationId = \"jp.co.tenposinfo.register.plus\""))
@@ -71,12 +81,13 @@ class V092ApkReleaseIntegrityGateTest {
         val build = workflow.indexOf("- name: Build debug APKs")
         val gate = workflow.indexOf("- name: Verify built APK release identity and integrity")
         val prepare = workflow.indexOf("- name: Prepare named APKs and SHA-256")
+        val (registerCode, registerName) = registerVersion()
 
         assertTrue(build >= 0)
         assertTrue(gate > build)
         assertTrue(prepare > gate)
-        assertTrue(workflow.contains("POS_VERSION_CODE: 127"))
-        assertTrue(workflow.contains("POS_VERSION_NAME: 0.97.0-dev.1"))
+        assertTrue(workflow.contains("POS_VERSION_CODE: $registerCode"))
+        assertTrue(workflow.contains("POS_VERSION_NAME: $registerName"))
         assertTrue(workflow.contains("bash ci/verify-apk-release-integrity.sh"))
         assertTrue(workflow.contains(":app:testDebugUnitTest"))
         assertTrue(workflow.contains(":customer-display:testDebugUnitTest"))

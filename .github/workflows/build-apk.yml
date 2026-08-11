@@ -48,6 +48,9 @@ concurrency:
 # V081SettlementReconciliationAuditLedgerTest.kt
 # V082SettlementReconciliationAuditCsvExportTest.kt
 # V083RestoreBootstrapOrderTest.kt
+# V096HeldTicketResponsiveTest.kt
+# V097SalesLookupResponsiveTest.kt
+# V098AutomaticPrintDispatchSafetyTest.kt
 # SETTLEMENT_RECONCILIATION=true
 # SETTLEMENT_RECONCILIATION_X_DIFFERENCE_INFORMATIONAL=true
 # SETTLEMENT_RECONCILIATION_Z_DIFFERENCE_ALERT=true
@@ -85,150 +88,49 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v0.97 sources
+      - name: Verify cumulative v0.14-v0.98 sources
         shell: bash
         env:
+          V097_FINAL_HEAD: c216ab8a37c6db23ebcde673cd08fc9d6f4c328d
           V090_FINAL_HEAD: 2ca9a2faa263f469788eaad903309f9e3ddcd545
           V086_FINAL_HEAD: aef6c08d75d057b67662e9612238edba15fc6489
         run: |
           set -euo pipefail
 
-          # v0.90までの確定済み累積検査を再実行する。
-          git show "$V090_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v090-build-apk.yml
+          # v0.97までの確定済み累積ソースゲートを再実行する。
+          # 現行版へ上がる2行だけを除外し、過去版の機能・安全性チェックは維持する。
+          git show "$V097_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v097-build-apk.yml
           awk '
-            /^      - name: Verify cumulative v0.14-v0.90 sources/ { capture=1; next }
+            /^      - name: Verify cumulative v0.14-v0.97 sources/ { capture=1; next }
             capture && /^      - name: Verify launcher and orientation configuration/ { exit }
             capture && /^        run: \|/ { inrun=1; next }
             capture && inrun { sub(/^          /, ""); print }
-          ' /tmp/v090-build-apk.yml \
-            | grep -v "grep -q 'versionCode = 120' app/build.gradle.kts" \
-            | grep -v "grep -q 'versionName = \"0.90.0-dev.1\"' app/build.gradle.kts" \
-            > /tmp/v090-cumulative-checks.sh
-          test -s /tmp/v090-cumulative-checks.sh
-          bash -euxo pipefail /tmp/v090-cumulative-checks.sh
+          ' /tmp/v097-build-apk.yml \
+            | grep -vF "grep -Fq 'versionCode = 127' app/build.gradle.kts" \
+            | grep -vF "grep -Fq 'versionName = \"0.97.0-dev.1\"' app/build.gradle.kts" \
+            > /tmp/v097-cumulative-checks.sh
+          test -s /tmp/v097-cumulative-checks.sh
+          bash -euxo pipefail /tmp/v097-cumulative-checks.sh
 
-          # v0.91 data-protection responsive acceptance remains cumulative.
-          test -s app/src/test/java/jp/co/tenposinfo/register/V091DataProtectionResponsiveTest.kt
-          test -s docs/V0.91_DATA_PROTECTION_RESPONSIVE.md
-          test -s docs/V0.91_RELEASE_NOTES.md
-          grep -Fq 'val responsive = rememberRegisterResponsiveMetrics()' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -Fq 'val leftScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -Fq 'val rightScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -Fq 'Modifier.verticalScroll(leftScroll)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -Fq 'Modifier.verticalScroll(rightScroll)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -Fq 'Modifier.width(if (responsive.isCompact) 360.dp else 470.dp)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -Fq 'heightIn(min = 80.dp, max = 150.dp)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -Fq 'AppUpdateDiagnosticsPanelV090(appContext)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -Fq '復元・取消用 責任者PIN' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -Fq '次回起動時に復元' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          grep -Fq '予約取消' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          ! grep -Fqi 'DELETE FROM sales' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          ! grep -Fqi 'UPDATE sales' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-          ! grep -Fqi 'DROP TABLE' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
-
-          # v0.92 built APK integrity gate remains cumulative.
-          test -s ci/verify-apk-release-integrity.sh
-          test -s app/src/test/java/jp/co/tenposinfo/register/V092ApkReleaseIntegrityGateTest.kt
-          test -s docs/V0.92_APK_RELEASE_INTEGRITY_GATE.md
-          test -s docs/V0.92_RELEASE_NOTES.md
-          grep -Fq 'jp.co.tenposinfo.register.dev' ci/verify-apk-release-integrity.sh
-          grep -Fq 'jp.co.tenposinfo.register.plus.dev' ci/verify-apk-release-integrity.sh
-          grep -Fq 'jp.co.tenposinfo.register.cd.dev' ci/verify-apk-release-integrity.sh
-          grep -Fq 'apkanalyzer' ci/verify-apk-release-integrity.sh
-          grep -Fq 'manifest_value min-sdk' ci/verify-apk-release-integrity.sh
-          grep -Fq 'manifest_value target-sdk' ci/verify-apk-release-integrity.sh
-          grep -Fq 'aapt2' ci/verify-apk-release-integrity.sh
-          grep -Fq 'apksigner' ci/verify-apk-release-integrity.sh
-          grep -Fq 'unzip -tq' ci/verify-apk-release-integrity.sh
-          grep -Fq 'APK Signature Scheme v2' ci/verify-apk-release-integrity.sh
-          grep -Fq '752c4f56263c8887ada96184d25fad200aff0e84a80c67eda60c7607da3ac9e4' ci/verify-apk-release-integrity.sh
-          ! grep -Fqi 'DELETE FROM' ci/verify-apk-release-integrity.sh
-          ! grep -Fqi 'UPDATE sales' ci/verify-apk-release-integrity.sh
-          ! grep -Fqi 'DROP TABLE' ci/verify-apk-release-integrity.sh
-
-          # v0.93 login + complete responsive acceptance. Detailed layout is enforced by JUnit.
-          test -s app/src/test/java/jp/co/tenposinfo/register/V093MainFlowResponsiveTest.kt
-          test -s docs/V0.93_MAIN_FLOW_RESPONSIVE.md
-          test -s docs/V0.93_RELEASE_NOTES.md
-          grep -Fq 'val operatorScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'val pinScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'val pinPanelWidthDp = if (responsive.isCompact) 260 else 390' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'val compactScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'SaleReceiptNavigation.intent(context, saleId)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'ReceiptVoucherNavigation.issuanceIntent(context, lastSaleId)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'onHistory = { screen = AppScreen.SALES_HISTORY }' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'onQueue = { openUnifiedPrintQueue() }' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'onNext = { screen = AppScreen.SALES }' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-
-          # v0.94 startup diagnostic responsive acceptance.
-          test -s app/src/test/java/jp/co/tenposinfo/register/V094StartupDiagnosticResponsiveTest.kt
-          test -s docs/V0.94_STARTUP_DIAGNOSTIC_RESPONSIVE.md
-          test -s docs/V0.94_RELEASE_NOTES.md
-          grep -Fq 'val diagnosticScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq '.verticalScroll(diagnosticScroll)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.fillMaxWidth().heightIn(min = 250.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.width(700.dp).height(RegisterLayoutPolicy.DIAGNOSTIC_CARD_HEIGHT_DP.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.width(340.dp).height(54.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'onComplete = { screen = AppScreen.LOGIN }' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq '最終総合実機試験へ繰越' docs/V0.94_RELEASE_NOTES.md
-          ! grep -Fqi 'DELETE FROM' docs/V0.94_STARTUP_DIAGNOSTIC_RESPONSIVE.md
-          ! grep -Fqi 'UPDATE sales' docs/V0.94_STARTUP_DIAGNOSTIC_RESPONSIVE.md
-          ! grep -Fqi 'DROP TABLE' docs/V0.94_STARTUP_DIAGNOSTIC_RESPONSIVE.md
-
-          # v0.95 sales edit responsive acceptance. Detailed layout is enforced by JUnit.
-          test -s app/src/test/java/jp/co/tenposinfo/register/V095SalesEditResponsiveTest.kt
-          test -s docs/V0.95_SALES_EDIT_RESPONSIVE.md
-          test -s docs/V0.95_RELEASE_NOTES.md
-          grep -Fq 'val editScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'val editSummaryScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'val discountEditScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'val discountPreviewScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.weight(0.72f)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.weight(0.92f)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.width(330.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.width(390.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'DiscountEngine.applyToItem' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'DiscountEngine.applyToTransaction' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq '最終総合実機試験へ繰越' docs/V0.95_RELEASE_NOTES.md
-          ! grep -Fqi 'DELETE FROM' docs/V0.95_SALES_EDIT_RESPONSIVE.md
-          ! grep -Fqi 'UPDATE sales' docs/V0.95_SALES_EDIT_RESPONSIVE.md
-          ! grep -Fqi 'DROP TABLE' docs/V0.95_SALES_EDIT_RESPONSIVE.md
-
-          # v0.96 held-ticket responsive acceptance. Detailed layout is enforced by JUnit.
-          test -s app/src/test/java/jp/co/tenposinfo/register/V096HeldTicketResponsiveTest.kt
-          test -s docs/V0.96_HELD_TICKET_RESPONSIVE.md
-          test -s docs/V0.96_RELEASE_NOTES.md
-          grep -Fq 'val ticketResponsive = rememberRegisterResponsiveMetrics()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'val splitSummaryScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.weight(1.25f).height(42.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.weight(0.8f)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.width(350.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.width(if (responsive.isCompact) 108.dp else 130.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'onMerge(source, ticket)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'HeldTicketOperationsUiPolicy.validateSplit(items, rawQuantities, newName)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq '最終総合実機試験へ繰越' docs/V0.96_RELEASE_NOTES.md
-          ! grep -Fqi 'DELETE FROM' docs/V0.96_HELD_TICKET_RESPONSIVE.md
-          ! grep -Fqi 'UPDATE sales' docs/V0.96_HELD_TICKET_RESPONSIVE.md
-          ! grep -Fqi 'DROP TABLE' docs/V0.96_HELD_TICKET_RESPONSIVE.md
-
-          # v0.97 sales lookup responsive acceptance. Detailed layout is enforced by JUnit.
-          grep -Fq 'versionCode = 127' app/build.gradle.kts
-          grep -Fq 'versionName = "0.97.0-dev.1"' app/build.gradle.kts
-          test -s app/src/test/java/jp/co/tenposinfo/register/V097SalesLookupResponsiveTest.kt
-          test -s docs/V0.97_SALES_LOOKUP_RESPONSIVE.md
-          test -s docs/V0.97_RELEASE_NOTES.md
-          grep -Fq 'val historyResponsive = rememberRegisterResponsiveMetrics()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'val historyFilterScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'val detailResponsive = rememberRegisterResponsiveMetrics()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'val detailSummaryScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'Modifier.width(380.dp)' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'if (!onDirectLookup(saleId))' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'onClick = onVoucher' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq 'onClick = onReverse' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          grep -Fq '最終総合実機試験へ繰越' docs/V0.97_RELEASE_NOTES.md
-          ! grep -Fqi 'DELETE FROM' docs/V0.97_SALES_LOOKUP_RESPONSIVE.md
-          ! grep -Fqi 'UPDATE sales' docs/V0.97_SALES_LOOKUP_RESPONSIVE.md
-          ! grep -Fqi 'DROP TABLE' docs/V0.97_SALES_LOOKUP_RESPONSIVE.md
+          # v0.98 automatic print dispatch safety acceptance.
+          grep -Fq 'versionCode = 128' app/build.gradle.kts
+          grep -Fq 'versionName = "0.98.0-dev.1"' app/build.gradle.kts
+          test -s app/src/test/java/jp/co/tenposinfo/register/V098AutomaticPrintDispatchSafetyTest.kt
+          test -s docs/V0.98_AUTOMATIC_PRINT_DISPATCH_SAFETY.md
+          test -s docs/V0.98_RELEASE_NOTES.md
+          grep -Fq 'const val MAX_JOBS_PER_RUN = 20' app/src/main/java/jp/co/tenposinfo/register/AutomaticPrintWorker.kt
+          grep -Fq 'AutomaticPrintWorkerRunGate.tryAcquire()' app/src/main/java/jp/co/tenposinfo/register/AutomaticPrintWorker.kt
+          grep -Fq 'AutomaticPrintWorkerRunGate.release()' app/src/main/java/jp/co/tenposinfo/register/AutomaticPrintWorker.kt
+          grep -Fq 'AutomaticPrintQueuePolicy.oldestCandidate(' app/src/main/java/jp/co/tenposinfo/register/AutomaticPrintWorker.kt
+          grep -Fq 'while (!AutomaticPrintQueuePolicy.batchLimitReached(attempted))' app/src/main/java/jp/co/tenposinfo/register/AutomaticPrintWorker.kt
+          grep -Fq 'if (AutomaticPrintQueuePolicy.shouldStopAfterAttempt(success))' app/src/main/java/jp/co/tenposinfo/register/AutomaticPrintWorker.kt
+          grep -Fq 'pendingAfterBatch = AutomaticPrintQueuePolicy.oldestCandidate(' app/src/main/java/jp/co/tenposinfo/register/AutomaticPrintWorker.kt
+          grep -Fq 'PrinterDeliveryPhase.WRITE_STARTED' app/src/main/java/jp/co/tenposinfo/register/Receipt.kt
+          grep -Fq 'UNKNOWN_DELIVERY_PREFIX' app/src/main/java/jp/co/tenposinfo/register/DocumentPrintSafety.kt
+          grep -Fq '最終総合実機試験へ繰越' docs/V0.98_RELEASE_NOTES.md
+          ! grep -Fqi 'DELETE FROM sales' app/src/main/java/jp/co/tenposinfo/register/AutomaticPrintWorker.kt
+          ! grep -Fqi 'UPDATE sales' app/src/main/java/jp/co/tenposinfo/register/AutomaticPrintWorker.kt
+          ! grep -Fqi 'DROP TABLE' app/src/main/java/jp/co/tenposinfo/register/AutomaticPrintWorker.kt
 
       - name: Verify launcher and orientation configuration
         shell: bash
@@ -256,8 +158,8 @@ jobs:
       - name: Verify built APK release identity and integrity
         shell: bash
         env:
-          POS_VERSION_CODE: 127
-          POS_VERSION_NAME: 0.97.0-dev.1
+          POS_VERSION_CODE: 128
+          POS_VERSION_NAME: 0.98.0-dev.1
           BUILD_TOOLS_VERSION: 36.0.0
         run: |
           set -euo pipefail
@@ -272,7 +174,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v0.97.0_dev1_sales_lookup_responsive_debug.apk
+          register_apk=artifacts/TSUGUREGI_v0.98.0_dev1_automatic_print_dispatch_safety_debug.apk
           plus_apk=artifacts/TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
@@ -303,8 +205,8 @@ jobs:
             >> artifacts/build-summary.txt
 
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=0.97.0-dev.1
-          REGISTER_VERSION_CODE=127
+          REGISTER_VERSION_NAME=0.98.0-dev.1
+          REGISTER_VERSION_CODE=128
           DATA_PROTECTION_RESPONSIVE=true
           APK_RELEASE_INTEGRITY_GATE=true
           MAIN_FLOW_RESPONSIVE=true
@@ -335,6 +237,13 @@ jobs:
           SALE_DETAIL_SUMMARY_SCROLL=true
           SALES_LOOKUP_NORMAL_LAYOUT_PRESERVED=true
           REAL_DEVICE_SALES_LOOKUP_VERIFICATION=deferred-final-acceptance
+          AUTOMATIC_PRINT_DISPATCH_SAFETY=true
+          AUTOMATIC_PRINT_SHARED_CHRONOLOGICAL_ORDER=true
+          AUTOMATIC_PRINT_FAIL_FAST=true
+          AUTOMATIC_PRINT_GLOBAL_BATCH_LIMIT=20
+          AUTOMATIC_PRINT_SINGLE_FLIGHT=true
+          AUTOMATIC_PRINT_BACKLOG_CONTINUATION=true
+          REAL_DEVICE_PRINTER_VERIFICATION=deferred-final-acceptance
           REAL_DEVICE_APK_INSTALL_VERIFICATION=deferred-final-acceptance
           EOF
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
@@ -343,7 +252,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v0.97.0-dev1-sales-lookup-responsive-apks
+          name: TSUGUREGI-v0.98.0-dev1-automatic-print-dispatch-safety-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30

@@ -89,10 +89,10 @@ class V096HeldTicketResponsiveTest {
         assertTrue(requirements.readText().contains("最終総合実機試験"))
 
         val workflow = File(root, ".github/workflows/build-apk.yml").readText()
-        assertTrue(workflow.contains("Verify cumulative v0.14-v0.97 sources"))
-        assertTrue(workflow.contains("POS_VERSION_CODE: 127"))
-        assertTrue(workflow.contains("POS_VERSION_NAME: 0.97.0-dev.1"))
+        assertTrue(workflow.contains("V096HeldTicketResponsiveTest.kt"))
         assertTrue(workflow.contains("HELD_TICKET_RESPONSIVE=true"))
+        assertTrue(workflow.contains("TICKET_LIST_RESPONSIVE=true"))
+        assertTrue(workflow.contains("TICKET_SPLIT_RESPONSIVE=true"))
         assertTrue(workflow.contains("APK_RELEASE_INTEGRITY_GATE=true"))
     }
 
