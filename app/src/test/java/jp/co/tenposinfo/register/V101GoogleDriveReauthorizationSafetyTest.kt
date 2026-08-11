@@ -84,7 +84,17 @@ class V101GoogleDriveReauthorizationSafetyTest {
         assertTrue(blockBody.contains("売上JSONは永久失敗にせず"))
         assertTrue(blockBody.contains("break"))
         assertFalse(blockBody.contains("markFailure(candidate"))
-        assertTrue(source.contains("GoogleDriveDirectUploadStatusStore(applicationContext).clearBlocker()"))
+    }
+
+    @Test
+    fun bothSuccessfulEasyConnectPathsClearBlockerBeforeRequestingUpload() {
+        val source = File(root, "app/src/main/java/jp/co/tenposinfo/register/GoogleDriveEasyConnectActivity.kt").readText()
+        val marker = "GoogleDriveDirectUploadStatusStore(applicationContext).clearBlocker()"
+        assertEquals(2, Regex(Regex.escape(marker)).findAll(source).count())
+        val setup = source.substring(source.indexOf("private fun finishEasySetup"), source.indexOf("private fun synchronizeNow"))
+        val manual = source.substring(source.indexOf("private fun synchronizeNow"), source.indexOf("private fun disconnect"))
+        assertTrue(setup.indexOf(marker) < setup.indexOf("GoogleDriveDirectUploadScheduler.enqueueNow"))
+        assertTrue(manual.indexOf(marker) < manual.indexOf("GoogleDriveDirectUploadScheduler.enqueueNow"))
     }
 
     @Test
