@@ -1,0 +1,102 @@
+name: v0.99 Apply printer endpoint gate
+
+on:
+  push:
+    branches:
+      - develop/v0.99
+    paths:
+      - .github/workflows/v099-apply-printer-endpoint-gate.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v0.99
+      - name: Patch TcpEscPosPrinterGateway
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('app/src/main/java/jp/co/tenposinfo/register/Receipt.kt')
+          text = path.read_text()
+          old = '''class TcpEscPosPrinterGateway(
+              private val host: String,
+              private val port: Int = 9100,
+              private val timeoutMillis: Int = 5_000,
+          ) : PrinterGateway {
+              override fun send(payload: ByteArray): Result<Unit> {
+                  var phase = PrinterDeliveryPhase.CONNECTING
+                  return runCatching {
+                      Socket().use { socket ->
+                          socket.connect(InetSocketAddress(host, port), timeoutMillis)
+                          socket.soTimeout = timeoutMillis
+                          phase = PrinterDeliveryPhase.CONNECTED
+                          socket.getOutputStream().use { stream ->
+                              phase = PrinterDeliveryPhase.WRITE_STARTED
+                              stream.write(payload)
+                              stream.flush()
+                              phase = PrinterDeliveryPhase.FLUSHED
+                          }
+                      }
+                  }.recoverCatching { error ->
+                      if (error is PrinterTransportException) throw error
+                      throw PrinterTransportException(phase, error)
+                  }
+              }
+          }
+          '''
+          new = '''class TcpEscPosPrinterGateway(
+              private val host: String,
+              private val port: Int = 9100,
+              private val timeoutMillis: Int = 5_000,
+          ) : PrinterGateway {
+              override fun send(payload: ByteArray): Result<Unit> = runCatching {
+                  PrinterEndpointSendGate.withPermit(
+                      host = host,
+                      port = port,
+                      waitMillis = timeoutMillis.toLong(),
+                  ) {
+                      sendExclusive(payload)
+                  }
+              }
+
+              private fun sendExclusive(payload: ByteArray) {
+                  var phase = PrinterDeliveryPhase.CONNECTING
+                  try {
+                      Socket().use { socket ->
+                          socket.connect(InetSocketAddress(host, port), timeoutMillis)
+                          socket.soTimeout = timeoutMillis
+                          phase = PrinterDeliveryPhase.CONNECTED
+                          socket.getOutputStream().use { stream ->
+                              phase = PrinterDeliveryPhase.WRITE_STARTED
+                              stream.write(payload)
+                              stream.flush()
+                              phase = PrinterDeliveryPhase.FLUSHED
+                          }
+                      }
+                  } catch (error: Throwable) {
+                      if (error is PrinterTransportException) throw error
+                      throw PrinterTransportException(phase, error)
+                  }
+              }
+          }
+          '''
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'expected exactly one gateway block, found {count}')
+          path.write_text(text.replace(old, new))
+          PY
+      - name: Commit patch
+        run: |
+          if git diff --quiet -- app/src/main/java/jp/co/tenposinfo/register/Receipt.kt; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/jp/co/tenposinfo/register/Receipt.kt
+          git commit -m "feat(v0.99): serialize TCP printer sends by endpoint"
+          git push origin HEAD:develop/v0.99
