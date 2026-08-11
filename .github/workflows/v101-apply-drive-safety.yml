@@ -5,7 +5,7 @@ on:
     branches:
       - develop/v1.01
     paths:
-      - ci/v101-apply-trigger-6.txt
+      - ci/v101-apply-trigger-7.txt
 
 permissions:
   contents: write
@@ -19,13 +19,16 @@ jobs:
         with:
           ref: develop/v1.01
           fetch-depth: 0
-      - name: Patch manual reconnect path
+      - name: Update Plus APK integrity expectations
         shell: bash
         run: |
           set -euo pipefail
-          python3 -c 'from pathlib import Path; p=Path("app/src/main/java/jp/co/tenposinfo/register/GoogleDriveEasyConnectActivity.kt"); t=p.read_text(encoding="utf-8"); old="                    val connection = GoogleDriveConnectionTestCoordinator(applicationContext)\n                        .createOrUpdate(token)\n                    val staged = JournalOutboxStore(applicationContext).use { it.stagePending(500) }\n"; new="                    val connection = GoogleDriveConnectionTestCoordinator(applicationContext)\n                        .createOrUpdate(token)\n                    GoogleDriveDirectUploadStatusStore(applicationContext).clearBlocker()\n                    val staged = JournalOutboxStore(applicationContext).use { it.stagePending(500) }\n"; assert t.count(old) == 1, t.count(old); p.write_text(t.replace(old,new,1),encoding="utf-8")'
+          python3 -c 'from pathlib import Path; p=Path("ci/verify-apk-release-integrity.sh"); t=p.read_text(); old=": \"${POS_VERSION_NAME:?POS_VERSION_NAME is required}\"\n"; new=old+": \"${PLUS_VERSION_CODE:?PLUS_VERSION_CODE is required}\"\n: \"${PLUS_VERSION_NAME:?PLUS_VERSION_NAME is required}\"\n"; assert t.count(old)==1; t=t.replace(old,new,1); t=t.replace("    '\''14'\'' \\\n    '\''0.14.0-dev.1'\'' \\\n", "    \"$PLUS_VERSION_CODE\" \\\n    \"$PLUS_VERSION_NAME\" \\\n",1); p.write_text(t)'
+          python3 -c 'from pathlib import Path; p=Path("ci/v101-final-build-apk.yml.txt"); t=p.read_text(); old="          POS_VERSION_NAME: 1.01.0-dev.1\n          BUILD_TOOLS_VERSION: 36.0.0\n"; new="          POS_VERSION_NAME: 1.01.0-dev.1\n          PLUS_VERSION_CODE: 15\n          PLUS_VERSION_NAME: 0.15.0-dev.1\n          BUILD_TOOLS_VERSION: 36.0.0\n"; assert t.count(old)==1; p.write_text(t.replace(old,new,1))'
+          grep -Fq 'PLUS_VERSION_CODE' ci/verify-apk-release-integrity.sh
+          grep -Fq 'PLUS_VERSION_CODE: 15' ci/v101-final-build-apk.yml.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/src/main/java/jp/co/tenposinfo/register/GoogleDriveEasyConnectActivity.kt
-          git commit -m "v1.01 Easy Connect手動再開時のblocker解除"
+          git add ci/verify-apk-release-integrity.sh ci/v101-final-build-apk.yml.txt
+          git commit -m "v1.01 Plus APK整合性ゲートを0.15へ更新"
           git push origin HEAD:develop/v1.01
