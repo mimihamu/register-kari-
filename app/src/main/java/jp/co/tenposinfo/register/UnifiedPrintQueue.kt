@@ -402,16 +402,7 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
         managerPin: String = "",
     ): Result<String> {
         if (!UnifiedPrintJobActionPolicy.mayPrint(job.status)) {
-            return Result.failure(
-                IllegalStateException(
-                    when (job.status) {
-                        PrintJobStatus.COMPLETED -> "完了済みジョブは送信できません。再印字を登録してください"
-                        PrintJobStatus.DISCARDED -> "破棄済みジョブは送信できません"
-                        PrintJobStatus.PRINTING -> "印刷中のジョブは操作できません"
-                        else -> "このジョブは送信できません"
-                    },
-                ),
-            )
+            return Result.failure(IllegalStateException(printabilityError(job.status)))
         }
         val managerName = if (requireHealthyPrinter) null else {
             settingsStore.managerNameForPin(managerPin)
@@ -455,18 +446,36 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
             }
         }
         PrinterConfigurationRegistry.reload(applicationContext)
-        val gateway = TcpEscPosPrinterGateway(
-            host = configuration.host,
-            port = configuration.port,
-            timeoutMillis = configuration.timeoutMillis,
-        )
-        val result = when (job.type) {
-            UnifiedPrintJobType.SALE_RECEIPT -> printSaleJob(job, configuration, gateway)
-            UnifiedPrintJobType.REVERSAL_RECEIPT,
-            UnifiedPrintJobType.SETTLEMENT_REPORT,
-            UnifiedPrintJobType.RECEIPT_VOUCHER,
-            -> documentStore.processDocumentPrint(job.sourceId, gateway).map {
-                "${job.type.displayName}を送信しました（Job.${job.sourceId}）"
+        val result = runCatching {
+            PrinterEndpointSendGate.withPermit(
+                host = configuration.host,
+                port = configuration.port,
+                waitMillis = configuration.timeoutMillis.toLong(),
+            ) {
+                val gateway = TcpEscPosPrinterGateway(
+                    host = configuration.host,
+                    port = configuration.port,
+                    timeoutMillis = configuration.timeoutMillis,
+                )
+                when (job.type) {
+                    UnifiedPrintJobType.SALE_RECEIPT ->
+                        printSaleJob(job, configuration, gateway).getOrThrow()
+
+                    UnifiedPrintJobType.REVERSAL_RECEIPT,
+                    UnifiedPrintJobType.SETTLEMENT_REPORT,
+                    UnifiedPrintJobType.RECEIPT_VOUCHER,
+                    -> {
+                        val current = documentStore.listDocumentPrintJobs(500)
+                            .firstOrNull { it.id == job.sourceId }
+                            ?: throw IllegalArgumentException("業務帳票の印刷ジョブが見つかりません")
+                        requireCurrentStatus(job.status, current.status)
+                        if (!UnifiedPrintJobActionPolicy.mayPrint(current.status)) {
+                            throw IllegalStateException(printabilityError(current.status))
+                        }
+                        documentStore.processDocumentPrint(job.sourceId, gateway).getOrThrow()
+                        "${job.type.displayName}を送信しました（Job.${job.sourceId}）"
+                    }
+                }
             }
         }
         result.onSuccess {
@@ -522,6 +531,11 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
     ): Result<String> {
         val sourceJob = salesDatabase.listPrintJobs(500).firstOrNull { it.id == unifiedJob.sourceId }
             ?: return Result.failure(IllegalArgumentException("売上印刷ジョブが見つかりません"))
+        runCatching { requireCurrentStatus(unifiedJob.status, sourceJob.status) }
+            .onFailure { return Result.failure(it) }
+        if (!UnifiedPrintJobActionPolicy.mayPrint(sourceJob.status)) {
+            return Result.failure(IllegalStateException(printabilityError(sourceJob.status)))
+        }
         val detail = salesDatabase.loadSaleDetail(sourceJob.saleId)
             ?: return Result.failure(IllegalArgumentException("売上データが見つかりません"))
         salesDatabase.markPrintStarted(sourceJob.id)
@@ -543,6 +557,21 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
             )
         }
         return result.map { "売上レシートを送信しました（Job.${sourceJob.id}）" }
+    }
+
+    private fun requireCurrentStatus(expected: PrintJobStatus, current: PrintJobStatus) {
+        if (expected != current) {
+            throw IllegalStateException(
+                "印刷ジョブの状態が変更されました（${expected.name}→${current.name}）。一覧を再読込してから操作してください",
+            )
+        }
+    }
+
+    private fun printabilityError(status: PrintJobStatus): String = when (status) {
+        PrintJobStatus.COMPLETED -> "完了済みジョブは送信できません。再印字を登録してください"
+        PrintJobStatus.DISCARDED -> "破棄済みジョブは送信できません"
+        PrintJobStatus.PRINTING -> "印刷中のジョブは操作できません"
+        else -> "このジョブは送信できません"
     }
 
     private fun auditDetail(job: UnifiedPrintJob, action: String): String =
