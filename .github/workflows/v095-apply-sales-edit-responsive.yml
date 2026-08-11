@@ -1,0 +1,331 @@
+name: v0.95 guarded sales edit responsive patch
+
+on:
+  push:
+    branches:
+      - develop/v0.95
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v0.95
+          fetch-depth: 0
+
+      - name: Apply guarded MainActivity patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt')
+          text = path.read_text()
+          if 'val editScroll = rememberScrollState()' in text and 'val discountPreviewScroll = rememberScrollState()' in text:
+              print('v0.95 sales edit responsive patch already applied')
+              raise SystemExit(0)
+
+          line_start = text.index('@Composable\nprivate fun LineEditScreen(')
+          discount_start = text.index('@Composable\nprivate fun DiscountScreen(', line_start)
+          ticket_start = text.index('@Composable\nprivate fun TicketListScreen(', discount_start)
+
+          old_line = text[line_start:discount_start]
+          old_discount = text[discount_start:ticket_start]
+          required_line = [
+              'Row(Modifier.weight(1f).padding(20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp))',
+              'CardPanel(Modifier.width(330.dp).fillMaxHeight())',
+              'modifier = Modifier.fillMaxWidth().height(110.dp)',
+          ]
+          required_discount = [
+              'Header("SCR-121", "値引・割引")',
+              'CardPanel(Modifier.width(390.dp).fillMaxHeight())',
+              'BottomActions(onBack, "適用", { onApply(preview) }, items.isNotEmpty() && numericValue > 0)',
+          ]
+          for marker in required_line:
+              if marker not in old_line:
+                  raise SystemExit(f'LineEdit guard failed: {marker}')
+          for marker in required_discount:
+              if marker not in old_discount:
+                  raise SystemExit(f'Discount guard failed: {marker}')
+
+          new_line = r'''@Composable
+          private fun LineEditScreen(
+              item: CartItem,
+              onSave: (CartItem) -> Unit,
+              onDiscount: () -> Unit,
+              onBack: () -> Unit,
+          ) {
+              var quantity by remember { mutableStateOf(item.quantity.toString()) }
+              var unitPrice by remember { mutableStateOf(item.unitPrice.toString()) }
+              var discount by remember { mutableStateOf(item.discountAmount.toString()) }
+              var note by remember { mutableStateOf(item.note) }
+              var category by remember { mutableStateOf(item.product.taxCategory) }
+              val parsedQuantity = quantity.toIntOrNull()?.coerceAtLeast(1) ?: 1
+              val parsedUnitPrice = unitPrice.toLongOrNull()?.coerceAtLeast(0) ?: 0
+              val maxDiscount = parsedUnitPrice * parsedQuantity
+              val parsedDiscount = discount.toLongOrNull()?.coerceIn(0, maxDiscount) ?: 0
+              val responsive = rememberRegisterResponsiveMetrics()
+              val editScroll = rememberScrollState()
+              val editSummaryScroll = rememberScrollState()
+
+              Column(Modifier.fillMaxSize()) {
+                  Header("SCR-120", "行編集")
+                  Row(
+                      Modifier.weight(1f).padding(responsive.screenPaddingDp.dp),
+                      horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
+                  ) {
+                      CardPanel(
+                          Modifier
+                              .weight(if (responsive.isCompact) 1.28f else 1f)
+                              .fillMaxHeight(),
+                      ) {
+                          Column(Modifier.fillMaxSize().verticalScroll(editScroll)) {
+                              Text(
+                                  item.product.name,
+                                  fontSize = if (responsive.isCompact) 22.sp else 28.sp,
+                                  fontWeight = FontWeight.Bold,
+                                  color = Navy,
+                              )
+                              Spacer(Modifier.height(if (responsive.isCompact) 10.dp else 18.dp))
+                              Row(
+                                  Modifier.fillMaxWidth(),
+                                  horizontalArrangement = Arrangement.spacedBy(if (responsive.isCompact) 8.dp else 14.dp),
+                              ) {
+                                  NumericField("数量", quantity, { quantity = it }, Modifier.weight(1f))
+                                  NumericField("単価", unitPrice, { unitPrice = it }, Modifier.weight(1f))
+                                  NumericField("行値引", discount, { discount = it }, Modifier.weight(1f))
+                              }
+                              Spacer(Modifier.height(if (responsive.isCompact) 10.dp else 18.dp))
+                              Text("税区分", fontSize = if (responsive.isCompact) 16.sp else 18.sp, fontWeight = FontWeight.Bold)
+                              Spacer(Modifier.height(if (responsive.isCompact) 5.dp else 8.dp))
+                              val taxes = TaxCategory.entries
+                              for (rowStart in taxes.indices step 3) {
+                                  Row(
+                                      Modifier.fillMaxWidth(),
+                                      horizontalArrangement = Arrangement.spacedBy(if (responsive.isCompact) 5.dp else 8.dp),
+                                  ) {
+                                      for (index in rowStart until minOf(rowStart + 3, taxes.size)) {
+                                          val tax = taxes[index]
+                                          OutlinedButton(
+                                              onClick = { category = tax },
+                                              modifier = Modifier.weight(1f),
+                                              border = BorderStroke(
+                                                  if (category == tax) 3.dp else 1.dp,
+                                                  if (category == tax) Danger else Border,
+                                              ),
+                                          ) {
+                                              Text(
+                                                  "${tax.displayName} ${tax.symbol}",
+                                                  fontSize = if (responsive.isCompact) 12.sp else 14.sp,
+                                              )
+                                          }
+                                      }
+                                      for (unused in minOf(rowStart + 3, taxes.size) until rowStart + 3) {
+                                          Spacer(Modifier.weight(1f))
+                                      }
+                                  }
+                                  Spacer(Modifier.height(if (responsive.isCompact) 5.dp else 8.dp))
+                              }
+                              Spacer(Modifier.height(if (responsive.isCompact) 6.dp else 12.dp))
+                              OutlinedTextField(
+                                  value = note,
+                                  onValueChange = { if (it.length <= 100) note = it },
+                                  label = { Text("行メモ") },
+                                  modifier = Modifier.fillMaxWidth().height(if (responsive.isCompact) 88.dp else 110.dp),
+                              )
+                          }
+                      }
+                      val summaryModifier = if (responsive.isCompact) {
+                          Modifier.weight(0.72f)
+                      } else {
+                          Modifier.width(330.dp)
+                      }
+                      CardPanel(summaryModifier.fillMaxHeight()) {
+                          Column(Modifier.weight(1f).verticalScroll(editSummaryScroll)) {
+                              Text(
+                                  "変更後",
+                                  fontSize = if (responsive.isCompact) 18.sp else 22.sp,
+                                  fontWeight = FontWeight.Bold,
+                                  color = Navy,
+                              )
+                              Spacer(Modifier.height(if (responsive.isCompact) 8.dp else 18.dp))
+                              AmountRow("数量", "${parsedQuantity}点")
+                              AmountRow("単価", yen(parsedUnitPrice))
+                              AmountRow("値引", "-${yen(parsedDiscount)}")
+                              AmountRow("金額", yen(maxDiscount - parsedDiscount), emphasized = true)
+                          }
+                          Spacer(Modifier.height(responsive.panelGapDp.dp))
+                          OutlinedButton(
+                              onClick = onDiscount,
+                              modifier = Modifier.fillMaxWidth().height(if (responsive.isCompact) 46.dp else 52.dp),
+                          ) { Text("値引・割引画面", maxLines = 1) }
+                      }
+                  }
+                  BottomActions(
+                      onBack = onBack,
+                      confirmLabel = "保存",
+                      onConfirm = {
+                          onSave(
+                              item.copy(
+                                  product = item.product.withLegacyTaxCategory(category),
+                                  quantity = parsedQuantity,
+                                  unitPrice = parsedUnitPrice,
+                                  discountAmount = parsedDiscount,
+                                  note = note.trim(),
+                              ),
+                          )
+                      },
+                  )
+              }
+          }
+
+          '''
+
+          new_discount = r'''@Composable
+          private fun DiscountScreen(
+              items: List<CartItem>,
+              selectedIndex: Int?,
+              onApply: (List<CartItem>) -> Unit,
+              onBack: () -> Unit,
+          ) {
+              var scope by remember { mutableStateOf(if (selectedIndex != null) DiscountScope.ITEM else DiscountScope.TRANSACTION) }
+              var type by remember { mutableStateOf(DiscountType.FIXED) }
+              var value by remember { mutableStateOf("") }
+              val numericValue = value.toLongOrNull()?.coerceAtLeast(0) ?: 0
+              val preview = runCatching {
+                  when (scope) {
+                      DiscountScope.ITEM -> {
+                          val index = selectedIndex ?: 0
+                          items.mapIndexed { rowIndex, item ->
+                              if (rowIndex == index) {
+                                  DiscountEngine.applyToItem(item, type, if (type == DiscountType.PERCENT) numericValue * 100 else numericValue)
+                              } else item
+                          }
+                      }
+                      DiscountScope.TRANSACTION -> DiscountEngine.applyToTransaction(
+                          items,
+                          type,
+                          if (type == DiscountType.PERCENT) numericValue * 100 else numericValue,
+                      )
+                  }
+              }.getOrElse { items }
+              val before = TaxEngine.calculate(items)
+              val after = TaxEngine.calculate(preview)
+              val responsive = rememberRegisterResponsiveMetrics()
+              val discountEditScroll = rememberScrollState()
+              val discountPreviewScroll = rememberScrollState()
+
+              Column(Modifier.fillMaxSize()) {
+                  Header("SCR-121", "値引・割引")
+                  Row(
+                      Modifier.weight(1f).padding(responsive.screenPaddingDp.dp),
+                      horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
+                  ) {
+                      CardPanel(
+                          Modifier
+                              .weight(if (responsive.isCompact) 1.08f else 1f)
+                              .fillMaxHeight(),
+                      ) {
+                          Column(Modifier.fillMaxSize().verticalScroll(discountEditScroll)) {
+                              Text(
+                                  "適用範囲",
+                                  fontSize = if (responsive.isCompact) 17.sp else 20.sp,
+                                  fontWeight = FontWeight.Bold,
+                                  color = Navy,
+                              )
+                              Row(
+                                  Modifier.fillMaxWidth(),
+                                  horizontalArrangement = Arrangement.spacedBy(if (responsive.isCompact) 6.dp else 10.dp),
+                              ) {
+                                  ChoiceButton("選択商品", scope == DiscountScope.ITEM, selectedIndex != null, Modifier.weight(1f)) { scope = DiscountScope.ITEM }
+                                  ChoiceButton("伝票全体", scope == DiscountScope.TRANSACTION, true, Modifier.weight(1f)) { scope = DiscountScope.TRANSACTION }
+                              }
+                              Spacer(Modifier.height(if (responsive.isCompact) 10.dp else 18.dp))
+                              Text(
+                                  "方式",
+                                  fontSize = if (responsive.isCompact) 17.sp else 20.sp,
+                                  fontWeight = FontWeight.Bold,
+                                  color = Navy,
+                              )
+                              Row(
+                                  Modifier.fillMaxWidth(),
+                                  horizontalArrangement = Arrangement.spacedBy(if (responsive.isCompact) 6.dp else 10.dp),
+                              ) {
+                                  ChoiceButton("定額値引", type == DiscountType.FIXED, true, Modifier.weight(1f)) { type = DiscountType.FIXED }
+                                  ChoiceButton("率割引", type == DiscountType.PERCENT, true, Modifier.weight(1f)) { type = DiscountType.PERCENT }
+                              }
+                              Spacer(Modifier.height(if (responsive.isCompact) 10.dp else 18.dp))
+                              NumericField(
+                                  if (type == DiscountType.FIXED) "値引額" else "割引率（%）",
+                                  value,
+                                  { value = it },
+                                  Modifier.fillMaxWidth(),
+                              )
+                              Spacer(Modifier.height(if (responsive.isCompact) 7.dp else 12.dp))
+                              Text(
+                                  "伝票値引は各明細へ比例配賦し、端数を最終行へ配賦します",
+                                  color = Color.Gray,
+                                  fontSize = if (responsive.isCompact) 12.sp else 14.sp,
+                              )
+                          }
+                      }
+                      val previewModifier = if (responsive.isCompact) {
+                          Modifier.weight(0.92f)
+                      } else {
+                          Modifier.width(390.dp)
+                      }
+                      CardPanel(previewModifier.fillMaxHeight()) {
+                          Column(Modifier.fillMaxSize().verticalScroll(discountPreviewScroll)) {
+                              Text(
+                                  "税率別プレビュー",
+                                  fontSize = if (responsive.isCompact) 18.sp else 21.sp,
+                                  fontWeight = FontWeight.Bold,
+                                  color = Navy,
+                              )
+                              Spacer(Modifier.height(if (responsive.isCompact) 8.dp else 14.dp))
+                              AmountRow("変更前合計", yen(before.grossAmount))
+                              AmountRow("変更後合計", yen(after.grossAmount), emphasized = true)
+                              AmountRow("値引合計", "-${yen((before.grossAmount - after.grossAmount).coerceAtLeast(0))}")
+                              Spacer(Modifier.height(if (responsive.isCompact) 7.dp else 12.dp))
+                              after.buckets.forEach { bucket ->
+                                  val label = if (bucket.taxable) "${bucket.ratePercent}%対象" else "非課税"
+                                  AmountRow(label, "${yen(bucket.grossAmount)} / 税 ${yen(bucket.taxAmount)}")
+                              }
+                          }
+                      }
+                  }
+                  BottomActions(onBack, "適用", { onApply(preview) }, items.isNotEmpty() && numericValue > 0)
+              }
+          }
+
+          '''
+
+          # Remove indentation introduced by Python source indentation only.
+          import textwrap
+          new_line = textwrap.dedent(new_line)
+          new_discount = textwrap.dedent(new_discount)
+          updated = text[:line_start] + new_line + new_discount + text[ticket_start:]
+          if updated.count('private fun LineEditScreen(') != 1 or updated.count('private fun DiscountScreen(') != 1:
+              raise SystemExit('Function count guard failed')
+          path.write_text(updated)
+          PY
+
+          git diff --check
+          grep -Fq 'val editScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          grep -Fq 'val discountPreviewScroll = rememberScrollState()' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          if git diff --cached --quiet; then
+            echo 'No patch commit required'
+            exit 0
+          fi
+          git commit -m 'feat(v0.95): make sales edit flow responsive'
+          git push origin HEAD:develop/v0.95
