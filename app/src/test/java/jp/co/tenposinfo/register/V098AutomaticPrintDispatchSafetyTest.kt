@@ -148,4 +148,33 @@ class V098AutomaticPrintDispatchSafetyTest {
         assertTrue(capability.contains("PrinterProfile.EPSON_TM_JAPAN"))
         assertTrue(capability.contains("automaticQueryAllowed = true"))
     }
+
+    @Test
+    fun currentReleaseIdentityCiAndFinalDeviceDeferralAreExplicit() {
+        val gradle = File(root, "app/build.gradle.kts").readText()
+        val workflow = File(root, ".github/workflows/build-apk.yml").readText()
+        val notes = File(root, "docs/V0.98_RELEASE_NOTES.md").readText()
+        val requirements = File(root, "docs/V0.98_AUTOMATIC_PRINT_DISPATCH_SAFETY.md").readText()
+
+        assertTrue(gradle.contains("versionCode = 128"))
+        assertTrue(gradle.contains("versionName = \"0.98.0-dev.1\""))
+        assertTrue(workflow.contains("Verify cumulative v0.14-v0.98 sources"))
+        assertTrue(workflow.contains("POS_VERSION_CODE: 128"))
+        assertTrue(workflow.contains("POS_VERSION_NAME: 0.98.0-dev.1"))
+        assertTrue(workflow.contains("AUTOMATIC_PRINT_DISPATCH_SAFETY=true"))
+        assertTrue(workflow.contains("AUTOMATIC_PRINT_GLOBAL_BATCH_LIMIT=20"))
+        assertTrue(workflow.contains("TSUGUREGI-v0.98.0-dev1-automatic-print-dispatch-safety-apks"))
+        assertTrue(notes.contains("最終総合実機試験へ繰越"))
+        assertTrue(requirements.contains("最終総合実機試験へ繰越"))
+    }
+
+    @Test
+    fun dispatchSafetyChangeDoesNotAddDestructiveSalesDataStatements() {
+        val worker = File(root, "app/src/main/java/jp/co/tenposinfo/register/AutomaticPrintWorker.kt").readText()
+        val requirements = File(root, "docs/V0.98_AUTOMATIC_PRINT_DISPATCH_SAFETY.md").readText()
+        val source = worker + requirements
+        assertFalse(source.contains("DELETE FROM sales", ignoreCase = true))
+        assertFalse(source.contains("UPDATE sales", ignoreCase = true))
+        assertFalse(source.contains("DROP TABLE", ignoreCase = true))
+    }
 }
