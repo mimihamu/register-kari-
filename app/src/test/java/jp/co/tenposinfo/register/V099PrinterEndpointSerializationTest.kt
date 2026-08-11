@@ -61,7 +61,7 @@ class V099PrinterEndpointSerializationTest {
 
         assertFalse(first.isAlive)
         assertFalse(second.isAlive)
-        assertTrue(secondEntered.count == 0L)
+        assertEquals(0L, secondEntered.count)
         assertEquals(1, maxActive.get())
     }
 
@@ -148,6 +148,36 @@ class V099PrinterEndpointSerializationTest {
         assertTrue(autoSource.contains("val gateway = TcpEscPosPrinterGateway("))
         assertTrue(queueSource.contains("val gateway = TcpEscPosPrinterGateway("))
         assertTrue(receiptSource.contains("future = executor.submit<Unit>"))
+    }
+
+    @Test
+    fun automaticAndManualPathsHoldEndpointGateAcrossJobClaimAndSend() {
+        assertTrue(autoSource.contains("PrinterEndpointSendGate.withPermit("))
+        assertTrue(autoSource.contains("val candidate = AutomaticPrintQueuePolicy.oldestCandidate("))
+        assertTrue(autoSource.contains("return@withPermit null"))
+        assertTrue(autoSource.indexOf("PrinterEndpointSendGate.withPermit(") < autoSource.indexOf("val candidate = AutomaticPrintQueuePolicy.oldestCandidate("))
+        assertTrue(queueSource.contains("PrinterEndpointSendGate.withPermit("))
+        assertTrue(queueSource.contains("requireCurrentStatus(job.status, current.status)"))
+        assertTrue(queueSource.contains("requireCurrentStatus(unifiedJob.status, sourceJob.status)"))
+        assertTrue(queueSource.contains("一覧を再読込してから操作してください"))
+    }
+
+    @Test
+    fun currentReleaseAndCiDocumentDuplicatePrevention() {
+        val gradle = File(root, "app/build.gradle.kts").readText()
+        val workflow = File(root, ".github/workflows/build-apk.yml").readText()
+        val notes = File(root, "docs/V0.99_RELEASE_NOTES.md").readText()
+        val requirements = File(root, "docs/V0.99_PRINTER_ENDPOINT_SERIALIZATION.md").readText()
+
+        assertTrue(gradle.contains("versionCode = 129"))
+        assertTrue(gradle.contains("versionName = \"0.99.0-dev.1\""))
+        assertTrue(workflow.contains("Verify cumulative v0.14-v0.99 sources"))
+        assertTrue(workflow.contains("PRINTER_ENDPOINT_SERIALIZATION=true"))
+        assertTrue(workflow.contains("PRINTER_JOB_STALE_STATE_REVALIDATION=true"))
+        assertTrue(workflow.contains("PRINTER_AUTO_MANUAL_DUPLICATE_PREVENTION=true"))
+        assertTrue(notes.contains("二重印刷"))
+        assertTrue(requirements.contains("最新ステータス"))
+        assertTrue(notes.contains("最終総合実機試験へ繰越"))
     }
 
     @Test
