@@ -18,12 +18,12 @@ for path in sorted(root.glob('*.kt')):
         return f'assertTrue(Regex("versionCode\\\\s*=\\\\s*(\\\\d+)").find({var})?.groupValues?.get(1)?.toIntOrNull()?.let {{ it >= 14 }} == true)'
     text = pattern_code.sub(repl_code, text)
 
-    pattern_name = re.compile(r'assertTrue\((\w+)\.contains\("versionName = \\\"0\\\.14\\\.0-dev\\\.1\\\""\)\)')
+    pattern_name = re.compile(r'assertTrue\((\w+)\.contains\("versionName = \\"0\.14\.0-dev\.1\\""\)\)')
     def repl_name(match):
         global version_name_changes
         version_name_changes += 1
         var = match.group(1)
-        return f'assertTrue(Regex("versionName\\\\s*=\\\\s*\\\\\"0\\\\.(\\\\d+)\\\\.0-dev\\\\.1\\\\\"").find({var})?.groupValues?.get(1)?.toIntOrNull()?.let {{ it >= 14 }} == true)'
+        return f'assertTrue(Regex("""versionName\\s*=\\s*"0\\.(\\d+)\\.0-dev\\.1""").find({var})?.groupValues?.get(1)?.toIntOrNull()?.let {{ it >= 14 }} == true)'
     text = pattern_name.sub(repl_name, text)
 
     old_artifact = 'assertTrue(workflow.contains("TSUGUREGI_PLUS_v0.14.0_dev1_sync_operations_dashboard_debug.apk"))'
@@ -46,5 +46,5 @@ v101.write_text(text.replace(old_root, new_root, 1), encoding='utf-8')
 print(f'versionCode changes={version_code_changes}')
 print(f'versionName changes={version_name_changes}')
 print(f'artifact changes={artifact_changes}')
-if version_code_changes < 10 or version_name_changes < 10 or artifact_changes < 10:
-    raise SystemExit('Expected legacy Plus release assertions were not found in enough tests')
+if version_code_changes != 13 or version_name_changes != 13 or artifact_changes != 13:
+    raise SystemExit('Expected exactly 13 stale Plus release assertions of each type')
