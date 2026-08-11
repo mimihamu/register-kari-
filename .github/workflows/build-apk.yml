@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 jobs:
-  restore-v096-final-ci:
+  generate-v096-final-ci:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-22.04
     steps:
@@ -18,7 +18,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
-      - name: Restore cumulative v0.96 CI
+      - name: Generate cumulative v0.96 CI as ordinary file
         shell: bash
         run: |
           set -euo pipefail
@@ -62,22 +62,21 @@ jobs:
               'name: TSUGUREGI-v0.95.0-dev1-sales-edit-responsive-apks',
               'name: TSUGUREGI-v0.96.0-dev1-held-ticket-responsive-apks',
           )
-          Path('.github/workflows/build-apk.yml').write_text(workflow)
+          Path('ci/v096-final-build-apk.yml.txt').write_text(workflow)
           PY
 
-          git rm -f --ignore-unmatch .github/workflows/v096-apply-held-ticket-responsive.yml
-          git rm -f --ignore-unmatch docs/.v096-held-ticket-patch-trigger
           git diff --check
-          grep -Fq 'Verify cumulative v0.14-v0.96 sources' .github/workflows/build-apk.yml
-          grep -Fq 'POS_VERSION_CODE: 126' .github/workflows/build-apk.yml
-          grep -Fq 'HELD_TICKET_RESPONSIVE=true' .github/workflows/build-apk.yml
-          grep -Fq 'TSUGUREGI-v0.96.0-dev1-held-ticket-responsive-apks' .github/workflows/build-apk.yml
+          test -s ci/v096-final-build-apk.yml.txt
+          grep -Fq 'Verify cumulative v0.14-v0.96 sources' ci/v096-final-build-apk.yml.txt
+          grep -Fq 'POS_VERSION_CODE: 126' ci/v096-final-build-apk.yml.txt
+          grep -Fq 'HELD_TICKET_RESPONSIVE=true' ci/v096-final-build-apk.yml.txt
+          grep -Fq 'TSUGUREGI-v0.96.0-dev1-held-ticket-responsive-apks' ci/v096-final-build-apk.yml.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .github/workflows/build-apk.yml
+          git add ci/v096-final-build-apk.yml.txt
           if git diff --cached --quiet; then
-            echo 'No CI restore commit required'
+            echo 'No generated CI file commit required'
             exit 0
           fi
-          git commit -m 'ci(v0.96): restore cumulative held-ticket release gate'
+          git commit -m 'ci(v0.96): generate final cumulative workflow payload'
           git push origin HEAD:develop/v0.96
