@@ -1415,203 +1415,364 @@ private fun TicketListScreen(
     var mergeSourceId by remember { mutableStateOf<Long?>(null) }
     var pendingMergeTargetId by remember { mutableStateOf<Long?>(null) }
     val mergeSource = mergeSourceId?.let { sourceId -> tickets.firstOrNull { it.id == sourceId } }
+    val ticketResponsive = rememberRegisterResponsiveMetrics()
 
     Column(Modifier.fillMaxSize()) {
         Header("SCR-200", "伝票一覧")
         if (currentCartCount > 0) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = PaleYellow),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp),
-            ) {
-                Text(
-                    "作業中の$currentCartCount 点は、別伝票を呼び出す前に自動で保留へ退避します。",
-                    modifier = Modifier.padding(12.dp),
-                    color = Navy,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
+  Card(
+      colors = CardDefaults.cardColors(containerColor = PaleYellow),
+      modifier = Modifier.fillMaxWidth().padding(
+          horizontal = ticketResponsive.screenPaddingDp.dp,
+          vertical = if (ticketResponsive.isCompact) 4.dp else 8.dp,
+      ),
+  ) {
+      Text(
+          "作業中の$currentCartCount 点は、別伝票を呼び出す前に自動で保留へ退避します。",
+          modifier = Modifier.padding(if (ticketResponsive.isCompact) 8.dp else 12.dp),
+          color = Navy,
+          fontWeight = FontWeight.Bold,
+          fontSize = if (ticketResponsive.isCompact) 12.sp else 14.sp,
+      )
+  }
         }
         if (mergeSource != null) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = PaleBlue),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "${mergeSource.name} を結合元として選択中です。結合先を選び、もう一度［結合確定］を押してください。",
-                        modifier = Modifier.weight(1f),
-                        color = Navy,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    OutlinedButton(onClick = {
-                        mergeSourceId = null
-                        pendingMergeTargetId = null
-                    }) { Text("結合を取消") }
-                }
-            }
+  Card(
+      colors = CardDefaults.cardColors(containerColor = PaleBlue),
+      modifier = Modifier.fillMaxWidth().padding(
+          horizontal = ticketResponsive.screenPaddingDp.dp,
+          vertical = if (ticketResponsive.isCompact) 3.dp else 6.dp,
+      ),
+  ) {
+      if (ticketResponsive.isCompact) {
+          Column(Modifier.fillMaxWidth().padding(8.dp)) {
+              Text(
+                  "${mergeSource.name} を結合元として選択中です。結合先を選び、もう一度［結合確定］を押してください。",
+                  color = Navy,
+                  fontWeight = FontWeight.Bold,
+                  fontSize = 12.sp,
+              )
+              Spacer(Modifier.height(5.dp))
+              CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                  OutlinedButton(
+                      onClick = {
+                          mergeSourceId = null
+                          pendingMergeTargetId = null
+                      },
+                      modifier = Modifier.fillMaxWidth().height(40.dp),
+                  ) { Text("結合を取消", fontSize = 12.sp, maxLines = 1) }
+              }
+          }
+      } else {
+          Row(
+              modifier = Modifier.fillMaxWidth().padding(12.dp),
+              verticalAlignment = Alignment.CenterVertically,
+          ) {
+              Text(
+                  "${mergeSource.name} を結合元として選択中です。結合先を選び、もう一度［結合確定］を押してください。",
+                  modifier = Modifier.weight(1f),
+                  color = Navy,
+                  fontWeight = FontWeight.Bold,
+              )
+              OutlinedButton(onClick = {
+                  mergeSourceId = null
+                  pendingMergeTargetId = null
+              }) { Text("結合を取消") }
+          }
+      }
+  }
         }
         if (!message.isNullOrBlank()) {
-            Text(
-                message,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 6.dp),
-                color = if (message.contains("できません") || message.contains("見つかりません")) Danger else Color(0xFF2E7D32),
-                fontWeight = FontWeight.Bold,
-            )
+  Text(
+      message,
+      modifier = Modifier.fillMaxWidth().padding(
+          horizontal = ticketResponsive.screenPaddingDp.dp,
+          vertical = if (ticketResponsive.isCompact) 3.dp else 6.dp,
+      ),
+      color = if (message.contains("できません") || message.contains("見つかりません")) Danger else Color(0xFF2E7D32),
+      fontWeight = FontWeight.Bold,
+      fontSize = if (ticketResponsive.isCompact) 12.sp else 14.sp,
+  )
         }
-        CardPanel(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp)) {
-            if (tickets.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("保留伝票はありません", fontSize = 24.sp, color = Color.Gray)
-                }
-            } else {
-                LazyColumn {
-                    itemsIndexed(tickets, key = { _, ticket -> ticket.id }) { _, ticket ->
-                        Column(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 7.dp)
-                                .background(
-                                    when {
-                                        pendingDeleteId == ticket.id -> Color(0xFFFFEBEE)
-                                        mergeSourceId == ticket.id -> PaleBlue
-                                        pendingMergeTargetId == ticket.id -> PaleYellow
-                                        else -> Color.Transparent
-                                    },
-                                    RoundedCornerShape(8.dp),
-                                )
-                                .padding(8.dp),
-                        ) {
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(ticket.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Navy)
-                                    Text(
-                                        "${formatDate(ticket.createdAt)} / 担当 ${ticket.operatorName} / ${ticket.itemCount}点",
-                                        color = Color.Gray,
-                                    )
-                                }
-                                Text(yen(ticket.totalAmount), fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                                Spacer(Modifier.width(10.dp))
-                                OutlinedButton(onClick = {
-                                    editingTicketId = ticket.id
-                                    editingName = ticket.name
-                                    pendingDeleteId = null
-                                    mergeSourceId = null
-                                    pendingMergeTargetId = null
-                                }) { Text("名称変更") }
-                                Spacer(Modifier.width(8.dp))
-                                OutlinedButton(onClick = {
-                                    if (pendingDeleteId == ticket.id) {
-                                        pendingDeleteId = null
-                                        onDelete(ticket)
-                                    } else {
-                                        pendingDeleteId = ticket.id
-                                        editingTicketId = null
-                                        mergeSourceId = null
-                                        pendingMergeTargetId = null
-                                    }
-                                }) {
-                                    Text(
-                                        if (pendingDeleteId == ticket.id) "削除確定" else "削除",
-                                        color = Danger,
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                }
-                                Spacer(Modifier.width(8.dp))
-                                BlueButton(
-                                    if (currentCartCount > 0) "退避して呼出" else "呼出",
-                                    { onLoad(ticket) },
-                                    Modifier.width(if (currentCartCount > 0) 145.dp else 105.dp),
-                                )
-                            }
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                                horizontalArrangement = Arrangement.End,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                if (mergeSource == null) {
-                                    OutlinedButton(onClick = {
-                                        mergeSourceId = ticket.id
-                                        pendingMergeTargetId = null
-                                        editingTicketId = null
-                                        pendingDeleteId = null
-                                    }) { Text("結合") }
-                                    Spacer(Modifier.width(8.dp))
-                                    OutlinedButton(onClick = { onSplit(ticket) }) { Text("分割") }
-                                } else if (mergeSource.id == ticket.id) {
-                                    OutlinedButton(onClick = {
-                                        mergeSourceId = null
-                                        pendingMergeTargetId = null
-                                    }) { Text("結合元を取消") }
-                                } else if (pendingMergeTargetId == ticket.id) {
-                                    Button(
-                                        onClick = {
-                                            val source = mergeSource
-                                            mergeSourceId = null
-                                            pendingMergeTargetId = null
-                                            onMerge(source, ticket)
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Danger),
-                                    ) { Text("結合確定") }
-                                } else {
-                                    OutlinedButton(onClick = {
-                                        pendingMergeTargetId = ticket.id
-                                        editingTicketId = null
-                                        pendingDeleteId = null
-                                    }) { Text("この伝票へ結合") }
-                                }
-                            }
-                            if (pendingMergeTargetId == ticket.id && mergeSource != null) {
-                                Text(
-                                    "${mergeSource.name} の全明細を ${ticket.name} の末尾へ結合します。元伝票は結合成功時のみ削除されます。",
-                                    color = Danger,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(top = 6.dp),
-                                )
-                            }
-                            if (pendingDeleteId == ticket.id) {
-                                Text(
-                                    "もう一度［削除確定］を押すと、この伝票を完全に削除します。",
-                                    color = Danger,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(top = 6.dp),
-                                )
-                            }
-                            if (editingTicketId == ticket.id) {
-                                Row(
-                                    Modifier.fillMaxWidth().padding(top = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    OutlinedTextField(
-                                        value = editingName,
-                                        onValueChange = {
-                                            editingName = it.take(HeldTicketSafetyPolicy.MAX_NAME_LENGTH)
-                                        },
-                                        label = { Text("伝票名") },
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    OutlinedButton(onClick = {
-                                        editingTicketId = null
-                                        editingName = ""
-                                    }) { Text("取消") }
-                                    BlueButton(
-                                        "保存",
-                                        {
-                                            onRename(ticket, editingName)
-                                            editingTicketId = null
-                                        },
-                                        Modifier.width(100.dp),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        CardPanel(
+  Modifier
+      .weight(1f)
+      .fillMaxWidth()
+      .padding(horizontal = ticketResponsive.screenPaddingDp.dp),
+        ) {
+  if (tickets.isEmpty()) {
+      Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+          Text(
+              "保留伝票はありません",
+              fontSize = if (ticketResponsive.isCompact) 20.sp else 24.sp,
+              color = Color.Gray,
+          )
+      }
+  } else {
+      LazyColumn {
+          itemsIndexed(tickets, key = { _, ticket -> ticket.id }) { _, ticket ->
+              Column(
+                  Modifier
+                      .fillMaxWidth()
+                      .padding(vertical = if (ticketResponsive.isCompact) 4.dp else 7.dp)
+                      .background(
+                          when {
+                              pendingDeleteId == ticket.id -> Color(0xFFFFEBEE)
+                              mergeSourceId == ticket.id -> PaleBlue
+                              pendingMergeTargetId == ticket.id -> PaleYellow
+                              else -> Color.Transparent
+                          },
+                          RoundedCornerShape(8.dp),
+                      )
+                      .padding(if (ticketResponsive.isCompact) 6.dp else 8.dp),
+              ) {
+                  if (ticketResponsive.isCompact) {
+                      Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                          Column(Modifier.weight(1f)) {
+                              Text(ticket.name, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Navy, maxLines = 1)
+                              Text(
+                                  "${formatDate(ticket.createdAt)} / ${ticket.operatorName} / ${ticket.itemCount}点",
+                                  color = Color.Gray,
+                                  fontSize = 11.sp,
+                                  maxLines = 1,
+                              )
+                          }
+                          Spacer(Modifier.width(6.dp))
+                          Text(yen(ticket.totalAmount), fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                      }
+                      Spacer(Modifier.height(5.dp))
+                      CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                          Row(
+                              Modifier.fillMaxWidth(),
+                              horizontalArrangement = Arrangement.spacedBy(5.dp),
+                          ) {
+                              OutlinedButton(
+                                  onClick = {
+                                      editingTicketId = ticket.id
+                                      editingName = ticket.name
+                                      pendingDeleteId = null
+                                      mergeSourceId = null
+                                      pendingMergeTargetId = null
+                                  },
+                                  modifier = Modifier.weight(1f).height(42.dp),
+                              ) { Text("名称変更", fontSize = 12.sp, maxLines = 1) }
+                              OutlinedButton(
+                                  onClick = {
+                                      if (pendingDeleteId == ticket.id) {
+                                          pendingDeleteId = null
+                                          onDelete(ticket)
+                                      } else {
+                                          pendingDeleteId = ticket.id
+                                          editingTicketId = null
+                                          mergeSourceId = null
+                                          pendingMergeTargetId = null
+                                      }
+                                  },
+                                  modifier = Modifier.weight(1f).height(42.dp),
+                              ) {
+                                  Text(
+                                      if (pendingDeleteId == ticket.id) "削除確定" else "削除",
+                                      color = Danger,
+                                      fontWeight = FontWeight.Bold,
+                                      fontSize = 12.sp,
+                                      maxLines = 1,
+                                  )
+                              }
+                              BlueButton(
+                                  if (currentCartCount > 0) "退避して呼出" else "呼出",
+                                  { onLoad(ticket) },
+                                  Modifier.weight(1.25f).height(42.dp),
+                              )
+                          }
+                      }
+                  } else {
+                      Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                          Column(Modifier.weight(1f)) {
+                              Text(ticket.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Navy)
+                              Text(
+                                  "${formatDate(ticket.createdAt)} / 担当 ${ticket.operatorName} / ${ticket.itemCount}点",
+                                  color = Color.Gray,
+                              )
+                          }
+                          Text(yen(ticket.totalAmount), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                          Spacer(Modifier.width(10.dp))
+                          OutlinedButton(onClick = {
+                              editingTicketId = ticket.id
+                              editingName = ticket.name
+                              pendingDeleteId = null
+                              mergeSourceId = null
+                              pendingMergeTargetId = null
+                          }) { Text("名称変更") }
+                          Spacer(Modifier.width(8.dp))
+                          OutlinedButton(onClick = {
+                              if (pendingDeleteId == ticket.id) {
+                                  pendingDeleteId = null
+                                  onDelete(ticket)
+                              } else {
+                                  pendingDeleteId = ticket.id
+                                  editingTicketId = null
+                                  mergeSourceId = null
+                                  pendingMergeTargetId = null
+                              }
+                          }) {
+                              Text(
+                                  if (pendingDeleteId == ticket.id) "削除確定" else "削除",
+                                  color = Danger,
+                                  fontWeight = FontWeight.Bold,
+                              )
+                          }
+                          Spacer(Modifier.width(8.dp))
+                          BlueButton(
+                              if (currentCartCount > 0) "退避して呼出" else "呼出",
+                              { onLoad(ticket) },
+                              Modifier.width(if (currentCartCount > 0) 145.dp else 105.dp),
+                          )
+                      }
+                  }
+                  CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides if (ticketResponsive.isCompact) 0.dp else LocalMinimumInteractiveComponentSize.current) {
+                      Row(
+                          modifier = Modifier.fillMaxWidth().padding(top = if (ticketResponsive.isCompact) 5.dp else 6.dp),
+                          horizontalArrangement = if (ticketResponsive.isCompact) {
+                              Arrangement.spacedBy(5.dp)
+                          } else {
+                              Arrangement.End
+                          },
+                          verticalAlignment = Alignment.CenterVertically,
+                      ) {
+                          if (mergeSource == null) {
+                              OutlinedButton(
+                                  onClick = {
+                                      mergeSourceId = ticket.id
+                                      pendingMergeTargetId = null
+                                      editingTicketId = null
+                                      pendingDeleteId = null
+                                  },
+                                  modifier = if (ticketResponsive.isCompact) Modifier.weight(1f).height(40.dp) else Modifier,
+                              ) { Text("結合", fontSize = if (ticketResponsive.isCompact) 12.sp else 14.sp) }
+                              if (!ticketResponsive.isCompact) Spacer(Modifier.width(8.dp))
+                              OutlinedButton(
+                                  onClick = { onSplit(ticket) },
+                                  modifier = if (ticketResponsive.isCompact) Modifier.weight(1f).height(40.dp) else Modifier,
+                              ) { Text("分割", fontSize = if (ticketResponsive.isCompact) 12.sp else 14.sp) }
+                          } else if (mergeSource.id == ticket.id) {
+                              OutlinedButton(
+                                  onClick = {
+                                      mergeSourceId = null
+                                      pendingMergeTargetId = null
+                                  },
+                                  modifier = if (ticketResponsive.isCompact) Modifier.fillMaxWidth().height(40.dp) else Modifier,
+                              ) { Text("結合元を取消", fontSize = if (ticketResponsive.isCompact) 12.sp else 14.sp) }
+                          } else if (pendingMergeTargetId == ticket.id) {
+                              Button(
+                                  onClick = {
+                                      val source = mergeSource
+                                      mergeSourceId = null
+                                      pendingMergeTargetId = null
+                                      onMerge(source, ticket)
+                                  },
+                                  modifier = if (ticketResponsive.isCompact) Modifier.fillMaxWidth().height(40.dp) else Modifier,
+                                  colors = ButtonDefaults.buttonColors(containerColor = Danger),
+                              ) { Text("結合確定", fontSize = if (ticketResponsive.isCompact) 12.sp else 14.sp) }
+                          } else {
+                              OutlinedButton(
+                                  onClick = {
+                                      pendingMergeTargetId = ticket.id
+                                      editingTicketId = null
+                                      pendingDeleteId = null
+                                  },
+                                  modifier = if (ticketResponsive.isCompact) Modifier.fillMaxWidth().height(40.dp) else Modifier,
+                              ) { Text("この伝票へ結合", fontSize = if (ticketResponsive.isCompact) 12.sp else 14.sp) }
+                          }
+                      }
+                  }
+                  if (pendingMergeTargetId == ticket.id && mergeSource != null) {
+                      Text(
+                          "${mergeSource.name} の全明細を ${ticket.name} の末尾へ結合します。元伝票は結合成功時のみ削除されます。",
+                          color = Danger,
+                          fontWeight = FontWeight.Bold,
+                          fontSize = if (ticketResponsive.isCompact) 12.sp else 14.sp,
+                          modifier = Modifier.padding(top = 6.dp),
+                      )
+                  }
+                  if (pendingDeleteId == ticket.id) {
+                      Text(
+                          "もう一度［削除確定］を押すと、この伝票を完全に削除します。",
+                          color = Danger,
+                          fontWeight = FontWeight.Bold,
+                          fontSize = if (ticketResponsive.isCompact) 12.sp else 14.sp,
+                          modifier = Modifier.padding(top = 6.dp),
+                      )
+                  }
+                  if (editingTicketId == ticket.id) {
+                      if (ticketResponsive.isCompact) {
+                          Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                              OutlinedTextField(
+                                  value = editingName,
+                                  onValueChange = {
+                                      editingName = it.take(HeldTicketSafetyPolicy.MAX_NAME_LENGTH)
+                                  },
+                                  label = { Text("伝票名") },
+                                  singleLine = true,
+                                  modifier = Modifier.fillMaxWidth(),
+                              )
+                              Spacer(Modifier.height(5.dp))
+                              CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                                  Row(
+                                      Modifier.fillMaxWidth(),
+                                      horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                  ) {
+                                      OutlinedButton(
+                                          onClick = {
+                                              editingTicketId = null
+                                              editingName = ""
+                                          },
+                                          modifier = Modifier.weight(1f).height(42.dp),
+                                      ) { Text("取消", fontSize = 12.sp) }
+                                      BlueButton(
+                                          "保存",
+                                          {
+                                              onRename(ticket, editingName)
+                                              editingTicketId = null
+                                          },
+                                          Modifier.weight(1f).height(42.dp),
+                                      )
+                                  }
+                              }
+                          }
+                      } else {
+                          Row(
+                              Modifier.fillMaxWidth().padding(top = 8.dp),
+                              verticalAlignment = Alignment.CenterVertically,
+                              horizontalArrangement = Arrangement.spacedBy(8.dp),
+                          ) {
+                              OutlinedTextField(
+                                  value = editingName,
+                                  onValueChange = {
+                                      editingName = it.take(HeldTicketSafetyPolicy.MAX_NAME_LENGTH)
+                                  },
+                                  label = { Text("伝票名") },
+                                  singleLine = true,
+                                  modifier = Modifier.weight(1f),
+                              )
+                              OutlinedButton(onClick = {
+                                  editingTicketId = null
+                                  editingName = ""
+                              }) { Text("取消") }
+                              BlueButton(
+                                  "保存",
+                                  {
+                                      onRename(ticket, editingName)
+                                      editingTicketId = null
+                                  },
+                                  Modifier.width(100.dp),
+                              )
+                          }
+                      }
+                  }
+              }
+          }
+      }
+  }
         }
         BottomActions(onBack, "販売へ戻る", onBack)
     }
@@ -1629,88 +1790,141 @@ private fun TicketSplitScreen(
     var newName by remember(ticket.id, suggestedName) { mutableStateOf(suggestedName) }
     var rawQuantities by remember(ticket.id, items.size) { mutableStateOf(List(items.size) { "0" }) }
     val validation = HeldTicketOperationsUiPolicy.validateSplit(items, rawQuantities, newName)
+    val responsive = rememberRegisterResponsiveMetrics()
+    val splitSummaryScroll = rememberScrollState()
 
     Column(Modifier.fillMaxSize()) {
         Header("SCR-201", "伝票分割")
         if (!externalMessage.isNullOrBlank()) {
-            Text(
-                externalMessage,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 6.dp),
-                color = Danger,
-                fontWeight = FontWeight.Bold,
-            )
+  Text(
+      externalMessage,
+      modifier = Modifier.fillMaxWidth().padding(
+          horizontal = responsive.screenPaddingDp.dp,
+          vertical = if (responsive.isCompact) 3.dp else 6.dp,
+      ),
+      color = Danger,
+      fontWeight = FontWeight.Bold,
+      fontSize = if (responsive.isCompact) 12.sp else 14.sp,
+  )
         }
         Row(
-            modifier = Modifier.weight(1f).fillMaxWidth().padding(18.dp),
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
+  modifier = Modifier
+      .weight(1f)
+      .fillMaxWidth()
+      .padding(responsive.screenPaddingDp.dp),
+  horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
         ) {
-            CardPanel(Modifier.weight(1f).fillMaxHeight()) {
-                Text("分割元: ${ticket.name}", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Navy)
-                Text("明細ごとに新しい伝票へ移す数量を入力します。元伝票を空にはできません。", color = Color.Gray)
-                Spacer(Modifier.height(10.dp))
-                LazyColumn(modifier = Modifier.weight(1f)) {
-                    itemsIndexed(items) { index, item ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(item.product.name, fontWeight = FontWeight.Bold, color = Navy)
-                                Text(
-                                    "元数量 ${item.quantity}点 / 単価 ${yen(item.unitPrice)} / 税 ${item.product.taxSymbol}",
-                                    color = Color.Gray,
-                                )
-                                if (item.discountAmount != 0L) {
-                                    Text("行値引 ${yen(item.discountAmount)}", color = Color.Gray)
-                                }
-                            }
-                            OutlinedTextField(
-                                value = rawQuantities.getOrElse(index) { "0" },
-                                onValueChange = { raw ->
-                                    val sanitized = raw.filter(Char::isDigit).take(6)
-                                    rawQuantities = rawQuantities.toMutableList().also { rows ->
-                                        rows[index] = sanitized
-                                    }
-                                },
-                                label = { Text("移動数量") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                singleLine = true,
-                                modifier = Modifier.width(130.dp),
-                            )
-                        }
-                    }
-                }
-            }
-            CardPanel(Modifier.width(350.dp).fillMaxHeight()) {
-                Text("分割先", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Navy)
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = newName,
-                    onValueChange = { newName = it.take(HeldTicketSafetyPolicy.MAX_NAME_LENGTH) },
-                    label = { Text("新しい伝票名") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(14.dp))
-                AmountRow("移動点数", "${validation.movedCount}点", emphasized = validation.canConfirm)
-                AmountRow("元伝票残数", "${validation.remainingCount}点")
-                Spacer(Modifier.height(14.dp))
-                Text(
-                    "数量の一部を分ける場合、行値引は数量比で按分し、税スナップショットは双方へ維持します。",
-                    color = Color.Gray,
-                )
-                if (validation.message != null) {
-                    Spacer(Modifier.height(12.dp))
-                    Text(validation.message, color = if (validation.canConfirm) Color(0xFF2E7D32) else Danger, fontWeight = FontWeight.Bold)
-                }
-            }
+  CardPanel(
+      Modifier
+          .weight(if (responsive.isCompact) 1.2f else 1f)
+          .fillMaxHeight(),
+  ) {
+      Text(
+          "分割元: ${ticket.name}",
+          fontSize = if (responsive.isCompact) 18.sp else 22.sp,
+          fontWeight = FontWeight.Bold,
+          color = Navy,
+          maxLines = 1,
+      )
+      Text(
+          "明細ごとに新しい伝票へ移す数量を入力します。元伝票を空にはできません。",
+          color = Color.Gray,
+          fontSize = if (responsive.isCompact) 11.sp else 14.sp,
+      )
+      Spacer(Modifier.height(if (responsive.isCompact) 6.dp else 10.dp))
+      LazyColumn(modifier = Modifier.weight(1f)) {
+          itemsIndexed(items) { index, item ->
+              Row(
+                  modifier = Modifier.fillMaxWidth().padding(vertical = if (responsive.isCompact) 3.dp else 6.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(if (responsive.isCompact) 6.dp else 10.dp),
+              ) {
+                  Column(Modifier.weight(1f)) {
+                      Text(
+                          item.product.name,
+                          fontWeight = FontWeight.Bold,
+                          color = Navy,
+                          fontSize = if (responsive.isCompact) 13.sp else 14.sp,
+                          maxLines = 1,
+                      )
+                      Text(
+                          "元数量 ${item.quantity}点 / 単価 ${yen(item.unitPrice)} / 税 ${item.product.taxSymbol}",
+                          color = Color.Gray,
+                          fontSize = if (responsive.isCompact) 11.sp else 14.sp,
+                          maxLines = if (responsive.isCompact) 2 else 1,
+                      )
+                      if (item.discountAmount != 0L) {
+                          Text(
+                              "行値引 ${yen(item.discountAmount)}",
+                              color = Color.Gray,
+                              fontSize = if (responsive.isCompact) 11.sp else 14.sp,
+                          )
+                      }
+                  }
+                  OutlinedTextField(
+                      value = rawQuantities.getOrElse(index) { "0" },
+                      onValueChange = { raw ->
+                          val sanitized = raw.filter(Char::isDigit).take(6)
+                          rawQuantities = rawQuantities.toMutableList().also { rows ->
+                              rows[index] = sanitized
+                          }
+                      },
+                      label = { Text("移動数量") },
+                      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                      singleLine = true,
+                      modifier = Modifier.width(if (responsive.isCompact) 108.dp else 130.dp),
+                  )
+              }
+          }
+      }
+  }
+  val splitSummaryModifier = if (responsive.isCompact) {
+      Modifier.weight(0.8f)
+  } else {
+      Modifier.width(350.dp)
+  }
+  CardPanel(splitSummaryModifier.fillMaxHeight()) {
+      Column(Modifier.fillMaxSize().verticalScroll(splitSummaryScroll)) {
+          Text(
+              "分割先",
+              fontSize = if (responsive.isCompact) 18.sp else 22.sp,
+              fontWeight = FontWeight.Bold,
+              color = Navy,
+          )
+          Spacer(Modifier.height(if (responsive.isCompact) 6.dp else 10.dp))
+          OutlinedTextField(
+              value = newName,
+              onValueChange = { newName = it.take(HeldTicketSafetyPolicy.MAX_NAME_LENGTH) },
+              label = { Text("新しい伝票名") },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+          )
+          Spacer(Modifier.height(if (responsive.isCompact) 8.dp else 14.dp))
+          AmountRow("移動点数", "${validation.movedCount}点", emphasized = validation.canConfirm)
+          AmountRow("元伝票残数", "${validation.remainingCount}点")
+          Spacer(Modifier.height(if (responsive.isCompact) 8.dp else 14.dp))
+          Text(
+              "数量の一部を分ける場合、行値引は数量比で按分し、税スナップショットは双方へ維持します。",
+              color = Color.Gray,
+              fontSize = if (responsive.isCompact) 12.sp else 14.sp,
+          )
+          if (validation.message != null) {
+              Spacer(Modifier.height(if (responsive.isCompact) 7.dp else 12.dp))
+              Text(
+                  validation.message,
+                  color = if (validation.canConfirm) Color(0xFF2E7D32) else Danger,
+                  fontWeight = FontWeight.Bold,
+                  fontSize = if (responsive.isCompact) 12.sp else 14.sp,
+              )
+          }
+      }
+  }
         }
         BottomActions(
-            onBack = onBack,
-            confirmLabel = "分割実行",
-            onConfirm = { onConfirm(validation.movedQuantities, newName) },
-            confirmEnabled = validation.canConfirm,
+  onBack = onBack,
+  confirmLabel = "分割実行",
+  onConfirm = { onConfirm(validation.movedQuantities, newName) },
+  confirmEnabled = validation.canConfirm,
         )
     }
 }
