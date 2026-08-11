@@ -11,14 +11,14 @@ class V092ApkReleaseIntegrityGateTest {
     }
 
     @Test
-    fun releaseIdentityIsV092AndCompanionAppsStayPinned() {
+    fun releaseIdentityTracksCurrentRegisterAndCompanionAppsStayPinned() {
         val register = File(root, "app/build.gradle.kts").readText()
         val plus = File(root, "management-app/build.gradle.kts").readText()
         val cd = File(root, "customer-display/build.gradle.kts").readText()
 
         assertTrue(register.contains("applicationId = \"jp.co.tenposinfo.register\""))
-        assertTrue(register.contains("versionCode = 122"))
-        assertTrue(register.contains("versionName = \"0.92.0-dev.1\""))
+        assertTrue(register.contains("versionCode = 123"))
+        assertTrue(register.contains("versionName = \"0.93.0-dev.1\""))
         assertTrue(register.contains("applicationIdSuffix = \".dev\""))
 
         assertTrue(plus.contains("applicationId = \"jp.co.tenposinfo.register.plus\""))
@@ -75,8 +75,8 @@ class V092ApkReleaseIntegrityGateTest {
         assertTrue(build >= 0)
         assertTrue(gate > build)
         assertTrue(prepare > gate)
-        assertTrue(workflow.contains("POS_VERSION_CODE: 122"))
-        assertTrue(workflow.contains("POS_VERSION_NAME: 0.92.0-dev.1"))
+        assertTrue(workflow.contains("POS_VERSION_CODE: 123"))
+        assertTrue(workflow.contains("POS_VERSION_NAME: 0.93.0-dev.1"))
         assertTrue(workflow.contains("bash ci/verify-apk-release-integrity.sh"))
         assertTrue(workflow.contains(":app:testDebugUnitTest"))
         assertTrue(workflow.contains(":customer-display:testDebugUnitTest"))
