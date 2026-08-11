@@ -228,6 +228,7 @@ class GoogleDriveEasyConnectActivity : ComponentActivity() {
                     val token = GoogleDriveAccessTokenProvider.acquire(applicationContext)
                     val connection = GoogleDriveConnectionTestCoordinator(applicationContext)
                         .createOrUpdate(token)
+                    GoogleDriveDirectUploadStatusStore(applicationContext).clearBlocker()
                     val staged = JournalOutboxStore(applicationContext).use { it.stagePending(500) }
                     GoogleDriveDirectUploadScheduler.ensurePeriodic(applicationContext)
                     GoogleDriveDirectUploadScheduler.enqueueNow(applicationContext)
