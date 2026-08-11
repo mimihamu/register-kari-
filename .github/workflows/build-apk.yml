@@ -99,11 +99,12 @@ jobs:
           set -euo pipefail
 
           # v0.90の確定済み累積検査をそのまま再実行する。
+          # YAMLの実ステップ行だけを境界にし、内側AWKの文字列では終了しない。
           # v0.90当時の現行版番号だけはv0.91で置き換えるため除外する。
           git show "$V090_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v090-build-apk.yml
           awk '
-            /- name: Verify cumulative v0.14-v0.90 sources/ { capture=1; next }
-            capture && /- name: Verify launcher and orientation configuration/ { exit }
+            /^      - name: Verify cumulative v0.14-v0.90 sources/ { capture=1; next }
+            capture && /^      - name: Verify launcher and orientation configuration/ { exit }
             capture && /^        run: \|/ { inrun=1; next }
             capture && inrun { sub(/^          /, ""); print }
           ' /tmp/v090-build-apk.yml \
