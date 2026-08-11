@@ -10,21 +10,22 @@ class V092ApkReleaseIntegrityGateTest {
         if (File(current, "app").isDirectory) current else current.parentFile
     }
 
-    private fun registerVersion(): Pair<String, String> {
-        val register = File(root, "app/build.gradle.kts").readText()
-        val code = Regex("versionCode = (\\d+)").find(register)?.groupValues?.get(1)
-            ?: error("register versionCode not found")
-        val name = Regex("versionName = \\\"([^\\\"]+)\\\"").find(register)?.groupValues?.get(1)
-            ?: error("register versionName not found")
+    private fun version(path: String): Pair<String, String> {
+        val source = File(root, path).readText()
+        val code = Regex("versionCode = (\\d+)").find(source)?.groupValues?.get(1)
+            ?: error("versionCode not found: $path")
+        val name = Regex("versionName = \\\"([^\\\"]+)\\\"").find(source)?.groupValues?.get(1)
+            ?: error("versionName not found: $path")
         return code to name
     }
 
     @Test
-    fun releaseIdentityTracksCurrentRegisterAndCompanionAppsStayPinned() {
+    fun releaseIdentityTracksCurrentRegisterAndManagementAppWhileCustomerDisplayStaysPinned() {
         val register = File(root, "app/build.gradle.kts").readText()
         val plus = File(root, "management-app/build.gradle.kts").readText()
         val cd = File(root, "customer-display/build.gradle.kts").readText()
-        val (registerCode, registerName) = registerVersion()
+        val (registerCode, registerName) = version("app/build.gradle.kts")
+        val (plusCode, plusName) = version("management-app/build.gradle.kts")
 
         assertTrue(register.contains("applicationId = \"jp.co.tenposinfo.register\""))
         assertTrue(registerCode.toInt() > 0)
@@ -32,8 +33,8 @@ class V092ApkReleaseIntegrityGateTest {
         assertTrue(register.contains("applicationIdSuffix = \".dev\""))
 
         assertTrue(plus.contains("applicationId = \"jp.co.tenposinfo.register.plus\""))
-        assertTrue(plus.contains("versionCode = 14"))
-        assertTrue(plus.contains("versionName = \"0.14.0-dev.1\""))
+        assertTrue(plusCode.toInt() >= 14)
+        assertTrue(plusName.matches(Regex("\\d+\\.\\d+\\.\\d+-dev\\.\\d+")))
 
         assertTrue(cd.contains("applicationId = \"jp.co.tenposinfo.register.cd\""))
         assertTrue(cd.contains("versionCode = 7"))
@@ -61,6 +62,8 @@ class V092ApkReleaseIntegrityGateTest {
         assertTrue(source.contains("expect_equal \"\$key\" signatureV2 \"true\""))
         assertTrue(source.contains("Signer #1 certificate SHA-256 digest:"))
         assertTrue(source.contains("752c4f56263c8887ada96184d25fad200aff0e84a80c67eda60c7607da3ac9e4"))
+        assertTrue(source.contains("PLUS_VERSION_CODE"))
+        assertTrue(source.contains("PLUS_VERSION_NAME"))
     }
 
     @Test
@@ -81,13 +84,16 @@ class V092ApkReleaseIntegrityGateTest {
         val build = workflow.indexOf("- name: Build debug APKs")
         val gate = workflow.indexOf("- name: Verify built APK release identity and integrity")
         val prepare = workflow.indexOf("- name: Prepare named APKs and SHA-256")
-        val (registerCode, registerName) = registerVersion()
+        val (registerCode, registerName) = version("app/build.gradle.kts")
+        val (plusCode, plusName) = version("management-app/build.gradle.kts")
 
         assertTrue(build >= 0)
         assertTrue(gate > build)
         assertTrue(prepare > gate)
         assertTrue(workflow.contains("POS_VERSION_CODE: $registerCode"))
         assertTrue(workflow.contains("POS_VERSION_NAME: $registerName"))
+        assertTrue(workflow.contains("PLUS_VERSION_CODE: $plusCode"))
+        assertTrue(workflow.contains("PLUS_VERSION_NAME: $plusName"))
         assertTrue(workflow.contains("bash ci/verify-apk-release-integrity.sh"))
         assertTrue(workflow.contains(":app:testDebugUnitTest"))
         assertTrue(workflow.contains(":customer-display:testDebugUnitTest"))
