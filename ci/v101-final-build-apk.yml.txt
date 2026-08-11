@@ -173,6 +173,8 @@ jobs:
         env:
           POS_VERSION_CODE: 131
           POS_VERSION_NAME: 1.01.0-dev.1
+          PLUS_VERSION_CODE: 15
+          PLUS_VERSION_NAME: 0.15.0-dev.1
           BUILD_TOOLS_VERSION: 36.0.0
         run: |
           set -euo pipefail

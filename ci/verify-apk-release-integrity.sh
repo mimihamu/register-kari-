@@ -4,6 +4,8 @@ set -euo pipefail
 : "${ANDROID_HOME:?ANDROID_HOME is required}"
 : "${POS_VERSION_CODE:?POS_VERSION_CODE is required}"
 : "${POS_VERSION_NAME:?POS_VERSION_NAME is required}"
+: "${PLUS_VERSION_CODE:?PLUS_VERSION_CODE is required}"
+: "${PLUS_VERSION_NAME:?PLUS_VERSION_NAME is required}"
 
 BUILD_TOOLS_VERSION="${BUILD_TOOLS_VERSION:-36.0.0}"
 AAPT2="${ANDROID_HOME}/build-tools/${BUILD_TOOLS_VERSION}/aapt2"
@@ -163,8 +165,8 @@ verify_apk \
     MANAGEMENT_APP \
     "$PLUS_APK" \
     'jp.co.tenposinfo.register.plus.dev' \
-    '14' \
-    '0.14.0-dev.1' \
+    "$PLUS_VERSION_CODE" \
+    "$PLUS_VERSION_NAME" \
     '26' \
     '36'
 
