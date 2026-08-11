@@ -20,6 +20,7 @@ import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.tasks.Tasks
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -43,6 +44,31 @@ enum class GoogleDriveApiFailureCategory(val retryable: Boolean) {
     UNKNOWN(true),
 }
 
+
+enum class GoogleDriveCandidateFailureDisposition {
+    RETRY_BATCH,
+    PERMANENT_ITEM,
+    BLOCK_QUEUE,
+}
+
+object GoogleDriveCandidateFailurePolicy {
+    fun disposition(category: GoogleDriveApiFailureCategory): GoogleDriveCandidateFailureDisposition = when (category) {
+        GoogleDriveApiFailureCategory.AUTHORIZATION_REQUIRED,
+        GoogleDriveApiFailureCategory.API_DISABLED,
+        GoogleDriveApiFailureCategory.STORAGE_FULL,
+        GoogleDriveApiFailureCategory.PERMISSION_DENIED,
+        -> GoogleDriveCandidateFailureDisposition.BLOCK_QUEUE
+
+        GoogleDriveApiFailureCategory.RATE_LIMITED,
+        GoogleDriveApiFailureCategory.NETWORK,
+        GoogleDriveApiFailureCategory.SERVER,
+        GoogleDriveApiFailureCategory.UNKNOWN,
+        -> GoogleDriveCandidateFailureDisposition.RETRY_BATCH
+
+        GoogleDriveApiFailureCategory.INVALID_DATA -> GoogleDriveCandidateFailureDisposition.PERMANENT_ITEM
+    }
+}
+
 class GoogleDriveApiException(
     val responseCode: Int,
     val responseBody: String,
@@ -54,6 +80,9 @@ object GoogleDriveApiErrorPolicy {
     fun classify(error: Throwable): GoogleDriveApiFailureCategory {
         if (error is GoogleDriveAuthorizationRequiredException) {
             return GoogleDriveApiFailureCategory.AUTHORIZATION_REQUIRED
+        }
+        if (error is IllegalArgumentException || error is JSONException) {
+            return GoogleDriveApiFailureCategory.INVALID_DATA
         }
         if (error is GoogleDriveApiException) {
             val body = error.responseBody.lowercase(Locale.ROOT)
@@ -313,6 +342,7 @@ data class GoogleDriveDirectUploadStatus(
     val duplicateCount: Int = 0,
     val retryCount: Int = 0,
     val permanentFailureCount: Int = 0,
+    val blockedCategory: GoogleDriveApiFailureCategory? = null,
     val lastMessage: String = "Google Drive直接送信はまだ実行されていません",
 )
 
@@ -329,6 +359,9 @@ class GoogleDriveDirectUploadStatusStore(context: Context) {
         duplicateCount = preferences.getInt("duplicates", 0),
         retryCount = preferences.getInt("retries", 0),
         permanentFailureCount = preferences.getInt("permanent_failures", 0),
+        blockedCategory = preferences.getString("blocked_category", null)?.let { value ->
+            runCatching { GoogleDriveApiFailureCategory.valueOf(value) }.getOrNull()
+        },
         lastMessage = preferences.getString("message", null)
             ?: "Google Drive直接送信はまだ実行されていません",
     )
@@ -338,26 +371,43 @@ class GoogleDriveDirectUploadStatusStore(context: Context) {
     }
 
     fun complete(result: GoogleDriveDirectUploadRunResult) {
-        preferences.edit()
+        val editor = preferences.edit()
             .putBoolean("running", false)
             .putLong("completed_at", System.currentTimeMillis())
             .putInt("uploaded", result.uploadedCount)
             .putInt("duplicates", result.duplicateCount)
             .putInt("retries", result.retryCount)
             .putInt("permanent_failures", result.permanentFailureCount)
-            .putString(
-                "message",
-                "送信${result.uploadedCount}件／既存${result.duplicateCount}件／再試行${result.retryCount}件／永久失敗${result.permanentFailureCount}件",
-            )
-            .apply()
+        val blocked = result.blockedCategory
+        if (blocked == null) {
+            editor.remove("blocked_category")
+        } else {
+            editor.putString("blocked_category", blocked.name)
+        }
+        editor.putString(
+            "message",
+            result.blockedMessage?.take(500)
+                ?: "送信${result.uploadedCount}件／既存${result.duplicateCount}件／再試行${result.retryCount}件／永久失敗${result.permanentFailureCount}件",
+        ).apply()
     }
 
     fun failed(message: String) {
-        preferences.edit()
+        failed(GoogleDriveApiFailureCategory.UNKNOWN, message)
+    }
+
+    fun failed(category: GoogleDriveApiFailureCategory, message: String) {
+        val editor = preferences.edit()
             .putBoolean("running", false)
             .putLong("completed_at", System.currentTimeMillis())
             .putString("message", message.take(500))
-            .apply()
+        if (GoogleDriveCandidateFailurePolicy.disposition(category) == GoogleDriveCandidateFailureDisposition.BLOCK_QUEUE) {
+            editor.putString("blocked_category", category.name)
+        }
+        editor.apply()
+    }
+
+    fun clearBlocker() {
+        preferences.edit().remove("blocked_category").apply()
     }
 }
 
@@ -375,6 +425,8 @@ data class GoogleDriveDirectUploadRunResult(
     val retryCount: Int,
     val permanentFailureCount: Int,
     val retryRecommended: Boolean,
+    val blockedCategory: GoogleDriveApiFailureCategory? = null,
+    val blockedMessage: String? = null,
 )
 
 class GoogleDriveDirectUploadCoordinator(context: Context) {
@@ -390,6 +442,8 @@ class GoogleDriveDirectUploadCoordinator(context: Context) {
         var retries = 0
         var permanentFailures = 0
         var retryRecommended = false
+        var blockedCategory: GoogleDriveApiFailureCategory? = null
+        var blockedMessage: String? = null
         for (candidate in loadCandidates(limit)) {
             val localFile = localFile(candidate.objectKey)
             if (!localFile.isFile) {
@@ -495,19 +549,23 @@ class GoogleDriveDirectUploadCoordinator(context: Context) {
             } catch (error: Throwable) {
                 val category = GoogleDriveApiErrorPolicy.classify(error)
                 val detail = "${GoogleDriveApiErrorPolicy.message(category)}：${error.message ?: error.javaClass.simpleName}"
-                markFailure(candidate, category, detail)
-                if (category.retryable) {
-                    retries += 1
-                    retryRecommended = true
-                } else {
-                    permanentFailures += 1
+                when (GoogleDriveCandidateFailurePolicy.disposition(category)) {
+                    GoogleDriveCandidateFailureDisposition.BLOCK_QUEUE -> {
+                        blockedCategory = category
+                        blockedMessage = "$detail。売上JSONは永久失敗にせず、再開可能な状態で保持しています"
+                        break
+                    }
+                    GoogleDriveCandidateFailureDisposition.RETRY_BATCH -> {
+                        markFailure(candidate, category, detail)
+                        retries += 1
+                        retryRecommended = true
+                        break
+                    }
+                    GoogleDriveCandidateFailureDisposition.PERMANENT_ITEM -> {
+                        markFailure(candidate, category, detail)
+                        permanentFailures += 1
+                    }
                 }
-                if (category in setOf(
-                        GoogleDriveApiFailureCategory.AUTHORIZATION_REQUIRED,
-                        GoogleDriveApiFailureCategory.API_DISABLED,
-                        GoogleDriveApiFailureCategory.STORAGE_FULL,
-                    )
-                ) break
             }
         }
         val result = GoogleDriveDirectUploadRunResult(
@@ -516,6 +574,8 @@ class GoogleDriveDirectUploadCoordinator(context: Context) {
             retryCount = retries,
             permanentFailureCount = permanentFailures,
             retryRecommended = retryRecommended,
+            blockedCategory = blockedCategory,
+            blockedMessage = blockedMessage,
         )
         GoogleDriveDirectUploadStatusStore(appContext).complete(result)
         return result
@@ -761,8 +821,12 @@ class GoogleDriveDirectUploadWorker(context: Context, parameters: WorkerParamete
             onSuccess = { runResult ->
                 diagnosticLog.append(
                     "UPLOAD_WORKER",
-                    if (runResult.retryRecommended) "RETRY" else "SUCCESS",
-                    "送信=${runResult.uploadedCount},既存=${runResult.duplicateCount},再試行=${runResult.retryCount},永久失敗=${runResult.permanentFailureCount}",
+                    when {
+                        runResult.blockedCategory != null -> "BLOCKED"
+                        runResult.retryRecommended -> "RETRY"
+                        else -> "SUCCESS"
+                    },
+                    "送信=${runResult.uploadedCount},既存=${runResult.duplicateCount},再試行=${runResult.retryCount},永久失敗=${runResult.permanentFailureCount},停止=${runResult.blockedCategory?.name ?: "なし"}",
                 )
                 if (runResult.retryRecommended) Result.retry() else Result.success()
             },
@@ -774,6 +838,7 @@ class GoogleDriveDirectUploadWorker(context: Context, parameters: WorkerParamete
                     error.message ?: error.javaClass.simpleName,
                 )
                 GoogleDriveDirectUploadStatusStore(applicationContext).failed(
+                    category,
                     "${GoogleDriveApiErrorPolicy.message(category)}：${error.message ?: error.javaClass.simpleName}",
                 )
                 if (category.retryable) Result.retry() else Result.success()

@@ -55,11 +55,16 @@ object GoogleDriveEasyConnectPolicy {
     fun isReady(state: GoogleDriveEasyConnectUiState): Boolean =
         state.account.email != null &&
             state.connectionTest.status == GoogleDriveConnectionTestStatus.SUCCEEDED &&
+            state.upload.blockedCategory == null &&
             !state.busy
 
     fun statusLabel(state: GoogleDriveEasyConnectUiState): String = when {
         state.busy -> "設定中"
         state.account.email == null -> "未接続"
+        state.upload.blockedCategory == GoogleDriveApiFailureCategory.AUTHORIZATION_REQUIRED -> "再接続が必要"
+        state.upload.blockedCategory == GoogleDriveApiFailureCategory.API_DISABLED -> "API確認が必要"
+        state.upload.blockedCategory == GoogleDriveApiFailureCategory.STORAGE_FULL -> "容量確認が必要"
+        state.upload.blockedCategory == GoogleDriveApiFailureCategory.PERMISSION_DENIED -> "権限確認が必要"
         state.connectionTest.status == GoogleDriveConnectionTestStatus.SUCCEEDED -> "接続済み"
         state.connectionTest.status == GoogleDriveConnectionTestStatus.RUNNING -> "接続確認中"
         else -> "確認が必要"
@@ -189,6 +194,7 @@ class GoogleDriveEasyConnectActivity : ComponentActivity() {
                     val staged = JournalOutboxStore(applicationContext).use { it.stagePending(500) }
                     val connection = GoogleDriveConnectionTestCoordinator(applicationContext)
                         .createOrUpdate(accessToken)
+                    GoogleDriveDirectUploadStatusStore(applicationContext).clearBlocker()
                     GoogleDriveDirectUploadScheduler.enqueueNow(applicationContext)
                     staged to connection
                 }

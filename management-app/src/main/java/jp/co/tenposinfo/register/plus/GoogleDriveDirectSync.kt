@@ -20,6 +20,7 @@ import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.tasks.Tasks
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -49,8 +50,17 @@ class GoogleDriveSyncApiException(
 
 class GoogleDriveSyncAuthorizationRequiredException(message: String) : IllegalStateException(message)
 
+class GoogleDriveSyncBatchException(
+    val category: GoogleDriveSyncFailureCategory,
+    message: String,
+    cause: Throwable,
+) : IOException(message, cause)
+
 object GoogleDriveSyncErrorPolicy {
     fun classify(error: Throwable): GoogleDriveSyncFailureCategory {
+        if (error is GoogleDriveSyncBatchException) {
+            return error.category
+        }
         if (error is GoogleDriveSyncAuthorizationRequiredException) {
             return GoogleDriveSyncFailureCategory.AUTHORIZATION_REQUIRED
         }
@@ -84,6 +94,44 @@ object GoogleDriveSyncErrorPolicy {
         GoogleDriveSyncFailureCategory.SERVER -> "Google Drive側の一時エラーです"
         GoogleDriveSyncFailureCategory.INVALID_DATA -> "Google Driveの応答またはJSONが不正です"
         GoogleDriveSyncFailureCategory.UNKNOWN -> "Google Drive同期で不明なエラーが発生しました"
+    }
+}
+
+enum class GoogleDriveRemoteFileFailureDisposition {
+    RETRY_BATCH,
+    BLOCK_BATCH,
+    REJECT_FILE,
+}
+
+data class GoogleDriveRemoteFileFailureDecision(
+    val category: GoogleDriveSyncFailureCategory,
+    val disposition: GoogleDriveRemoteFileFailureDisposition,
+)
+
+object GoogleDriveRemoteFileFailurePolicy {
+    fun decide(error: Throwable): GoogleDriveRemoteFileFailureDecision {
+        if (error is IllegalArgumentException || error is JSONException) {
+            return GoogleDriveRemoteFileFailureDecision(
+                category = GoogleDriveSyncFailureCategory.INVALID_DATA,
+                disposition = GoogleDriveRemoteFileFailureDisposition.REJECT_FILE,
+            )
+        }
+        val category = GoogleDriveSyncErrorPolicy.classify(error)
+        val disposition = when (category) {
+            GoogleDriveSyncFailureCategory.AUTHORIZATION_REQUIRED,
+            GoogleDriveSyncFailureCategory.API_DISABLED,
+            GoogleDriveSyncFailureCategory.PERMISSION_DENIED,
+            -> GoogleDriveRemoteFileFailureDisposition.BLOCK_BATCH
+
+            GoogleDriveSyncFailureCategory.RATE_LIMITED,
+            GoogleDriveSyncFailureCategory.NETWORK,
+            GoogleDriveSyncFailureCategory.SERVER,
+            GoogleDriveSyncFailureCategory.UNKNOWN,
+            -> GoogleDriveRemoteFileFailureDisposition.RETRY_BATCH
+
+            GoogleDriveSyncFailureCategory.INVALID_DATA -> GoogleDriveRemoteFileFailureDisposition.REJECT_FILE
+        }
+        return GoogleDriveRemoteFileFailureDecision(category, disposition)
     }
 }
 
@@ -346,7 +394,7 @@ class GoogleDriveDirectSyncRepository(
                 unchanged += 1
                 return@forEach
             }
-            runCatching {
+            try {
                 require(remote.size == null || remote.size in 1..SalesJournalImportContract.MAX_DOCUMENT_BYTES) {
                     "Google Drive上のJSONが20MiBを超えています"
                 }
@@ -367,15 +415,27 @@ class GoogleDriveDirectSyncRepository(
                     )
                     processed += ProcessedDriveFile(remote, sha256)
                 }
-            }.onFailure { error ->
-                errors += 1
-                documents += SalesJournalImportDocument(
-                    sourceName = remote.name,
-                    sourceUri = "gdrive://${remote.id}",
-                    rawJson = null,
-                    loadErrorCode = ImportRejectionCode.READ_ERROR,
-                    loadErrorMessage = error.message ?: "Google Driveから読み込めませんでした",
-                )
+            } catch (error: Throwable) {
+                val decision = GoogleDriveRemoteFileFailurePolicy.decide(error)
+                when (decision.disposition) {
+                    GoogleDriveRemoteFileFailureDisposition.REJECT_FILE -> {
+                        errors += 1
+                        documents += SalesJournalImportDocument(
+                            sourceName = remote.name,
+                            sourceUri = "gdrive://${remote.id}",
+                            rawJson = null,
+                            loadErrorCode = ImportRejectionCode.READ_ERROR,
+                            loadErrorMessage = error.message ?: "Google Driveから読み込めませんでした",
+                        )
+                    }
+                    GoogleDriveRemoteFileFailureDisposition.RETRY_BATCH,
+                    GoogleDriveRemoteFileFailureDisposition.BLOCK_BATCH,
+                    -> throw GoogleDriveSyncBatchException(
+                        category = decision.category,
+                        message = "${GoogleDriveSyncErrorPolicy.message(decision.category)}：${error.message ?: error.javaClass.simpleName}",
+                        cause = error,
+                    )
+                }
             }
         }
         val batch = if (documents.isEmpty()) null else SalesJournalImportRepository(database).importDocuments(documents)
