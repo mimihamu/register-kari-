@@ -102,14 +102,20 @@ class V105SettlementActualCashSafetyTest {
             "app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt",
         ).readText()
         val start = store.indexOf("fun recordSettlement(")
-        val end = store.indexOf("fun settlementById(", start).takeIf { it > start } ?: store.length
+        val end = store.indexOf("fun recentSettlements(", start).takeIf { it > start } ?: store.length
         val body = store.substring(start, end)
 
         assertTrue(body.contains("return db.transaction"))
         assertTrue(body.contains("ZSettlementPreflightPolicy.evaluate("))
         assertTrue(body.contains("claimOperationKey("))
-        assertTrue(body.contains("BusinessSessionSchema.close("))
         assertTrue(body.contains("SettlementActualCashSafetyV105.effectiveActualCash("))
+
+        // 現行の営業終了は同一transaction内の条件付きUPDATE。
+        assertTrue(body.contains("\"business_sessions\""))
+        assertTrue(body.contains("BusinessSessionLifecyclePolicy.resultStatus(type, session.status).name"))
+        assertTrue(body.contains("\"id = ? AND status = ?\""))
+        assertTrue(body.contains("BusinessSessionStatus.OPEN.name"))
+        assertTrue(body.contains("check(updated == 1)"))
     }
 
     @Test
