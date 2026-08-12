@@ -291,6 +291,8 @@ internal object OutboxExternalDocumentProvider {
             treeUri,
             DocumentsContract.getDocumentId(parentUri),
         )
+        var matched: OutboxExternalDocument? = null
+        var matchCount = 0
         resolver.query(
             childrenUri,
             arrayOf(
@@ -309,7 +311,9 @@ internal object OutboxExternalDocumentProvider {
             val sizeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
             while (cursor.moveToNext()) {
                 if (cursor.getString(nameIndex) != displayName) continue
-                return OutboxExternalDocument(
+                matchCount++
+                OutboxDuplicateDisplayNameSafetyV108.requireUnique(displayName, matchCount)
+                matched = OutboxExternalDocument(
                     uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, cursor.getString(idIndex)),
                     displayName = displayName,
                     mimeType = if (mimeIndex < 0 || cursor.isNull(mimeIndex)) null else cursor.getString(mimeIndex),
@@ -317,7 +321,7 @@ internal object OutboxExternalDocumentProvider {
                 )
             }
         }
-        return null
+        return matched
     }
 
     fun createFile(context: Context, parentUri: Uri, displayName: String): Uri {
