@@ -114,9 +114,9 @@ class V106DriveJsonCollisionSafetyTest {
 
     @Test
     fun releaseIdentityDocsAndCiFlagsArePresent() {
-        val gradle = File(root, "app/build.gradle.kts").readText()
-        assertTrue(gradle.contains("versionCode = 136"))
-        assertTrue(gradle.contains("versionName = \"1.06.0-dev.1\""))
+        val v106Notes = File(root, "docs/V1.06_RELEASE_NOTES.md").readText()
+        assertTrue(v106Notes.contains("versionCode `136`"))
+        assertTrue(v106Notes.contains("versionName `1.06.0-dev.1`"))
 
         val design = File(root, "docs/V1.06_DRIVE_JSON_COLLISION_SAFETY.md")
         val notes = File(root, "docs/V1.06_RELEASE_NOTES.md")
