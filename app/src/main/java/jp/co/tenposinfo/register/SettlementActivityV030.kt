@@ -175,8 +175,8 @@ private fun SettlementScreenV030(
     var pendingAcknowledged by remember { mutableStateOf(false) }
     var showConfirmation by remember { mutableStateOf(false) }
     val actual = actualCash.toLongOrNull()
-    val previewActual = actual ?: summary.expectedCash
-    val variance = OperationsMath.variance(previewActual, summary.expectedCash)
+    val previewActual = if (isZ) actual else actual ?: summary.expectedCash
+    val variance = previewActual?.let { OperationsMath.variance(it, summary.expectedCash) }
     val preflight = if (isZ) {
         ZSettlementPreflightPolicy.evaluate(
             heldTickets = summary.heldTickets,
@@ -193,7 +193,7 @@ private fun SettlementScreenV030(
         )
     }
 
-    if (showConfirmation) {
+    if (showConfirmation && previewActual != null && variance != null) {
         AlertDialog(
             onDismissRequest = { showConfirmation = false },
             title = { Text("Z精算して営業を終了しますか？", fontWeight = FontWeight.Bold) },
@@ -249,7 +249,11 @@ private fun SettlementScreenV030(
                         onManagerPinChanged = { managerPin = it.filter(Char::isDigit).take(8) },
                         onPendingAcknowledgedChanged = { pendingAcknowledged = it },
                         onExecute = {
-                            if (isZ) showConfirmation = true else onExecute(actual, "", false)
+                            if (isZ) {
+                                if (SettlementActualCashSafetyV105.maySubmit(reportType, actual)) showConfirmation = true
+                            } else {
+                                onExecute(actual, "", false)
+                            }
                         },
                     )
                     SettlementPreviewPanelV030(
@@ -283,7 +287,11 @@ private fun SettlementScreenV030(
                         onManagerPinChanged = { managerPin = it.filter(Char::isDigit).take(8) },
                         onPendingAcknowledgedChanged = { pendingAcknowledged = it },
                         onExecute = {
-                            if (isZ) showConfirmation = true else onExecute(actual, "", false)
+                            if (isZ) {
+                                if (SettlementActualCashSafetyV105.maySubmit(reportType, actual)) showConfirmation = true
+                            } else {
+                                onExecute(actual, "", false)
+                            }
                         },
                     )
                     SettlementPreviewPanelV030(
@@ -338,7 +346,13 @@ private fun SettlementInputPanelV030(
         OutlinedTextField(
             value = actualCash,
             onValueChange = onActualCashChanged,
-            label = { Text("現金実査額（空欄は理論額）") },
+            label = { Text(if (isZ) "現金実査額（必須）" else "現金実査額（空欄は理論額）") },
+            supportingText = {
+                Text(
+                    if (isZ) SettlementActualCashSafetyV105.Z_REQUIRED_MESSAGE
+                    else "X点検では未入力の場合、理論現金を実在高として使用します。",
+                )
+            },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
@@ -396,7 +410,9 @@ private fun SettlementInputPanelV030(
         Spacer(Modifier.height(12.dp))
         Button(
             onClick = onExecute,
-            enabled = session != null && (!isZ || (!summary.settled && summary.heldTickets == 0)),
+            enabled = session != null &&
+                SettlementActualCashSafetyV105.maySubmit(reportType, actualCash.toLongOrNull()) &&
+                (!isZ || (!summary.settled && summary.heldTickets == 0)),
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = if (isZ) SettlementDangerV030 else SettlementBlueV030,
@@ -423,8 +439,8 @@ private fun SettlementInputPanelV030(
 private fun SettlementPreviewPanelV030(
     modifier: Modifier,
     summary: DailyOperationsSummary,
-    previewActual: Long,
-    variance: Long,
+    previewActual: Long?,
+    variance: Long?,
 ) {
     SettlementPanelV030(modifier) {
         Text("プレビュー", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = SettlementNavyV030)
@@ -435,8 +451,8 @@ private fun SettlementPreviewPanelV030(
         SettlementAmountV030("返品・取消", "-${settlementYenV030(summary.reversalGross)}")
         SettlementAmountV030("純売上", settlementYenV030(summary.netSales), true)
         SettlementAmountV030("現金理論", settlementYenV030(summary.expectedCash))
-        SettlementAmountV030("現金実査", settlementYenV030(previewActual))
-        SettlementAmountV030("過不足", settlementSignedYenV030(variance), true)
+        SettlementAmountV030("現金実査", previewActual?.let(::settlementYenV030) ?: "未入力")
+        SettlementAmountV030("過不足", variance?.let(::settlementSignedYenV030) ?: "未計算", true)
         SettlementAmountV030("未印刷", "${summary.pendingPrints}件")
         SettlementAmountV030("未会計伝票", "${summary.heldTickets}件")
     }
