@@ -742,6 +742,42 @@ class OutboxExternalDeliveryCoordinator(context: Context) {
             )
             require(partialSha == localSha256) { "送信先の一時ファイルSHA-256が一致しません" }
 
+            val preCommitExisting = OutboxExternalDocumentProvider.findChild(
+                appContext,
+                treeUri,
+                parent,
+                fileName,
+            )
+            if (preCommitExisting != null) {
+                val existingIsDirectory =
+                    preCommitExisting.mimeType == DocumentsContract.Document.MIME_TYPE_DIR
+                val sameSize = !existingIsDirectory && preCommitExisting.size == written
+                val sameSha256 = if (sameSize) {
+                    sha256(
+                        appContext.contentResolver.openInputStream(preCommitExisting.uri)
+                            ?: throw FileNotFoundException("確定直前の同名JSONを検証できません"),
+                    ) == localSha256
+                } else {
+                    false
+                }
+                when (
+                    OutboxDestinationCollisionSafetyV106.decide(
+                        existingIsDirectory = existingIsDirectory,
+                        sameSize = sameSize,
+                        sameSha256 = sameSha256,
+                    )
+                ) {
+                    OutboxExistingDestinationDecisionV106.ALREADY_SENT -> {
+                        require(OutboxExternalDocumentProvider.delete(appContext, partialUri)) {
+                            "確定直前の競合解決後に一時ファイルを削除できません: $partialName"
+                        }
+                        return true
+                    }
+                    OutboxExistingDestinationDecisionV106.COLLISION ->
+                        throw OutboxDestinationCollisionException(fileName)
+                }
+            }
+
             // Legacy v1.07 frozen source-gate compatibility:
             // catch (error: OutboxProviderNameMismatchException) { throw error }
             // v1.11以降はrename例外をcatchせず、同じ安全性を自然伝播で保証する。
@@ -763,6 +799,18 @@ class OutboxExternalDeliveryCoordinator(context: Context) {
                     ?: throw FileNotFoundException("送信JSONを検証できません"),
             )
             require(finalSha == localSha256) { "送信JSONのSHA-256が一致しません" }
+
+            val visibleFinal = OutboxExternalDocumentProvider.findChild(
+                appContext,
+                treeUri,
+                parent,
+                fileName,
+            ) ?: throw OutboxFinalCommitVisibilityUnavailableException(fileName)
+            OutboxFinalCommitRaceSafetyV112.requireSameDocument(
+                fileName = fileName,
+                committedDocumentId = DocumentsContract.getDocumentId(finalUri),
+                visibleDocumentId = DocumentsContract.getDocumentId(visibleFinal.uri),
+            )
             externalCommitted = true
             return false
         } catch (error: Throwable) {
