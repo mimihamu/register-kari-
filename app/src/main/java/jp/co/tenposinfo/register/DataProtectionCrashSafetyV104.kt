@@ -61,7 +61,8 @@ internal object CrashSafeFileReplaceV104 {
             Files.move(staged.toPath(), target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
             require(target.isFile) { "原子的ファイル置換後にtargetを確認できません" }
             if (!sameDirectory) {
-                require(source.delete() || !source.exists()) { "置換完了後に元一時ファイルを削除できません" }
+                // target commit後の元source削除はcleanup。削除失敗を置換失敗へ戻さない。
+                runCatching { source.delete() }
             }
         } finally {
             if (!sameDirectory) staged.delete()
