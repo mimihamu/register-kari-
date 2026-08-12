@@ -72,8 +72,8 @@ class V109SafProviderQueryUnavailableSafetyTest {
     @Test
     fun releaseIdentityDocsAndCiFlagsArePresent() {
         val gradle = File(root, "app/build.gradle.kts").readText()
-        assertTrue(gradle.contains("versionCode = 142"))
-        assertTrue(gradle.contains("versionName = \"1.12.0-dev.1\""))
+        assertTrue(gradle.contains("versionCode = 143"))
+        assertTrue(gradle.contains("versionName = \"1.13.0-dev.1\""))
 
         val design = File(root, "docs/V1.09_SAF_PROVIDER_QUERY_UNAVAILABLE_SAFETY.md")
         val notes = File(root, "docs/V1.09_RELEASE_NOTES.md")

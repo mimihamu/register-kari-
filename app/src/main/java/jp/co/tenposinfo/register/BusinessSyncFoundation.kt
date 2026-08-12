@@ -540,10 +540,13 @@ class JournalOutboxStore(context: Context) : AutoCloseable {
                 put("status", SyncOutboxStatus.PENDING.name)
                 put("next_attempt_at", 0)
                 putNull("last_error")
+                putNull("processing_started_at")
+                putNull("lease_until")
+                putNull("worker_token")
                 put("updated_at", now)
             },
-            "status = ?",
-            arrayOf(SyncOutboxStatus.STAGED.name),
+            "status = ? AND (worker_token IS NULL OR lease_until IS NULL OR lease_until <= ?)",
+            arrayOf(SyncOutboxStatus.STAGED.name, now.toString()),
         )
     }
 
