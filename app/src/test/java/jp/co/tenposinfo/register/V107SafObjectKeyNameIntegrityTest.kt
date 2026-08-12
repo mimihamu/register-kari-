@@ -50,10 +50,15 @@ class V107SafObjectKeyNameIntegrityTest {
     fun renameMismatchIsNotSwallowedIntoOrdinaryRenameFallback() {
         val source = deliverySource()
         val body = functionBody(source, "private fun deliverOne(", "private fun copyPartialToFinal(")
+        val renameStart = body.indexOf("val renamed =")
+        val finalStart = body.indexOf("val finalUri =", renameStart)
+        assertTrue(renameStart >= 0)
+        assertTrue(finalStart > renameStart)
+        val renameBlock = body.substring(renameStart, finalStart)
 
-        assertTrue(body.contains("catch (error: OutboxProviderNameMismatchException)"))
-        assertTrue(body.contains("throw error"))
-        assertTrue(body.contains("catch (_: Throwable)"))
+        assertTrue(renameBlock.contains("OutboxExternalDocumentProvider.rename(appContext, partialUri, fileName)"))
+        assertFalse(renameBlock.contains("catch"))
+        assertFalse(renameBlock.contains("Throwable"))
         assertTrue(body.contains("val finalUri = renamed ?: copyPartialToFinal("))
         assertFalse(body.contains("val renamed = runCatching"))
     }
