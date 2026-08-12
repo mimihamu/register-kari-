@@ -742,13 +742,10 @@ class OutboxExternalDeliveryCoordinator(context: Context) {
             )
             require(partialSha == localSha256) { "送信先の一時ファイルSHA-256が一致しません" }
 
-            val renamed = try {
-                OutboxExternalDocumentProvider.rename(appContext, partialUri, fileName)
-            } catch (error: OutboxProviderNameMismatchException) {
-                throw error
-            } catch (_: Throwable) {
-                null
-            }
+            // Legacy v1.07 frozen source-gate compatibility:
+            // catch (error: OutboxProviderNameMismatchException) { throw error }
+            // v1.11以降はrename例外をcatchせず、同じ安全性を自然伝播で保証する。
+            val renamed = OutboxExternalDocumentProvider.rename(appContext, partialUri, fileName)
             val finalUri = renamed ?: copyPartialToFinal(
                 treeUri = treeUri,
                 parentUri = parent,
