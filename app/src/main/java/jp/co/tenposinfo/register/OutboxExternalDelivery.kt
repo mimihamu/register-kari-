@@ -271,12 +271,13 @@ internal object OutboxExternalDocumentProvider {
             }
             return existing.uri
         }
-        return DocumentsContract.createDocument(
+        val created = DocumentsContract.createDocument(
             context.contentResolver,
             parentUri,
             DocumentsContract.Document.MIME_TYPE_DIR,
             displayName,
         ) ?: error("送信先へフォルダを作成できません: $displayName")
+        return verifyExactDisplayName(context, created, displayName)
     }
 
     fun findChild(
@@ -319,16 +320,24 @@ internal object OutboxExternalDocumentProvider {
         return null
     }
 
-    fun createFile(context: Context, parentUri: Uri, displayName: String): Uri =
-        DocumentsContract.createDocument(
+    fun createFile(context: Context, parentUri: Uri, displayName: String): Uri {
+        val created = DocumentsContract.createDocument(
             context.contentResolver,
             parentUri,
             OUTBOX_DELIVERY_MIME,
             displayName,
         ) ?: error("送信先へファイルを作成できません: $displayName")
+        return verifyExactDisplayName(context, created, displayName)
+    }
 
-    fun rename(context: Context, documentUri: Uri, displayName: String): Uri? =
-        DocumentsContract.renameDocument(context.contentResolver, documentUri, displayName)
+    fun rename(context: Context, documentUri: Uri, displayName: String): Uri? {
+        val renamed = DocumentsContract.renameDocument(
+            context.contentResolver,
+            documentUri,
+            displayName,
+        ) ?: return null
+        return verifyExactDisplayName(context, renamed, displayName)
+    }
 
     fun delete(context: Context, documentUri: Uri): Boolean =
         runCatching { DocumentsContract.deleteDocument(context.contentResolver, documentUri) }
@@ -345,6 +354,31 @@ internal object OutboxExternalDocumentProvider {
             if (!cursor.moveToFirst()) null
             else cursor.longOrNull(cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE))
         }
+
+    private fun displayName(context: Context, documentUri: Uri): String? =
+        context.contentResolver.query(
+            documentUri,
+            arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+            null,
+            null,
+            null,
+        )?.use { cursor ->
+            val index = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            if (!cursor.moveToFirst() || index < 0 || cursor.isNull(index)) null else cursor.getString(index)
+        }
+
+    private fun verifyExactDisplayName(
+        context: Context,
+        documentUri: Uri,
+        requestedName: String,
+    ): Uri {
+        val actualName = displayName(context, documentUri)
+        if (!OutboxProviderNameSafetyV107.isExact(requestedName, actualName)) {
+            delete(context, documentUri)
+            throw OutboxProviderNameMismatchException(requestedName, actualName)
+        }
+        return documentUri
+    }
 
     private fun Cursor.longOrNull(index: Int): Long? =
         if (index < 0 || isNull(index)) null else getLong(index)
@@ -685,9 +719,13 @@ class OutboxExternalDeliveryCoordinator(context: Context) {
             )
             require(partialSha == localSha256) { "送信先の一時ファイルSHA-256が一致しません" }
 
-            val renamed = runCatching {
+            val renamed = try {
                 OutboxExternalDocumentProvider.rename(appContext, partialUri, fileName)
-            }.getOrNull()
+            } catch (error: OutboxProviderNameMismatchException) {
+                throw error
+            } catch (_: Throwable) {
+                null
+            }
             val finalUri = renamed ?: copyPartialToFinal(
                 treeUri = treeUri,
                 parentUri = parent,

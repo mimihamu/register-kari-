@@ -21,7 +21,9 @@ internal object OutboxDestinationCollisionSafetyV106 {
         }
 }
 
-internal class OutboxDestinationCollisionException(fileName: String) :
-    IllegalStateException(
-        "${OutboxDestinationCollisionSafetyV106.COLLISION_MESSAGE} 対象: $fileName",
-    )
+internal open class OutboxDestinationCollisionException(
+    fileName: String,
+    detail: String = OutboxDestinationCollisionSafetyV106.COLLISION_MESSAGE,
+) : IllegalStateException(
+    "$detail 対象: $fileName",
+)
