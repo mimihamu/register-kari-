@@ -1,0 +1,179 @@
+name: v1.05 settlement safety patch
+
+on:
+  push:
+    branches:
+      - develop/v1.05
+
+permissions:
+  contents: write
+
+jobs:
+  patch-source:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.05
+          fetch-depth: 0
+      - name: Patch Z settlement actual-cash safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # OperationsStore: DB-level enforcement. X keeps the historical fallback, Z cannot use it.
+          path = Path('app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt')
+          text = path.read_text()
+          old = '            val actual = actualCash ?: summary.expectedCash\n            require(actual >= 0) { "現金実査額は0円以上で入力してください" }\n'
+          new = '            val actual = SettlementActualCashSafetyV105.effectiveActualCash(\n                type = type,\n                actualCash = actualCash,\n                expectedCash = summary.expectedCash,\n            )\n'
+          assert old in text, 'OperationsStore actual-cash block not found'
+          path.write_text(text.replace(old, new, 1))
+
+          # Coordinator: reject unsafe non-UI calls before any DB operation/manager approval side effect.
+          path = Path('app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt')
+          text = path.read_text()
+          needle = '''    ): Long {
+              val session = store.activeBusinessSession()
+          '''
+          replacement = '''    ): Long {
+              SettlementActualCashSafetyV105.validate(type, actualCash)
+              val session = store.activeBusinessSession()
+          '''
+          assert needle in text, 'SecureOperationsCoordinator recordSettlement entry not found'
+          path.write_text(text.replace(needle, replacement, 1))
+
+          # UI: Z blank is visibly required, cannot enter confirmation, and preview no longer impersonates theory as actual.
+          path = Path('app/src/main/java/jp/co/tenposinfo/register/SettlementActivityV030.kt')
+          text = path.read_text()
+          text = text.replace(
+              '    val previewActual = actual ?: summary.expectedCash\n    val variance = OperationsMath.variance(previewActual, summary.expectedCash)\n',
+              '    val previewActual = if (isZ) actual else actual ?: summary.expectedCash\n    val variance = previewActual?.let { OperationsMath.variance(it, summary.expectedCash) }\n',
+              1,
+          )
+          text = text.replace(
+              '    if (showConfirmation) {\n',
+              '    if (showConfirmation && previewActual != null && variance != null) {\n',
+              1,
+          )
+          old_execute = '                            if (isZ) showConfirmation = true else onExecute(actual, "", false)\n'
+          new_execute = '''                            if (isZ) {
+                                  if (SettlementActualCashSafetyV105.maySubmit(reportType, actual)) showConfirmation = true
+                              } else {
+                                  onExecute(actual, "", false)
+                              }
+          '''
+          assert text.count(old_execute) == 2, f'UI execute block count={text.count(old_execute)}'
+          text = text.replace(old_execute, new_execute)
+          old_field = '''        OutlinedTextField(
+              value = actualCash,
+              onValueChange = onActualCashChanged,
+              label = { Text("現金実査額（空欄は理論額）") },
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+          )
+          '''
+          new_field = '''        OutlinedTextField(
+              value = actualCash,
+              onValueChange = onActualCashChanged,
+              label = { Text(if (isZ) "現金実査額（必須）" else "現金実査額（空欄は理論額）") },
+              supportingText = {
+                  Text(
+                      if (isZ) SettlementActualCashSafetyV105.Z_REQUIRED_MESSAGE
+                      else "X点検では未入力の場合、理論現金を実在高として使用します。",
+                  )
+              },
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+          )
+          '''
+          assert old_field in text, 'actual-cash OutlinedTextField not found'
+          text = text.replace(old_field, new_field, 1)
+          old_enabled = '            enabled = session != null && (!isZ || (!summary.settled && summary.heldTickets == 0)),\n'
+          new_enabled = '''            enabled = session != null &&
+                  SettlementActualCashSafetyV105.maySubmit(reportType, actualCash.toLongOrNull()) &&
+                  (!isZ || (!summary.settled && summary.heldTickets == 0)),
+          '''
+          assert old_enabled in text, 'settlement execute enabled predicate not found'
+          text = text.replace(old_enabled, new_enabled, 1)
+          text = text.replace(
+              '    previewActual: Long,\n    variance: Long,\n',
+              '    previewActual: Long?,\n    variance: Long?,\n',
+              1,
+          )
+          text = text.replace(
+              '        SettlementAmountV030("現金実査", settlementYenV030(previewActual))\n        SettlementAmountV030("過不足", settlementSignedYenV030(variance), true)\n',
+              '        SettlementAmountV030("現金実査", previewActual?.let(::settlementYenV030) ?: "未入力")\n        SettlementAmountV030("過不足", variance?.let(::settlementSignedYenV030) ?: "未計算", true)\n',
+              1,
+          )
+          path.write_text(text)
+
+          # Development release identity.
+          path = Path('app/build.gradle.kts')
+          text = path.read_text()
+          assert 'versionCode = 134' in text and 'versionName = "1.04.0-dev.1"' in text
+          text = text.replace('versionCode = 134', 'versionCode = 135', 1)
+          text = text.replace('versionName = "1.04.0-dev.1"', 'versionName = "1.05.0-dev.1"', 1)
+          path.write_text(text)
+
+          # v1.04 release identity remains a historical assertion, not a current-product pin.
+          path = Path('app/src/test/java/jp/co/tenposinfo/register/V104DataProtectionCrashSafetyTest.kt')
+          text = path.read_text()
+          old = '''        val gradle = File(root, "app/build.gradle.kts").readText()
+              assertTrue(gradle.contains("versionCode = 134"))
+              assertTrue(gradle.contains("versionName = \\"1.04.0-dev.1\\""))
+
+              val design = File(root, "docs/V1.04_DATA_PROTECTION_CRASH_SAFETY.md")
+              val notes = File(root, "docs/V1.04_RELEASE_NOTES.md")
+          '''
+          new = '''        val design = File(root, "docs/V1.04_DATA_PROTECTION_CRASH_SAFETY.md")
+              val notes = File(root, "docs/V1.04_RELEASE_NOTES.md")
+              val historicalNotes = notes.readText()
+              assertTrue(historicalNotes.contains("versionCode `134`"))
+              assertTrue(historicalNotes.contains("versionName `1.04.0-dev.1`"))
+          '''
+          if old not in text:
+              # tolerate normal Kotlin indentation while still requiring exact historical lines.
+              old = '''        val gradle = File(root, "app/build.gradle.kts").readText()
+              assertTrue(gradle.contains("versionCode = 134"))
+              assertTrue(gradle.contains("versionName = \\"1.04.0-dev.1\\""))
+
+              val design = File(root, "docs/V1.04_DATA_PROTECTION_CRASH_SAFETY.md")
+              val notes = File(root, "docs/V1.04_RELEASE_NOTES.md")
+          '''
+          # Use simple line-level replacement if the multiline escaped form differs.
+          if 'val gradle = File(root, "app/build.gradle.kts").readText()' in text:
+              start = text.index('        val gradle = File(root, "app/build.gradle.kts").readText()')
+              end_marker = '        assertTrue(design.isFile)'
+              end = text.index(end_marker, start)
+              replacement = '''        val design = File(root, "docs/V1.04_DATA_PROTECTION_CRASH_SAFETY.md")
+              val notes = File(root, "docs/V1.04_RELEASE_NOTES.md")
+              val historicalNotes = notes.readText()
+              assertTrue(historicalNotes.contains("versionCode `134`"))
+              assertTrue(historicalNotes.contains("versionName `1.04.0-dev.1`"))
+          '''
+              text = text[:start] + replacement + text[end:]
+          else:
+              raise AssertionError('V104 current release identity block not found')
+          path.write_text(text)
+          PY
+      - name: Commit source patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'mimihamu'
+          git config user.email '74812001+mimihamu@users.noreply.github.com'
+          git add app/build.gradle.kts \
+            app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt \
+            app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt \
+            app/src/main/java/jp/co/tenposinfo/register/SettlementActivityV030.kt \
+            app/src/test/java/jp/co/tenposinfo/register/V104DataProtectionCrashSafetyTest.kt
+          if git diff --cached --quiet; then
+            echo 'No patch required.'
+            exit 0
+          fi
+          git commit -m 'v1.05 require actual cash for Z settlement'
+          git push origin HEAD:develop/v1.05
