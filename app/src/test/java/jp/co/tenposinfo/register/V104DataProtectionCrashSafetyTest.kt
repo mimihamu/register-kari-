@@ -109,7 +109,10 @@ class V104DataProtectionCrashSafetyTest {
             "app/src/main/java/jp/co/tenposinfo/register/DataProtectionCrashSafetyV104.kt",
         ).readText()
         assertTrue(helper.contains("Files.move(staged.toPath(), target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)"))
-        assertFalse(helper.substringAfter("fun replace(source: File, target: File)").substringBefore("private fun copyAndSync").contains("target.delete()"))
+        val replaceBody = helper.substringAfter("fun replace(source: File, target: File)").substringBefore("private fun copyAndSync")
+        assertFalse(replaceBody.contains("target.delete()"))
+        assertTrue(replaceBody.contains("runCatching { source.delete() }"))
+        assertFalse(replaceBody.contains("require(source.delete()"))
     }
 
     @Test
