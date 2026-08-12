@@ -657,8 +657,11 @@ class OperationsStore(context: Context) {
                 )
                 check(preflight.mayProceed) { preflight.message ?: "Z精算前の確認に失敗しました" }
             }
-            val actual = actualCash ?: summary.expectedCash
-            require(actual >= 0) { "現金実査額は0円以上で入力してください" }
+            val actual = SettlementActualCashSafetyV105.effectiveActualCash(
+                type = type,
+                actualCash = actualCash,
+                expectedCash = summary.expectedCash,
+            )
             val variance = OperationsMath.variance(actual, summary.expectedCash)
 
             val id = insertOrThrow(

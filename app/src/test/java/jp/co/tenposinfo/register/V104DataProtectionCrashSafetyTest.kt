@@ -117,17 +117,22 @@ class V104DataProtectionCrashSafetyTest {
 
     @Test
     fun releaseIdentityAndDataProtectionDocumentationAreExplicit() {
-        val gradle = File(root, "app/build.gradle.kts").readText()
-        assertTrue(gradle.contains("versionCode = 134"))
-        assertTrue(gradle.contains("versionName = \"1.04.0-dev.1\""))
-
         val design = File(root, "docs/V1.04_DATA_PROTECTION_CRASH_SAFETY.md")
         val notes = File(root, "docs/V1.04_RELEASE_NOTES.md")
         assertTrue(design.isFile)
         assertTrue(notes.isFile)
+
+        val historicalNotes = notes.readText()
+        assertTrue(historicalNotes.contains("versionCode `134`"))
+        assertTrue(historicalNotes.contains("versionName `1.04.0-dev.1`"))
         assertTrue(design.readText().contains("WAL"))
         assertTrue(design.readText().contains("ATOMIC_MOVE"))
-        assertTrue(notes.readText().contains("最終総合実機試験"))
+        assertTrue(historicalNotes.contains("最終総合実機試験"))
+
+        val workflow = File(root, ".github/workflows/build-apk.yml").readText()
+        assertTrue(workflow.contains("DATA_PROTECTION_WAL_SAFE_FALLBACK=true"))
+        assertTrue(workflow.contains("DATA_PROTECTION_ATOMIC_REPLACE=true"))
+        assertTrue(workflow.contains("DATA_PROTECTION_TARGET_PREDELETE_REMOVED=true"))
     }
 
     private fun dataProtectionSource(): String = File(

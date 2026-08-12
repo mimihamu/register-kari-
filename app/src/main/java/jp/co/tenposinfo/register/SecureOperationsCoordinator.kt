@@ -58,6 +58,7 @@ class SecureOperationsCoordinator(
         managerPin: String,
         pendingPrintsAcknowledged: Boolean = false,
     ): Long {
+        SettlementActualCashSafetyV105.validate(type, actualCash)
         val session = store.activeBusinessSession()
             ?: throw IllegalStateException("営業中の営業日がありません")
         val businessDate = session.businessDate
