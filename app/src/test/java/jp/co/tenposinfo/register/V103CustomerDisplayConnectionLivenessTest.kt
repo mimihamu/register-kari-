@@ -83,16 +83,22 @@ class V103CustomerDisplayConnectionLivenessTest {
 
     @Test
     fun releaseIdentityAndPhysicalVerificationDeferralAreExplicit() {
-        val gradle = File(root, "app/build.gradle.kts").readText()
-        assertTrue(gradle.contains("versionCode = 133"))
-        assertTrue(gradle.contains("versionName = \"1.03.0-dev.1\""))
-
         val requirements = File(root, "docs/V1.03_CUSTOMER_DISPLAY_CONNECTION_LIVENESS.md")
         val notes = File(root, "docs/V1.03_RELEASE_NOTES.md")
         assertTrue(requirements.isFile)
         assertTrue(notes.isFile)
+
+        val releaseNotes = notes.readText()
+        assertTrue(releaseNotes.contains("versionCode `133`"))
+        assertTrue(releaseNotes.contains("versionName `1.03.0-dev.1`"))
         assertTrue(requirements.readText().contains("最終総合実機試験"))
-        assertTrue(notes.readText().contains("最終総合実機試験"))
+        assertTrue(releaseNotes.contains("最終総合実機試験"))
+
+        val workflow = File(root, ".github/workflows/build-apk.yml").readText()
+        assertTrue(workflow.contains("CUSTOMER_DISPLAY_CONNECTION_LIVENESS=true"))
+        assertTrue(workflow.contains("CUSTOMER_DISPLAY_HANDSHAKE_TIMEOUT_MS=5000"))
+        assertTrue(workflow.contains("CUSTOMER_DISPLAY_LIVENESS_CHECK_INTERVAL_MS=15000"))
+        assertTrue(workflow.contains("CUSTOMER_DISPLAY_STALE_AFTER_MS=45000"))
     }
 
     private fun serverSource(): String = File(

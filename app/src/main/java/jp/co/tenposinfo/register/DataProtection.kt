@@ -401,30 +401,52 @@ class DataProtectionManager(context: Context) {
     }
 
     private fun snapshotDatabase(target: File) {
-        target.parentFile?.mkdirs()
-        target.delete()
-        RegisterDatabase(appContext).use { helper ->
-            val database = helper.writableDatabase
-            database.rawQuery("PRAGMA wal_checkpoint(FULL)", null).use { cursor -> while (cursor.moveToNext()) Unit }
-            val escaped = target.absolutePath.replace("'", "''")
-            val vacuumSucceeded = runCatching {
-                database.execSQL("VACUUM INTO '$escaped'")
-                target.isFile && target.length() > 0L
-            }.getOrDefault(false)
-            if (!vacuumSucceeded) {
-                target.delete()
+    target.parentFile?.mkdirs()
+    target.delete()
+    RegisterDatabase(appContext).use { helper ->
+        val database = helper.writableDatabase
+        val escaped = target.absolutePath.replace("'", "''")
+        val vacuumSucceeded = runCatching {
+            database.execSQL("VACUUM INTO '$escaped'")
+            target.isFile && target.length() > 0L
+        }.getOrDefault(false)
+        if (!vacuumSucceeded) {
+            target.delete()
+            val source = appContext.getDatabasePath(DATABASE_NAME)
+            require(source.isFile) { "DBファイルが見つかりません" }
+            val wal = File(source.absolutePath + "-wal")
+            var copied = false
+            var latestCheckpoint: WalCheckpointResultV104? = null
+            for (attempt in 1..BackupSnapshotFallbackPolicyV104.MAX_ATTEMPTS) {
+                val checkpoint = database.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { cursor ->
+                    require(cursor.moveToFirst()) { "WAL checkpoint結果を取得できません" }
+                    WalCheckpointResultV104(
+                        busy = cursor.getInt(0),
+                        logFrames = cursor.getInt(1),
+                        checkpointedFrames = cursor.getInt(2),
+                    )
+                }
+                latestCheckpoint = checkpoint
+                if (!BackupSnapshotFallbackPolicyV104.mayAttemptCopy(checkpoint)) continue
+
                 database.beginTransaction()
                 try {
-                    val source = appContext.getDatabasePath(DATABASE_NAME)
-                    require(source.isFile) { "DBファイルが見つかりません" }
+                    if (!BackupSnapshotFallbackPolicyV104.walQuiescent(wal)) continue
                     source.copyTo(target, overwrite = true)
+                    require(target.isFile && target.length() > 0L) { "DB fallback snapshotを作成できません" }
                     database.setTransactionSuccessful()
+                    copied = true
                 } finally {
                     database.endTransaction()
                 }
+                if (copied) break
+            }
+            require(copied) {
+                "WALを安全に固定できないためbackupを中止しました: ${latestCheckpoint ?: "checkpointなし"}"
             }
         }
     }
+}
 
     private fun inspectDatabaseFile(file: File): DataProtectionReport {
         val database = SQLiteDatabase.openDatabase(file.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
@@ -543,11 +565,9 @@ class DataProtectionManager(context: Context) {
             return digest.digest().joinToString("") { "%02x".format(it) }
         }
         internal fun atomicReplace(source: File, target: File) {
-            target.parentFile?.mkdirs()
-            if (target.exists()) target.delete()
-            if (!source.renameTo(target)) { source.copyTo(target, overwrite = true); require(source.delete()) { "一時ファイルを削除できません" } }
-        }
-        internal fun readSimpleProperties(text: String): Map<String, String> = text.lineSequence().map(String::trim)
+    CrashSafeFileReplaceV104.replace(source, target)
+}
+internal fun readSimpleProperties(text: String): Map<String, String> = text.lineSequence().map(String::trim)
             .filter { it.isNotEmpty() && !it.startsWith("#") && it.contains('=') }
             .associate { it.substringBefore('=') to it.substringAfter('=') }
     }
