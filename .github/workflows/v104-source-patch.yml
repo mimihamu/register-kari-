@@ -1,0 +1,131 @@
+name: v1.04 source patch
+
+on:
+  push:
+    branches:
+      - develop/v1.04
+
+permissions:
+  contents: write
+
+jobs:
+  patch-source:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.04
+          fetch-depth: 0
+      - name: Patch DataProtection crash safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt')
+          text = path.read_text()
+
+          old_snapshot = '''    private fun snapshotDatabase(target: File) {
+              target.parentFile?.mkdirs()
+              target.delete()
+              RegisterDatabase(appContext).use { helper ->
+                  val database = helper.writableDatabase
+                  database.rawQuery("PRAGMA wal_checkpoint(FULL)", null).use { cursor -> while (cursor.moveToNext()) Unit }
+                  val escaped = target.absolutePath.replace("'", "''")
+                  val vacuumSucceeded = runCatching {
+                      database.execSQL("VACUUM INTO '$escaped'")
+                      target.isFile && target.length() > 0L
+                  }.getOrDefault(false)
+                  if (!vacuumSucceeded) {
+                      target.delete()
+                      database.beginTransaction()
+                      try {
+                          val source = appContext.getDatabasePath(DATABASE_NAME)
+                          require(source.isFile) { "DBファイルが見つかりません" }
+                          source.copyTo(target, overwrite = true)
+                          database.setTransactionSuccessful()
+                      } finally {
+                          database.endTransaction()
+                      }
+                  }
+              }
+          }
+          '''
+          new_snapshot = '''    private fun snapshotDatabase(target: File) {
+              target.parentFile?.mkdirs()
+              target.delete()
+              RegisterDatabase(appContext).use { helper ->
+                  val database = helper.writableDatabase
+                  val escaped = target.absolutePath.replace("'", "''")
+                  val vacuumSucceeded = runCatching {
+                      database.execSQL("VACUUM INTO '$escaped'")
+                      target.isFile && target.length() > 0L
+                  }.getOrDefault(false)
+                  if (!vacuumSucceeded) {
+                      target.delete()
+                      val source = appContext.getDatabasePath(DATABASE_NAME)
+                      require(source.isFile) { "DBファイルが見つかりません" }
+                      val wal = File(source.absolutePath + "-wal")
+                      var copied = false
+                      var latestCheckpoint: WalCheckpointResultV104? = null
+                      for (attempt in 1..BackupSnapshotFallbackPolicyV104.MAX_ATTEMPTS) {
+                          val checkpoint = database.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { cursor ->
+                              require(cursor.moveToFirst()) { "WAL checkpoint結果を取得できません" }
+                              WalCheckpointResultV104(
+                                  busy = cursor.getInt(0),
+                                  logFrames = cursor.getInt(1),
+                                  checkpointedFrames = cursor.getInt(2),
+                              )
+                          }
+                          latestCheckpoint = checkpoint
+                          if (!BackupSnapshotFallbackPolicyV104.mayAttemptCopy(checkpoint)) continue
+
+                          database.beginTransaction()
+                          try {
+                              if (!BackupSnapshotFallbackPolicyV104.walQuiescent(wal)) continue
+                              source.copyTo(target, overwrite = true)
+                              require(target.isFile && target.length() > 0L) { "DB fallback snapshotを作成できません" }
+                              database.setTransactionSuccessful()
+                              copied = true
+                          } finally {
+                              database.endTransaction()
+                          }
+                          if (copied) break
+                      }
+                      require(copied) {
+                          "WALを安全に固定できないためbackupを中止しました: ${latestCheckpoint ?: "checkpointなし"}"
+                      }
+                  }
+              }
+          }
+          '''
+          old_atomic = '''        internal fun atomicReplace(source: File, target: File) {
+              target.parentFile?.mkdirs()
+              if (target.exists()) target.delete()
+              if (!source.renameTo(target)) { source.copyTo(target, overwrite = true); require(source.delete()) { "一時ファイルを削除できません" } }
+          }
+          '''
+          new_atomic = '''        internal fun atomicReplace(source: File, target: File) {
+              CrashSafeFileReplaceV104.replace(source, target)
+          }
+          '''
+
+          assert old_snapshot in text, 'snapshotDatabase block did not match'
+          assert old_atomic in text, 'atomicReplace block did not match'
+          text = text.replace(old_snapshot, new_snapshot, 1).replace(old_atomic, new_atomic, 1)
+          path.write_text(text)
+          PY
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt; then
+            echo 'No patch required.'
+            exit 0
+          fi
+          git config user.name 'mimihamu'
+          git config user.email '74812001+mimihamu@users.noreply.github.com'
+          git add app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
+          git commit -m 'v1.04 harden backup snapshot and atomic replacement'
+          git push origin HEAD:develop/v1.04
