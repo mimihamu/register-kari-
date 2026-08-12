@@ -27,19 +27,14 @@ jobs:
           path = Path('app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt')
           text = path.read_text()
           old = '            val actual = actualCash ?: summary.expectedCash\n            require(actual >= 0) { "現金実査額は0円以上で入力してください" }\n'
-          new = '''            val actual = SettlementActualCashSafetyV105.effectiveActualCash(
-                  type = type,
-                  actualCash = actualCash,
-                  expectedCash = summary.expectedCash,
-              )
-          '''
+          new = '            val actual = SettlementActualCashSafetyV105.effectiveActualCash(\n                type = type,\n                actualCash = actualCash,\n                expectedCash = summary.expectedCash,\n            )\n'
           assert old in text, 'OperationsStore actual-cash block not found'
           path.write_text(text.replace(old, new, 1))
 
           path = Path('app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt')
           text = path.read_text()
           pattern = re.compile(
-              r'(    fun recordSettlement\(\n(?:.*\n)*?    \): Long \{\n)(        val session = store\.activeBusinessSession\(\)\n)',
+              r'(    fun recordSettlement\(\n[\s\S]*?    \): Long \{\n)(        val session = store\.activeBusinessSession\(\)\n)',
           )
           text, count = pattern.subn(
               r'\1        SettlementActualCashSafetyV105.validate(type, actualCash)\n\2',
@@ -51,89 +46,57 @@ jobs:
 
           path = Path('app/src/main/java/jp/co/tenposinfo/register/SettlementActivityV030.kt')
           text = path.read_text()
-          old = '    val previewActual = actual ?: summary.expectedCash\n    val variance = OperationsMath.variance(previewActual, summary.expectedCash)\n'
-          new = '    val previewActual = if (isZ) actual else actual ?: summary.expectedCash\n    val variance = previewActual?.let { OperationsMath.variance(it, summary.expectedCash) }\n'
-          assert old in text
-          text = text.replace(old, new, 1)
-          assert '    if (showConfirmation) {\n' in text
-          text = text.replace('    if (showConfirmation) {\n', '    if (showConfirmation && previewActual != null && variance != null) {\n', 1)
+          replacements = [
+              (
+                  '    val previewActual = actual ?: summary.expectedCash\n    val variance = OperationsMath.variance(previewActual, summary.expectedCash)\n',
+                  '    val previewActual = if (isZ) actual else actual ?: summary.expectedCash\n    val variance = previewActual?.let { OperationsMath.variance(it, summary.expectedCash) }\n',
+                  1,
+              ),
+              (
+                  '    if (showConfirmation) {\n',
+                  '    if (showConfirmation && previewActual != null && variance != null) {\n',
+                  1,
+              ),
+              (
+                  '            label = { Text("現金実査額（空欄は理論額）") },\n',
+                  '            label = { Text(if (isZ) "現金実査額（必須）" else "現金実査額（空欄は理論額）") },\n            supportingText = {\n                Text(\n                    if (isZ) SettlementActualCashSafetyV105.Z_REQUIRED_MESSAGE\n                    else "X点検では未入力の場合、理論現金を実在高として使用します。",\n                )\n            },\n',
+                  1,
+              ),
+              (
+                  '            enabled = session != null && (!isZ || (!summary.settled && summary.heldTickets == 0)),\n',
+                  '            enabled = session != null &&\n                SettlementActualCashSafetyV105.maySubmit(reportType, actualCash.toLongOrNull()) &&\n                (!isZ || (!summary.settled && summary.heldTickets == 0)),\n',
+                  1,
+              ),
+              (
+                  '    previewActual: Long,\n    variance: Long,\n',
+                  '    previewActual: Long?,\n    variance: Long?,\n',
+                  1,
+              ),
+              (
+                  '        SettlementAmountV030("現金実査", settlementYenV030(previewActual))\n        SettlementAmountV030("過不足", settlementSignedYenV030(variance), true)\n',
+                  '        SettlementAmountV030("現金実査", previewActual?.let(::settlementYenV030) ?: "未入力")\n        SettlementAmountV030("過不足", variance?.let(::settlementSignedYenV030) ?: "未計算", true)\n',
+                  1,
+              ),
+          ]
+          for old, new, expected_count in replacements:
+              count = text.count(old)
+              assert count == expected_count, f'UI replacement expected {expected_count}, got {count}: {old[:60]}'
+              text = text.replace(old, new, expected_count)
 
           old_execute = '                            if (isZ) showConfirmation = true else onExecute(actual, "", false)\n'
-          new_execute = '''                            if (isZ) {
-                                  if (SettlementActualCashSafetyV105.maySubmit(reportType, actual)) showConfirmation = true
-                              } else {
-                                  onExecute(actual, "", false)
-                              }
-          '''
           assert text.count(old_execute) == 2, f'execute count={text.count(old_execute)}'
+          new_execute = '                            if (isZ) {\n                                if (SettlementActualCashSafetyV105.maySubmit(reportType, actual)) showConfirmation = true\n                            } else {\n                                onExecute(actual, "", false)\n                            }\n'
           text = text.replace(old_execute, new_execute)
-
-          old_field = '''        OutlinedTextField(
-              value = actualCash,
-              onValueChange = onActualCashChanged,
-              label = { Text("現金実査額（空欄は理論額）") },
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-              singleLine = true,
-              modifier = Modifier.fillMaxWidth(),
-          )
-          '''
-          new_field = '''        OutlinedTextField(
-              value = actualCash,
-              onValueChange = onActualCashChanged,
-              label = { Text(if (isZ) "現金実査額（必須）" else "現金実査額（空欄は理論額）") },
-              supportingText = {
-                  Text(
-                      if (isZ) SettlementActualCashSafetyV105.Z_REQUIRED_MESSAGE
-                      else "X点検では未入力の場合、理論現金を実在高として使用します。",
-                  )
-              },
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-              singleLine = true,
-              modifier = Modifier.fillMaxWidth(),
-          )
-          '''
-          assert old_field in text
-          text = text.replace(old_field, new_field, 1)
-
-          old_enabled = '            enabled = session != null && (!isZ || (!summary.settled && summary.heldTickets == 0)),\n'
-          new_enabled = '''            enabled = session != null &&
-                  SettlementActualCashSafetyV105.maySubmit(reportType, actualCash.toLongOrNull()) &&
-                  (!isZ || (!summary.settled && summary.heldTickets == 0)),
-          '''
-          assert old_enabled in text
-          text = text.replace(old_enabled, new_enabled, 1)
-
-          old_signature = '    previewActual: Long,\n    variance: Long,\n'
-          assert old_signature in text
-          text = text.replace(old_signature, '    previewActual: Long?,\n    variance: Long?,\n', 1)
-          old_preview = '        SettlementAmountV030("現金実査", settlementYenV030(previewActual))\n        SettlementAmountV030("過不足", settlementSignedYenV030(variance), true)\n'
-          new_preview = '        SettlementAmountV030("現金実査", previewActual?.let(::settlementYenV030) ?: "未入力")\n        SettlementAmountV030("過不足", variance?.let(::settlementSignedYenV030) ?: "未計算", true)\n'
-          assert old_preview in text
-          path.write_text(text.replace(old_preview, new_preview, 1))
+          path.write_text(text)
 
           path = Path('app/build.gradle.kts')
           text = path.read_text()
-          assert 'versionCode = 134' in text
-          assert 'versionName = "1.04.0-dev.1"' in text
+          assert text.count('versionCode = 134') == 1
+          assert text.count('versionName = "1.04.0-dev.1"') == 1
           path.write_text(
               text.replace('versionCode = 134', 'versionCode = 135', 1)
                   .replace('versionName = "1.04.0-dev.1"', 'versionName = "1.05.0-dev.1"', 1)
           )
-
-          path = Path('app/src/test/java/jp/co/tenposinfo/register/V104DataProtectionCrashSafetyTest.kt')
-          text = path.read_text()
-          start_marker = '        val gradle = File(root, "app/build.gradle.kts").readText()\n'
-          end_marker = '        assertTrue(design.isFile)\n'
-          assert start_marker in text, 'V104 current-version marker not found'
-          start = text.index(start_marker)
-          end = text.index(end_marker, start)
-          replacement = '''        val design = File(root, "docs/V1.04_DATA_PROTECTION_CRASH_SAFETY.md")
-              val notes = File(root, "docs/V1.04_RELEASE_NOTES.md")
-              val historicalNotes = notes.readText()
-              assertTrue(historicalNotes.contains("versionCode `134`"))
-              assertTrue(historicalNotes.contains("versionName `1.04.0-dev.1`"))
-          '''
-          path.write_text(text[:start] + replacement + text[end:])
           PY
       - name: Commit source patch
         shell: bash
@@ -144,7 +107,6 @@ jobs:
           git add app/build.gradle.kts \
             app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt \
             app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt \
-            app/src/main/java/jp/co/tenposinfo/register/SettlementActivityV030.kt \
-            app/src/test/java/jp/co/tenposinfo/register/V104DataProtectionCrashSafetyTest.kt
+            app/src/main/java/jp/co/tenposinfo/register/SettlementActivityV030.kt
           git commit -m 'v1.05 require actual cash for Z settlement'
           git push origin HEAD:develop/v1.05
