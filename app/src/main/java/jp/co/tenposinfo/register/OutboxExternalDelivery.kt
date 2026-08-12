@@ -60,38 +60,6 @@ object OutboxDeliverySettingsPolicy {
     }
 }
 
-class OutboxDeliverySettingsStore(context: Context) {
-    private val preferences = context.applicationContext.getSharedPreferences(
-        OUTBOX_DELIVERY_SETTINGS_PREFS,
-        Context.MODE_PRIVATE,
-    )
-
-    fun load(): OutboxDeliverySettings = OutboxDeliverySettingsPolicy.sanitized(
-        OutboxDeliverySettings(
-            enabled = preferences.getBoolean("enabled", false),
-            treeUri = preferences.getString("tree_uri", null),
-            destinationLabel = preferences.getString("destination_label", null),
-            unmeteredNetworkOnly = preferences.getBoolean("unmetered_only", false),
-            failureNotificationsEnabled = preferences.getBoolean("failure_notifications", true),
-        ),
-    )
-
-    fun save(settings: OutboxDeliverySettings): OutboxDeliverySettings {
-        val validated = OutboxDeliverySettingsPolicy.validated(settings)
-        preferences.edit()
-            .putBoolean("enabled", validated.enabled)
-            .apply {
-                if (validated.treeUri == null) remove("tree_uri") else putString("tree_uri", validated.treeUri)
-                if (validated.destinationLabel == null) remove("destination_label")
-                else putString("destination_label", validated.destinationLabel)
-            }
-            .putBoolean("unmetered_only", validated.unmeteredNetworkOnly)
-            .putBoolean("failure_notifications", validated.failureNotificationsEnabled)
-            .apply()
-        return validated
-    }
-}
-
 enum class OutboxDeliveryResultState(val displayName: String) {
     NEVER("未実行"),
     IDLE("待機中"),
@@ -445,12 +413,13 @@ class OutboxExternalDeliveryCoordinator(context: Context) {
             } catch (error: Throwable) {
                 val permissionLost = error is SecurityException ||
                     !ExternalBackupDestinationAccess.hasPersistedWritePermission(appContext, treeUri)
+                val collision = error is OutboxDestinationCollisionException
                 val message = (error.message ?: error.javaClass.simpleName).take(500)
                 val permanent = if (permissionLost) {
                     markDeliveryPaused(record, message)
                     false
                 } else {
-                    markDeliveryFailure(record, message)
+                    markDeliveryFailure(record, message, forcePermanent = collision)
                 }
                 val result = if (permissionLost) {
                     OutboxDeliveryResultState.PERMISSION_LOST
@@ -462,11 +431,11 @@ class OutboxExternalDeliveryCoordinator(context: Context) {
                 OutboxDeliveryNotificationCoordinator.apply(appContext, result, message)
                 OutboxDeliveryAudit.record(
                     appContext,
-                    "SYNC_OUTBOX_EXTERNAL_FAILED",
+                    if (collision) "SYNC_OUTBOX_EXTERNAL_COLLISION" else "SYNC_OUTBOX_EXTERNAL_FAILED",
                     "${record.eventId} / ${record.objectKey} / permanent=$permanent / $message",
                     record.id,
                 )
-                retryRecommended = !permissionLost && !permanent
+                retryRecommended = !permissionLost && !collision && !permanent
                 break
             }
         }
@@ -475,7 +444,7 @@ class OutboxExternalDeliveryCoordinator(context: Context) {
         if (!retryRecommended) {
             if (delivered > 0 || lastObjectKey != null) {
                 statusStore.success(lastObjectKey, countsAfter.first, countsAfter.second)
-            } else {
+            } else if (countsAfter.second == 0) {
                 statusStore.idle(countsAfter.first, countsAfter.second)
             }
             if (countsAfter.second == 0) OutboxDeliveryNotificationCoordinator.clear(appContext)
@@ -634,23 +603,27 @@ class OutboxExternalDeliveryCoordinator(context: Context) {
             parent,
             fileName,
         )
-        if (
-            existing != null &&
-            existing.mimeType != DocumentsContract.Document.MIME_TYPE_DIR &&
-            existing.size == localFile.length() &&
-            sha256(
-                appContext.contentResolver.openInputStream(existing.uri)
-                    ?: throw FileNotFoundException("送信済みJSONを検証できません"),
-            ) == localSha256
-        ) {
-            return true
-        }
         if (existing != null) {
-            require(existing.mimeType != DocumentsContract.Document.MIME_TYPE_DIR) {
-                "送信先に同名フォルダがあります: $fileName"
+            val existingIsDirectory = existing.mimeType == DocumentsContract.Document.MIME_TYPE_DIR
+            val sameSize = !existingIsDirectory && existing.size == localFile.length()
+            val sameSha256 = if (sameSize) {
+                sha256(
+                    appContext.contentResolver.openInputStream(existing.uri)
+                        ?: throw FileNotFoundException("送信済みJSONを検証できません"),
+                ) == localSha256
+            } else {
+                false
             }
-            require(OutboxExternalDocumentProvider.delete(appContext, existing.uri)) {
-                "送信先の同名ファイルを置き換えられません: $fileName"
+            when (
+                OutboxDestinationCollisionSafetyV106.decide(
+                    existingIsDirectory = existingIsDirectory,
+                    sameSize = sameSize,
+                    sameSha256 = sameSha256,
+                )
+            ) {
+                OutboxExistingDestinationDecisionV106.ALREADY_SENT -> return true
+                OutboxExistingDestinationDecisionV106.COLLISION ->
+                    throw OutboxDestinationCollisionException(fileName)
             }
         }
 
@@ -798,12 +771,16 @@ class OutboxExternalDeliveryCoordinator(context: Context) {
         }
     }
 
-    private fun markDeliveryFailure(record: OutboxDeliveryRecord, message: String): Boolean {
+    private fun markDeliveryFailure(
+        record: OutboxDeliveryRecord,
+        message: String,
+        forcePermanent: Boolean = false,
+    ): Boolean {
         val helper = RegisterDatabase(appContext)
         return try {
             val db = helper.writableDatabase
             val attempts = record.attemptCount + 1
-            val permanent = OutboxDeliveryRetryPolicy.permanent(attempts)
+            val permanent = forcePermanent || OutboxDeliveryRetryPolicy.permanent(attempts)
             db.update(
                 "sync_outbox",
                 ContentValues().apply {
