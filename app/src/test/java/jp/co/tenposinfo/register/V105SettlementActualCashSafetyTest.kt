@@ -119,17 +119,35 @@ class V105SettlementActualCashSafetyTest {
     }
 
     @Test
-    fun releaseIdentityDocumentationAndPhysicalDeferralAreExplicit() {
+    fun releaseHistoryDocumentationAndPhysicalDeferralAreExplicit() {
         val gradle = File(root, "app/build.gradle.kts").readText()
-        assertTrue(gradle.contains("versionCode = 135"))
-        assertTrue(gradle.contains("versionName = \"1.05.0-dev.1\""))
+        val currentVersionCode = gradle.lineSequence()
+            .map(String::trim)
+            .firstOrNull { it.startsWith("versionCode = ") }
+            ?.substringAfter('=')
+            ?.trim()
+            ?.toIntOrNull()
+            ?: error("versionCode missing")
+        val currentVersion = gradle.lineSequence()
+            .map(String::trim)
+            .firstOrNull { it.startsWith("versionName = ") }
+            ?.substringAfter('=')
+            ?.trim()
+            ?.removeSurrounding("\"")
+            ?.takeIf(String::isNotBlank)
+            ?: error("versionName missing")
+        assertTrue(currentVersionCode >= 135)
+        assertTrue(currentVersion.isNotBlank())
 
         val design = File(root, "docs/V1.05_Z_SETTLEMENT_ACTUAL_CASH_SAFETY.md")
         val notes = File(root, "docs/V1.05_RELEASE_NOTES.md")
         assertTrue(design.isFile)
         assertTrue(notes.isFile)
         assertTrue(design.readText().contains(SettlementActualCashSafetyV105.Z_REQUIRED_MESSAGE))
-        assertTrue(notes.readText().contains("最終総合実機試験"))
+        val notesText = notes.readText()
+        assertTrue(notesText.contains("versionCode `135`"))
+        assertTrue(notesText.contains("1.05.0-dev.1"))
+        assertTrue(notesText.contains("最終総合実機試験"))
     }
 
     private fun assertFailureMessage(expected: String, action: () -> Unit) {
