@@ -151,19 +151,24 @@ jobs:
           from pathlib import Path
           store = Path('app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt').read_text()
           start = store.index('fun recordSettlement(')
-          end = store.find('fun settlementById(', start)
+          end = store.find('fun recentSettlements(', start)
           body = store[start:] if end < 0 else store[start:end]
           assert 'val actual = actualCash ?: summary.expectedCash' not in body
           assert 'return db.transaction' in body
           assert 'claimOperationKey(' in body
           assert 'ZSettlementPreflightPolicy.evaluate(' in body
-          assert 'BusinessSessionSchema.close(' in body
+          assert '"business_sessions"' in body
+          assert 'BusinessSessionLifecyclePolicy.resultStatus(type, session.status).name' in body
+          assert '"id = ? AND status = ?"' in body
+          assert 'BusinessSessionStatus.OPEN.name' in body
+          assert 'check(updated == 1)' in body
           policy = Path('app/src/main/java/jp/co/tenposinfo/register/SettlementActualCashSafetyV105.kt').read_text()
           assert 'return actualCash ?: expectedCash' in policy
           assert 'SettlementReportType.Z_SETTLEMENT && actualCash == null' in policy
           assert 'actualCash != null && actualCash < 0L' in policy
-          assert 'DELETE FROM sales' not in policy.upper()
-          assert 'DROP TABLE' not in policy.upper()
+          upper_policy = policy.upper()
+          assert 'DELETE FROM SALES' not in upper_policy
+          assert 'DROP TABLE' not in upper_policy
           PY
           grep -Fq '最終総合実機試験' docs/V1.05_RELEASE_NOTES.md
 
