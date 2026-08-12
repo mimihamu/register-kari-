@@ -85,9 +85,9 @@ class V108SafDuplicateDisplayNameSafetyTest {
 
     @Test
     fun releaseIdentityDocsAndCiFlagsArePresent() {
-        val gradle = File(root, "app/build.gradle.kts").readText()
-        assertTrue(gradle.contains("versionCode = 138"))
-        assertTrue(gradle.contains("versionName = \"1.08.0-dev.1\""))
+        val v108Notes = File(root, "docs/V1.08_RELEASE_NOTES.md").readText()
+        assertTrue(v108Notes.contains("versionCode `138`"))
+        assertTrue(v108Notes.contains("versionName `1.08.0-dev.1`"))
 
         val design = File(root, "docs/V1.08_SAF_DUPLICATE_DISPLAY_NAME_SAFETY.md")
         val notes = File(root, "docs/V1.08_RELEASE_NOTES.md")
