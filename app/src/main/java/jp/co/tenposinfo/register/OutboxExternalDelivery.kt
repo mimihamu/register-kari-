@@ -22,6 +22,7 @@ import java.io.FileNotFoundException
 import java.io.InputStream
 import java.security.MessageDigest
 import java.util.Locale
+import java.util.UUID
 
 private const val OUTBOX_DELIVERY_SETTINGS_PREFS = "outbox_delivery_settings_v1"
 private const val OUTBOX_DELIVERY_STATUS_PREFS = "outbox_delivery_status_v1"
@@ -412,6 +413,7 @@ private data class OutboxDeliveryRecord(
     val eventId: String,
     val objectKey: String,
     val attemptCount: Int,
+    val workerToken: String,
 )
 
 data class OutboxDeliveryRunResult(
@@ -471,7 +473,7 @@ class OutboxExternalDeliveryCoordinator(context: Context) {
             return OutboxDeliveryRunResult(0, null, countsBefore.first, countsBefore.second, false)
         }
 
-        val records = loadStaged(limit)
+        val records = claimStaged(limit)
         if (records.isEmpty()) {
             statusStore.idle(countsBefore.first, countsBefore.second)
             OutboxDeliveryNotificationCoordinator.clear(appContext)
@@ -605,36 +607,63 @@ class OutboxExternalDeliveryCoordinator(context: Context) {
 
     fun currentCounts(): Pair<Int, Int> = counts()
 
-    private fun loadStaged(limit: Int): List<OutboxDeliveryRecord> {
+    private fun claimStaged(limit: Int): List<OutboxDeliveryRecord> {
         val helper = RegisterDatabase(appContext)
         return try {
             val db = helper.writableDatabase
             JournalOutboxSchema.ensureCore(db)
-            db.rawQuery(
-                """
-                SELECT id, event_id, object_key, attempt_count
-                FROM sync_outbox
-                WHERE status='STAGED' AND next_attempt_at <= ?
-                ORDER BY created_at ASC, id ASC
-                LIMIT ?
-                """.trimIndent(),
-                arrayOf(
-                    System.currentTimeMillis().toString(),
-                    limit.coerceIn(1, 500).toString(),
-                ),
-            ).use { cursor ->
-                buildList {
-                    while (cursor.moveToNext()) {
-                        add(
-                            OutboxDeliveryRecord(
-                                id = cursor.getLong(0),
-                                eventId = cursor.getString(1),
-                                objectKey = cursor.getString(2),
-                                attemptCount = cursor.getInt(3),
-                            ),
-                        )
+            val now = System.currentTimeMillis()
+            val workerToken = UUID.randomUUID().toString()
+            db.beginTransaction()
+            try {
+                val selected = db.rawQuery(
+                    """
+                    SELECT id, event_id, object_key, attempt_count
+                    FROM sync_outbox
+                    WHERE status='STAGED'
+                      AND next_attempt_at <= ?
+                      AND (worker_token IS NULL OR lease_until IS NULL OR lease_until <= ?)
+                    ORDER BY created_at ASC, id ASC
+                    LIMIT ?
+                    """.trimIndent(),
+                    arrayOf(
+                        now.toString(),
+                        now.toString(),
+                        limit.coerceIn(1, 500).toString(),
+                    ),
+                ).use { cursor ->
+                    buildList {
+                        while (cursor.moveToNext()) {
+                            add(
+                                OutboxDeliveryRecord(
+                                    id = cursor.getLong(0),
+                                    eventId = cursor.getString(1),
+                                    objectKey = cursor.getString(2),
+                                    attemptCount = cursor.getInt(3),
+                                    workerToken = workerToken,
+                                ),
+                            )
+                        }
                     }
                 }
+                val claimed = selected.mapNotNull { record ->
+                    val changed = db.update(
+                        "sync_outbox",
+                        ContentValues().apply {
+                            put("processing_started_at", now)
+                            put("lease_until", now + OutboxExternalDeliveryLeaseV113.LEASE_MILLIS)
+                            put("worker_token", workerToken)
+                            put("updated_at", now)
+                        },
+                        "id=? AND status='STAGED' AND next_attempt_at <= ? AND (worker_token IS NULL OR lease_until IS NULL OR lease_until <= ?)",
+                        arrayOf(record.id.toString(), now.toString(), now.toString()),
+                    )
+                    if (changed == 1) record else null
+                }
+                db.setTransactionSuccessful()
+                claimed
+            } finally {
+                db.endTransaction()
             }
         } finally {
             helper.close()
@@ -861,10 +890,10 @@ class OutboxExternalDeliveryCoordinator(context: Context) {
                     putNull("worker_token")
                     put("updated_at", now)
                 },
-                "id=? AND status='STAGED'",
-                arrayOf(record.id.toString()),
+                "id=? AND status='STAGED' AND worker_token=?",
+                arrayOf(record.id.toString(), record.workerToken),
             )
-            require(changed == 1) { "Outbox状態が変化したため送信完了を確定できません" }
+            OutboxExternalDeliveryLeaseV113.requireOwnedTransition(record.id, changed)
         } finally {
             helper.close()
         }
@@ -874,17 +903,21 @@ class OutboxExternalDeliveryCoordinator(context: Context) {
         val helper = RegisterDatabase(appContext)
         try {
             val db = helper.writableDatabase
-            db.update(
+            val changed = db.update(
                 "sync_outbox",
                 ContentValues().apply {
                     put("status", SyncOutboxStatus.PENDING.name)
                     put("next_attempt_at", 0)
                     put("last_error", message)
+                    putNull("processing_started_at")
+                    putNull("lease_until")
+                    putNull("worker_token")
                     put("updated_at", System.currentTimeMillis())
                 },
-                "id=? AND status='STAGED'",
-                arrayOf(record.id.toString()),
+                "id=? AND status='STAGED' AND worker_token=?",
+                arrayOf(record.id.toString(), record.workerToken),
             )
+            OutboxExternalDeliveryLeaseV113.requireOwnedTransition(record.id, changed)
         } finally {
             helper.close()
         }
@@ -893,17 +926,21 @@ class OutboxExternalDeliveryCoordinator(context: Context) {
     private fun markDeliveryPaused(record: OutboxDeliveryRecord, message: String) {
         val helper = RegisterDatabase(appContext)
         try {
-            helper.writableDatabase.update(
+            val changed = helper.writableDatabase.update(
                 "sync_outbox",
                 ContentValues().apply {
                     put("status", SyncOutboxStatus.STAGED.name)
                     put("next_attempt_at", 0)
                     put("last_error", message)
+                    putNull("processing_started_at")
+                    putNull("lease_until")
+                    putNull("worker_token")
                     put("updated_at", System.currentTimeMillis())
                 },
-                "id=? AND status='STAGED'",
-                arrayOf(record.id.toString()),
+                "id=? AND status='STAGED' AND worker_token=?",
+                arrayOf(record.id.toString(), record.workerToken),
             )
+            OutboxExternalDeliveryLeaseV113.requireOwnedTransition(record.id, changed)
         } finally {
             helper.close()
         }
@@ -919,7 +956,7 @@ class OutboxExternalDeliveryCoordinator(context: Context) {
             val db = helper.writableDatabase
             val attempts = record.attemptCount + 1
             val permanent = forcePermanent || OutboxDeliveryRetryPolicy.permanent(attempts)
-            db.update(
+            val changed = db.update(
                 "sync_outbox",
                 ContentValues().apply {
                     put("status", if (permanent) SyncOutboxStatus.FAILED.name else SyncOutboxStatus.STAGED.name)
@@ -930,11 +967,15 @@ class OutboxExternalDeliveryCoordinator(context: Context) {
                         else System.currentTimeMillis() + OutboxDeliveryRetryPolicy.delayMillis(attempts),
                     )
                     put("last_error", message)
+                    putNull("processing_started_at")
+                    putNull("lease_until")
+                    putNull("worker_token")
                     put("updated_at", System.currentTimeMillis())
                 },
-                "id=? AND status='STAGED'",
-                arrayOf(record.id.toString()),
+                "id=? AND status='STAGED' AND worker_token=?",
+                arrayOf(record.id.toString(), record.workerToken),
             )
+            OutboxExternalDeliveryLeaseV113.requireOwnedTransition(record.id, changed)
             permanent
         } finally {
             helper.close()
