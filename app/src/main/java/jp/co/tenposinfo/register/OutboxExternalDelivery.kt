@@ -60,6 +60,38 @@ object OutboxDeliverySettingsPolicy {
     }
 }
 
+class OutboxDeliverySettingsStore(context: Context) {
+    private val preferences = context.applicationContext.getSharedPreferences(
+        OUTBOX_DELIVERY_SETTINGS_PREFS,
+        Context.MODE_PRIVATE,
+    )
+
+    fun load(): OutboxDeliverySettings = OutboxDeliverySettingsPolicy.sanitized(
+        OutboxDeliverySettings(
+            enabled = preferences.getBoolean("enabled", false),
+            treeUri = preferences.getString("tree_uri", null),
+            destinationLabel = preferences.getString("destination_label", null),
+            unmeteredNetworkOnly = preferences.getBoolean("unmetered_only", false),
+            failureNotificationsEnabled = preferences.getBoolean("failure_notifications", true),
+        ),
+    )
+
+    fun save(settings: OutboxDeliverySettings): OutboxDeliverySettings {
+        val validated = OutboxDeliverySettingsPolicy.validated(settings)
+        preferences.edit()
+            .putBoolean("enabled", validated.enabled)
+            .apply {
+                if (validated.treeUri == null) remove("tree_uri") else putString("tree_uri", validated.treeUri)
+                if (validated.destinationLabel == null) remove("destination_label")
+                else putString("destination_label", validated.destinationLabel)
+            }
+            .putBoolean("unmetered_only", validated.unmeteredNetworkOnly)
+            .putBoolean("failure_notifications", validated.failureNotificationsEnabled)
+            .apply()
+        return validated
+    }
+}
+
 enum class OutboxDeliveryResultState(val displayName: String) {
     NEVER("未実行"),
     IDLE("待機中"),
