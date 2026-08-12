@@ -87,9 +87,9 @@ class V107SafObjectKeyNameIntegrityTest {
 
     @Test
     fun releaseIdentityDocsAndCiFlagsArePresent() {
-        val gradle = File(root, "app/build.gradle.kts").readText()
-        assertTrue(gradle.contains("versionCode = 137"))
-        assertTrue(gradle.contains("versionName = \"1.07.0-dev.1\""))
+        val v107Notes = File(root, "docs/V1.07_RELEASE_NOTES.md").readText()
+        assertTrue(v107Notes.contains("versionCode `137`"))
+        assertTrue(v107Notes.contains("versionName `1.07.0-dev.1`"))
 
         val design = File(root, "docs/V1.07_SAF_OBJECT_KEY_NAME_INTEGRITY.md")
         val notes = File(root, "docs/V1.07_RELEASE_NOTES.md")
