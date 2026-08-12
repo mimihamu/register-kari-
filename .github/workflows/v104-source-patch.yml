@@ -22,36 +22,11 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path('app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt')
           text = path.read_text()
 
-          old_snapshot = '''    private fun snapshotDatabase(target: File) {
-              target.parentFile?.mkdirs()
-              target.delete()
-              RegisterDatabase(appContext).use { helper ->
-                  val database = helper.writableDatabase
-                  database.rawQuery("PRAGMA wal_checkpoint(FULL)", null).use { cursor -> while (cursor.moveToNext()) Unit }
-                  val escaped = target.absolutePath.replace("'", "''")
-                  val vacuumSucceeded = runCatching {
-                      database.execSQL("VACUUM INTO '$escaped'")
-                      target.isFile && target.length() > 0L
-                  }.getOrDefault(false)
-                  if (!vacuumSucceeded) {
-                      target.delete()
-                      database.beginTransaction()
-                      try {
-                          val source = appContext.getDatabasePath(DATABASE_NAME)
-                          require(source.isFile) { "DBファイルが見つかりません" }
-                          source.copyTo(target, overwrite = true)
-                          database.setTransactionSuccessful()
-                      } finally {
-                          database.endTransaction()
-                      }
-                  }
-              }
-          }
-          '''
           new_snapshot = '''    private fun snapshotDatabase(target: File) {
               target.parentFile?.mkdirs()
               target.delete()
@@ -100,20 +75,28 @@ jobs:
               }
           }
           '''
-          old_atomic = '''        internal fun atomicReplace(source: File, target: File) {
-              target.parentFile?.mkdirs()
-              if (target.exists()) target.delete()
-              if (!source.renameTo(target)) { source.copyTo(target, overwrite = true); require(source.delete()) { "一時ファイルを削除できません" } }
-          }
-          '''
+          snapshot_pattern = re.compile(
+              r'    private fun snapshotDatabase\(target: File\) \{\n.*?\n    \}\n\n    private fun inspectDatabaseFile',
+              re.S,
+          )
+          text, snapshot_count = snapshot_pattern.subn(
+              new_snapshot + '\n    private fun inspectDatabaseFile',
+              text,
+              count=1,
+          )
+          assert snapshot_count == 1, f'snapshotDatabase replacement count={snapshot_count}'
+
+          atomic_pattern = re.compile(
+              r'        internal fun atomicReplace\(source: File, target: File\) \{\n.*?\n        \}\n        internal fun readSimpleProperties',
+              re.S,
+          )
           new_atomic = '''        internal fun atomicReplace(source: File, target: File) {
               CrashSafeFileReplaceV104.replace(source, target)
           }
-          '''
+          internal fun readSimpleProperties'''
+          text, atomic_count = atomic_pattern.subn(new_atomic, text, count=1)
+          assert atomic_count == 1, f'atomicReplace replacement count={atomic_count}'
 
-          assert old_snapshot in text, 'snapshotDatabase block did not match'
-          assert old_atomic in text, 'atomicReplace block did not match'
-          text = text.replace(old_snapshot, new_snapshot, 1).replace(old_atomic, new_atomic, 1)
           path.write_text(text)
           PY
       - name: Commit patch
