@@ -7,6 +7,7 @@ import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -16,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 internal object CustomerDisplayWebSocketHandshake {
@@ -26,6 +28,15 @@ internal object CustomerDisplayWebSocketHandshake {
             .digest((key.trim() + MAGIC).toByteArray(StandardCharsets.ISO_8859_1))
         return Base64.getEncoder().encodeToString(digest)
     }
+}
+
+internal object CustomerDisplayConnectionLivenessPolicy {
+    const val HANDSHAKE_TIMEOUT_MS = 5_000
+    const val LIVENESS_CHECK_INTERVAL_MS = 15_000
+    const val STALE_AFTER_MS = 45_000L
+
+    fun shouldClose(nowMillis: Long, lastTransportActivityAtMillis: Long): Boolean =
+        nowMillis - lastTransportActivityAtMillis >= STALE_AFTER_MS
 }
 
 /**
@@ -118,7 +129,7 @@ internal class CustomerDisplayWebSocketServer(
                     val client = socket.accept().apply {
                         tcpNoDelay = true
                         keepAlive = true
-                        soTimeout = 0
+                        soTimeout = CustomerDisplayConnectionLivenessPolicy.HANDSHAKE_TIMEOUT_MS
                     }
                     executor.execute { handleClient(client) }
                 }
@@ -179,12 +190,15 @@ internal class CustomerDisplayWebSocketServer(
             output.write(response.toByteArray(StandardCharsets.ISO_8859_1))
             output.flush()
 
+            socket.soTimeout = CustomerDisplayConnectionLivenessPolicy.LIVENESS_CHECK_INTERVAL_MS
             connection = ClientConnection(socket, executor)
             clients += connection
             notifyClientCount()
             connection.sendText(latestPayload())
             readClientFrames(connection)
         } catch (_: EOFException) {
+            Unit
+        } catch (_: SocketTimeoutException) {
             Unit
         } catch (error: Exception) {
             if (running.get()) onError(error.message ?: error.javaClass.simpleName)
@@ -203,7 +217,14 @@ internal class CustomerDisplayWebSocketServer(
     private fun readClientFrames(connection: ClientConnection) {
         val input = connection.socket.getInputStream()
         while (running.get() && !connection.socket.isClosed) {
-            val first = input.read()
+            val first = try {
+                input.read()
+            } catch (_: SocketTimeoutException) {
+                if (connection.isTransportStale(System.currentTimeMillis())) {
+                    throw EOFException("customer display transport inactive")
+                }
+                continue
+            }
             if (first < 0) return
             val second = input.read()
             if (second < 0) return
@@ -224,6 +245,7 @@ internal class CustomerDisplayWebSocketServer(
                     payload[index] = (payload[index].toInt() xor mask[index % 4].toInt()).toByte()
                 }
             }
+            connection.markInboundActivity()
             when (opcode) {
                 0x8 -> {
                     connection.sendControl(0x8, payload)
@@ -298,11 +320,13 @@ internal class CustomerDisplayWebSocketServer(
         executor: Executor,
     ) {
         private val writeLock = Any()
+        private val lastTransportActivityAtMillis = AtomicLong(System.currentTimeMillis())
         private val textDispatcher = CustomerDisplayLatestSendDispatcher(
             executor = executor,
             send = { payload ->
                 synchronized(writeLock) {
                     writeFrame(socket.getOutputStream(), 0x1, payload.toByteArray(StandardCharsets.UTF_8))
+                    markTransportActivity()
                 }
             },
             onFailure = { closeTransport() },
@@ -313,14 +337,29 @@ internal class CustomerDisplayWebSocketServer(
         fun sendControl(opcode: Int, payload: ByteArray): Boolean = runCatching {
             synchronized(writeLock) {
                 writeFrame(socket.getOutputStream(), opcode, payload.copyOf(minOf(payload.size, 125)))
+                markTransportActivity()
             }
         }.isSuccess
+
+        fun markInboundActivity() {
+            markTransportActivity()
+        }
+
+        fun isTransportStale(nowMillis: Long): Boolean =
+            CustomerDisplayConnectionLivenessPolicy.shouldClose(
+                nowMillis = nowMillis,
+                lastTransportActivityAtMillis = lastTransportActivityAtMillis.get(),
+            )
 
         override fun toString(): String = "CustomerDisplayClient(${socket.remoteSocketAddress})"
 
         fun close() {
             textDispatcher.close()
             closeTransport()
+        }
+
+        private fun markTransportActivity() {
+            lastTransportActivityAtMillis.set(System.currentTimeMillis())
         }
 
         private fun closeTransport() {
