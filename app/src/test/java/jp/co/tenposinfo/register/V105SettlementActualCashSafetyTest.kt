@@ -121,10 +121,21 @@ class V105SettlementActualCashSafetyTest {
     @Test
     fun releaseHistoryDocumentationAndPhysicalDeferralAreExplicit() {
         val gradle = File(root, "app/build.gradle.kts").readText()
-        val currentVersionCode = Regex("versionCode = (\\d+)")
-            .find(gradle)?.groupValues?.get(1)?.toIntOrNull() ?: error("versionCode missing")
-        val currentVersion = Regex("versionName = \\\"([^\\\"]+)\\\"")
-            .find(gradle)?.groupValues?.get(1) ?: error("versionName missing")
+        val currentVersionCode = gradle.lineSequence()
+            .map(String::trim)
+            .firstOrNull { it.startsWith("versionCode = ") }
+            ?.substringAfter('=')
+            ?.trim()
+            ?.toIntOrNull()
+            ?: error("versionCode missing")
+        val currentVersion = gradle.lineSequence()
+            .map(String::trim)
+            .firstOrNull { it.startsWith("versionName = ") }
+            ?.substringAfter('=')
+            ?.trim()
+            ?.removeSurrounding("\"")
+            ?.takeIf(String::isNotBlank)
+            ?: error("versionName missing")
         assertTrue(currentVersionCode >= 135)
         assertTrue(currentVersion.isNotBlank())
 
