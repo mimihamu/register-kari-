@@ -351,36 +351,51 @@ internal object OutboxExternalDocumentProvider {
         runCatching { DocumentsContract.deleteDocument(context.contentResolver, documentUri) }
             .getOrDefault(false)
 
-    fun size(context: Context, documentUri: Uri): Long? =
-        context.contentResolver.query(
-            documentUri,
-            arrayOf(DocumentsContract.Document.COLUMN_SIZE),
-            null,
-            null,
-            null,
-        )?.use { cursor ->
-            if (!cursor.moveToFirst()) null
-            else cursor.longOrNull(cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE))
+    fun size(context: Context, documentUri: Uri): Long? {
+        val cursor = OutboxProviderMetadataSafetyV110.requireAvailable(
+            "size",
+            context.contentResolver.query(
+                documentUri,
+                arrayOf(DocumentsContract.Document.COLUMN_SIZE),
+                null,
+                null,
+                null,
+            ),
+        )
+        return cursor.use { value ->
+            if (!value.moveToFirst()) null
+            else value.longOrNull(value.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE))
         }
+    }
 
-    private fun displayName(context: Context, documentUri: Uri): String? =
-        context.contentResolver.query(
-            documentUri,
-            arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
-            null,
-            null,
-            null,
-        )?.use { cursor ->
-            val index = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-            if (!cursor.moveToFirst() || index < 0 || cursor.isNull(index)) null else cursor.getString(index)
+    private fun displayName(context: Context, documentUri: Uri): String? {
+        val cursor = OutboxProviderMetadataSafetyV110.requireAvailable(
+            "displayName",
+            context.contentResolver.query(
+                documentUri,
+                arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+                null,
+                null,
+                null,
+            ),
+        )
+        return cursor.use { value ->
+            val index = value.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            if (!value.moveToFirst() || index < 0 || value.isNull(index)) null else value.getString(index)
         }
+    }
 
     private fun verifyExactDisplayName(
         context: Context,
         documentUri: Uri,
         requestedName: String,
     ): Uri {
-        val actualName = displayName(context, documentUri)
+        val actualName = try {
+            displayName(context, documentUri)
+        } catch (error: OutboxProviderMetadataUnavailableException) {
+            delete(context, documentUri)
+            throw error
+        }
         if (!OutboxProviderNameSafetyV107.isExact(requestedName, actualName)) {
             delete(context, documentUri)
             throw OutboxProviderNameMismatchException(requestedName, actualName)
