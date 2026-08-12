@@ -39,6 +39,7 @@ internal object BackupSnapshotFallbackPolicyV104 {
  */
 internal object CrashSafeFileReplaceV104 {
     private const val TEMP_MARKER = ".atomic-replace-"
+    private const val STALE_TEMP_MILLIS = 60L * 60L * 1_000L
 
     fun replace(source: File, target: File) {
         require(source.isFile) { "置換元ファイルが見つかりません" }
@@ -85,8 +86,14 @@ internal object CrashSafeFileReplaceV104 {
 
     private fun cleanupStaleSiblingTemps(directory: File, targetName: String) {
         val prefix = ".$targetName$TEMP_MARKER"
+        val staleBefore = System.currentTimeMillis() - STALE_TEMP_MILLIS
         directory.listFiles().orEmpty()
-            .filter { it.isFile && it.name.startsWith(prefix) && it.name.endsWith(".tmp") }
+            .filter {
+                it.isFile &&
+                    it.name.startsWith(prefix) &&
+                    it.name.endsWith(".tmp") &&
+                    it.lastModified() in 1 until staleBefore
+            }
             .forEach { it.delete() }
     }
 }
