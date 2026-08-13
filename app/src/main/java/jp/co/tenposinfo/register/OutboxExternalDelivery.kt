@@ -485,12 +485,12 @@ class OutboxExternalDeliveryCoordinator(context: Context) {
         var lastObjectKey: String? = null
         var retryRecommended = false
         for (record in records) {
-            val localFile = localFile(record.objectKey)
-            if (!localFile.isFile) {
-                moveBackToPending(record, "ローカルJSONが見つからないため再生成します")
-                continue
-            }
             try {
+                val localFile = localFile(record.objectKey)
+                if (!localFile.isFile) {
+                    moveBackToPending(record, "ローカルJSONが見つからないため再生成します")
+                    continue
+                }
                 val duplicate = deliverOne(treeUri, record.objectKey, localFile)
                 markSent(record)
                 delivered++
@@ -501,16 +501,24 @@ class OutboxExternalDeliveryCoordinator(context: Context) {
                     "${record.eventId} / ${record.objectKey} / ${localFile.length()} bytes / sha256=${sha256(FileInputStream(localFile))}",
                     record.id,
                 )
+            } catch (error: OutboxExternalDeliveryLeaseLostExceptionV113) {
+                handleLeaseOwnershipLost(record, error)
+                break
             } catch (error: Throwable) {
                 val permissionLost = error is SecurityException ||
                     !ExternalBackupDestinationAccess.hasPersistedWritePermission(appContext, treeUri)
                 val collision = error is OutboxDestinationCollisionException
                 val message = (error.message ?: error.javaClass.simpleName).take(500)
-                val permanent = if (permissionLost) {
-                    markDeliveryPaused(record, message)
-                    false
-                } else {
-                    markDeliveryFailure(record, message, forcePermanent = collision)
+                val permanent = try {
+                    if (permissionLost) {
+                        markDeliveryPaused(record, message)
+                        false
+                    } else {
+                        markDeliveryFailure(record, message, forcePermanent = collision)
+                    }
+                } catch (leaseLost: OutboxExternalDeliveryLeaseLostExceptionV113) {
+                    handleLeaseOwnershipLost(record, leaseLost)
+                    break
                 }
                 val result = if (permissionLost) {
                     OutboxDeliveryResultState.PERMISSION_LOST
@@ -606,6 +614,20 @@ class OutboxExternalDeliveryCoordinator(context: Context) {
     }
 
     fun currentCounts(): Pair<Int, Int> = counts()
+
+    private fun handleLeaseOwnershipLost(
+        record: OutboxDeliveryRecord,
+        error: OutboxExternalDeliveryLeaseLostExceptionV113,
+    ) {
+        val counts = counts()
+        statusStore.waiting(counts.first, counts.second)
+        OutboxDeliveryAudit.record(
+            appContext,
+            "SYNC_OUTBOX_EXTERNAL_LEASE_LOST",
+            "${record.eventId} / ${record.objectKey} / ${(error.message ?: error.javaClass.simpleName).take(500)}",
+            record.id,
+        )
+    }
 
     private fun claimStaged(limit: Int): List<OutboxDeliveryRecord> {
         val helper = RegisterDatabase(appContext)
