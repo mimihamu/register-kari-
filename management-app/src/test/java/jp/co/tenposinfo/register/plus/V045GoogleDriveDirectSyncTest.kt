@@ -31,7 +31,7 @@ class V045GoogleDriveDirectSyncTest {
     }
 
     @Test
-    fun directSyncUsesFileIdModifiedTimeAndSha256() {
+    fun directSyncUsesFileIdServerVersionAndSha256() {
         val source = File(
             "src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt",
         ).readText()
@@ -47,13 +47,9 @@ class V045GoogleDriveDirectSyncTest {
             "GoogleDriveSyncAccessTokenProvider",
             "AuthorizationRequest.builder",
             "GoogleDriveAccountPolicy.requestedScopes",
-            "files(id,name,modifiedTime,size,appProperties)",
-            "supportsAllDrives=false",
-            "spaces=drive",
-            "appProperties has",
-            "sales-journal",
-            "file_id",
-            "modified_time",
+            "files(id,name,modifiedTime,version,size,appProperties)",
+            "GoogleDriveRemoteVersionPolicyV119",
+            "remote_version",
             "content_sha256",
             "SalesJournalImportRepository(database).importDocuments",
             "forceReimport",
@@ -66,13 +62,36 @@ class V045GoogleDriveDirectSyncTest {
         )) assertTrue(token, source.contains(token))
 
         assertTrue(database.contains("DATABASE_VERSION = 4"))
-        assertTrue(database.contains("drive_sync_files"))
+        assertTrue(database.contains("remote_version TEXT"))
+        assertTrue(database.contains("const val DATABASE_VERSION = 6"))
+        assertTrue(database.contains("ensureDriveRemoteVersionV119"))
         assertTrue(manifest.contains("GoogleDriveDirectSyncBootstrapProvider"))
         assertTrue(account.contains("今すぐ差分同期"))
         assertTrue(account.contains("全件再取込"))
         assertTrue(account.contains("起動時に差分同期"))
         assertFalse(source.contains("putString(\"access_token\""))
         assertFalse(source.contains("putString(\"refresh_token\""))
+    }
+
+    @Test
+    fun fastSkipRequiresPersistedMatchingServerVersion() {
+        assertFalse(GoogleDriveRemoteVersionPolicyV119.canSkipDownload(null, "10", false))
+        assertFalse(GoogleDriveRemoteVersionPolicyV119.canSkipDownload("", "10", false))
+        assertFalse(GoogleDriveRemoteVersionPolicyV119.canSkipDownload("9", "10", false))
+        assertFalse(GoogleDriveRemoteVersionPolicyV119.canSkipDownload("10", null, false))
+        assertFalse(GoogleDriveRemoteVersionPolicyV119.canSkipDownload("10", "10", true))
+        assertTrue(GoogleDriveRemoteVersionPolicyV119.canSkipDownload("10", "10", false))
+    }
+
+    @Test
+    fun modifiedTimeAloneIsNeverUsedForFastSkip() {
+        val source = File(
+            "src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt",
+        ).readText()
+        assertFalse(source.contains("known.modifiedTime == remote.modifiedTime"))
+        assertTrue(source.contains("knownRemoteVersion = known?.remoteVersion"))
+        assertTrue(source.contains("currentRemoteVersion = remote.version"))
+        assertTrue(source.contains("known.contentSha256 == sha256"))
     }
 
     @Test
