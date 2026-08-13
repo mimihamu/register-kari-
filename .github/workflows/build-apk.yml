@@ -166,6 +166,7 @@ jobs:
           grep -Fq 'DB_RECOVERY_WAL_TRUNCATE_HANDOFF=true' .github/workflows/build-apk.yml
           grep -Fq 'DB_RECOVERY_MIGRATION_ROLLBACK_BOUNDARY=true' .github/workflows/build-apk.yml
           grep -Fq 'DB_RECOVERY_FINAL_SCHEMA_GATE=true' .github/workflows/build-apk.yml
+          grep -Fq 'DB_RECOVERY_PENDING_RESTORE_WRITE_FENCE=true' .github/workflows/build-apk.yml
           python3 - <<'PY'
           from pathlib import Path
           register = Path('app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt').read_text()
@@ -192,20 +193,31 @@ jobs:
 
           restore = Path('app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt').read_text()
           gate = Path('app/src/main/java/jp/co/tenposinfo/register/DatabaseRecoveryIntegrityV116.kt').read_text()
+          activity = Path('app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt').read_text()
           assert 'PRAGMA wal_checkpoint(TRUNCATE)' in restore
           assert 'wal.length() == 0L' in restore
           assert restore.index('PRAGMA wal_checkpoint(TRUNCATE)') < restore.index('sourceDatabase.copyTo(temporary, overwrite = true)')
           assert 'DatabaseRecoveryIntegrityV116.migrateAndVerify(context)' in restore
           assert 'DatabaseRecoveryIntegrityV116.verifyFinal(context)' in restore
+          assert 'PendingRestoreWriteFenceV116.remove(database)' in restore
           assert 'PRAGMA foreign_key_check' in restore
           assert 'DatabaseStartupSchemaBootstrapV085.ensureBeforeUi(appContext)' in gate
           assert 'AppUpdateDatabaseHealthCheckV089.inspect(appContext)' in gate
           assert 'EXPECTED_DATABASE_USER_VERSION = 4' in gate
+          assert 'PendingRestoreWriteFenceV116' in gate
+          assert 'CREATE TRIGGER IF NOT EXISTS' in gate
+          assert 'RAISE(ABORT' in gate
+          assert 'RestoreReservationCoordinatorV116' in gate
+          assert 'isInstalled(database)' in gate
           assert 'idx_print_jobs_status' in gate
           assert 'idx_settlement_session' in gate
+          assert 'RestoreReservationCoordinatorV116.stage(appContext, manager, file, pin)' in activity
+          assert 'RestoreReservationCoordinatorV116.cancel(appContext, manager, pin)' in activity
           PY
           grep -Fq 'v1.16.0-dev.1 DB整合性' docs/V1.15_RELEASE_NOTES.md
+          grep -Fq '復元予約中' docs/V1.15_RELEASE_NOTES.md
           grep -Fq 'v1.16 WAL-safe rollback' docs/V0.21_DATA_PROTECTION.md
+          grep -Fq '復元予約中の書込みフェンス' docs/V0.21_DATA_PROTECTION.md
           grep -Fq '最終総合実機試験' docs/V1.15_RELEASE_NOTES.md
 
       - name: Verify launcher and orientation configuration
@@ -296,6 +308,7 @@ jobs:
           DB_RECOVERY_MIGRATION_ROLLBACK_BOUNDARY=true
           DB_RECOVERY_FINAL_INTEGRITY_FK=true
           DB_RECOVERY_FINAL_SCHEMA_GATE=true
+          DB_RECOVERY_PENDING_RESTORE_WRITE_FENCE=true
           MANAGEMENT_APP_VERSION_NAME=0.15.0-dev.1
           MANAGEMENT_APP_VERSION_CODE=15
           DATA_PROTECTION_RESPONSIVE=true
