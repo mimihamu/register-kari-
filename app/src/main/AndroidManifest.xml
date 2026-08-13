@@ -28,6 +28,12 @@
             android:initOrder="900" />
 
         <provider
+            android:name=".SyncJournalReplayIntegrityBootstrapProviderV117"
+            android:authorities="${applicationId}.sync-journal-replay-integrity-bootstrap"
+            android:exported="false"
+            android:initOrder="140" />
+
+        <provider
             android:name=".CatalogBootstrapProvider"
             android:authorities="${applicationId}.catalog-bootstrap"
             android:exported="false"
