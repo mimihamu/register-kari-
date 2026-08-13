@@ -94,6 +94,10 @@ concurrency:
 # SYNC_IMPORT_CONFLICT_AUDIT=true
 # SYNC_IMPORT_CONFLICT_NO_RETRY_LOOP=true
 # SYNC_IMPORT_CONFLICT_FINGERPRINT_AFTER_AUDIT=true
+# DRIVE_REMOTE_VERSION_FINGERPRINT=true
+# DRIVE_MODIFIED_TIME_NOT_IDENTITY=true
+# DRIVE_VERSION_MISSING_SHA_FALLBACK=true
+# MANAGEMENT_DB_REMOTE_VERSION_MIGRATION=true
 # DATA_PROTECTION_RESPONSIVE=true
 # APK_RELEASE_INTEGRITY_GATE=true
 # MAIN_FLOW_RESPONSIVE=true
@@ -244,9 +248,10 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v1.18 sources
+      - name: Verify cumulative v0.14-v1.19 sources
         shell: bash
         env:
+          V118_FINAL_HEAD: af58236196d0cb50c8df6ba28cdd2568c33e7eec
           V117_FINAL_HEAD: 80e9cdc0f8bc81e9585a3d8b981aacfae1b1b7d9
           V114_FINAL_HEAD: d9fbdb4c5d63240a8310ae537994f92a5c6b2f28
           V113_FINAL_HEAD: 2a58140d03ef2155a8f1d4c1307459d52db4022d
@@ -271,15 +276,15 @@ jobs:
           V093_FINAL_HEAD: 5c8d0d95175bb7dd6cf8b70f52b31162c415a5e7
         run: |
           set -euo pipefail
-          git show "$V117_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v117-build-apk.yml
+          git show "$V118_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v118-build-apk.yml
           awk '
-            /^      - name: Verify cumulative v0.14-v1.17 sources/ { capture=1; next }
+            /^      - name: Verify cumulative v0.14-v1.18 sources/ { capture=1; next }
             capture && /^      - name: Verify launcher and orientation configuration/ { exit }
             capture && /^        run: \|/ { inrun=1; next }
             capture && inrun { sub(/^          /, ""); print }
-          ' /tmp/v117-build-apk.yml > /tmp/v117-cumulative-checks.sh
-          test -s /tmp/v117-cumulative-checks.sh
-          bash -euxo pipefail /tmp/v117-cumulative-checks.sh
+          ' /tmp/v118-build-apk.yml > /tmp/v118-cumulative-checks.sh
+          test -s /tmp/v118-cumulative-checks.sh
+          bash -euxo pipefail /tmp/v118-cumulative-checks.sh
 
           python3 - <<'PY'
           from pathlib import Path
@@ -288,39 +293,32 @@ jobs:
 
           app_build = active_gradle('app/build.gradle.kts')
           plus_build = active_gradle('management-app/build.gradle.kts')
-          assert 'versionCode = 148' in app_build
-          assert 'versionName = "1.18.0-dev.1"' in app_build
-          assert 'versionCode = 17' in plus_build
-          assert 'versionName = "0.17.0-dev.1"' in plus_build
+          assert 'versionCode = 149' in app_build
+          assert 'versionName = "1.19.0-dev.1"' in app_build
+          assert 'versionCode = 18' in plus_build
+          assert 'versionName = "0.18.0-dev.1"' in plus_build
 
-          policy = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/FolderImportRepository.kt').read_text()
-          repository = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/SalesJournalImportRepository.kt').read_text()
-          direct_sync = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt').read_text()
-          assert 'SalesJournalReplayDecisionV118' in policy
-          assert 'SalesJournalReplayConflictPolicyV118' in policy
-          assert 'duplicate_import_key=?' in policy
-          for field in ('schema_version', 'minimum_reader_version', 'duplicate_key_version', 'event_id', 'event_type', 'store_id', 'terminal_id', 'business_date', 'aggregate_id', 'occurred_at', 'payload_schema', 'payload_json', 'total_amount'):
-              assert f'"{field}"' in policy
-          decision = repository.index('SalesJournalReplayConflictPolicyV118.decide')
-          conflict = repository.index('SalesJournalReplayDecisionV118.CONFLICT', decision)
-          rejection = repository.index('ImportRejectionCode.DUPLICATE_KEY_MISMATCH', conflict)
-          assert repository.index('SalesJournalReplayDecisionV118.NEW', decision) > decision
-          assert repository.index('SalesJournalReplayDecisionV118.IDENTICAL', decision) > decision
-          assert conflict > decision
-          assert rejection > conflict
-          assert repository.index('rejected += 1', rejection) > rejection
-          assert 'STATUS_COMPLETED_WITH_ERRORS' in repository
-          apply = direct_sync.index('SalesJournalImportRepository(database).importDocuments(documents)')
-          fingerprint = direct_sync.index('processed.forEach { recordFingerprint(it.remote, it.sha256) }')
-          assert apply >= 0 and fingerprint > apply
-          assert 'v1.18 追補' in Path('docs/V1.17_SYNC_REPLAY_INTEGRITY.md').read_text()
-          assert 'v1.18.0-dev.1' in Path('docs/V1.17_RELEASE_NOTES.md').read_text()
+          direct = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt').read_text()
+          database = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/ManagementDatabase.kt').read_text()
+          test = Path('management-app/src/test/java/jp/co/tenposinfo/register/plus/V045GoogleDriveDirectSyncTest.kt').read_text()
+          assert 'files(id,name,modifiedTime,version,size,appProperties)' in direct
+          assert 'GoogleDriveRemoteVersionPolicyV119' in direct
+          assert 'knownRemoteVersion = known?.remoteVersion' in direct
+          assert 'currentRemoteVersion = remote.version' in direct
+          assert 'known.modifiedTime == remote.modifiedTime' not in direct
+          assert 'known.contentSha256 == sha256' in direct
+          assert 'remote_version' in direct
+          assert 'remote_version TEXT' in database
+          assert 'ensureDriveRemoteVersionV119' in database
+          assert 'const val DATABASE_VERSION = 6' in database
+          assert 'fastSkipRequiresPersistedMatchingServerVersion' in test
+          assert 'modifiedTimeAloneIsNeverUsedForFastSkip' in test
           PY
 
-          grep -Fq 'SYNC_IMPORT_CONFLICT_QUARANTINE=true' .github/workflows/build-apk.yml
-          grep -Fq 'SYNC_IMPORT_CONFLICT_AUDIT=true' .github/workflows/build-apk.yml
-          grep -Fq 'SYNC_IMPORT_CONFLICT_NO_RETRY_LOOP=true' .github/workflows/build-apk.yml
-          grep -Fq 'SYNC_IMPORT_CONFLICT_FINGERPRINT_AFTER_AUDIT=true' .github/workflows/build-apk.yml
+          grep -Fq 'DRIVE_REMOTE_VERSION_FINGERPRINT=true' .github/workflows/build-apk.yml
+          grep -Fq 'DRIVE_MODIFIED_TIME_NOT_IDENTITY=true' .github/workflows/build-apk.yml
+          grep -Fq 'DRIVE_VERSION_MISSING_SHA_FALLBACK=true' .github/workflows/build-apk.yml
+          grep -Fq 'MANAGEMENT_DB_REMOTE_VERSION_MIGRATION=true' .github/workflows/build-apk.yml
 
       - name: Verify launcher and orientation configuration
         shell: bash
@@ -348,10 +346,10 @@ jobs:
       - name: Verify built APK release identity and integrity
         shell: bash
         env:
-          POS_VERSION_CODE: 148
-          POS_VERSION_NAME: 1.18.0-dev.1
-          PLUS_VERSION_CODE: 17
-          PLUS_VERSION_NAME: 0.17.0-dev.1
+          POS_VERSION_CODE: 149
+          POS_VERSION_NAME: 1.19.0-dev.1
+          PLUS_VERSION_CODE: 18
+          PLUS_VERSION_NAME: 0.18.0-dev.1
           BUILD_TOOLS_VERSION: 36.0.0
         run: |
           set -euo pipefail
@@ -362,12 +360,12 @@ jobs:
       - name: Prepare named APKs and SHA-256
         shell: bash
         env:
-          V117_FINAL_HEAD: 80e9cdc0f8bc81e9585a3d8b981aacfae1b1b7d9
+          V118_FINAL_HEAD: af58236196d0cb50c8df6ba28cdd2568c33e7eec
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v1.18.0_dev1_sync_conflict_quarantine_debug.apk
-          plus_apk=artifacts/TSUGUREGI_PLUS_v0.17.0_dev1_sync_conflict_quarantine_debug.apk
+          register_apk=artifacts/TSUGUREGI_v1.19.0_dev1_drive_version_fingerprint_debug.apk
+          plus_apk=artifacts/TSUGUREGI_PLUS_v0.18.0_dev1_drive_version_fingerprint_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
           cp management-app/build/outputs/apk/debug/management-app-debug.apk "$plus_apk"
@@ -379,12 +377,12 @@ jobs:
           stat --printf='MANAGEMENT_APP_APK_SIZE_BYTES=%s\n' "$plus_apk" | tee -a artifacts/build-summary.txt
           stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' "$cd_apk" | tee -a artifacts/build-summary.txt
 
-          git show "$V117_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v117-build-apk.yml
+          git show "$V118_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v118-build-apk.yml
           awk '
             /cat >> artifacts\/build-summary.txt <<'\''EOF'\''/ { capture=1; next }
             capture && /^          EOF$/ { exit }
             capture { sub(/^          /, ""); print }
-          ' /tmp/v117-build-apk.yml \
+          ' /tmp/v118-build-apk.yml \
             | grep -v '^REGISTER_VERSION_NAME=' \
             | grep -v '^REGISTER_VERSION_CODE=' \
             | grep -v '^MANAGEMENT_APP_VERSION_NAME=' \
@@ -392,15 +390,15 @@ jobs:
             >> artifacts/build-summary.txt
 
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=1.18.0-dev.1
-          REGISTER_VERSION_CODE=148
-          MANAGEMENT_APP_VERSION_NAME=0.17.0-dev.1
-          MANAGEMENT_APP_VERSION_CODE=17
-          SYNC_IMPORT_CONFLICT_QUARANTINE=true
-          SYNC_IMPORT_CONFLICT_AUDIT=true
-          SYNC_IMPORT_CONFLICT_NO_RETRY_LOOP=true
-          SYNC_IMPORT_CONFLICT_FINGERPRINT_AFTER_AUDIT=true
-          REAL_DEVICE_SYNC_CONFLICT_VERIFICATION=deferred-final-acceptance
+          REGISTER_VERSION_NAME=1.19.0-dev.1
+          REGISTER_VERSION_CODE=149
+          MANAGEMENT_APP_VERSION_NAME=0.18.0-dev.1
+          MANAGEMENT_APP_VERSION_CODE=18
+          DRIVE_REMOTE_VERSION_FINGERPRINT=true
+          DRIVE_MODIFIED_TIME_NOT_IDENTITY=true
+          DRIVE_VERSION_MISSING_SHA_FALLBACK=true
+          MANAGEMENT_DB_REMOTE_VERSION_MIGRATION=true
+          REAL_DEVICE_DRIVE_VERSION_FINGERPRINT_VERIFICATION=deferred-final-acceptance
           EOF
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
@@ -408,7 +406,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v1.18.0-dev1-sync-conflict-quarantine-apks
+          name: TSUGUREGI-v1.19.0-dev1-drive-version-fingerprint-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
