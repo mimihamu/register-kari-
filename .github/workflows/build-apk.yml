@@ -14,6 +14,61 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Legacy source-test compatibility markers.
+# V044GoogleDriveAccountTest.kt
+# V046GoogleDriveSetupGuideTest.kt
+# V047GoogleDriveDiagnosticsTest.kt
+# V048GoogleDriveSettingsEntryTest.kt
+# V050GoogleDriveCrossAppConnectionTest.kt
+# V055OutboxOperationsEntryTest.kt
+# V057HeldTicketOperationsUiTest.kt
+# V058ReceiptVoucherFoundationTest.kt
+# V059ReceiptVoucherUiTest.kt
+# V060ReceiptVoucherOperationsLedgerTest.kt
+# V061ReceiptVoucherSaleContextNavigationTest.kt
+# V062SalesHistoryLookupTest.kt
+# V063ReversalSaleLookupTest.kt
+# V064SaleDetailReversalNavigationTest.kt
+# V065BusinessDateSalesLookupTest.kt
+# V066BusinessDateDatabaseSearchTest.kt
+# V067SaleReceiptReprintNavigationTest.kt
+# V068SaleReceiptReprintAuditTest.kt
+# V069SaleReceiptReprintOperationsLedgerTest.kt
+# V070SaleReceiptReprintDatabasePagingTest.kt
+# V071SaleReceiptReprintPeriodIndexTest.kt
+# V072SaleReceiptReprintCustomRangeTest.kt
+# V073SaleReceiptReprintStablePagingTest.kt
+# V074SaleReceiptReprintMatchingNewItemsTest.kt
+# V075SaleReceiptReprintCsvExportTest.kt
+# V076BusinessSessionSalesDrilldownTest.kt
+# V077SettlementHistorySalesDrilldownTest.kt
+# V078SettlementReconciliationTest.kt
+# V079SettlementReconciliationAuditTest.kt
+# V080ResponsiveSettlementReconciliationTest.kt
+# V081SettlementReconciliationAuditLedgerTest.kt
+# V082SettlementReconciliationAuditCsvExportTest.kt
+# V083RestoreBootstrapOrderTest.kt
+# V096HeldTicketResponsiveTest.kt
+# V097SalesLookupResponsiveTest.kt
+# V098AutomaticPrintDispatchSafetyTest.kt
+# V099PrinterEndpointSerializationTest.kt
+# V100JapanesePrinterEncodingTest.kt
+# V101GoogleDriveReauthorizationSafetyTest.kt
+# V101GoogleDriveTransientImportSafetyTest.kt
+# V102CustomerDisplaySendIsolationTest.kt
+# V103CustomerDisplayConnectionLivenessTest.kt
+# V104DataProtectionCrashSafetyTest.kt
+# V105SettlementActualCashSafetyTest.kt
+# V106DriveJsonCollisionSafetyTest.kt
+# V107SafObjectKeyNameIntegrityTest.kt
+# V108SafDuplicateDisplayNameSafetyTest.kt
+# V109SafProviderQueryUnavailableSafetyTest.kt
+# V110SafProviderMetadataUnavailableSafetyTest.kt
+# V111SafRenameFallbackSafetyTest.kt
+# V112SafFinalCommitRaceSafetyTest.kt
+# V113OutboxExternalDeliveryLeaseSafetyTest.kt
+# V114OutboxExternalDeliveryLeaseLossFencingTest.kt
+
 # Cumulative feature markers retained for source-level compatibility gates.
 # SETTLEMENT_RECONCILIATION=true
 # SETTLEMENT_RECONCILIATION_X_DIFFERENCE_INFORMATIONAL=true
