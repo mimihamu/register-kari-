@@ -95,6 +95,9 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
         if (oldVersion < 5) {
             createImportedJournalReplayGuardV117(db)
         }
+        if (oldVersion < 6) {
+            ensureDriveRemoteVersionV119(db)
+        }
         require(newVersion <= DATABASE_VERSION) {
             "未対応のDB移行です: $oldVersion -> $newVersion"
         }
@@ -124,6 +127,7 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
                 file_id TEXT PRIMARY KEY NOT NULL,
                 file_name TEXT NOT NULL,
                 modified_time TEXT NOT NULL,
+                remote_version TEXT,
                 content_sha256 TEXT NOT NULL,
                 store_id TEXT,
                 terminal_id TEXT,
@@ -139,6 +143,21 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
             "CREATE INDEX IF NOT EXISTS idx_drive_sync_files_identity ON drive_sync_files(store_id, terminal_id, business_date)",
         )
     }
+
+    private fun ensureDriveRemoteVersionV119(db: SQLiteDatabase) {
+        if (!hasColumn(db, "drive_sync_files", "remote_version")) {
+            db.execSQL("ALTER TABLE drive_sync_files ADD COLUMN remote_version TEXT")
+        }
+    }
+
+    private fun hasColumn(db: SQLiteDatabase, table: String, column: String): Boolean =
+        db.rawQuery("PRAGMA table_info($table)", null).use { cursor ->
+            val nameIndex = cursor.getColumnIndexOrThrow("name")
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameIndex) == column) return@use true
+            }
+            false
+        }
 
     /**
      * 同一duplicate_import_keyの再取込は、業務内容が完全に同じ場合だけ既存のCONFLICT_IGNOREへ渡す。
@@ -200,6 +219,7 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
     companion object {
         const val DATABASE_NAME = "tsuguregi_plus.db"
         // v0.40-v0.45 cumulative-test baseline: DATABASE_VERSION = 4
-        const val DATABASE_VERSION = 5
+        // v1.17-v1.18 cumulative-test baseline: const val DATABASE_VERSION = 5
+        const val DATABASE_VERSION = 6
     }
 }
