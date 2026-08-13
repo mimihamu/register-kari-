@@ -64,8 +64,8 @@ class V111SafRenameFallbackSafetyTest {
     @Test
     fun releaseIdentityDocsAndCiFlagsArePresent() {
         val gradle = File(root, "app/build.gradle.kts").readText()
-        assertTrue(gradle.contains("versionCode = 144"))
-        assertTrue(gradle.contains("versionName = \"1.14.0-dev.1\""))
+        assertTrue(gradle.contains("versionCode = 145"))
+        assertTrue(gradle.contains("versionName = \"1.15.0-dev.1\""))
 
         val design = File(root, "docs/V1.11_SAF_RENAME_FALLBACK_SAFETY.md")
         val notes = File(root, "docs/V1.11_RELEASE_NOTES.md")

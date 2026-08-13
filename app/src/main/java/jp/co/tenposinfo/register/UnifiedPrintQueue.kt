@@ -465,8 +465,7 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
                     UnifiedPrintJobType.SETTLEMENT_REPORT,
                     UnifiedPrintJobType.RECEIPT_VOUCHER,
                     -> {
-                        val current = documentStore.listDocumentPrintJobs(500)
-                            .firstOrNull { it.id == job.sourceId }
+                        val current = documentStore.loadDocumentPrintJob(job.sourceId)
                             ?: throw IllegalArgumentException("業務帳票の印刷ジョブが見つかりません")
                         requireCurrentStatus(job.status, current.status)
                         if (!UnifiedPrintJobActionPolicy.mayPrint(current.status)) {
@@ -529,34 +528,38 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
         configuration: PrinterConfiguration,
         gateway: PrinterGateway,
     ): Result<String> {
-        val sourceJob = salesDatabase.listPrintJobs(500).firstOrNull { it.id == unifiedJob.sourceId }
+        val sourceJob = salesDatabase.loadPrintJob(unifiedJob.sourceId)
             ?: return Result.failure(IllegalArgumentException("売上印刷ジョブが見つかりません"))
         runCatching { requireCurrentStatus(unifiedJob.status, sourceJob.status) }
             .onFailure { return Result.failure(it) }
         if (!UnifiedPrintJobActionPolicy.mayPrint(sourceJob.status)) {
             return Result.failure(IllegalStateException(printabilityError(sourceJob.status)))
         }
-        val detail = salesDatabase.loadSaleDetail(sourceJob.saleId)
-            ?: return Result.failure(IllegalArgumentException("売上データが見つかりません"))
-        salesDatabase.markPrintStarted(sourceJob.id)
+        val claimed = salesDatabase.claimPrintJob(sourceJob.id)
+            ?: return Result.failure(IllegalStateException("印刷ジョブの状態が変更されたため送信を開始できませんでした"))
+        val detail = salesDatabase.loadSaleDetail(claimed.saleId)
+        if (detail == null) {
+            salesDatabase.markPrintFailed(claimed.id, "売上データが見つかりません", permanent = true)
+            return Result.failure(IllegalArgumentException("売上データが見つかりません"))
+        }
         val receipt = ReceiptFactory.fromSale(detail, reprint = detail.summary.printCount > 0)
         val payload = EscPosEncoder.encode(
             data = receipt,
-            configuration = configuration.copy(paperWidthMm = sourceJob.paperWidthMm),
+            configuration = configuration.copy(paperWidthMm = claimed.paperWidthMm),
         )
         val result = gateway.send(payload)
         result.onSuccess {
-            salesDatabase.markPrintCompleted(sourceJob.id)
+            salesDatabase.markPrintCompleted(claimed.id)
         }.onFailure { error ->
             val manualConfirmation = PrinterRetrySafety.classify(error) ==
                 PrinterFailureDisposition.MANUAL_CONFIRMATION_REQUIRED
             salesDatabase.markPrintFailed(
-                sourceJob.id,
+                claimed.id,
                 error.message ?: error.javaClass.simpleName,
                 permanent = manualConfirmation,
             )
         }
-        return result.map { "売上レシートを送信しました（Job.${sourceJob.id}）" }
+        return result.map { "売上レシートを送信しました（Job.${claimed.id}）" }
     }
 
     private fun requireCurrentStatus(expected: PrintJobStatus, current: PrintJobStatus) {

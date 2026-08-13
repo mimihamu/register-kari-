@@ -76,8 +76,8 @@ class V114OutboxExternalDeliveryLeaseLossFencingTest {
     @Test
     fun releaseIdentityDocsAndCiFlagsArePresent() {
         val gradle = File(root, "app/build.gradle.kts").readText()
-        assertTrue(gradle.contains("versionCode = 144"))
-        assertTrue(gradle.contains("versionName = \"1.14.0-dev.1\""))
+        assertTrue(gradle.contains("versionCode = 145"))
+        assertTrue(gradle.contains("versionName = \"1.15.0-dev.1\""))
         assertTrue(File(root, "docs/V1.14_OUTBOX_EXTERNAL_DELIVERY_LEASE_LOSS_FENCING.md").isFile)
         val notes = File(root, "docs/V1.14_RELEASE_NOTES.md")
         assertTrue(notes.isFile)

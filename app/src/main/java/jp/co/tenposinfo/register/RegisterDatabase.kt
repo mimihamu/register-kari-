@@ -433,63 +433,112 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         }
     }
 
-    fun nextPrintableJob(): PrintJobRecord? {
-        readableDatabase.query(
+    fun loadPrintJob(jobId: Long): PrintJobRecord? = loadPrintJob(readableDatabase, jobId)
+
+    fun nextPrintableJob(): PrintJobRecord? = readableDatabase.query(
+        "print_jobs",
+        PRINT_JOB_COLUMNS,
+        "status IN (?, ?)",
+        arrayOf(PrintJobStatus.PENDING.name, PrintJobStatus.RETRY.name),
+        null,
+        null,
+        "created_at ASC, id ASC",
+        "1",
+    ).use { cursor -> if (cursor.moveToFirst()) cursor.toPrintJob() else null }
+
+    fun claimNextPrintableJob(): PrintJobRecord? = writableDatabase.runInTransactionWithResult {
+        val candidate = query(
             "print_jobs",
             PRINT_JOB_COLUMNS,
             "status IN (?, ?)",
             arrayOf(PrintJobStatus.PENDING.name, PrintJobStatus.RETRY.name),
             null,
             null,
-            "created_at ASC",
+            "created_at ASC, id ASC",
             "1",
-        ).use { cursor -> return if (cursor.moveToFirst()) cursor.toPrintJob() else null }
+        ).use { cursor -> if (cursor.moveToFirst()) cursor.toPrintJob() else null }
+            ?: return@runInTransactionWithResult null
+        claimPrintJobWithin(this, candidate)
+    }
+
+    fun claimPrintJob(jobId: Long): PrintJobRecord? = writableDatabase.runInTransactionWithResult {
+        val candidate = loadPrintJob(this, jobId) ?: return@runInTransactionWithResult null
+        claimPrintJobWithin(this, candidate)
     }
 
     fun markPrintStarted(jobId: Long) {
-        updatePrintJob(jobId, PrintJobStatus.PRINTING, null, incrementAttempt = true)
+        check(claimPrintJob(jobId) != null) { "印刷ジョブの状態が変更されたため開始できませんでした" }
     }
 
     fun markPrintCompleted(jobId: Long) {
-        writableDatabase.runInTransaction {
-            val saleId = query(
-                "print_jobs",
-                arrayOf("sale_id"),
-                "id = ?",
-                arrayOf(jobId.toString()),
-                null,
-                null,
-                null,
-            ).use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else null }
-            update(
+        writableDatabase.runInTransactionWithResult {
+            val current = loadPrintJob(this, jobId)
+                ?: error("印刷ジョブが見つかりません")
+            if (current.status == PrintJobStatus.COMPLETED) return@runInTransactionWithResult Unit
+            check(current.status == PrintJobStatus.PRINTING) {
+                "印刷中ではないジョブを完了へ変更できません"
+            }
+            val updated = update(
                 "print_jobs",
                 ContentValues().apply {
                     put("status", PrintJobStatus.COMPLETED.name)
                     putNull("last_error")
                     put("updated_at", System.currentTimeMillis())
                 },
-                "id = ?",
-                arrayOf(jobId.toString()),
+                "id = ? AND status = ? AND attempt_count = ?",
+                arrayOf(jobId.toString(), PrintJobStatus.PRINTING.name, current.attemptCount.toString()),
             )
-            if (saleId != null) {
-                execSQL("UPDATE sales SET print_count = print_count + 1 WHERE id = ?", arrayOf(saleId))
-            }
+            check(updated == 1) { "印刷ジョブの状態が変更されたため完了を確定できませんでした" }
+            execSQL("UPDATE sales SET print_count = print_count + 1 WHERE id = ?", arrayOf(current.saleId))
+            Unit
         }
     }
 
-    fun markPrintFailed(jobId: Long, error: String, permanent: Boolean) {
-        val current = listPrintJobs(500).firstOrNull { it.id == jobId } ?: return
-        val status = if (permanent || current.attemptCount >= 4) PrintJobStatus.FAILED else PrintJobStatus.RETRY
-        updatePrintJob(jobId, status, error.take(500), incrementAttempt = false)
+    fun markPrintFailed(jobId: Long, error: String, permanent: Boolean = false) {
+        writableDatabase.runInTransactionWithResult {
+            val current = loadPrintJob(this, jobId) ?: return@runInTransactionWithResult Unit
+            if (current.status != PrintJobStatus.PRINTING) return@runInTransactionWithResult Unit
+            val manualConfirmation = error.contains("送信結果が不明") || error.contains("自動再試行しません")
+            val status = if (permanent || manualConfirmation || current.attemptCount >= 4) {
+                PrintJobStatus.FAILED
+            } else {
+                PrintJobStatus.RETRY
+            }
+            update(
+                "print_jobs",
+                ContentValues().apply {
+                    put("status", status.name)
+                    put("last_error", error.take(500))
+                    put("updated_at", System.currentTimeMillis())
+                },
+                "id = ? AND status = ? AND attempt_count = ?",
+                arrayOf(jobId.toString(), PrintJobStatus.PRINTING.name, current.attemptCount.toString()),
+            )
+            Unit
+        }
     }
 
     fun retryPrintJob(jobId: Long) {
-        val current = listPrintJobs(500).firstOrNull { it.id == jobId }
-            ?: throw IllegalArgumentException("売上印刷ジョブが見つかりません")
-        require(current.status != PrintJobStatus.COMPLETED) { "完了済みジョブは再送できません。再印字を登録してください" }
-        require(current.status != PrintJobStatus.DISCARDED) { "破棄済みジョブは再送できません" }
-        require(current.status != PrintJobStatus.PRINTING) { "印刷中のジョブは操作できません" }
-        updatePrintJob(jobId, PrintJobStatus.RETRY, null, incrementAttempt = false)
+        writableDatabase.runInTransactionWithResult {
+            val current = loadPrintJob(this, jobId)
+                ?: throw IllegalArgumentException("印刷ジョブが見つかりません")
+            require(current.status != PrintJobStatus.COMPLETED) { "完了済みジョブは再送できません。再印字を登録してください" }
+            require(current.status != PrintJobStatus.DISCARDED) { "破棄済みジョブは再送できません" }
+            require(current.status != PrintJobStatus.PRINTING) { "印刷中のジョブは操作できません" }
+            require(PrintQueueAtomicityV115.mayRetry(current.status)) { "このジョブは再送できません" }
+            val updated = update(
+                "print_jobs",
+                ContentValues().apply {
+                    put("status", PrintJobStatus.RETRY.name)
+                    putNull("last_error")
+                    put("updated_at", System.currentTimeMillis())
+                },
+                "id = ? AND status = ? AND attempt_count = ?",
+                arrayOf(jobId.toString(), current.status.name, current.attemptCount.toString()),
+            )
+            check(updated == 1) { "印刷ジョブの状態が変更されたため再試行へ戻せませんでした" }
+            Unit
+        }
     }
 
     fun discardPrintJob(
@@ -498,7 +547,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         auditDetail: String,
         actor: String,
     ) {
-        val current = listPrintJobs(500).firstOrNull { it.id == jobId }
+        val current = loadPrintJob(jobId)
             ?: throw IllegalArgumentException("売上印刷ジョブが見つかりません")
         require(current.status != PrintJobStatus.COMPLETED) { "完了済みジョブは破棄できません" }
         require(current.status != PrintJobStatus.DISCARDED) { "このジョブは既に破棄済みです" }
@@ -536,22 +585,41 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         }
     }
 
-    private fun updatePrintJob(
-        jobId: Long,
-        status: PrintJobStatus,
-        error: String?,
-        incrementAttempt: Boolean,
-    ) {
-        writableDatabase.runInTransaction {
-            val values = ContentValues().apply {
-                put("status", status.name)
-                if (error == null) putNull("last_error") else put("last_error", error)
-                put("updated_at", System.currentTimeMillis())
-            }
-            update("print_jobs", values, "id = ?", arrayOf(jobId.toString()))
-            if (incrementAttempt) {
-                execSQL("UPDATE print_jobs SET attempt_count = attempt_count + 1 WHERE id = ?", arrayOf(jobId))
-            }
+    private fun loadPrintJob(db: SQLiteDatabase, jobId: Long): PrintJobRecord? = db.query(
+        "print_jobs",
+        PRINT_JOB_COLUMNS,
+        "id = ?",
+        arrayOf(jobId.toString()),
+        null,
+        null,
+        null,
+        "1",
+    ).use { cursor -> if (cursor.moveToFirst()) cursor.toPrintJob() else null }
+
+    private fun claimPrintJobWithin(db: SQLiteDatabase, candidate: PrintJobRecord): PrintJobRecord? {
+        if (!PrintQueueAtomicityV115.mayClaim(candidate.status)) return null
+        val now = System.currentTimeMillis()
+        val attempt = candidate.attemptCount + 1
+        val updated = db.update(
+            "print_jobs",
+            ContentValues().apply {
+                put("status", PrintJobStatus.PRINTING.name)
+                put("attempt_count", attempt)
+                putNull("last_error")
+                put("updated_at", now)
+            },
+            "id = ? AND status = ? AND attempt_count = ?",
+            arrayOf(candidate.id.toString(), candidate.status.name, candidate.attemptCount.toString()),
+        )
+        return if (updated == 1) {
+            candidate.copy(
+                status = PrintJobStatus.PRINTING,
+                attemptCount = attempt,
+                lastError = null,
+                updatedAt = now,
+            )
+        } else {
+            null
         }
     }
 

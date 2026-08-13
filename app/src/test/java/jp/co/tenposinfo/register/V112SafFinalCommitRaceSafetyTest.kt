@@ -84,8 +84,8 @@ class V112SafFinalCommitRaceSafetyTest {
     @Test
     fun releaseIdentityDocsAndCiFlagsArePresent() {
         val gradle = File(root, "app/build.gradle.kts").readText()
-        assertTrue(gradle.contains("versionCode = 144"))
-        assertTrue(gradle.contains("versionName = \"1.14.0-dev.1\""))
+        assertTrue(gradle.contains("versionCode = 145"))
+        assertTrue(gradle.contains("versionName = \"1.15.0-dev.1\""))
 
         val design = File(root, "docs/V1.12_SAF_FINAL_COMMIT_RACE_SAFETY.md")
         val notes = File(root, "docs/V1.12_RELEASE_NOTES.md")

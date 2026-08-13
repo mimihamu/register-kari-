@@ -364,13 +364,12 @@ class PrintQueueProcessor(
     private val gateway: PrinterGateway,
 ) {
     fun processNext(): Boolean {
-        val job = database.nextPrintableJob() ?: return false
+        val job = database.claimNextPrintableJob() ?: return false
         val detail = database.loadSaleDetail(job.saleId)
         if (detail == null) {
             database.markPrintFailed(job.id, "売上データが見つかりません", permanent = true)
             return false
         }
-        database.markPrintStarted(job.id)
         val receipt = ReceiptFactory.fromSale(detail, reprint = detail.summary.printCount > 0)
         val configuredSnapshot = (PrinterConfigurationRegistry.current() ?: PrinterConfiguration()).copy(
             paperWidthMm = job.paperWidthMm,
