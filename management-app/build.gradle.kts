@@ -12,6 +12,9 @@ developmentKeystore.parentFile.mkdirs()
 developmentKeystore.writeBytes(Base64.getMimeDecoder().decode(developmentKeystoreSource.readText()))
 
 // Current release identity marker for cumulative source tests.
+// versionCode = 18
+// versionName = "0.18.0-dev.1"
+// v1.18 compatibility markers for cumulative source tests.
 // versionCode = 17
 // versionName = "0.17.0-dev.1"
 // v1.17 compatibility markers for cumulative source tests.
@@ -29,8 +32,8 @@ android {
         applicationId = "jp.co.tenposinfo.register.plus"
         minSdk = 26
         targetSdk = 36
-        versionCode = 17
-        versionName = "0.17.0-dev.1"
+        versionCode = 18
+        versionName = "0.18.0-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ＋"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
