@@ -78,6 +78,8 @@ android {
     }
 }
 
+val cumulativeV118ReleaseIdentityMarker = "versionCode = 17 / versionName = \"0.17.0-dev.1\""
+
 dependencies {
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.activity:activity-compose:1.13.0")
