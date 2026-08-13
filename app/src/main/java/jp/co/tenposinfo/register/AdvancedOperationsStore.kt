@@ -316,6 +316,7 @@ class AdvancedOperationsStore(context: Context) {
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
         val now = System.currentTimeMillis()
         return db.transaction {
+            requireSessionStillOpen(session.id)
             val id = insertOrThrow(
                 "cash_movements",
                 null,
@@ -367,15 +368,18 @@ class AdvancedOperationsStore(context: Context) {
         require(session.status == BusinessSessionStatus.OPEN) { "この営業セッションは既に終了しています" }
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
         val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
-        val summary = dailySummary(LocalDate.parse(session.businessDate))
-        if (type == SettlementReportType.Z_SETTLEMENT && summary.settled) error("この営業セッションは既にZ精算済みです")
-        val actual = actualCash ?: summary.expectedCash
-        require(actual >= 0) { "現金実査額は0円以上で入力してください" }
-        val variance = actual - summary.expectedCash
         val now = System.currentTimeMillis()
         var previewText = ""
         var printJobId = 0L
         val reportId = db.transaction {
+            requireSessionStillOpen(session.id)
+            val summary = dailySummary(LocalDate.parse(session.businessDate))
+            if (type == SettlementReportType.Z_SETTLEMENT && summary.settled) {
+                error("この営業セッションは既にZ精算済みです")
+            }
+            val actual = actualCash ?: summary.expectedCash
+            require(actual >= 0) { "現金実査額は0円以上で入力してください" }
+            val variance = actual - summary.expectedCash
             val id = insertOrThrow(
                 "settlement_reports",
                 null,
@@ -593,6 +597,8 @@ class AdvancedOperationsStore(context: Context) {
         var previewText = ""
         var printJobId = 0L
         val reversalId = db.transaction {
+            requireSessionStillOpen(session.id)
+            requireReversalSnapshotCurrent(selected, type)
             val id = insertOrThrow(
                 "reversal_transactions",
                 null,
@@ -715,22 +721,37 @@ class AdvancedOperationsStore(context: Context) {
         result
     }
 
+    fun loadDocumentPrintJob(jobId: Long): DocumentPrintJobRecord? = db.query(
+        "document_print_jobs",
+        DOCUMENT_JOB_COLUMNS,
+        "id = ?",
+        arrayOf(jobId.toString()),
+        null,
+        null,
+        null,
+        "1",
+    ).use { cursor ->
+        if (!cursor.moveToFirst()) null else cursor.toDocumentPrintJob()
+    }
+
     fun retryDocumentPrint(jobId: Long) {
-        val current = listDocumentPrintJobs(500).firstOrNull { it.id == jobId }
+        val current = loadDocumentPrintJob(jobId)
             ?: throw IllegalArgumentException("業務帳票の印刷ジョブが見つかりません")
         require(current.status != PrintJobStatus.COMPLETED) { "完了済みジョブは再送できません。再印字を登録してください" }
         require(current.status != PrintJobStatus.DISCARDED) { "破棄済みジョブは再送できません" }
         require(current.status != PrintJobStatus.PRINTING) { "印刷中のジョブは操作できません" }
-        db.update(
+        require(PrintQueueAtomicityV115.mayRetry(current.status)) { "このジョブは再送できません" }
+        val updated = db.update(
             "document_print_jobs",
             ContentValues().apply {
                 put("status", PrintJobStatus.RETRY.name)
                 putNull("last_error")
                 put("updated_at", System.currentTimeMillis())
             },
-            "id = ?",
-            arrayOf(jobId.toString()),
+            "id = ? AND status = ? AND attempt_count = ?",
+            arrayOf(jobId.toString(), current.status.name, current.attemptCount.toString()),
         )
+        check(updated == 1) { "印刷ジョブの状態が変更されたため再試行へ戻せませんでした" }
     }
 
     fun discardDocumentPrint(
@@ -739,7 +760,7 @@ class AdvancedOperationsStore(context: Context) {
         auditDetail: String,
         actor: String,
     ) {
-        val current = listDocumentPrintJobs(500).firstOrNull { it.id == jobId }
+        val current = loadDocumentPrintJob(jobId)
             ?: throw IllegalArgumentException("業務帳票の印刷ジョブが見つかりません")
         require(current.status != PrintJobStatus.COMPLETED) { "完了済みジョブは破棄できません" }
         require(current.status != PrintJobStatus.DISCARDED) { "このジョブは既に破棄済みです" }
@@ -782,44 +803,62 @@ class AdvancedOperationsStore(context: Context) {
     }
 
     fun processDocumentPrint(jobId: Long, gateway: PrinterGateway): Result<Unit> {
-        val job = listDocumentPrintJobs(500).firstOrNull { it.id == jobId }
+        val job = loadDocumentPrintJob(jobId)
             ?: return Result.failure(IllegalArgumentException("印刷ジョブが見つかりません"))
+        if (!PrintQueueAtomicityV115.mayClaim(job.status)) {
+            return Result.failure(IllegalStateException("印刷ジョブの状態が変更されたため送信を開始できませんでした"))
+        }
         val attempt = job.attemptCount + 1
-        db.update(
+        val claimed = db.update(
             "document_print_jobs",
             ContentValues().apply {
                 put("status", PrintJobStatus.PRINTING.name)
                 put("attempt_count", attempt)
+                putNull("last_error")
                 put("updated_at", System.currentTimeMillis())
             },
-            "id = ?",
-            arrayOf(jobId.toString()),
+            "id = ? AND status = ? AND attempt_count = ?",
+            arrayOf(jobId.toString(), job.status.name, job.attemptCount.toString()),
         )
-        val result = gateway.send(TextEscPosEncoder.encode(job.payloadText))
-        result.onSuccess {
-            db.update(
-                "document_print_jobs",
-                ContentValues().apply {
-                    put("status", PrintJobStatus.COMPLETED.name)
-                    putNull("last_error")
-                    put("updated_at", System.currentTimeMillis())
-                },
-                "id = ?",
-                arrayOf(jobId.toString()),
-            )
-        }.onFailure { error ->
-            db.update(
-                "document_print_jobs",
-                ContentValues().apply {
-                    put("status", if (attempt >= 5) PrintJobStatus.FAILED.name else PrintJobStatus.RETRY.name)
-                    put("last_error", (error.message ?: error.javaClass.simpleName).take(500))
-                    put("updated_at", System.currentTimeMillis())
-                },
-                "id = ?",
-                arrayOf(jobId.toString()),
-            )
+        if (claimed != 1) {
+            return Result.failure(IllegalStateException("印刷ジョブの状態が変更されたため送信を開始できませんでした"))
         }
-        return result
+        val result = gateway.send(TextEscPosEncoder.encode(job.payloadText))
+        return result.fold(
+            onSuccess = {
+                val updated = db.update(
+                    "document_print_jobs",
+                    ContentValues().apply {
+                        put("status", PrintJobStatus.COMPLETED.name)
+                        putNull("last_error")
+                        put("updated_at", System.currentTimeMillis())
+                    },
+                    "id = ? AND status = ? AND attempt_count = ?",
+                    arrayOf(jobId.toString(), PrintJobStatus.PRINTING.name, attempt.toString()),
+                )
+                if (updated == 1) Result.success(Unit) else Result.failure(
+                    IllegalStateException("送信後に印刷ジョブの所有状態が変更されました。自動再送せず確認してください"),
+                )
+            },
+            onFailure = { error ->
+                val manualConfirmation = PrinterRetrySafety.classify(error) ==
+                    PrinterFailureDisposition.MANUAL_CONFIRMATION_REQUIRED
+                db.update(
+                    "document_print_jobs",
+                    ContentValues().apply {
+                        put(
+                            "status",
+                            if (manualConfirmation || attempt >= 5) PrintJobStatus.FAILED.name else PrintJobStatus.RETRY.name,
+                        )
+                        put("last_error", (error.message ?: error.javaClass.simpleName).take(500))
+                        put("updated_at", System.currentTimeMillis())
+                    },
+                    "id = ? AND status = ? AND attempt_count = ?",
+                    arrayOf(jobId.toString(), PrintJobStatus.PRINTING.name, attempt.toString()),
+                )
+                Result.failure(error)
+            },
+        )
     }
 
     private fun SQLiteDatabase.insertDocumentJob(
@@ -843,6 +882,59 @@ class AdvancedOperationsStore(context: Context) {
             put("updated_at", now)
         },
     )
+
+    private fun android.database.Cursor.toDocumentPrintJob() = DocumentPrintJobRecord(
+        id = getLong(0),
+        documentType = OperationDocumentType.valueOf(getString(1)),
+        referenceId = getLong(2),
+        paperWidthMm = getInt(3),
+        status = PrintJobStatus.valueOf(getString(4)),
+        attemptCount = getInt(5),
+        lastError = if (isNull(6)) null else getString(6),
+        payloadText = getString(7),
+        createdAt = getLong(8),
+        updatedAt = getLong(9),
+    )
+
+    private fun requireSessionStillOpen(sessionId: Long) {
+        val status = db.query(
+            "business_sessions",
+            arrayOf("status"),
+            "id = ?",
+            arrayOf(sessionId.toString()),
+            null,
+            null,
+            null,
+            "1",
+        ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+        check(status == BusinessSessionStatus.OPEN.name) {
+            "営業セッションが終了しました。画面を更新してから再実行してください"
+        }
+    }
+
+    private fun requireReversalSnapshotCurrent(
+        selected: List<Pair<ReturnLineRecord, CartItem>>,
+        type: ReversalType,
+    ) {
+        selected.forEach { (line, item) ->
+            val current = db.rawQuery(
+                "SELECT COALESCE(SUM(return_quantity), 0), COALESCE(SUM(discount_amount), 0) FROM reversal_items WHERE sale_item_id = ?",
+                arrayOf(line.saleItemId.toString()),
+            ).use { cursor ->
+                check(cursor.moveToFirst())
+                cursor.getInt(0) to cursor.getLong(1)
+            }
+            ReversalConcurrencySafetyV115.requireSnapshotUnchanged(
+                originalQuantity = line.originalQuantity,
+                snapshotReturnedQuantity = line.returnedQuantity,
+                snapshotRefundedDiscount = line.refundedDiscount,
+                currentReturnedQuantity = current.first,
+                currentRefundedDiscount = current.second,
+                requestedQuantity = item.quantity,
+                cancel = type == ReversalType.CANCEL,
+            )
+        }
+    }
 
     private fun movementTotal(type: CashMovementType, sessionId: Long): Long = longQuery(
         "SELECT COALESCE(SUM(amount), 0) FROM cash_movements WHERE movement_type = ? AND business_session_id = ?",
