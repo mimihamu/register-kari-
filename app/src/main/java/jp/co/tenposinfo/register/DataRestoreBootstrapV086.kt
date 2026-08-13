@@ -26,8 +26,9 @@ internal data class RestoreRollbackInventoryV086(
 
 /**
  * v0.86: 復元前の元DBをWAL込みで確定した、一貫性検証済みスナップショットとして保持する。
+ * v1.16: checkpointをTRUNCATEまで強化し、正本ファイルだけをコピーできる状態を明示的に固定する。
  *
- * - 現DBをPRAGMA wal_checkpoint(FULL)してからコピーする。
+ * - 現DBをPRAGMA wal_checkpoint(TRUNCATE)してWALを0 byteまで確定してからコピーする。
  * - コピー先は一時ファイルでSQLite整合性・外部キー・SHA-256を検証してから確定する。
  * - 復元失敗時は検証済みスナップショットから一時ファイル経由で元DBを戻す。
  * - ロールバック作成に失敗した場合は現DB/WALを一切削除せず復元を中止する。
@@ -104,7 +105,9 @@ internal object RestoreRollbackSafetyV086 {
             SQLiteDatabase.OPEN_READWRITE,
         )
         try {
-            val checkpoint = database.rawQuery("PRAGMA wal_checkpoint(FULL)", null).use { cursor ->
+            // v0.86 compatibility marker: PRAGMA wal_checkpoint(FULL)
+            // v1.16はRESTART相当の排他待ちに加え、成功時にWALを0 byteへ切り詰めるTRUNCATEを使用する。
+            val checkpoint = database.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { cursor ->
                 require(cursor.moveToFirst()) { "WAL checkpoint結果を取得できません" }
                 val busy = cursor.getInt(0)
                 val logFrames = cursor.getInt(1)
@@ -118,6 +121,12 @@ internal object RestoreRollbackSafetyV086 {
             requireIntegrity(database, "元DB")
         } finally {
             database.close()
+        }
+
+        // TRUNCATE成功後に接続を閉じた状態で、main DB単体コピーが安全なことをもう一度確認する。
+        val wal = File(databaseFile.absolutePath + "-wal")
+        require(!wal.exists() || wal.length() == 0L) {
+            "WALを0 byteへ確定できていないため復元前ロールバックを作成できません"
         }
     }
 
@@ -160,6 +169,7 @@ internal object RestoreRollbackSafetyV086 {
 /**
  * v0.86以降の起動時復元Provider。
  * v0.83の起動順序（initOrder=1000）は維持しつつ、復元前ロールバックをWAL-safeにする。
+ * v1.16ではmigrationと復元後最終検証まで同じrollback境界へ含める。
  */
 class DataRestoreBootstrapProviderV086 : ContentProvider() {
     override fun onCreate(): Boolean {
@@ -179,24 +189,29 @@ internal object PendingRestoreApplierV086 {
         val restoreDir = File(context.filesDir, "data_restore")
         val planFile = File(restoreDir, "restore-plan.properties")
         val pending = File(restoreDir, "pending-register.db")
-        if (!planFile.isFile || !pending.isFile) return
+        val database = context.getDatabasePath(REGISTER_DATABASE_NAME_V086)
+
+        // 予約計画と候補DBの組がない起動は、取消・予約途中異常で残ったフェンスだけを回収する。
+        if (!planFile.isFile || !pending.isFile) {
+            PendingRestoreWriteFenceV116.remove(database)
+            return
+        }
 
         val resultFile = File(restoreDir, "restore-result.txt")
         val plan = runCatching {
             DataProtectionManager.readSimpleProperties(planFile.readText(Charsets.UTF_8))
         }.getOrElse { error ->
-            return failWithoutReplacement(planFile, pending, resultFile, "復元計画を読み取れません: ${error.message}")
+            return failWithoutReplacement(planFile, pending, resultFile, database, "復元計画を読み取れません: ${error.message}")
         }
         val expectedHash = plan["database_sha256"]
-            ?: return failWithoutReplacement(planFile, pending, resultFile, "復元計画にSHA-256がありません")
+            ?: return failWithoutReplacement(planFile, pending, resultFile, database, "復元計画にSHA-256がありません")
         val actualHash = runCatching { DataProtectionManager.sha256(pending) }.getOrElse { error ->
-            return failWithoutReplacement(planFile, pending, resultFile, "復元予約DBを読み取れません: ${error.message}")
+            return failWithoutReplacement(planFile, pending, resultFile, database, "復元予約DBを読み取れません: ${error.message}")
         }
         if (actualHash != expectedHash) {
-            return failWithoutReplacement(planFile, pending, resultFile, "復元予約DBのSHA-256が一致しません")
+            return failWithoutReplacement(planFile, pending, resultFile, database, "復元予約DBのSHA-256が一致しません")
         }
 
-        val database = context.getDatabasePath(REGISTER_DATABASE_NAME_V086)
         database.parentFile?.mkdirs()
         val hadCurrent = database.isFile
 
@@ -208,6 +223,7 @@ internal object PendingRestoreApplierV086 {
                     planFile,
                     pending,
                     resultFile,
+                    database,
                     "復元中止・元DB保持。復元前ロールバックを安全に作成できません: ${error.message}",
                 )
             }
@@ -218,8 +234,21 @@ internal object PendingRestoreApplierV086 {
         try {
             RestoreRollbackSafetyV086.deleteWalSidecars(database)
             DataProtectionManager.atomicReplace(pending, database)
+
+            // 候補DBに過去の復元予約triggerが含まれていても、正本化前に必ず除去する。
+            PendingRestoreWriteFenceV116.remove(database)
+
+            // 配置直後は候補DBそのものの最低限の構造を確認する。
             verifyRestoredDatabase(database)
+
+            // v1.16: legacy migration / 後付けschema ensure / user_version / index検査までrollback境界内で完了させる。
+            DatabaseRecoveryIntegrityV116.migrateAndVerify(context)
+
+            // migration後のschemaへ監査を書き込み、その書込み後にも正本DBを最終検証する。
             insertRestoreAudit(database, plan)
+            DatabaseRecoveryIntegrityV116.verifyFinal(context)
+
+            // ここまで成功して初めて復元成功を確定する。
             planFile.delete()
             resultFile.writeText(
                 "復元成功: ${plan["backup_file"].orEmpty()} / ${Date()} / " +
@@ -231,6 +260,9 @@ internal object PendingRestoreApplierV086 {
             val rollbackResult = if (rollback != null) {
                 runCatching {
                     val restored = RestoreRollbackSafetyV086.restoreVerifiedSnapshot(rollback, database)
+                    // rollback snapshotには予約フェンスも含まれるため、元DBへ戻した直後に除去して再検証する。
+                    PendingRestoreWriteFenceV116.remove(database)
+                    DatabaseRecoveryIntegrityV116.verifyFinal(context)
                     "元DBへロールバック完了 / ${restored.file.name} / sha256=${restored.sha256}"
                 }.getOrElse { rollbackError ->
                     "元DBロールバック失敗: ${rollbackError.message} / 安全スナップショット=${rollback.file.name}"
@@ -258,6 +290,14 @@ internal object PendingRestoreApplierV086 {
             require(integrity.size == 1 && integrity.single().equals("ok", ignoreCase = true)) {
                 "復元DBのSQLite整合性エラー: ${integrity.joinToString()}"
             }
+            val foreignKeyViolations = database.rawQuery("PRAGMA foreign_key_check", null).use { cursor ->
+                var count = 0
+                while (cursor.moveToNext()) count++
+                count
+            }
+            require(foreignKeyViolations == 0) {
+                "復元DBに外部キー不整合があります: $foreignKeyViolations 件"
+            }
             val tables = database.rawQuery(
                 "SELECT name FROM sqlite_master WHERE type='table'",
                 null,
@@ -284,7 +324,7 @@ internal object PendingRestoreApplierV086 {
                 ContentValues().apply {
                     put("event_type", "DATA_RESTORE_APPLIED")
                     put("reference_id", 0)
-                    put("detail", "${plan["backup_file"].orEmpty()} / 起動時復元 / v0.86 WAL-safe rollback")
+                    put("detail", "${plan["backup_file"].orEmpty()} / 起動時復元 / v1.16 WAL・migration-safe rollback")
                     put("operator_name", plan["actor_name"].orEmpty().ifBlank { "責任者" })
                     put("created_at", System.currentTimeMillis())
                 },
@@ -298,10 +338,15 @@ internal object PendingRestoreApplierV086 {
         plan: File,
         pending: File,
         result: File,
+        database: File,
         message: String,
     ) {
         plan.delete()
         pending.delete()
-        result.writeText("復元予約を破棄・元DB保持: $message", Charsets.UTF_8)
+        val fenceCleanup = runCatching { PendingRestoreWriteFenceV116.remove(database) }
+            .exceptionOrNull()
+            ?.let { " / フェンス解除失敗: ${it.message}" }
+            .orEmpty()
+        result.writeText("復元予約を破棄・元DB保持: $message$fenceCleanup", Charsets.UTF_8)
     }
 }

@@ -11,6 +11,14 @@ require(developmentKeystoreSource.isFile) { "開発版署名鍵が見つかり�
 developmentKeystore.parentFile.mkdirs()
 developmentKeystore.writeBytes(Base64.getMimeDecoder().decode(developmentKeystoreSource.readText()))
 
+// Current release identity marker for cumulative source tests.
+// versionCode = 146
+// versionName = "1.16.0-dev.1"
+// Legacy cumulative source-test compatibility markers for v1.15 only.
+// The actual package release identity is the v1.16 defaultConfig below.
+// versionCode = 145
+// versionName = "1.15.0-dev.1"
+
 android {
     namespace = "jp.co.tenposinfo.register"
     compileSdk = 36
@@ -19,8 +27,8 @@ android {
         applicationId = "jp.co.tenposinfo.register"
         minSdk = 26
         targetSdk = 36
-        versionCode = 145
-        versionName = "1.15.0-dev.1"
+        versionCode = 146
+        versionName = "1.16.0-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

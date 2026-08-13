@@ -71,8 +71,8 @@ class V091DataProtectionResponsiveTest {
 
         assertTrue(source.contains("manager.createBackup(actor)"))
         assertTrue(source.contains("manager.verifyBackup(file)"))
-        assertTrue(source.contains("manager.stageRestore(file, pin)"))
-        assertTrue(source.contains("manager.cancelPendingRestore(pin)"))
+        assertTrue(source.contains("RestoreReservationCoordinatorV116.stage(appContext, manager, file, pin)"))
+        assertTrue(source.contains("RestoreReservationCoordinatorV116.cancel(appContext, manager, pin)"))
         assertTrue(source.contains("report?.restoreReady == true"))
         assertTrue(source.contains("RestoreRollbackSafetyV086.inventory(appContext)"))
         assertFalse(source.contains("DELETE FROM sales", ignoreCase = true))
