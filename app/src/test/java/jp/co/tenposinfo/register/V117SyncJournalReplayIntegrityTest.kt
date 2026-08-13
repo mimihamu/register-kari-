@@ -37,13 +37,15 @@ class V117SyncJournalReplayIntegrityTest {
     }
 
     @Test
-    fun v117ReleaseEvidenceExists() {
+    fun v117ReleaseEvidenceRemainsPresentInLaterVersions() {
         val build = File(root, "app/build.gradle.kts").readLines()
             .map(String::trim)
             .filterNot { it.startsWith("//") }
             .joinToString("\n")
-        assertTrue(build.contains("versionCode = 147"))
-        assertTrue(build.contains("versionName = \"1.17.0-dev.1\""))
+        val versionCode = Regex("versionCode = (\\d+)").find(build)?.groupValues?.get(1)?.toIntOrNull()
+        val versionName = Regex("versionName = \"1\\.(\\d+)\\.0-dev\\.1\"").find(build)?.groupValues?.get(1)?.toIntOrNull()
+        assertTrue(versionCode != null && versionCode >= 147)
+        assertTrue(versionName != null && versionName >= 17)
         assertTrue(File(root, "docs/V1.17_SYNC_REPLAY_INTEGRITY.md").isFile)
         assertTrue(File(root, "docs/V1.17_RELEASE_NOTES.md").isFile)
     }
