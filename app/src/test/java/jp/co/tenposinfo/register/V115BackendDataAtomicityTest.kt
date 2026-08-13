@@ -28,17 +28,25 @@ class V115BackendDataAtomicityTest {
     fun v116RecoveryGuardsRemainPresent() {
         val restore = source("DataRestoreBootstrapV086.kt")
         val gate = source("DatabaseRecoveryIntegrityV116.kt")
+        val activity = source("DataProtectionActivity.kt")
         assertTrue(restore.contains("PRAGMA wal_checkpoint(TRUNCATE)"))
         assertTrue(restore.contains("wal.length() == 0L"))
         assertTrue(restore.contains("DatabaseRecoveryIntegrityV116.migrateAndVerify(context)"))
         assertTrue(restore.contains("DatabaseRecoveryIntegrityV116.verifyFinal(context)"))
+        assertTrue(restore.contains("PendingRestoreWriteFenceV116.remove(database)"))
         assertTrue(restore.contains("PRAGMA foreign_key_check"))
         assertTrue(gate.contains("DatabaseStartupSchemaBootstrapV085.ensureBeforeUi(appContext)"))
         assertTrue(gate.contains("DataProtectionManager(appContext).diagnose()"))
         assertTrue(gate.contains("AppUpdateDatabaseHealthCheckV089.inspect(appContext)"))
         assertTrue(gate.contains("EXPECTED_DATABASE_USER_VERSION = 4"))
+        assertTrue(gate.contains("PendingRestoreWriteFenceV116"))
+        assertTrue(gate.contains("CREATE TRIGGER IF NOT EXISTS"))
+        assertTrue(gate.contains("RAISE(ABORT"))
+        assertTrue(gate.contains("RestoreReservationCoordinatorV116"))
         assertTrue(gate.contains("idx_print_jobs_status"))
         assertTrue(gate.contains("idx_settlement_session"))
+        assertTrue(activity.contains("RestoreReservationCoordinatorV116.stage(appContext, manager, file, pin)"))
+        assertTrue(activity.contains("RestoreReservationCoordinatorV116.cancel(appContext, manager, pin)"))
     }
 
     @Test
@@ -50,11 +58,14 @@ class V115BackendDataAtomicityTest {
         assertTrue(gradle.contains("versionCode = 146"))
         assertTrue(gradle.contains("versionName = \"1.16.0-dev.1\""))
         assertTrue(notes.contains("v1.16.0-dev.1 DB整合性"))
+        assertTrue(notes.contains("復元予約中"))
         assertTrue(notes.contains("最終総合実機試験"))
         assertTrue(protection.contains("v1.16 WAL-safe rollback"))
+        assertTrue(protection.contains("復元予約中の書込みフェンス"))
         assertTrue(workflow.contains("DB_RECOVERY_WAL_TRUNCATE_HANDOFF=true"))
         assertTrue(workflow.contains("DB_RECOVERY_MIGRATION_ROLLBACK_BOUNDARY=true"))
         assertTrue(workflow.contains("DB_RECOVERY_FINAL_SCHEMA_GATE=true"))
+        assertTrue(workflow.contains("DB_RECOVERY_PENDING_RESTORE_WRITE_FENCE=true"))
     }
 
     private fun source(name: String): String =
