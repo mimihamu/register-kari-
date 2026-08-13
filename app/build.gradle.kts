@@ -12,10 +12,15 @@ developmentKeystore.parentFile.mkdirs()
 developmentKeystore.writeBytes(Base64.getMimeDecoder().decode(developmentKeystoreSource.readText()))
 
 // Current release identity marker for cumulative source tests.
+// versionCode = 148
+// versionName = "1.18.0-dev.1"
+// v1.17 cumulative source-test compatibility markers.
+// versionCode = 147
+// versionName = "1.17.0-dev.1"
+// v1.16 cumulative source-test compatibility markers.
 // versionCode = 146
 // versionName = "1.16.0-dev.1"
 // Legacy cumulative source-test compatibility markers for v1.15 only.
-// The actual package release identity is the v1.16 defaultConfig below.
 // versionCode = 145
 // versionName = "1.15.0-dev.1"
 
@@ -27,8 +32,8 @@ android {
         applicationId = "jp.co.tenposinfo.register"
         minSdk = 26
         targetSdk = 36
-        versionCode = 147
-        versionName = "1.17.0-dev.1"
+        versionCode = 148
+        versionName = "1.18.0-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
