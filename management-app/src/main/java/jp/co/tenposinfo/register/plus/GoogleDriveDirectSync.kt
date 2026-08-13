@@ -162,10 +162,21 @@ object GoogleDriveSyncAccessTokenProvider {
     }
 }
 
+object GoogleDriveRemoteVersionPolicyV119 {
+    fun canSkipDownload(
+        knownRemoteVersion: String?,
+        currentRemoteVersion: String?,
+        forceReimport: Boolean,
+    ): Boolean = !forceReimport &&
+        !knownRemoteVersion.isNullOrBlank() &&
+        knownRemoteVersion == currentRemoteVersion
+}
+
 data class GoogleDriveSyncRemoteFile(
     val id: String,
     val name: String,
     val modifiedTime: String,
+    val version: String?,
     val size: Long?,
     val appProperties: Map<String, String>,
 )
@@ -177,7 +188,7 @@ class GoogleDriveSyncRestClient(private val accessToken: String) {
         do {
             val query = "mimeType='application/json' and trashed=false" +
                 propertyQuery("app", APP) + propertyQuery("role", ROLE)
-            val fields = "nextPageToken,files(id,name,modifiedTime,size,appProperties)"
+            val fields = "nextPageToken,files(id,name,modifiedTime,version,size,appProperties)"
             val url = buildString {
                 append(DRIVE_FILES_URL)
                 append("?spaces=drive")
@@ -201,6 +212,7 @@ class GoogleDriveSyncRestClient(private val accessToken: String) {
                     id = item.getString("id"),
                     name = item.optString("name").ifBlank { "${item.getString("id")}.json" },
                     modifiedTime = item.optString("modifiedTime"),
+                    version = item.optString("version").takeIf(String::isNotBlank),
                     size = item.optString("size").toLongOrNull(),
                     appProperties = properties,
                 )
@@ -390,7 +402,13 @@ class GoogleDriveDirectSyncRepository(
         var errors = 0
         remoteFiles.forEach { remote ->
             val known = known(remote.id)
-            if (!forceReimport && known != null && known.modifiedTime == remote.modifiedTime) {
+            if (
+                GoogleDriveRemoteVersionPolicyV119.canSkipDownload(
+                    knownRemoteVersion = known?.remoteVersion,
+                    currentRemoteVersion = remote.version,
+                    forceReimport = forceReimport,
+                )
+            ) {
                 unchanged += 1
                 return@forEach
             }
@@ -458,10 +476,17 @@ class GoogleDriveDirectSyncRepository(
     }
 
     private fun known(fileId: String): KnownDriveFile? = database.readableDatabase.rawQuery(
-        "SELECT modified_time, content_sha256 FROM $TABLE WHERE file_id=?",
+        "SELECT remote_version, content_sha256 FROM $TABLE WHERE file_id=?",
         arrayOf(fileId),
     ).use { cursor ->
-        if (!cursor.moveToFirst()) null else KnownDriveFile(cursor.getString(0), cursor.getString(1))
+        if (!cursor.moveToFirst()) {
+            null
+        } else {
+            KnownDriveFile(
+                remoteVersion = if (cursor.isNull(0)) null else cursor.getString(0),
+                contentSha256 = cursor.getString(1),
+            )
+        }
     }
 
     private fun recordFingerprint(remote: GoogleDriveSyncRemoteFile, sha256: String) {
@@ -472,6 +497,7 @@ class GoogleDriveDirectSyncRepository(
                 put("file_id", remote.id)
                 put("file_name", remote.name)
                 put("modified_time", remote.modifiedTime)
+                if (remote.version == null) putNull("remote_version") else put("remote_version", remote.version)
                 put("content_sha256", sha256)
                 put("store_id", remote.appProperties["storeId"])
                 put("terminal_id", remote.appProperties["terminalId"])
@@ -489,6 +515,7 @@ class GoogleDriveDirectSyncRepository(
                 file_id TEXT PRIMARY KEY NOT NULL,
                 file_name TEXT NOT NULL,
                 modified_time TEXT NOT NULL,
+                remote_version TEXT,
                 content_sha256 TEXT NOT NULL,
                 store_id TEXT,
                 terminal_id TEXT,
@@ -506,7 +533,7 @@ class GoogleDriveDirectSyncRepository(
         .digest(bytes)
         .joinToString("") { "%02x".format(Locale.ROOT, it.toInt() and 0xff) }
 
-    private data class KnownDriveFile(val modifiedTime: String, val contentSha256: String)
+    private data class KnownDriveFile(val remoteVersion: String?, val contentSha256: String)
     private data class ProcessedDriveFile(val remote: GoogleDriveSyncRemoteFile, val sha256: String)
 
     companion object {
