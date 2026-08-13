@@ -44,6 +44,45 @@ class V117ImportReplayIntegrityTest {
     }
 
     @Test
+    fun v118DeterministicConflictIsQuarantinedInsideImportTransaction() {
+        val policy = File(root, "management-app/src/main/java/jp/co/tenposinfo/register/plus/FolderImportRepository.kt").readText()
+        val repository = File(root, "management-app/src/main/java/jp/co/tenposinfo/register/plus/SalesJournalImportRepository.kt").readText()
+
+        assertTrue(policy.contains("SalesJournalReplayDecisionV118"))
+        assertTrue(policy.contains("SalesJournalReplayConflictPolicyV118"))
+        assertTrue(policy.contains("SalesJournalReplayDecisionV118.NEW"))
+        assertTrue(policy.contains("SalesJournalReplayDecisionV118.IDENTICAL"))
+        assertTrue(policy.contains("SalesJournalReplayDecisionV118.CONFLICT"))
+        assertTrue(policy.contains("duplicate_import_key=?"))
+        listOf(
+            "schema_version",
+            "minimum_reader_version",
+            "duplicate_key_version",
+            "event_id",
+            "event_type",
+            "store_id",
+            "terminal_id",
+            "business_date",
+            "aggregate_id",
+            "occurred_at",
+            "payload_schema",
+            "payload_json",
+            "total_amount",
+        ).forEach { field -> assertTrue("missing v1.18 compare field $field", policy.contains("\"$field\"")) }
+
+        val decision = repository.indexOf("SalesJournalReplayConflictPolicyV118.decide")
+        val insert = repository.indexOf("val rowId = insertEnvelope", decision)
+        val conflict = repository.indexOf("SalesJournalReplayDecisionV118.CONFLICT", decision)
+        val rejection = repository.indexOf("code = ImportRejectionCode.DUPLICATE_KEY_MISMATCH", conflict)
+        assertTrue(decision >= 0)
+        assertTrue(insert > decision)
+        assertTrue(conflict > decision)
+        assertTrue(rejection > conflict)
+        assertTrue(repository.indexOf("rejected += 1", rejection) > rejection)
+        assertTrue(repository.contains("STATUS_COMPLETED_WITH_ERRORS"))
+    }
+
+    @Test
     fun driveFingerprintIsRecordedOnlyAfterLogicalImportTransaction() {
         val source = File(root, "management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt").readText()
         val apply = source.indexOf("SalesJournalImportRepository(database).importDocuments(documents)")
@@ -54,13 +93,13 @@ class V117ImportReplayIntegrityTest {
     }
 
     @Test
-    fun plusVersionTracksDatabaseUpgrade() {
+    fun plusVersionTracksCurrentSyncIntegrityRelease() {
         val build = File(root, "management-app/build.gradle.kts").readLines()
             .map(String::trim)
             .filterNot { it.startsWith("//") }
             .joinToString("\n")
 
-        assertTrue(build.contains("versionCode = 16"))
-        assertTrue(build.contains("versionName = \"0.16.0-dev.1\""))
+        assertTrue(build.contains("versionCode = 17"))
+        assertTrue(build.contains("versionName = \"0.17.0-dev.1\""))
     }
 }

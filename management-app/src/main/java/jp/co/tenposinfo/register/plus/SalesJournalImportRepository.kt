@@ -126,17 +126,36 @@ class SalesJournalImportRepository(
                     }
 
                     is JournalParseResult.Accepted -> {
-                        val rowId = insertEnvelope(
-                            db = db,
-                            runId = runId,
-                            document = document,
-                            envelope = parsed.envelope,
-                            importedAt = nowMillis(),
-                        )
-                        if (SalesJournalImportPolicy.isDuplicateInsertResult(rowId)) {
-                            duplicate += 1
-                        } else {
-                            imported += 1
+                        when (SalesJournalReplayConflictPolicyV118.decide(db, parsed.envelope)) {
+                            SalesJournalReplayDecisionV118.NEW -> {
+                                val rowId = insertEnvelope(
+                                    db = db,
+                                    runId = runId,
+                                    document = document,
+                                    envelope = parsed.envelope,
+                                    importedAt = nowMillis(),
+                                )
+                                if (SalesJournalImportPolicy.isDuplicateInsertResult(rowId)) {
+                                    duplicate += 1
+                                } else {
+                                    imported += 1
+                                }
+                            }
+
+                            SalesJournalReplayDecisionV118.IDENTICAL -> {
+                                duplicate += 1
+                            }
+
+                            SalesJournalReplayDecisionV118.CONFLICT -> {
+                                insertRejection(
+                                    db = db,
+                                    runId = runId,
+                                    document = document,
+                                    code = ImportRejectionCode.DUPLICATE_KEY_MISMATCH,
+                                    message = "同一duplicateImportKeyの既存データと業務内容が一致しません",
+                                )
+                                rejected += 1
+                            }
                         }
                     }
                 }
