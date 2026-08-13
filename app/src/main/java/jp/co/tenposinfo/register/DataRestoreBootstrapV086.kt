@@ -189,24 +189,29 @@ internal object PendingRestoreApplierV086 {
         val restoreDir = File(context.filesDir, "data_restore")
         val planFile = File(restoreDir, "restore-plan.properties")
         val pending = File(restoreDir, "pending-register.db")
-        if (!planFile.isFile || !pending.isFile) return
+        val database = context.getDatabasePath(REGISTER_DATABASE_NAME_V086)
+
+        // 予約計画と候補DBの組がない起動は、取消・予約途中異常で残ったフェンスだけを回収する。
+        if (!planFile.isFile || !pending.isFile) {
+            PendingRestoreWriteFenceV116.remove(database)
+            return
+        }
 
         val resultFile = File(restoreDir, "restore-result.txt")
         val plan = runCatching {
             DataProtectionManager.readSimpleProperties(planFile.readText(Charsets.UTF_8))
         }.getOrElse { error ->
-            return failWithoutReplacement(planFile, pending, resultFile, "復元計画を読み取れません: ${error.message}")
+            return failWithoutReplacement(planFile, pending, resultFile, database, "復元計画を読み取れません: ${error.message}")
         }
         val expectedHash = plan["database_sha256"]
-            ?: return failWithoutReplacement(planFile, pending, resultFile, "復元計画にSHA-256がありません")
+            ?: return failWithoutReplacement(planFile, pending, resultFile, database, "復元計画にSHA-256がありません")
         val actualHash = runCatching { DataProtectionManager.sha256(pending) }.getOrElse { error ->
-            return failWithoutReplacement(planFile, pending, resultFile, "復元予約DBを読み取れません: ${error.message}")
+            return failWithoutReplacement(planFile, pending, resultFile, database, "復元予約DBを読み取れません: ${error.message}")
         }
         if (actualHash != expectedHash) {
-            return failWithoutReplacement(planFile, pending, resultFile, "復元予約DBのSHA-256が一致しません")
+            return failWithoutReplacement(planFile, pending, resultFile, database, "復元予約DBのSHA-256が一致しません")
         }
 
-        val database = context.getDatabasePath(REGISTER_DATABASE_NAME_V086)
         database.parentFile?.mkdirs()
         val hadCurrent = database.isFile
 
@@ -218,6 +223,7 @@ internal object PendingRestoreApplierV086 {
                     planFile,
                     pending,
                     resultFile,
+                    database,
                     "復元中止・元DB保持。復元前ロールバックを安全に作成できません: ${error.message}",
                 )
             }
@@ -228,6 +234,9 @@ internal object PendingRestoreApplierV086 {
         try {
             RestoreRollbackSafetyV086.deleteWalSidecars(database)
             DataProtectionManager.atomicReplace(pending, database)
+
+            // 候補DBに過去の復元予約triggerが含まれていても、正本化前に必ず除去する。
+            PendingRestoreWriteFenceV116.remove(database)
 
             // 配置直後は候補DBそのものの最低限の構造を確認する。
             verifyRestoredDatabase(database)
@@ -251,6 +260,9 @@ internal object PendingRestoreApplierV086 {
             val rollbackResult = if (rollback != null) {
                 runCatching {
                     val restored = RestoreRollbackSafetyV086.restoreVerifiedSnapshot(rollback, database)
+                    // rollback snapshotには予約フェンスも含まれるため、元DBへ戻した直後に除去して再検証する。
+                    PendingRestoreWriteFenceV116.remove(database)
+                    DatabaseRecoveryIntegrityV116.verifyFinal(context)
                     "元DBへロールバック完了 / ${restored.file.name} / sha256=${restored.sha256}"
                 }.getOrElse { rollbackError ->
                     "元DBロールバック失敗: ${rollbackError.message} / 安全スナップショット=${rollback.file.name}"
@@ -326,10 +338,15 @@ internal object PendingRestoreApplierV086 {
         plan: File,
         pending: File,
         result: File,
+        database: File,
         message: String,
     ) {
         plan.delete()
         pending.delete()
-        result.writeText("復元予約を破棄・元DB保持: $message", Charsets.UTF_8)
+        val fenceCleanup = runCatching { PendingRestoreWriteFenceV116.remove(database) }
+            .exceptionOrNull()
+            ?.let { " / フェンス解除失敗: ${it.message}" }
+            .orEmpty()
+        result.writeText("復元予約を破棄・元DB保持: $message$fenceCleanup", Charsets.UTF_8)
     }
 }
