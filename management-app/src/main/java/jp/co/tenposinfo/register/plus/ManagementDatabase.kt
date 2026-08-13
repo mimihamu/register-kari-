@@ -74,6 +74,7 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
         )
         createFolderImportFilesTable(db)
         createDriveSyncFilesTable(db)
+        createImportedJournalReplayGuardV117(db)
         createIndexes(db)
     }
 
@@ -90,6 +91,9 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
         }
         if (oldVersion < 4) {
             createDriveSyncFilesTable(db)
+        }
+        if (oldVersion < 5) {
+            createImportedJournalReplayGuardV117(db)
         }
         require(newVersion <= DATABASE_VERSION) {
             "未対応のDB移行です: $oldVersion -> $newVersion"
@@ -136,6 +140,42 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
         )
     }
 
+    /**
+     * 同一duplicate_import_keyの再取込は、業務内容が完全に同じ場合だけ既存のCONFLICT_IGNOREへ渡す。
+     * Drive file id / source URI / import run / imported time は輸送メタデータなので比較しない。
+     */
+    private fun createImportedJournalReplayGuardV117(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TRIGGER IF NOT EXISTS trg_v117_imported_journal_identity_guard
+            BEFORE INSERT ON imported_journal
+            WHEN EXISTS (
+                SELECT 1
+                FROM imported_journal existing
+                WHERE existing.duplicate_import_key = NEW.duplicate_import_key
+                  AND (
+                    existing.schema_version IS NOT NEW.schema_version
+                    OR existing.minimum_reader_version IS NOT NEW.minimum_reader_version
+                    OR existing.duplicate_key_version IS NOT NEW.duplicate_key_version
+                    OR existing.event_id IS NOT NEW.event_id
+                    OR existing.event_type IS NOT NEW.event_type
+                    OR existing.store_id IS NOT NEW.store_id
+                    OR existing.terminal_id IS NOT NEW.terminal_id
+                    OR existing.business_date IS NOT NEW.business_date
+                    OR existing.aggregate_id IS NOT NEW.aggregate_id
+                    OR existing.occurred_at IS NOT NEW.occurred_at
+                    OR existing.payload_schema IS NOT NEW.payload_schema
+                    OR existing.payload_json IS NOT NEW.payload_json
+                    OR existing.total_amount IS NOT NEW.total_amount
+                  )
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'SYNC_IMPORT_DUPLICATE_KEY_CONTENT_MISMATCH');
+            END
+            """.trimIndent(),
+        )
+    }
+
     private fun createIndexes(db: SQLiteDatabase) {
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS idx_imported_journal_business_date ON imported_journal(business_date)",
@@ -159,6 +199,6 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
 
     companion object {
         const val DATABASE_NAME = "tsuguregi_plus.db"
-        const val DATABASE_VERSION = 4
+        const val DATABASE_VERSION = 5
     }
 }
