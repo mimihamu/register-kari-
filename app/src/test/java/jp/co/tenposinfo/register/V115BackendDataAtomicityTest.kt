@@ -89,12 +89,35 @@ class V115BackendDataAtomicityTest {
     }
 
     @Test
+    fun v116WalAndMigrationRecoveryGuardsRemainPresent() {
+        val restore = source("DataRestoreBootstrapV086.kt")
+        val gate = source("DatabaseRecoveryIntegrityV116.kt")
+        val checkpoint = restore.indexOf("PRAGMA wal_checkpoint(TRUNCATE)")
+        val walZero = restore.indexOf("wal.length() == 0L")
+        val copy = restore.indexOf("sourceDatabase.copyTo(temporary, overwrite = true)")
+        assertTrue(checkpoint >= 0)
+        assertTrue(walZero > checkpoint)
+        assertTrue(copy > walZero)
+        assertTrue(restore.contains("DatabaseRecoveryIntegrityV116.migrateAndVerify(context)"))
+        assertTrue(restore.contains("DatabaseRecoveryIntegrityV116.verifyFinal(context)"))
+        assertTrue(restore.contains("PRAGMA foreign_key_check"))
+        assertTrue(gate.contains("DatabaseStartupSchemaBootstrapV085.ensureBeforeUi(appContext)"))
+        assertTrue(gate.contains("DataProtectionManager(appContext).diagnose()"))
+        assertTrue(gate.contains("AppUpdateDatabaseHealthCheckV089.inspect(appContext)"))
+        assertTrue(gate.contains("EXPECTED_DATABASE_USER_VERSION = 4"))
+        assertTrue(gate.contains("idx_print_jobs_status"))
+        assertTrue(gate.contains("idx_settlement_session"))
+    }
+
+    @Test
     fun releaseIdentityDocsAndCiFlagsArePresent() {
         val gradle = File(root, "app/build.gradle.kts").readText()
-        assertTrue(gradle.contains("versionCode = 145"))
-        assertTrue(gradle.contains("versionName = \"1.15.0-dev.1\""))
+        assertTrue(gradle.contains("versionCode = 146"))
+        assertTrue(gradle.contains("versionName = \"1.16.0-dev.1\""))
         assertTrue(File(root, "docs/V1.15_BACKEND_DATA_ATOMICITY.md").isFile)
         assertTrue(File(root, "docs/V1.15_RELEASE_NOTES.md").readText().contains("最終総合実機試験"))
+        assertTrue(File(root, "docs/V1.16_DATABASE_RECOVERY_INTEGRITY.md").isFile)
+        assertTrue(File(root, "docs/V1.16_RELEASE_NOTES.md").isFile)
         val workflow = File(root, ".github/workflows/build-apk.yml").readText()
         assertTrue(workflow.contains("BACKEND_DATA_PRINT_CAS=true"))
         assertTrue(workflow.contains("BACKEND_DATA_PRINT_COMPLETION_IDEMPOTENT=true"))
@@ -102,6 +125,9 @@ class V115BackendDataAtomicityTest {
         assertTrue(workflow.contains("BACKEND_DATA_SESSION_FENCING=true"))
         assertTrue(workflow.contains("BACKEND_DATA_SETTLEMENT_SNAPSHOT_ATOMIC=true"))
         assertTrue(workflow.contains("BACKEND_DATA_DOCUMENT_PRINT_UNCERTAIN_NO_RETRY=true"))
+        assertTrue(workflow.contains("DB_RECOVERY_WAL_TRUNCATE_HANDOFF=true"))
+        assertTrue(workflow.contains("DB_RECOVERY_MIGRATION_ROLLBACK_BOUNDARY=true"))
+        assertTrue(workflow.contains("DB_RECOVERY_FINAL_SCHEMA_GATE=true"))
     }
 
     private fun source(name: String): String =
