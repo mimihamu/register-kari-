@@ -80,13 +80,13 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.work:work-runtime:2.11.2")
     implementation("com.google.android.gms:play-services-auth:21.6.0")
-    implementation("com.google.api-client:google-api-client-android:2.8.1")
-    implementation("com.google.http-client:google-http-client-gson:2.0.2")
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.foundation:foundation")
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    implementation("androidx.compose.ui:ui-tooling-preview")
+
+    implementation("androidx.compose.ui:ui:1.11.4")
+    implementation("androidx.compose.ui:ui-tooling-preview:1.11.4")
+    implementation("androidx.compose.foundation:foundation:1.11.4")
+    implementation("androidx.compose.material3:material3:1.4.0")
+
+    debugImplementation("androidx.compose.ui:ui-tooling:1.11.4")
 
     testImplementation("junit:junit:4.13.2")
 }
