@@ -466,7 +466,9 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                                 onClick = {
                                     val file = selected ?: return@Button
                                     runTask {
-                                        val staged = withContext(Dispatchers.IO) { manager.stageRestore(file, pin) }
+                                        val staged = withContext(Dispatchers.IO) {
+                                            RestoreReservationCoordinatorV116.stage(appContext, manager, file, pin)
+                                        }
                                         pin = ""
                                         "復元予約: ${staged.backup.fileName}。アプリを完全終了して再起動してください。"
                                     }
@@ -477,7 +479,9 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                             OutlinedButton(
                                 onClick = {
                                     runTask {
-                                        val actor = withContext(Dispatchers.IO) { manager.cancelPendingRestore(pin) }
+                                        val actor = withContext(Dispatchers.IO) {
+                                            RestoreReservationCoordinatorV116.cancel(appContext, manager, pin)
+                                        }
                                         pin = ""
                                         "復元予約を取り消しました（$actor）"
                                     }
