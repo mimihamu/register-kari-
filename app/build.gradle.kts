@@ -11,6 +11,9 @@ require(developmentKeystoreSource.isFile) { "開発版署名鍵が見つかり�
 developmentKeystore.parentFile.mkdirs()
 developmentKeystore.writeBytes(Base64.getMimeDecoder().decode(developmentKeystoreSource.readText()))
 
+// Current release identity marker for cumulative source tests.
+// versionCode = 146
+// versionName = "1.16.0-dev.1"
 // Legacy cumulative source-test compatibility markers for v1.15 only.
 // The actual package release identity is the v1.16 defaultConfig below.
 // versionCode = 145
@@ -77,13 +80,13 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.work:work-runtime:2.11.2")
     implementation("com.google.android.gms:play-services-auth:21.6.0")
-
-    implementation("androidx.compose.ui:ui:1.11.4")
-    implementation("androidx.compose.ui:ui-tooling-preview:1.11.4")
-    implementation("androidx.compose.foundation:foundation:1.11.4")
-    implementation("androidx.compose.material3:material3:1.4.0")
-
-    debugImplementation("androidx.compose.ui:ui-tooling:1.11.4")
+    implementation("com.google.api-client:google-api-client-android:2.8.1")
+    implementation("com.google.http-client:google-http-client-gson:2.0.2")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.foundation:foundation")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    implementation("androidx.compose.ui:ui-tooling-preview")
 
     testImplementation("junit:junit:4.13.2")
 }
