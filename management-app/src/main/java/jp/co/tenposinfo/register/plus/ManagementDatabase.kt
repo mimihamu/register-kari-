@@ -10,6 +10,8 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
     null,
     DATABASE_VERSION,
 ) {
+    private val appContext = context.applicationContext
+
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
         db.setForeignKeyConstraintsEnabled(true)
@@ -101,6 +103,11 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
         require(newVersion <= DATABASE_VERSION) {
             "未対応のDB移行です: $oldVersion -> $newVersion"
         }
+    }
+
+    override fun onOpen(db: SQLiteDatabase) {
+        super.onOpen(db)
+        SalesJournalImportCompatibilityResetV124.ensureCurrent(appContext, db)
     }
 
     private fun createFolderImportFilesTable(db: SQLiteDatabase) {
