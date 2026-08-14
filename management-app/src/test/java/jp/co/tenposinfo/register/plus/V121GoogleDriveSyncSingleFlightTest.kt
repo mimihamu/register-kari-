@@ -43,6 +43,9 @@ class V121GoogleDriveSyncSingleFlightTest {
         val source = File(
             "src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt",
         ).readText()
+        val account = File(
+            "src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveAccountActivity.kt",
+        ).readText()
 
         assertTrue(source.contains("GoogleDriveSyncSingleFlightV121.run"))
         assertTrue(source.contains("putString(\"run_token\", runToken)"))
@@ -54,6 +57,8 @@ class V121GoogleDriveSyncSingleFlightTest {
         assertTrue(source.contains("enqueueImmediate(context, ExistingWorkPolicy.APPEND_OR_REPLACE)"))
         assertFalse(source.contains("tsuguregi-plus-drive-api-sync-startup"))
         assertFalse(source.contains("tsuguregi-plus-drive-api-sync-manual"))
+        assertTrue(account.contains("GoogleDriveDirectSyncStatusStore(applicationContext).failed(category, message)"))
+        assertFalse(account.contains("GoogleDriveDirectSyncStatusStore(applicationContext).failed(message)"))
     }
 
     @Test
