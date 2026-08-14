@@ -484,7 +484,7 @@ class GoogleDriveDirectSyncRepository(
                             val rawJson = bytes.toString(Charsets.UTF_8)
                             val sha256 = sha256(bytes)
                             if (!forceReimport && known != null && known.contentSha256 == sha256) {
-                                recordFingerprint(remote, sha256)
+                                recordFingerprint(database.writableDatabase, remote, sha256)
                                 unchanged += 1
                             } else {
                                 documents += SalesJournalImportDocument(
@@ -518,8 +518,13 @@ class GoogleDriveDirectSyncRepository(
                         }
                     }
 
-                    val batch = if (documents.isEmpty()) null else SalesJournalImportRepository(database).importDocuments(documents)
-                    processed.forEach { recordFingerprint(it.remote, it.sha256) }
+                    val batch = if (documents.isEmpty()) {
+                        null
+                    } else {
+                        SalesJournalImportRepository(database).importDocumentsWithCommitHook(documents) { db ->
+                            processed.forEach { recordFingerprint(db, it.remote, it.sha256) }
+                        }
+                    }
                     downloaded += documents.size
                     imported += batch?.importedCount ?: 0
                     duplicates += batch?.duplicateCount ?: 0
@@ -567,8 +572,12 @@ class GoogleDriveDirectSyncRepository(
         }
     }
 
-    private fun recordFingerprint(remote: GoogleDriveSyncRemoteFile, sha256: String) {
-        database.writableDatabase.insertWithOnConflict(
+    private fun recordFingerprint(
+        db: SQLiteDatabase,
+        remote: GoogleDriveSyncRemoteFile,
+        sha256: String,
+    ) {
+        db.insertWithOnConflict(
             TABLE,
             null,
             ContentValues().apply {
