@@ -68,8 +68,14 @@ class V121GoogleDriveSyncSingleFlightTest {
         ).readText()
         val lockAt = source.indexOf("GoogleDriveSyncSingleFlightV121.run")
         val pageAt = source.indexOf("client.listJournalPage(pageToken)", lockAt)
-        val importAt = source.indexOf("SalesJournalImportRepository(database).importDocuments(documents)", pageAt)
-        val fingerprintAt = source.indexOf("processed.forEach { recordFingerprint(it.remote, it.sha256) }", importAt)
+        val importAt = source.indexOf(
+            "SalesJournalImportRepository(database).importDocumentsWithCommitHook(documents) { db ->",
+            pageAt,
+        )
+        val fingerprintAt = source.indexOf(
+            "processed.forEach { recordFingerprint(db, it.remote, it.sha256) }",
+            importAt,
+        )
         val nextPageAt = source.indexOf("pageToken = page.nextPageToken", fingerprintAt)
 
         assertTrue(lockAt >= 0)
