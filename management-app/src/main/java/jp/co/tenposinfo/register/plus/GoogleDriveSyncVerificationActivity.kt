@@ -457,22 +457,24 @@ class GoogleDriveSyncVerificationActivity : ComponentActivity() {
                 onFailure = { error ->
                     if (snapshot.resolvedMode == GoogleDriveResolvedMode.DRIVE_API) {
                         val category = GoogleDriveSyncErrorPolicy.classify(error)
-                        GoogleDriveDirectSyncStatusStore(applicationContext).failed(
+                        val statusStore = GoogleDriveDirectSyncStatusStore(applicationContext)
+                        statusStore.failed(
                             category,
                             "${GoogleDriveSyncErrorPolicy.message(category)}：${error.message ?: error.javaClass.simpleName}",
                         )
+                        val finalizedStatus = statusStore.load()
+                        GoogleDriveFailureVerificationRecordV126.fromDirectStatus(
+                            status = finalizedStatus,
+                            error = error,
+                            recordedAt = System.currentTimeMillis(),
+                        )
+                    } else {
+                        GoogleDriveFailureVerificationRecordV126.genericFailure(
+                            mode = snapshot.resolvedMode,
+                            error = error,
+                            recordedAt = System.currentTimeMillis(),
+                        )
                     }
-                    GoogleDriveSyncVerificationRecord(
-                        recordedAt = System.currentTimeMillis(),
-                        mode = snapshot.resolvedMode,
-                        success = false,
-                        listedCount = 0,
-                        importedCount = 0,
-                        duplicateCount = 0,
-                        rejectedCount = 0,
-                        errorCount = 1,
-                        message = error.message ?: error.javaClass.simpleName,
-                    )
                 },
             )
             historyStore.append(record)
