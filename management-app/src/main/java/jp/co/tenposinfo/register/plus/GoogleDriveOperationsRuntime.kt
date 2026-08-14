@@ -14,6 +14,7 @@ data class GoogleDriveSchedulerSnapshot(
     val periodicScheduled: Boolean
         get() = periodicStates.any(::isActiveWorkState)
 
+    // v1.21: startup/manual are compatibility labels over the same immediate unique-work chain.
     val startupScheduled: Boolean
         get() = startupStates.any(::isActiveWorkState)
 
@@ -28,15 +29,15 @@ data class GoogleDriveSchedulerSnapshot(
 
 object GoogleDriveSchedulerInspector {
     private const val PERIODIC_NAME = "tsuguregi-plus-drive-api-sync-periodic"
-    private const val STARTUP_NAME = "tsuguregi-plus-drive-api-sync-startup"
-    private const val MANUAL_NAME = "tsuguregi-plus-drive-api-sync-manual"
+    private const val IMMEDIATE_NAME = "tsuguregi-plus-drive-api-sync-immediate"
 
     fun inspect(context: Context): GoogleDriveSchedulerSnapshot {
         val manager = WorkManager.getInstance(context.applicationContext)
+        val immediateStates = states(manager, IMMEDIATE_NAME)
         return GoogleDriveSchedulerSnapshot(
             periodicStates = states(manager, PERIODIC_NAME),
-            startupStates = states(manager, STARTUP_NAME),
-            manualStates = states(manager, MANUAL_NAME),
+            startupStates = immediateStates,
+            manualStates = immediateStates,
         )
     }
 
