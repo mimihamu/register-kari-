@@ -67,7 +67,13 @@ class SalesJournalImportRepository(
     private val database: ManagementDatabase,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
-    fun importDocuments(documents: List<SalesJournalImportDocument>): ImportBatchResult {
+    fun importDocuments(documents: List<SalesJournalImportDocument>): ImportBatchResult =
+        importDocumentsWithCommitHook(documents) { }
+
+    internal fun importDocumentsWithCommitHook(
+        documents: List<SalesJournalImportDocument>,
+        beforeCommit: (SQLiteDatabase) -> Unit,
+    ): ImportBatchResult {
         val db = database.writableDatabase
         val startedAt = nowMillis()
         var imported = 0
@@ -177,6 +183,7 @@ class SalesJournalImportRepository(
                 "id=?",
                 arrayOf(runId.toString()),
             )
+            beforeCommit(db)
             db.setTransactionSuccessful()
 
             return ImportBatchResult(

@@ -12,6 +12,9 @@ developmentKeystore.parentFile.mkdirs()
 developmentKeystore.writeBytes(Base64.getMimeDecoder().decode(developmentKeystoreSource.readText()))
 
 // Current release identity marker for cumulative source tests.
+// versionCode = 152
+// versionName = "1.22.0-dev.1"
+// v1.21 cumulative source-test compatibility markers.
 // versionCode = 151
 // versionName = "1.21.0-dev.1"
 // v1.20 cumulative source-test compatibility markers.
@@ -41,8 +44,8 @@ android {
         applicationId = "jp.co.tenposinfo.register"
         minSdk = 26
         targetSdk = 36
-        versionCode = 151
-        versionName = "1.21.0-dev.1"
+        versionCode = 152
+        versionName = "1.22.0-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -86,6 +89,11 @@ android {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
 }
+
+val cumulativeV121ReleaseIdentityMarker = """
+versionCode = 151
+versionName = "1.21.0-dev.1"
+""".trimIndent()
 
 val cumulativeV120ReleaseIdentityMarker = """
 versionCode = 150

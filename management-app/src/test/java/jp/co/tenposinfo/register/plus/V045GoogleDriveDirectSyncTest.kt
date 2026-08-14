@@ -114,8 +114,13 @@ class V045GoogleDriveDirectSyncTest {
         assertTrue(source.contains("pageToken = page.nextPageToken"))
         assertFalse(source.contains("MAX_FILES = 5_000"))
 
-        val importAt = source.indexOf("SalesJournalImportRepository(database).importDocuments(documents)")
-        val fingerprintAt = source.indexOf("processed.forEach { recordFingerprint(it.remote, it.sha256) }", importAt)
+        val importAt = source.indexOf(
+            "SalesJournalImportRepository(database).importDocumentsWithCommitHook(documents) { db ->",
+        )
+        val fingerprintAt = source.indexOf(
+            "processed.forEach { recordFingerprint(db, it.remote, it.sha256) }",
+            importAt,
+        )
         val nextPageAt = source.indexOf("pageToken = page.nextPageToken", fingerprintAt)
         assertTrue(importAt >= 0)
         assertTrue(fingerprintAt > importAt)

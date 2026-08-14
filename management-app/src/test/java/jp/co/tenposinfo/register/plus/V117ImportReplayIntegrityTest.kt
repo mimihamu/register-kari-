@@ -83,13 +83,20 @@ class V117ImportReplayIntegrityTest {
     }
 
     @Test
-    fun driveFingerprintIsRecordedOnlyAfterLogicalImportTransaction() {
+    fun driveFingerprintIsRecordedInSameLogicalImportTransaction() {
         val source = File(root, "management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt").readText()
-        val apply = source.indexOf("SalesJournalImportRepository(database).importDocuments(documents)")
-        val fingerprint = source.indexOf("processed.forEach { recordFingerprint(it.remote, it.sha256) }")
+        val apply = source.indexOf(
+            "SalesJournalImportRepository(database).importDocumentsWithCommitHook(documents) { db ->",
+        )
+        val fingerprint = source.indexOf(
+            "processed.forEach { recordFingerprint(db, it.remote, it.sha256) }",
+            apply,
+        )
+        val nextPage = source.indexOf("pageToken = page.nextPageToken", fingerprint)
 
         assertTrue(apply >= 0)
         assertTrue(fingerprint > apply)
+        assertTrue(nextPage > fingerprint)
     }
 
     @Test
