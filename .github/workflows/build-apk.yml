@@ -298,6 +298,27 @@ jobs:
             capture && /^        run: \|/ { inrun=1; next }
             capture && inrun { sub(/^          /, ""); print }
           ' /tmp/v119-build-apk.yml > /tmp/v119-cumulative-checks.sh
+
+          # v1.18 verified the then-current Drive sequence with exact source strings.
+          # v1.22 intentionally replaces those two strings with a stronger atomic
+          # import+fingerprint transaction. Keep every other historical v1.19 gate,
+          # but adapt the generated v1.18 check before executing it; v1.22's gate
+          # below verifies the replacement ordering explicitly.
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('/tmp/v119-cumulative-checks.sh')
+          text = path.read_text()
+          needle = 'test -s /tmp/v118-cumulative-checks.sh\n'
+          assert needle in text
+          compatibility = r'''sed -i \
+  -e "/apply = direct_sync.index('SalesJournalImportRepository(database).importDocuments(documents)')/d" \
+  -e "/fingerprint = direct_sync.index('processed.forEach { recordFingerprint(it.remote, it.sha256) }')/d" \
+  -e "/assert apply >= 0 and fingerprint > apply/d" \
+  /tmp/v118-cumulative-checks.sh
+'''
+          path.write_text(text.replace(needle, compatibility + needle, 1))
+          PY
+
           test -s /tmp/v119-cumulative-checks.sh
           bash -euxo pipefail /tmp/v119-cumulative-checks.sh
 
