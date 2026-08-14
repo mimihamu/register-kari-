@@ -329,10 +329,34 @@ class GoogleDriveDirectSyncStatusStore(context: Context) {
             .putBoolean("running", true)
             .putString("run_token", runToken)
             .putLong("started_at", System.currentTimeMillis())
+            .putInt("listed", 0)
+            .putInt("downloaded", 0)
+            .putInt("unchanged", 0)
+            .putInt("imported", 0)
+            .putInt("duplicates", 0)
+            .putInt("rejected", 0)
+            .putInt("errors", 0)
             .remove("failure_category")
             .putString("message", "Google Driveの売上JSONを確認しています")
             .apply()
         return runToken
+    }
+
+    fun progress(runToken: String, result: GoogleDriveDirectSyncResult) {
+        if (preferences.getString("run_token", null) != runToken) return
+        preferences.edit()
+            .putInt("listed", result.listedCount)
+            .putInt("downloaded", result.downloadedCount)
+            .putInt("unchanged", result.unchangedCount)
+            .putInt("imported", result.importedCount)
+            .putInt("duplicates", result.duplicateCount)
+            .putInt("rejected", result.rejectedCount)
+            .putInt("errors", result.errorCount)
+            .putString(
+                "message",
+                "同期中／確認${result.listedCount}件／取得${result.downloadedCount}件／新規${result.importedCount}件／重複${result.duplicateCount}件／隔離${result.rejectedCount}件",
+            )
+            .apply()
     }
 
     fun complete(runToken: String, result: GoogleDriveDirectSyncResult) {
@@ -529,6 +553,18 @@ class GoogleDriveDirectSyncRepository(
                     imported += batch?.importedCount ?: 0
                     duplicates += batch?.duplicateCount ?: 0
                     rejected += batch?.rejectedCount ?: 0
+                    statusStore.progress(
+                        runToken,
+                        GoogleDriveDirectSyncResult(
+                            listedCount = listed,
+                            downloadedCount = downloaded,
+                            unchangedCount = unchanged,
+                            importedCount = imported,
+                            duplicateCount = duplicates,
+                            rejectedCount = rejected,
+                            errorCount = errors,
+                        ),
+                    )
                     pageToken = page.nextPageToken
                 } while (pageToken != null)
 
