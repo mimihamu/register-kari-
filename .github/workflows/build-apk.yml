@@ -299,10 +299,9 @@ jobs:
             capture && inrun { sub(/^          /, ""); print }
           ' /tmp/v119-build-apk.yml > /tmp/v119-cumulative-checks.sh
 
-          # v1.18 verified the then-current Drive sequence with exact source strings.
-          # v1.22 intentionally replaces only its old post-import fingerprint order
-          # with a stronger atomic import+fingerprint transaction. Every other
-          # historical v1.18/v1.19 gate remains active.
+          # v1.17/v1.18 verified the then-current non-atomic Drive sequence with exact source strings.
+          # v1.22 replaces only that sequence with a stronger atomic import+fingerprint transaction.
+          # Patch the extracted historical scripts at runtime; every unrelated historical gate remains active.
           python3 - <<'PY'
           from pathlib import Path
           path = Path('/tmp/v119-cumulative-checks.sh')
@@ -315,6 +314,15 @@ jobs:
               "grep -Fq 'assert apply >= 0 and fingerprint > apply' /tmp/v118-cumulative-checks.sh\n"
               "grep -vF \"apply = direct_sync.index('SalesJournalImportRepository(database).importDocuments(documents)')\" /tmp/v118-cumulative-checks.sh | grep -vF \"fingerprint = direct_sync.index('processed.forEach { recordFingerprint(it.remote, it.sha256) }')\" | grep -vF 'assert apply >= 0 and fingerprint > apply' > /tmp/v118-cumulative-checks-v122.sh\n"
               "mv /tmp/v118-cumulative-checks-v122.sh /tmp/v118-cumulative-checks.sh\n"
+              "python3 - <<'PYV117'\n"
+              "from pathlib import Path\n"
+              "p = Path('/tmp/v118-cumulative-checks.sh')\n"
+              "t = p.read_text()\n"
+              "n = 'test -s /tmp/v117-cumulative-checks.sh\\n'\n"
+              "assert n in t\n"
+              "patch = \"grep -Fq \\\"assert direct_sync.index('SalesJournalImportRepository(database).importDocuments(documents)') < direct_sync.index('processed.forEach { recordFingerprint(it.remote, it.sha256) }')\\\" /tmp/v117-cumulative-checks.sh\\n\" + \"grep -vF \\\"assert direct_sync.index('SalesJournalImportRepository(database).importDocuments(documents)') < direct_sync.index('processed.forEach { recordFingerprint(it.remote, it.sha256) }')\\\" /tmp/v117-cumulative-checks.sh > /tmp/v117-cumulative-checks-v122.sh\\n\" + \"mv /tmp/v117-cumulative-checks-v122.sh /tmp/v117-cumulative-checks.sh\\n\"\n"
+              "p.write_text(t.replace(n, patch + n, 1))\n"
+              "PYV117\n"
           )
           path.write_text(text.replace(needle, compatibility + needle, 1))
           PY
@@ -369,10 +377,12 @@ jobs:
           assert '20 / 0.20.0-dev.1' in v121_docs
 
           assert 'fun importDocumentsWithCommitHook(' in imports
-          run_update = imports.index('db.update(\n                "import_runs"')
-          hook = imports.index('beforeCommit(db)', run_update)
+          hook = imports.index('beforeCommit(db)')
+          run_update = imports.rfind('db.update(', 0, hook)
+          assert run_update >= 0
+          assert '"import_runs"' in imports[run_update:hook]
           success = imports.index('db.setTransactionSuccessful()', hook)
-          assert run_update >= 0 and hook > run_update and success > hook
+          assert hook > run_update and success > hook
           assert 'driveFingerprintRunsInsideImportTransactionBeforeCommit' in v122_test
           assert '152 / 1.22.0-dev.1' in v122_docs
           assert '21 / 0.21.0-dev.1' in v122_docs
