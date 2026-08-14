@@ -337,6 +337,7 @@ class GoogleDriveDirectSyncStatusStore(context: Context) {
             .putInt("rejected", 0)
             .putInt("errors", 0)
             .remove("failure_category")
+            .remove(KEY_OWNED_RUN_FAILURE_PENDING)
             .putString("message", "Google Driveの売上JSONを確認しています")
             .apply()
         return runToken
@@ -374,6 +375,7 @@ class GoogleDriveDirectSyncStatusStore(context: Context) {
             .putInt("rejected", result.rejectedCount)
             .putInt("errors", result.errorCount)
             .remove("failure_category")
+            .remove(KEY_OWNED_RUN_FAILURE_PENDING)
             .putString(
                 "message",
                 "最終同期 ${formatSyncTime(completedAt)}／確認${result.listedCount}件／取得${result.downloadedCount}件／新規${result.importedCount}件／重複${result.duplicateCount}件／隔離${result.rejectedCount}件",
@@ -387,12 +389,23 @@ class GoogleDriveDirectSyncStatusStore(context: Context) {
 
     fun failed(category: GoogleDriveSyncFailureCategory, message: String) {
         if (preferences.getBoolean("running", false)) return
-        writeFailure(category, message)
+        val ownedRunFailure = preferences.getBoolean(KEY_OWNED_RUN_FAILURE_PENDING, false)
+        writeFailure(
+            category = category,
+            message = message,
+            resetProgress = !ownedRunFailure,
+            markOwnedRunFailurePending = false,
+        )
     }
 
     fun failedForRun(runToken: String, category: GoogleDriveSyncFailureCategory, message: String) {
         if (preferences.getString("run_token", null) != runToken) return
-        writeFailure(category, message)
+        writeFailure(
+            category = category,
+            message = message,
+            resetProgress = false,
+            markOwnedRunFailurePending = true,
+        )
     }
 
     fun recoverStaleRun(message: String) {
@@ -400,6 +413,7 @@ class GoogleDriveDirectSyncStatusStore(context: Context) {
         preferences.edit()
             .putBoolean("running", false)
             .remove("run_token")
+            .remove(KEY_OWNED_RUN_FAILURE_PENDING)
             .putLong("completed_at", completedAt)
             .putString("failure_category", GoogleDriveSyncFailureCategory.UNKNOWN.name)
             .putString(
@@ -409,9 +423,14 @@ class GoogleDriveDirectSyncStatusStore(context: Context) {
             .apply()
     }
 
-    private fun writeFailure(category: GoogleDriveSyncFailureCategory, message: String) {
+    private fun writeFailure(
+        category: GoogleDriveSyncFailureCategory,
+        message: String,
+        resetProgress: Boolean,
+        markOwnedRunFailurePending: Boolean,
+    ) {
         val completedAt = System.currentTimeMillis()
-        preferences.edit()
+        val editor = preferences.edit()
             .putBoolean("running", false)
             .remove("run_token")
             .putLong("completed_at", completedAt)
@@ -420,11 +439,34 @@ class GoogleDriveDirectSyncStatusStore(context: Context) {
                 "message",
                 "最終同期 ${formatSyncTime(completedAt)}（失敗）／${message.take(420)}",
             )
-            .apply()
+        if (resetProgress) {
+            resetProgressCounters(editor)
+        }
+        if (markOwnedRunFailurePending) {
+            editor.putBoolean(KEY_OWNED_RUN_FAILURE_PENDING, true)
+        } else {
+            editor.remove(KEY_OWNED_RUN_FAILURE_PENDING)
+        }
+        editor.apply()
     }
 
     private fun formatSyncTime(value: Long): String =
         SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.JAPAN).format(Date(value))
+
+    private fun resetProgressCounters(editor: android.content.SharedPreferences.Editor) {
+        editor
+            .putInt("listed", 0)
+            .putInt("downloaded", 0)
+            .putInt("unchanged", 0)
+            .putInt("imported", 0)
+            .putInt("duplicates", 0)
+            .putInt("rejected", 0)
+            .putInt("errors", 0)
+    }
+
+    companion object {
+        private const val KEY_OWNED_RUN_FAILURE_PENDING = "owned_run_failure_pending_v125"
+    }
 }
 
 data class GoogleDriveDirectSyncResult(
