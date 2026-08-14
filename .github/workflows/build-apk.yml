@@ -310,12 +310,7 @@ jobs:
           text = path.read_text()
           needle = 'test -s /tmp/v118-cumulative-checks.sh\n'
           assert needle in text
-          compatibility = r'''sed -i \
-  -e "/apply = direct_sync.index('SalesJournalImportRepository(database).importDocuments(documents)')/d" \
-  -e "/fingerprint = direct_sync.index('processed.forEach { recordFingerprint(it.remote, it.sha256) }')/d" \
-  -e "/assert apply >= 0 and fingerprint > apply/d" \
-  /tmp/v118-cumulative-checks.sh
-'''
+          compatibility = "sed -i -e \"/apply = direct_sync.index('SalesJournalImportRepository(database).importDocuments(documents)')/d\" -e \"/fingerprint = direct_sync.index('processed.forEach { recordFingerprint(it.remote, it.sha256) }')/d\" -e \"/assert apply >= 0 and fingerprint > apply/d\" /tmp/v118-cumulative-checks.sh\n"
           path.write_text(text.replace(needle, compatibility + needle, 1))
           PY
 
