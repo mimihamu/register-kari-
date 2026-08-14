@@ -26,6 +26,12 @@ class V045GoogleDriveDirectSyncTest {
             GoogleDriveSyncFailureCategory.NETWORK,
             GoogleDriveSyncErrorPolicy.classify(IOException("offline")),
         )
+        assertEquals(
+            GoogleDriveSyncFailureCategory.SERVER,
+            GoogleDriveSyncErrorPolicy.classify(
+                GoogleDriveSyncIncompleteListingException("incomplete listing"),
+            ),
+        )
         assertTrue(GoogleDriveSyncFailureCategory.SERVER.retryable)
         assertFalse(GoogleDriveSyncFailureCategory.PERMISSION_DENIED.retryable)
     }
@@ -92,6 +98,28 @@ class V045GoogleDriveDirectSyncTest {
         assertTrue(source.contains("knownRemoteVersion = known?.remoteVersion"))
         assertTrue(source.contains("currentRemoteVersion = remote.version"))
         assertTrue(source.contains("known.contentSha256 == sha256"))
+    }
+
+    @Test
+    fun v120ConsumesAllDrivePagesAndRejectsIncompleteListings() {
+        val source = File(
+            "src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt",
+        ).readText()
+
+        assertTrue(source.contains("nextPageToken,incompleteSearch,files"))
+        assertTrue(source.contains("fun listJournalPage(pageToken: String?)"))
+        assertTrue(source.contains("visitedPageTokens"))
+        assertTrue(source.contains("page.incompleteSearch"))
+        assertTrue(source.contains("GoogleDriveSyncIncompleteListingException"))
+        assertTrue(source.contains("pageToken = page.nextPageToken"))
+        assertFalse(source.contains("MAX_FILES = 5_000"))
+
+        val importAt = source.indexOf("SalesJournalImportRepository(database).importDocuments(documents)")
+        val fingerprintAt = source.indexOf("processed.forEach { recordFingerprint(it.remote, it.sha256) }", importAt)
+        val nextPageAt = source.indexOf("pageToken = page.nextPageToken", fingerprintAt)
+        assertTrue(importAt >= 0)
+        assertTrue(fingerprintAt > importAt)
+        assertTrue(nextPageAt > fingerprintAt)
     }
 
     @Test
