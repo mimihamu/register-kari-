@@ -300,17 +300,22 @@ jobs:
           ' /tmp/v119-build-apk.yml > /tmp/v119-cumulative-checks.sh
 
           # v1.18 verified the then-current Drive sequence with exact source strings.
-          # v1.22 intentionally replaces those two strings with a stronger atomic
-          # import+fingerprint transaction. Keep every other historical v1.19 gate,
-          # but adapt the generated v1.18 check before executing it; v1.22's gate
-          # below verifies the replacement ordering explicitly.
+          # v1.22 intentionally replaces only its old post-import fingerprint order
+          # with a stronger atomic import+fingerprint transaction. Every other
+          # historical v1.18/v1.19 gate remains active.
           python3 - <<'PY'
           from pathlib import Path
           path = Path('/tmp/v119-cumulative-checks.sh')
           text = path.read_text()
           needle = 'test -s /tmp/v118-cumulative-checks.sh\n'
           assert needle in text
-          compatibility = "sed -i -e \"/apply = direct_sync.index('SalesJournalImportRepository(database).importDocuments(documents)')/d\" -e \"/fingerprint = direct_sync.index('processed.forEach { recordFingerprint(it.remote, it.sha256) }')/d\" -e \"/assert apply >= 0 and fingerprint > apply/d\" /tmp/v118-cumulative-checks.sh\n"
+          compatibility = (
+              "grep -Fq \"apply = direct_sync.index('SalesJournalImportRepository(database).importDocuments(documents)')\" /tmp/v118-cumulative-checks.sh\n"
+              "grep -Fq \"fingerprint = direct_sync.index('processed.forEach { recordFingerprint(it.remote, it.sha256) }')\" /tmp/v118-cumulative-checks.sh\n"
+              "grep -Fq 'assert apply >= 0 and fingerprint > apply' /tmp/v118-cumulative-checks.sh\n"
+              "grep -vF \"apply = direct_sync.index('SalesJournalImportRepository(database).importDocuments(documents)')\" /tmp/v118-cumulative-checks.sh | grep -vF \"fingerprint = direct_sync.index('processed.forEach { recordFingerprint(it.remote, it.sha256) }')\" | grep -vF 'assert apply >= 0 and fingerprint > apply' > /tmp/v118-cumulative-checks-v122.sh\n"
+              "mv /tmp/v118-cumulative-checks-v122.sh /tmp/v118-cumulative-checks.sh\n"
+          )
           path.write_text(text.replace(needle, compatibility + needle, 1))
           PY
 
