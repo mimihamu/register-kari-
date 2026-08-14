@@ -1,0 +1,1 @@
+temporary branch retained only because connector does not expose branch deletion; product branch develop/v1.25 is unaffected.
