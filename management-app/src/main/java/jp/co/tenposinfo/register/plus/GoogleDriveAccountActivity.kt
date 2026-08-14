@@ -319,7 +319,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
             result.onFailure { error ->
                 val category = GoogleDriveSyncErrorPolicy.classify(error)
                 val message = "${GoogleDriveSyncErrorPolicy.message(category)}：${error.message ?: error.javaClass.simpleName}"
-                GoogleDriveDirectSyncStatusStore(applicationContext).failed(message)
+                GoogleDriveDirectSyncStatusStore(applicationContext).failed(category, message)
                 syncStatus.value = GoogleDriveDirectSyncStatusStore(applicationContext).load()
                 state.value = state.value.copy(message = message)
             }

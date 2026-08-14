@@ -62,7 +62,7 @@ class V051GoogleDriveRecoveryFallbackTest {
 
         assertTrue(directSync.contains("fun setAutomaticSyncEnabled"))
         assertTrue(directSync.contains("cancelUniqueWork(PERIODIC_NAME)"))
-        assertTrue(directSync.contains("cancelUniqueWork(STARTUP_NAME)"))
+        assertTrue(directSync.contains("cancelUniqueWork(IMMEDIATE_NAME)"))
         assertTrue(account.contains("GoogleDriveRecoveryActivity::class.java"))
         assertTrue(account.contains("運用セットアップ・復旧"))
         assertTrue(easyConnect.contains("GoogleDriveRecoveryActivity::class.java"))

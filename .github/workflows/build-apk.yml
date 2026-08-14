@@ -68,6 +68,7 @@ concurrency:
 # V112SafFinalCommitRaceSafetyTest.kt
 # V113OutboxExternalDeliveryLeaseSafetyTest.kt
 # V114OutboxExternalDeliveryLeaseLossFencingTest.kt
+# V121GoogleDriveSyncSingleFlightTest.kt
 
 # Cumulative feature markers retained for source-level compatibility gates.
 # SETTLEMENT_RECONCILIATION=true
@@ -102,6 +103,9 @@ concurrency:
 # DRIVE_PAGINATION_NO_5000_CAP=true
 # DRIVE_INCOMPLETE_SEARCH_RETRY=true
 # DRIVE_PAGE_FINGERPRINT_COMMIT=true
+# DRIVE_SYNC_SINGLE_FLIGHT=true
+# DRIVE_SYNC_STATUS_RUN_OWNERSHIP=true
+# DRIVE_IMMEDIATE_WORK_COALESCED=true
 # DATA_PROTECTION_RESPONSIVE=true
 # APK_RELEASE_INTEGRITY_GATE=true
 # MAIN_FLOW_RESPONSIVE=true
@@ -219,6 +223,7 @@ concurrency:
 # REAL_DEVICE_PRINTER_ENDPOINT_SERIALIZATION_VERIFICATION=deferred-final-acceptance
 # REAL_DEVICE_PRINTER_VERIFICATION=deferred-final-acceptance
 # REAL_DEVICE_APK_INSTALL_VERIFICATION=deferred-final-acceptance
+# REAL_DEVICE_DRIVE_SYNC_CONCURRENCY_VERIFICATION=deferred-final-acceptance
 
 jobs:
   build-debug-apk:
@@ -252,7 +257,7 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v1.20 sources
+      - name: Verify cumulative v0.14-v1.21 sources
         shell: bash
         env:
           V119_FINAL_HEAD: 6fbd9323ccd81f2103eae1fad8e3d8f3a6c1cac0
@@ -298,14 +303,16 @@ jobs:
 
           app_build = active_gradle('app/build.gradle.kts')
           plus_build = active_gradle('management-app/build.gradle.kts')
-          assert 'versionCode = 150' in app_build
-          assert 'versionName = "1.20.0-dev.1"' in app_build
-          assert 'versionCode = 19' in plus_build
-          assert 'versionName = "0.19.0-dev.1"' in plus_build
+          assert 'versionCode = 151' in app_build
+          assert 'versionName = "1.21.0-dev.1"' in app_build
+          assert 'versionCode = 20' in plus_build
+          assert 'versionName = "0.20.0-dev.1"' in plus_build
 
           direct = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt').read_text()
-          test = Path('management-app/src/test/java/jp/co/tenposinfo/register/plus/V045GoogleDriveDirectSyncTest.kt').read_text()
-          docs = Path('docs/V1.20_DRIVE_PAGINATION_COMPLETENESS.md').read_text()
+          v120_test = Path('management-app/src/test/java/jp/co/tenposinfo/register/plus/V045GoogleDriveDirectSyncTest.kt').read_text()
+          v121_test = Path('management-app/src/test/java/jp/co/tenposinfo/register/plus/V121GoogleDriveSyncSingleFlightTest.kt').read_text()
+          v120_docs = Path('docs/V1.20_DRIVE_PAGINATION_COMPLETENESS.md').read_text()
+          v121_docs = Path('docs/V1.21_DRIVE_SYNC_SINGLE_FLIGHT.md').read_text()
           assert 'fun listJournalPage(pageToken: String?)' in direct
           assert 'nextPageToken,incompleteSearch,files' in direct
           assert 'PAGE_SIZE = 1_000' in direct
@@ -317,15 +324,28 @@ jobs:
           fingerprint = direct.index('processed.forEach { recordFingerprint(it.remote, it.sha256) }', imported)
           next_page = direct.index('pageToken = page.nextPageToken', fingerprint)
           assert imported >= 0 and fingerprint > imported and next_page > fingerprint
-          assert 'v120ConsumesAllDrivePagesAndRejectsIncompleteListings' in test
-          assert '150 / 1.20.0-dev.1' in docs
-          assert '19 / 0.19.0-dev.1' in docs
+          assert 'v120ConsumesAllDrivePagesAndRejectsIncompleteListings' in v120_test
+          assert '150 / 1.20.0-dev.1' in v120_docs
+          assert '19 / 0.19.0-dev.1' in v120_docs
+
+          assert 'GoogleDriveSyncSingleFlightV121.run' in direct
+          assert 'putString("run_token", runToken)' in direct
+          assert 'failedForRun' in direct
+          assert 'IMMEDIATE_NAME = "tsuguregi-plus-drive-api-sync-immediate"' in direct
+          assert 'tsuguregi-plus-drive-api-sync-startup' not in direct
+          assert 'tsuguregi-plus-drive-api-sync-manual' not in direct
+          assert 'singleFlightSerializesConcurrentSyncBodies' in v121_test
+          assert '151 / 1.21.0-dev.1' in v121_docs
+          assert '20 / 0.20.0-dev.1' in v121_docs
           PY
 
           grep -Fq 'DRIVE_PAGINATION_COMPLETE=true' .github/workflows/build-apk.yml
           grep -Fq 'DRIVE_PAGINATION_NO_5000_CAP=true' .github/workflows/build-apk.yml
           grep -Fq 'DRIVE_INCOMPLETE_SEARCH_RETRY=true' .github/workflows/build-apk.yml
           grep -Fq 'DRIVE_PAGE_FINGERPRINT_COMMIT=true' .github/workflows/build-apk.yml
+          grep -Fq 'DRIVE_SYNC_SINGLE_FLIGHT=true' .github/workflows/build-apk.yml
+          grep -Fq 'DRIVE_SYNC_STATUS_RUN_OWNERSHIP=true' .github/workflows/build-apk.yml
+          grep -Fq 'DRIVE_IMMEDIATE_WORK_COALESCED=true' .github/workflows/build-apk.yml
 
       - name: Verify launcher and orientation configuration
         shell: bash
@@ -353,10 +373,10 @@ jobs:
       - name: Verify built APK release identity and integrity
         shell: bash
         env:
-          POS_VERSION_CODE: 150
-          POS_VERSION_NAME: 1.20.0-dev.1
-          PLUS_VERSION_CODE: 19
-          PLUS_VERSION_NAME: 0.19.0-dev.1
+          POS_VERSION_CODE: 151
+          POS_VERSION_NAME: 1.21.0-dev.1
+          PLUS_VERSION_CODE: 20
+          PLUS_VERSION_NAME: 0.20.0-dev.1
           BUILD_TOOLS_VERSION: 36.0.0
         run: |
           set -euo pipefail
@@ -371,8 +391,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v1.20.0_dev1_drive_pagination_completeness_debug.apk
-          plus_apk=artifacts/TSUGUREGI_PLUS_v0.19.0_dev1_drive_pagination_completeness_debug.apk
+          register_apk=artifacts/TSUGUREGI_v1.21.0_dev1_drive_sync_single_flight_debug.apk
+          plus_apk=artifacts/TSUGUREGI_PLUS_v0.20.0_dev1_drive_sync_single_flight_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
           cp management-app/build/outputs/apk/debug/management-app-debug.apk "$plus_apk"
@@ -397,15 +417,19 @@ jobs:
             >> artifacts/build-summary.txt
 
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=1.20.0-dev.1
-          REGISTER_VERSION_CODE=150
-          MANAGEMENT_APP_VERSION_NAME=0.19.0-dev.1
-          MANAGEMENT_APP_VERSION_CODE=19
+          REGISTER_VERSION_NAME=1.21.0-dev.1
+          REGISTER_VERSION_CODE=151
+          MANAGEMENT_APP_VERSION_NAME=0.20.0-dev.1
+          MANAGEMENT_APP_VERSION_CODE=20
           DRIVE_PAGINATION_COMPLETE=true
           DRIVE_PAGINATION_NO_5000_CAP=true
           DRIVE_INCOMPLETE_SEARCH_RETRY=true
           DRIVE_PAGE_FINGERPRINT_COMMIT=true
+          DRIVE_SYNC_SINGLE_FLIGHT=true
+          DRIVE_SYNC_STATUS_RUN_OWNERSHIP=true
+          DRIVE_IMMEDIATE_WORK_COALESCED=true
           REAL_DEVICE_DRIVE_PAGINATION_VERIFICATION=deferred-final-acceptance
+          REAL_DEVICE_DRIVE_SYNC_CONCURRENCY_VERIFICATION=deferred-final-acceptance
           EOF
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
@@ -413,7 +437,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v1.20.0-dev1-drive-pagination-completeness-apks
+          name: TSUGUREGI-v1.21.0-dev1-drive-sync-single-flight-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
