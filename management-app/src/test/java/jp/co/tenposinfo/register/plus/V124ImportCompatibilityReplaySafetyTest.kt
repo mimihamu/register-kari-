@@ -35,30 +35,44 @@ class V124ImportCompatibilityReplaySafetyTest {
     }
 
     @Test
-    fun driveAndFolderKeepIndependentSuccessfulSignatures() {
-        assertNotEquals(
-            SalesJournalImportChannelV124.DRIVE_API.preferenceKey,
-            SalesJournalImportChannelV124.COMPATIBILITY_FOLDER.preferenceKey,
-        )
+    fun compatibilityChangeInvalidatesOnlyTransportFingerprints() {
+        val compatibility = File(
+            "src/main/java/jp/co/tenposinfo/register/plus/SalesJournalImportCompatibilityV124.kt",
+        ).readText()
+        val database = File(
+            "src/main/java/jp/co/tenposinfo/register/plus/ManagementDatabase.kt",
+        ).readText()
+
+        assertTrue(database.contains("SalesJournalImportCompatibilityResetV124.ensureCurrent(appContext, db)"))
+        assertTrue(compatibility.contains("db.delete(\"drive_sync_files\", null, null)"))
+        assertTrue(compatibility.contains("db.delete(\"folder_import_files\", null, null)"))
+        assertTrue(compatibility.contains("db.setTransactionSuccessful()"))
+        assertTrue(compatibility.contains("preferences.edit().putString(KEY_PROCESSOR_SIGNATURE, currentSignature).commit()"))
+
+        assertFalse(compatibility.contains("db.delete(\"imported_journal\""))
+        assertFalse(compatibility.contains("db.delete(\"import_rejections\""))
+        assertFalse(compatibility.contains("db.delete(\"import_runs\""))
     }
 
     @Test
-    fun bothAutomaticImportPathsForceReplayOnCompatibilityChange() {
-        val drive = File(
-            "src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt",
+    fun fingerprintResetHappensBeforeSignatureIsPersisted() {
+        val compatibility = File(
+            "src/main/java/jp/co/tenposinfo/register/plus/SalesJournalImportCompatibilityV124.kt",
         ).readText()
-        val verification = File(
-            "src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveSyncVerificationActivity.kt",
-        ).readText()
+        val driveDelete = compatibility.indexOf("db.delete(\"drive_sync_files\", null, null)")
+        val folderDelete = compatibility.indexOf("db.delete(\"folder_import_files\", null, null)", driveDelete)
+        val transactionSuccess = compatibility.indexOf("db.setTransactionSuccessful()", folderDelete)
+        val endTransaction = compatibility.indexOf("db.endTransaction()", transactionSuccess)
+        val signatureCommit = compatibility.indexOf(
+            "preferences.edit().putString(KEY_PROCESSOR_SIGNATURE, currentSignature).commit()",
+            endTransaction,
+        )
 
-        assertTrue(drive.contains("SalesJournalImportChannelV124.DRIVE_API"))
-        assertTrue(drive.contains("requiresFullReplay()"))
-        assertTrue(drive.contains("effectiveForceReimport"))
-        assertTrue(drive.contains("compatibilityStore.markSuccessful()"))
-
-        assertTrue(verification.contains("SalesJournalImportChannelV124.COMPATIBILITY_FOLDER"))
-        assertTrue(verification.contains("effectiveForceRescan"))
-        assertTrue(verification.contains("compatibilityStore.markSuccessful()"))
+        assertTrue(driveDelete >= 0)
+        assertTrue(folderDelete > driveDelete)
+        assertTrue(transactionSuccess > folderDelete)
+        assertTrue(endTransaction > transactionSuccess)
+        assertTrue(signatureCommit > endTransaction)
     }
 
     @Test
