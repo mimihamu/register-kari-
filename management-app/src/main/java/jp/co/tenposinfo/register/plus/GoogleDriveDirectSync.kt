@@ -440,14 +440,7 @@ class GoogleDriveDirectSyncStatusStore(context: Context) {
                 "最終同期 ${formatSyncTime(completedAt)}（失敗）／${message.take(420)}",
             )
         if (resetProgress) {
-            editor
-                .putInt("listed", 0)
-                .putInt("downloaded", 0)
-                .putInt("unchanged", 0)
-                .putInt("imported", 0)
-                .putInt("duplicates", 0)
-                .putInt("rejected", 0)
-                .putInt("errors", 0)
+            resetProgressCounters(editor)
         }
         if (markOwnedRunFailurePending) {
             editor.putBoolean(KEY_OWNED_RUN_FAILURE_PENDING, true)
@@ -459,6 +452,17 @@ class GoogleDriveDirectSyncStatusStore(context: Context) {
 
     private fun formatSyncTime(value: Long): String =
         SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.JAPAN).format(Date(value))
+
+    private fun resetProgressCounters(editor: android.content.SharedPreferences.Editor) {
+        editor
+            .putInt("listed", 0)
+            .putInt("downloaded", 0)
+            .putInt("unchanged", 0)
+            .putInt("imported", 0)
+            .putInt("duplicates", 0)
+            .putInt("rejected", 0)
+            .putInt("errors", 0)
+    }
 
     companion object {
         private const val KEY_OWNED_RUN_FAILURE_PENDING = "owned_run_failure_pending_v125"
