@@ -71,6 +71,7 @@ concurrency:
 # V121GoogleDriveSyncSingleFlightTest.kt
 # V122DriveImportFingerprintAtomicityTest.kt
 # V123DrivePartialProgressStatusTest.kt
+# V124ImportCompatibilityReplaySafetyTest.kt
 
 # Cumulative feature markers retained for source-level compatibility gates.
 # SETTLEMENT_RECONCILIATION=true
@@ -114,6 +115,10 @@ concurrency:
 # DRIVE_SYNC_COMMITTED_PROGRESS=true
 # DRIVE_SYNC_RUNNING_COUNTER_RESET=true
 # DRIVE_SYNC_FAILURE_PROGRESS_PRESERVED=true
+# IMPORT_PROCESSOR_SIGNATURE=true
+# IMPORT_COMPATIBILITY_AUTO_REPLAY=true
+# IMPORT_TRANSPORT_FINGERPRINT_RESET_ATOMIC=true
+# IMPORT_BUSINESS_DATA_PRESERVED=true
 # DATA_PROTECTION_RESPONSIVE=true
 # APK_RELEASE_INTEGRITY_GATE=true
 # MAIN_FLOW_RESPONSIVE=true
@@ -234,6 +239,7 @@ concurrency:
 # REAL_DEVICE_DRIVE_SYNC_CONCURRENCY_VERIFICATION=deferred-final-acceptance
 # REAL_DEVICE_DRIVE_ATOMIC_COMMIT_VERIFICATION=deferred-final-acceptance
 # REAL_DEVICE_DRIVE_PARTIAL_PROGRESS_VERIFICATION=deferred-final-acceptance
+# REAL_DEVICE_IMPORT_COMPATIBILITY_REPLAY_VERIFICATION=deferred-final-acceptance
 
 jobs:
   build-debug-apk:
@@ -267,9 +273,10 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v1.23 sources
+      - name: Verify cumulative v0.14-v1.24 sources
         shell: bash
         env:
+          V123_FINAL_HEAD: 60e497a0e19b597df375d0bf648394ba09e473f9
           V122_FINAL_HEAD: 9acb68084449fea47cfe88217d1688ac400234c3
           V119_FINAL_HEAD: 6fbd9323ccd81f2103eae1fad8e3d8f3a6c1cac0
           V118_FINAL_HEAD: af58236196d0cb50c8df6ba28cdd2568c33e7eec
@@ -297,15 +304,15 @@ jobs:
           V093_FINAL_HEAD: 5c8d0d95175bb7dd6cf8b70f52b31162c415a5e7
         run: |
           set -euo pipefail
-          git show "$V122_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v122-build-apk.yml
+          git show "$V123_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v123-build-apk.yml
           awk '
-            /^      - name: Verify cumulative v0.14-v1.22 sources/ { capture=1; next }
+            /^      - name: Verify cumulative v0.14-v1.23 sources/ { capture=1; next }
             capture && /^      - name: Verify launcher and orientation configuration/ { exit }
             capture && /^        run: \|/ { inrun=1; next }
             capture && inrun { sub(/^          /, ""); print }
-          ' /tmp/v122-build-apk.yml > /tmp/v122-cumulative-checks.sh
-          test -s /tmp/v122-cumulative-checks.sh
-          bash -euxo pipefail /tmp/v122-cumulative-checks.sh
+          ' /tmp/v123-build-apk.yml > /tmp/v123-cumulative-checks.sh
+          test -s /tmp/v123-cumulative-checks.sh
+          bash -euxo pipefail /tmp/v123-cumulative-checks.sh
 
           python3 - <<'PY'
           from pathlib import Path
@@ -319,50 +326,50 @@ jobs:
 
           app_build = active_gradle('app/build.gradle.kts')
           plus_build = active_gradle('management-app/build.gradle.kts')
-          assert 'versionCode = 153' in app_build
-          assert 'versionName = "1.23.0-dev.1"' in app_build
-          assert 'versionCode = 22' in plus_build
-          assert 'versionName = "0.22.0-dev.1"' in plus_build
+          assert 'versionCode = 154' in app_build
+          assert 'versionName = "1.24.0-dev.1"' in app_build
+          assert 'versionCode = 23' in plus_build
+          assert 'versionName = "0.23.0-dev.1"' in plus_build
 
-          direct = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt').read_text()
-          test = Path('management-app/src/test/java/jp/co/tenposinfo/register/plus/V123DrivePartialProgressStatusTest.kt').read_text()
-          docs = Path('docs/V1.23_DRIVE_PARTIAL_PROGRESS_STATUS.md').read_text()
+          compatibility = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/SalesJournalImportCompatibilityV124.kt').read_text()
+          database = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/ManagementDatabase.kt').read_text()
+          test = Path('management-app/src/test/java/jp/co/tenposinfo/register/plus/V124ImportCompatibilityReplaySafetyTest.kt').read_text()
+          docs = Path('docs/V1.24_IMPORT_COMPATIBILITY_REPLAY_SAFETY.md').read_text()
 
-          running_at = direct.index('fun running(): String')
-          progress_method = direct.index('fun progress(runToken: String, result: GoogleDriveDirectSyncResult)', running_at)
-          running_block = direct[running_at:progress_method]
-          for key in ('listed', 'downloaded', 'unchanged', 'imported', 'duplicates', 'rejected', 'errors'):
-              assert f'.putInt("{key}", 0)' in running_block
+          for token in (
+              'RULE_VERSION',
+              'SalesJournalImportContract.SCHEMA',
+              'SUPPORTED_SCHEMA_VERSION',
+              'READER_VERSION',
+              'SUPPORTED_DUPLICATE_KEY_VERSION',
+              'supportedEventTypes.sorted()',
+              'supportedPayloadSchemas.sorted()',
+          ):
+              assert token in compatibility
+          assert 'SalesJournalImportCompatibilityResetV124.ensureCurrent(appContext, db)' in database
 
-          complete_method = direct.index('fun complete(runToken:', progress_method)
-          progress_block = direct[progress_method:complete_method]
-          assert 'preferences.getString("run_token", null) != runToken' in progress_block
-          assert '.putInt("listed", result.listedCount)' in progress_block
-          assert '.putInt("errors", result.errorCount)' in progress_block
-
-          atomic_import = direct.index('SalesJournalImportRepository(database).importDocumentsWithCommitHook(documents) { db ->')
-          fingerprint = direct.index('processed.forEach { recordFingerprint(db, it.remote, it.sha256) }', atomic_import)
-          progress_call = direct.index('statusStore.progress(', fingerprint)
-          next_page = direct.index('pageToken = page.nextPageToken', progress_call)
-          assert atomic_import >= 0 and fingerprint > atomic_import and progress_call > fingerprint and next_page > progress_call
-
-          failure_at = direct.index('private fun writeFailure(')
-          format_at = direct.index('private fun formatSyncTime', failure_at)
-          failure_block = direct[failure_at:format_at]
-          assert '.putInt("listed"' not in failure_block
-          assert '.putInt("downloaded"' not in failure_block
-          assert '.putInt("imported"' not in failure_block
-
-          assert 'newRunClearsPreviousCountersBeforeAnyDriveWork' in test
-          assert 'pageProgressBelongsToActiveRunAndIsWrittenAfterAtomicPageCommit' in test
-          assert 'failedRunPreservesLastCommittedProgressCounters' in test
-          assert '153 / `1.23.0-dev.1`' in docs
-          assert '22 / `0.22.0-dev.1`' in docs
+          drive_delete = compatibility.index('db.delete("drive_sync_files", null, null)')
+          folder_delete = compatibility.index('db.delete("folder_import_files", null, null)', drive_delete)
+          transaction_success = compatibility.index('db.setTransactionSuccessful()', folder_delete)
+          end_transaction = compatibility.index('db.endTransaction()', transaction_success)
+          signature_commit = compatibility.index('preferences.edit().putString(KEY_PROCESSOR_SIGNATURE, currentSignature).commit()', end_transaction)
+          assert drive_delete >= 0 and folder_delete > drive_delete
+          assert transaction_success > folder_delete and end_transaction > transaction_success
+          assert signature_commit > end_transaction
+          assert 'db.delete("imported_journal"' not in compatibility
+          assert 'db.delete("import_rejections"' not in compatibility
+          assert 'db.delete("import_runs"' not in compatibility
+          assert 'const val DATABASE_VERSION = 6' in database
+          assert 'compatibilityChangeInvalidatesOnlyTransportFingerprints' in test
+          assert 'fingerprintResetHappensBeforeSignatureIsPersisted' in test
+          assert '154 / `1.24.0-dev.1`' in docs
+          assert '23 / `0.23.0-dev.1`' in docs
           PY
 
-          grep -Fq 'DRIVE_SYNC_COMMITTED_PROGRESS=true' .github/workflows/build-apk.yml
-          grep -Fq 'DRIVE_SYNC_RUNNING_COUNTER_RESET=true' .github/workflows/build-apk.yml
-          grep -Fq 'DRIVE_SYNC_FAILURE_PROGRESS_PRESERVED=true' .github/workflows/build-apk.yml
+          grep -Fq 'IMPORT_PROCESSOR_SIGNATURE=true' .github/workflows/build-apk.yml
+          grep -Fq 'IMPORT_COMPATIBILITY_AUTO_REPLAY=true' .github/workflows/build-apk.yml
+          grep -Fq 'IMPORT_TRANSPORT_FINGERPRINT_RESET_ATOMIC=true' .github/workflows/build-apk.yml
+          grep -Fq 'IMPORT_BUSINESS_DATA_PRESERVED=true' .github/workflows/build-apk.yml
 
       - name: Verify launcher and orientation configuration
         shell: bash
@@ -390,10 +397,10 @@ jobs:
       - name: Verify built APK release identity and integrity
         shell: bash
         env:
-          POS_VERSION_CODE: 153
-          POS_VERSION_NAME: 1.23.0-dev.1
-          PLUS_VERSION_CODE: 22
-          PLUS_VERSION_NAME: 0.22.0-dev.1
+          POS_VERSION_CODE: 154
+          POS_VERSION_NAME: 1.24.0-dev.1
+          PLUS_VERSION_CODE: 23
+          PLUS_VERSION_NAME: 0.23.0-dev.1
           BUILD_TOOLS_VERSION: 36.0.0
         run: |
           set -euo pipefail
@@ -406,8 +413,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v1.23.0_dev1_drive_partial_progress_status_debug.apk
-          plus_apk=artifacts/TSUGUREGI_PLUS_v0.22.0_dev1_drive_partial_progress_status_debug.apk
+          register_apk=artifacts/TSUGUREGI_v1.24.0_dev1_import_compatibility_replay_debug.apk
+          plus_apk=artifacts/TSUGUREGI_PLUS_v0.23.0_dev1_import_compatibility_replay_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
           cp management-app/build/outputs/apk/debug/management-app-debug.apk "$plus_apk"
@@ -419,19 +426,20 @@ jobs:
           stat --printf='MANAGEMENT_APP_APK_SIZE_BYTES=%s\n' "$plus_apk" | tee -a artifacts/build-summary.txt
           stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' "$cd_apk" | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=1.23.0-dev.1
-          REGISTER_VERSION_CODE=153
-          MANAGEMENT_APP_VERSION_NAME=0.22.0-dev.1
-          MANAGEMENT_APP_VERSION_CODE=22
+          REGISTER_VERSION_NAME=1.24.0-dev.1
+          REGISTER_VERSION_CODE=154
+          MANAGEMENT_APP_VERSION_NAME=0.23.0-dev.1
+          MANAGEMENT_APP_VERSION_CODE=23
           DRIVE_REMOTE_VERSION_FINGERPRINT=true
           DRIVE_PAGINATION_COMPLETE=true
           DRIVE_SYNC_SINGLE_FLIGHT=true
-          DRIVE_SYNC_STATUS_RUN_OWNERSHIP=true
           DRIVE_IMPORT_FINGERPRINT_ATOMIC_COMMIT=true
           DRIVE_SYNC_COMMITTED_PROGRESS=true
-          DRIVE_SYNC_RUNNING_COUNTER_RESET=true
-          DRIVE_SYNC_FAILURE_PROGRESS_PRESERVED=true
-          REAL_DEVICE_DRIVE_PARTIAL_PROGRESS_VERIFICATION=deferred-final-acceptance
+          IMPORT_PROCESSOR_SIGNATURE=true
+          IMPORT_COMPATIBILITY_AUTO_REPLAY=true
+          IMPORT_TRANSPORT_FINGERPRINT_RESET_ATOMIC=true
+          IMPORT_BUSINESS_DATA_PRESERVED=true
+          REAL_DEVICE_IMPORT_COMPATIBILITY_REPLAY_VERIFICATION=deferred-final-acceptance
           EOF
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
@@ -439,7 +447,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v1.23.0-dev1-drive-partial-progress-status-apks
+          name: TSUGUREGI-v1.24.0-dev1-import-compatibility-replay-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
