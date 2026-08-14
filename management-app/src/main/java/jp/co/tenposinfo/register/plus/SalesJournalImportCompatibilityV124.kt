@@ -38,7 +38,10 @@ object SalesJournalImportCompatibilityResetV124 {
      *
      * The DB transaction is committed before the preference signature. If the process
      * dies in between, the next DB open repeats the harmless fingerprint reset.
+     * Synchronization prevents concurrent ManagementDatabase opens in this process from
+     * performing overlapping first-open resets.
      */
+    @Synchronized
     fun ensureCurrent(context: Context, db: SQLiteDatabase): Boolean {
         if (db.isReadOnly) return false
         val preferences = context.applicationContext.getSharedPreferences(
