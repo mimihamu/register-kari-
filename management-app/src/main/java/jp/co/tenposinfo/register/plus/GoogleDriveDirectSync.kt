@@ -56,10 +56,15 @@ class GoogleDriveSyncBatchException(
     cause: Throwable,
 ) : IOException(message, cause)
 
+class GoogleDriveSyncIncompleteListingException(message: String) : IOException(message)
+
 object GoogleDriveSyncErrorPolicy {
     fun classify(error: Throwable): GoogleDriveSyncFailureCategory {
         if (error is GoogleDriveSyncBatchException) {
             return error.category
+        }
+        if (error is GoogleDriveSyncIncompleteListingException) {
+            return GoogleDriveSyncFailureCategory.SERVER
         }
         if (error is GoogleDriveSyncAuthorizationRequiredException) {
             return GoogleDriveSyncFailureCategory.AUTHORIZATION_REQUIRED
@@ -181,45 +186,50 @@ data class GoogleDriveSyncRemoteFile(
     val appProperties: Map<String, String>,
 )
 
+data class GoogleDriveSyncRemotePage(
+    val files: List<GoogleDriveSyncRemoteFile>,
+    val nextPageToken: String?,
+    val incompleteSearch: Boolean,
+)
+
 class GoogleDriveSyncRestClient(private val accessToken: String) {
-    fun listJournalFiles(maxFiles: Int = MAX_FILES): List<GoogleDriveSyncRemoteFile> {
-        val result = mutableListOf<GoogleDriveSyncRemoteFile>()
-        var pageToken: String? = null
-        do {
-            val query = "mimeType='application/json' and trashed=false" +
-                propertyQuery("app", APP) + propertyQuery("role", ROLE)
-            val fields = "nextPageToken,files(id,name,modifiedTime,version,size,appProperties)"
-            val url = buildString {
-                append(DRIVE_FILES_URL)
-                append("?spaces=drive")
-                append("&supportsAllDrives=false")
-                append("&pageSize=1000")
-                append("&orderBy=modifiedTime")
-                append("&fields=").append(encode(fields))
-                append("&q=").append(encode(query))
-                pageToken?.let { append("&pageToken=").append(encode(it)) }
+    fun listJournalPage(pageToken: String?): GoogleDriveSyncRemotePage {
+        val query = "mimeType='application/json' and trashed=false" +
+            propertyQuery("app", APP) + propertyQuery("role", ROLE)
+        val fields = "nextPageToken,incompleteSearch,files(id,name,modifiedTime,version,size,appProperties)"
+        val url = buildString {
+            append(DRIVE_FILES_URL)
+            append("?spaces=drive")
+            append("&supportsAllDrives=false")
+            append("&pageSize=$PAGE_SIZE")
+            append("&orderBy=modifiedTime")
+            append("&fields=").append(encode(fields))
+            append("&q=").append(encode(query))
+            pageToken?.let { append("&pageToken=").append(encode(it)) }
+        }
+        val root = JSONObject(execute("GET", url))
+        val files = root.optJSONArray("files") ?: JSONArray()
+        val result = ArrayList<GoogleDriveSyncRemoteFile>(files.length())
+        for (index in 0 until files.length()) {
+            val item = files.getJSONObject(index)
+            val properties = linkedMapOf<String, String>()
+            item.optJSONObject("appProperties")?.let { source ->
+                source.keys().forEach { key -> properties[key] = source.optString(key) }
             }
-            val root = JSONObject(execute("GET", url))
-            val files = root.optJSONArray("files") ?: JSONArray()
-            for (index in 0 until files.length()) {
-                if (result.size >= maxFiles) break
-                val item = files.getJSONObject(index)
-                val properties = linkedMapOf<String, String>()
-                item.optJSONObject("appProperties")?.let { source ->
-                    source.keys().forEach { key -> properties[key] = source.optString(key) }
-                }
-                result += GoogleDriveSyncRemoteFile(
-                    id = item.getString("id"),
-                    name = item.optString("name").ifBlank { "${item.getString("id")}.json" },
-                    modifiedTime = item.optString("modifiedTime"),
-                    version = item.optString("version").takeIf(String::isNotBlank),
-                    size = item.optString("size").toLongOrNull(),
-                    appProperties = properties,
-                )
-            }
-            pageToken = root.optString("nextPageToken").takeIf(String::isNotBlank)
-        } while (pageToken != null && result.size < maxFiles)
-        return result
+            result += GoogleDriveSyncRemoteFile(
+                id = item.getString("id"),
+                name = item.optString("name").ifBlank { "${item.getString("id")}.json" },
+                modifiedTime = item.optString("modifiedTime"),
+                version = item.optString("version").takeIf(String::isNotBlank),
+                size = item.optString("size").toLongOrNull(),
+                appProperties = properties,
+            )
+        }
+        return GoogleDriveSyncRemotePage(
+            files = result,
+            nextPageToken = root.optString("nextPageToken").takeIf(String::isNotBlank),
+            incompleteSearch = root.optBoolean("incompleteSearch", false),
+        )
     }
 
     fun download(fileId: String): ByteArray = executeBytes(
@@ -258,7 +268,7 @@ class GoogleDriveSyncRestClient(private val accessToken: String) {
         const val DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files"
         const val APP = "tsuguregi"
         const val ROLE = "sales-journal"
-        const val MAX_FILES = 5_000
+        const val PAGE_SIZE = 1_000
 
         fun encode(value: String): String = URLEncoder.encode(value, "UTF-8")
         fun encodePath(value: String): String = value.replace("/", "%2F")
@@ -395,76 +405,101 @@ class GoogleDriveDirectSyncRepository(
         statusStore.running()
         ensureSchema(database.writableDatabase)
         val client = GoogleDriveSyncRestClient(accessToken)
-        val remoteFiles = client.listJournalFiles()
-        val documents = mutableListOf<SalesJournalImportDocument>()
-        val processed = mutableListOf<ProcessedDriveFile>()
+        val visitedPageTokens = mutableSetOf<String>()
+        var pageToken: String? = null
+        var listed = 0
+        var downloaded = 0
         var unchanged = 0
+        var imported = 0
+        var duplicates = 0
+        var rejected = 0
         var errors = 0
-        remoteFiles.forEach { remote ->
-            val known = known(remote.id)
-            if (
-                GoogleDriveRemoteVersionPolicyV119.canSkipDownload(
-                    knownRemoteVersion = known?.remoteVersion,
-                    currentRemoteVersion = remote.version,
-                    forceReimport = forceReimport,
-                )
-            ) {
-                unchanged += 1
-                return@forEach
+
+        do {
+            if (pageToken != null && !visitedPageTokens.add(pageToken)) {
+                throw GoogleDriveSyncIncompleteListingException("Google Driveのpage tokenが循環しました")
             }
-            try {
-                require(remote.size == null || remote.size in 1..SalesJournalImportContract.MAX_DOCUMENT_BYTES) {
-                    "Google Drive上のJSONが20MiBを超えています"
-                }
-                val bytes = client.download(remote.id)
-                require(bytes.isNotEmpty() && bytes.size <= SalesJournalImportContract.MAX_DOCUMENT_BYTES) {
-                    "Google Drive上のJSONサイズが不正です"
-                }
-                val rawJson = bytes.toString(Charsets.UTF_8)
-                val sha256 = sha256(bytes)
-                if (!forceReimport && known != null && known.contentSha256 == sha256) {
-                    recordFingerprint(remote, sha256)
-                    unchanged += 1
-                } else {
-                    documents += SalesJournalImportDocument(
-                        sourceName = remote.name,
-                        sourceUri = "gdrive://${remote.id}",
-                        rawJson = rawJson,
+            val page = client.listJournalPage(pageToken)
+            if (page.incompleteSearch) {
+                throw GoogleDriveSyncIncompleteListingException("Google Driveの一覧検索が不完全なため再試行します")
+            }
+            listed += page.files.size
+            val documents = mutableListOf<SalesJournalImportDocument>()
+            val processed = mutableListOf<ProcessedDriveFile>()
+
+            page.files.forEach { remote ->
+                val known = known(remote.id)
+                if (
+                    GoogleDriveRemoteVersionPolicyV119.canSkipDownload(
+                        knownRemoteVersion = known?.remoteVersion,
+                        currentRemoteVersion = remote.version,
+                        forceReimport = forceReimport,
                     )
-                    processed += ProcessedDriveFile(remote, sha256)
+                ) {
+                    unchanged += 1
+                    return@forEach
                 }
-            } catch (error: Throwable) {
-                val decision = GoogleDriveRemoteFileFailurePolicy.decide(error)
-                when (decision.disposition) {
-                    GoogleDriveRemoteFileFailureDisposition.REJECT_FILE -> {
-                        errors += 1
+                try {
+                    require(remote.size == null || remote.size in 1..SalesJournalImportContract.MAX_DOCUMENT_BYTES) {
+                        "Google Drive上のJSONが20MiBを超えています"
+                    }
+                    val bytes = client.download(remote.id)
+                    require(bytes.isNotEmpty() && bytes.size <= SalesJournalImportContract.MAX_DOCUMENT_BYTES) {
+                        "Google Drive上のJSONサイズが不正です"
+                    }
+                    val rawJson = bytes.toString(Charsets.UTF_8)
+                    val sha256 = sha256(bytes)
+                    if (!forceReimport && known != null && known.contentSha256 == sha256) {
+                        recordFingerprint(remote, sha256)
+                        unchanged += 1
+                    } else {
                         documents += SalesJournalImportDocument(
                             sourceName = remote.name,
                             sourceUri = "gdrive://${remote.id}",
-                            rawJson = null,
-                            loadErrorCode = ImportRejectionCode.READ_ERROR,
-                            loadErrorMessage = error.message ?: "Google Driveから読み込めませんでした",
+                            rawJson = rawJson,
+                        )
+                        processed += ProcessedDriveFile(remote, sha256)
+                    }
+                } catch (error: Throwable) {
+                    val decision = GoogleDriveRemoteFileFailurePolicy.decide(error)
+                    when (decision.disposition) {
+                        GoogleDriveRemoteFileFailureDisposition.REJECT_FILE -> {
+                            errors += 1
+                            documents += SalesJournalImportDocument(
+                                sourceName = remote.name,
+                                sourceUri = "gdrive://${remote.id}",
+                                rawJson = null,
+                                loadErrorCode = ImportRejectionCode.READ_ERROR,
+                                loadErrorMessage = error.message ?: "Google Driveから読み込めませんでした",
+                            )
+                        }
+                        GoogleDriveRemoteFileFailureDisposition.RETRY_BATCH,
+                        GoogleDriveRemoteFileFailureDisposition.BLOCK_BATCH,
+                        -> throw GoogleDriveSyncBatchException(
+                            category = decision.category,
+                            message = "${GoogleDriveSyncErrorPolicy.message(decision.category)}：${error.message ?: error.javaClass.simpleName}",
+                            cause = error,
                         )
                     }
-                    GoogleDriveRemoteFileFailureDisposition.RETRY_BATCH,
-                    GoogleDriveRemoteFileFailureDisposition.BLOCK_BATCH,
-                    -> throw GoogleDriveSyncBatchException(
-                        category = decision.category,
-                        message = "${GoogleDriveSyncErrorPolicy.message(decision.category)}：${error.message ?: error.javaClass.simpleName}",
-                        cause = error,
-                    )
                 }
             }
-        }
-        val batch = if (documents.isEmpty()) null else SalesJournalImportRepository(database).importDocuments(documents)
-        processed.forEach { recordFingerprint(it.remote, it.sha256) }
+
+            val batch = if (documents.isEmpty()) null else SalesJournalImportRepository(database).importDocuments(documents)
+            processed.forEach { recordFingerprint(it.remote, it.sha256) }
+            downloaded += documents.size
+            imported += batch?.importedCount ?: 0
+            duplicates += batch?.duplicateCount ?: 0
+            rejected += batch?.rejectedCount ?: 0
+            pageToken = page.nextPageToken
+        } while (pageToken != null)
+
         val result = GoogleDriveDirectSyncResult(
-            listedCount = remoteFiles.size,
-            downloadedCount = documents.size,
+            listedCount = listed,
+            downloadedCount = downloaded,
             unchangedCount = unchanged,
-            importedCount = batch?.importedCount ?: 0,
-            duplicateCount = batch?.duplicateCount ?: 0,
-            rejectedCount = batch?.rejectedCount ?: 0,
+            importedCount = imported,
+            duplicateCount = duplicates,
+            rejectedCount = rejected,
             errorCount = errors,
         )
         statusStore.complete(result)
