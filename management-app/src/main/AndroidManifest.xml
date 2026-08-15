@@ -11,6 +11,12 @@
         android:theme="@style/Theme.TsuguRegiPlus">
 
         <provider
+            android:name=".GoogleDriveOrphanedRunRecoveryProviderV131"
+            android:authorities="${applicationId}.google-drive-orphaned-run-recovery-v131"
+            android:exported="false"
+            android:initOrder="300" />
+
+        <provider
             android:name=".GoogleDriveVerificationHistoryRecoveryProviderV130"
             android:authorities="${applicationId}.google-drive-verification-history-recovery-v130"
             android:exported="false"
