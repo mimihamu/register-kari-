@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 
 class V127DriveWorkerVerificationHistoryTest {
     @Test
@@ -50,13 +51,15 @@ class V127DriveWorkerVerificationHistoryTest {
     fun failedWorkerRecordKeepsFinalizedPartialProgressAndMinimumErrorCount() {
         val record = GoogleDriveWorkerVerificationRecordV127.failure(
             status = GoogleDriveDirectSyncStatus(
+                running = false,
                 listedCount = 1_000,
                 importedCount = 740,
                 duplicateCount = 250,
                 rejectedCount = 10,
                 errorCount = 0,
+                lastFailureCategory = GoogleDriveSyncFailureCategory.NETWORK,
             ),
-            error = IllegalStateException("page 2 failed"),
+            error = IOException("page 2 failed"),
             recordedAt = 789L,
         )
 
