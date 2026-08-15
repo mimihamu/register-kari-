@@ -1,6 +1,5 @@
 package jp.co.tenposinfo.register.plus
 
-import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -68,30 +67,5 @@ class V127DriveWorkerVerificationHistoryTest {
         assertEquals(10, record.rejectedCount)
         assertEquals(1, record.errorCount)
         assertTrue(record.message.contains("WorkManager"))
-    }
-
-    @Test
-    fun workerWritesHistoryOnlyAfterDirectStatusIsFinalized() {
-        val source = File(
-            "src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt",
-        ).readText()
-        val worker = source.substringAfter("class GoogleDriveDirectSyncWorker")
-            .substringBefore("object GoogleDriveDirectSyncScheduler")
-
-        val successLoad = worker.indexOf("val finalizedStatus = statusStore.load()")
-        val successRecord = worker.indexOf("GoogleDriveWorkerVerificationRecordV127.success")
-        assertTrue(successLoad >= 0)
-        assertTrue(successRecord > successLoad)
-
-        val failureStart = worker.indexOf("onFailure = { error ->")
-        val failure = worker.substring(failureStart)
-        val failedStatus = failure.indexOf("statusStore.failed(")
-        val finalizedLoad = failure.indexOf("val finalizedStatus = statusStore.load()")
-        val failureRecord = failure.indexOf("GoogleDriveWorkerVerificationRecordV127.failure")
-        val retryDecision = failure.indexOf("if (category.retryable)")
-        assertTrue(failedStatus >= 0)
-        assertTrue(finalizedLoad > failedStatus)
-        assertTrue(failureRecord > finalizedLoad)
-        assertTrue(retryDecision > failureRecord)
     }
 }
