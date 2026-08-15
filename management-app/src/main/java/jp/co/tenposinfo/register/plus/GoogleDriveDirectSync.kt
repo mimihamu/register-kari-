@@ -711,18 +711,33 @@ class GoogleDriveDirectSyncWorker(context: Context, parameters: WorkerParameters
     override fun doWork(): Result {
         val account = GoogleDriveAccountStore(applicationContext).load()
         if (account.email == null) return Result.success()
+        val statusStore = GoogleDriveDirectSyncStatusStore(applicationContext)
+        val historyStore = GoogleDriveSyncVerificationHistoryStore(applicationContext)
         return runCatching {
             val token = GoogleDriveSyncAccessTokenProvider.acquire(applicationContext)
             GoogleDriveDirectSyncRepository(applicationContext).use { repository ->
                 repository.synchronize(token, forceReimport = false)
             }
         }.fold(
-            onSuccess = { Result.success() },
+            onSuccess = {
+                val finalizedStatus = statusStore.load()
+                historyStore.append(
+                    GoogleDriveWorkerVerificationRecordV127.success(finalizedStatus),
+                )
+                Result.success()
+            },
             onFailure = { error ->
                 val category = GoogleDriveSyncErrorPolicy.classify(error)
-                GoogleDriveDirectSyncStatusStore(applicationContext).failed(
+                statusStore.failed(
                     category,
                     "${GoogleDriveSyncErrorPolicy.message(category)}：${error.message ?: error.javaClass.simpleName}",
+                )
+                val finalizedStatus = statusStore.load()
+                historyStore.append(
+                    GoogleDriveWorkerVerificationRecordV127.failure(
+                        status = finalizedStatus,
+                        error = error,
+                    ),
                 )
                 if (category.retryable) Result.retry() else Result.success()
             },

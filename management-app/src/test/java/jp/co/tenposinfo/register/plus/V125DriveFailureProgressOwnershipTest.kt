@@ -63,11 +63,16 @@ class V125DriveFailureProgressOwnershipTest {
     @Test
     fun workerStillRoutesPreflightAndRepositoryFailuresThroughStatusStore() {
         val worker = source.indexOf("class GoogleDriveDirectSyncWorker")
-        val acquire = source.indexOf("GoogleDriveSyncAccessTokenProvider.acquire", worker)
+        val statusStore = source.indexOf(
+            "val statusStore = GoogleDriveDirectSyncStatusStore(applicationContext)",
+            worker,
+        )
+        val acquire = source.indexOf("GoogleDriveSyncAccessTokenProvider.acquire", statusStore)
         val repository = source.indexOf("GoogleDriveDirectSyncRepository(applicationContext)", acquire)
-        val outerFailure = source.indexOf("GoogleDriveDirectSyncStatusStore(applicationContext).failed", repository)
+        val outerFailure = source.indexOf("statusStore.failed(", repository)
         assertTrue(worker >= 0)
-        assertTrue(acquire > worker)
+        assertTrue(statusStore > worker)
+        assertTrue(acquire > statusStore)
         assertTrue(repository > acquire)
         assertTrue(outerFailure > repository)
         assertFalse(source.substring(worker).contains("putInt(\"listed\", 0)"))
