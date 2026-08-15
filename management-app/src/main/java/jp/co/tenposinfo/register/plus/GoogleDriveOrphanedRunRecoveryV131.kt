@@ -5,6 +5,9 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
 import android.net.Uri
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 object GoogleDriveOrphanedRunRecoveryPolicyV131 {
     fun shouldRecoverAtProcessStart(status: GoogleDriveDirectSyncStatus): Boolean = status.running
@@ -26,14 +29,38 @@ object GoogleDriveOrphanedRunRecoveryV131 {
             return null
         }
 
-        statusStore.recoverStaleRun(
-            "前回のアプリprocess終了により実行中runを中断扱いで復旧しました",
-        )
+        check(finalizePersistedRunDurably(appContext)) {
+            "前回Drive同期runの中断状態を永続化できませんでした"
+        }
         val finalized = statusStore.load()
         val record = GoogleDriveOrphanedRunRecoveryPolicyV131.recordFromRecoveredStatus(finalized)
         GoogleDriveSyncVerificationHistoryStore(appContext).append(record)
         return record
     }
+
+    internal fun finalizePersistedRunDurably(context: Context): Boolean {
+        val completedAt = System.currentTimeMillis()
+        return context.applicationContext
+            .getSharedPreferences(STATUS_PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("running", false)
+            .remove("run_token")
+            .remove(KEY_OWNED_RUN_FAILURE_PENDING)
+            .putLong("completed_at", completedAt)
+            .putString("failure_category", GoogleDriveSyncFailureCategory.UNKNOWN.name)
+            .putString(
+                "message",
+                "最終同期 ${formatSyncTime(completedAt)}（停止状態を修復）／" +
+                    "前回のアプリprocess終了により実行中runを中断扱いで復旧しました",
+            )
+            .commit()
+    }
+
+    private fun formatSyncTime(value: Long): String =
+        SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.JAPAN).format(Date(value))
+
+    private const val STATUS_PREFS_NAME = "tsuguregi_plus_drive_api_sync_status"
+    private const val KEY_OWNED_RUN_FAILURE_PENDING = "owned_run_failure_pending_v125"
 }
 
 class GoogleDriveOrphanedRunRecoveryProviderV131 : ContentProvider() {
