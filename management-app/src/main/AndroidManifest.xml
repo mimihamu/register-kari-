@@ -11,6 +11,12 @@
         android:theme="@style/Theme.TsuguRegiPlus">
 
         <provider
+            android:name=".GoogleDriveVerificationHistoryRecoveryProviderV130"
+            android:authorities="${applicationId}.google-drive-verification-history-recovery-v130"
+            android:exported="false"
+            android:initOrder="200" />
+
+        <provider
             android:name=".GoogleDriveDirectSyncBootstrapProvider"
             android:authorities="${applicationId}.google-drive-direct-sync-bootstrap"
             android:exported="false"
