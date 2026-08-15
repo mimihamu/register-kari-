@@ -62,6 +62,9 @@ class GoogleDriveSyncIncompleteListingException(message: String) : IOException(m
 
 object GoogleDriveSyncErrorPolicy {
     fun classify(error: Throwable): GoogleDriveSyncFailureCategory {
+        if (error is GoogleDriveDirectSyncStatusPersistenceException) {
+            return GoogleDriveSyncFailureCategory.UNKNOWN
+        }
         if (error is GoogleDriveSyncBatchException) {
             return error.category
         }
@@ -502,7 +505,7 @@ class GoogleDriveDirectSyncRepository(
         GoogleDriveSyncSingleFlightV121.run {
             GoogleDriveStartupRecoveryBarrierV132.requireDriveSyncAllowed()
             val statusStore = GoogleDriveDirectSyncStatusStore(appContext)
-            val runToken = statusStore.running()
+            val runToken = GoogleDriveDirectSyncStatusDurabilityV133.start(appContext)
             try {
                 ensureSchema(database.writableDatabase)
                 val client = GoogleDriveSyncRestClient(accessToken)
@@ -596,9 +599,10 @@ class GoogleDriveDirectSyncRepository(
                     imported += batch?.importedCount ?: 0
                     duplicates += batch?.duplicateCount ?: 0
                     rejected += batch?.rejectedCount ?: 0
-                    statusStore.progress(
-                        runToken,
-                        GoogleDriveDirectSyncResult(
+                    GoogleDriveDirectSyncStatusDurabilityV133.progress(
+                        context = appContext,
+                        runToken = runToken,
+                        result = GoogleDriveDirectSyncResult(
                             listedCount = listed,
                             downloadedCount = downloaded,
                             unchangedCount = unchanged,
@@ -620,14 +624,20 @@ class GoogleDriveDirectSyncRepository(
                     rejectedCount = rejected,
                     errorCount = errors,
                 )
-                statusStore.complete(runToken, result)
+                GoogleDriveDirectSyncStatusDurabilityV133.complete(
+                    context = appContext,
+                    runToken = runToken,
+                    result = result,
+                )
                 result
             } catch (error: Throwable) {
+                if (error is GoogleDriveDirectSyncStatusPersistenceException) throw error
                 val category = GoogleDriveSyncErrorPolicy.classify(error)
-                statusStore.failedForRun(
-                    runToken,
-                    category,
-                    "${GoogleDriveSyncErrorPolicy.message(category)}：${error.message ?: error.javaClass.simpleName}",
+                GoogleDriveDirectSyncStatusDurabilityV133.failedForRun(
+                    context = appContext,
+                    runToken = runToken,
+                    category = category,
+                    message = "${GoogleDriveSyncErrorPolicy.message(category)}：${error.message ?: error.javaClass.simpleName}",
                 )
                 throw error
             }
@@ -645,7 +655,7 @@ class GoogleDriveDirectSyncRepository(
             null
         } else {
             KnownDriveFile(
-                remoteVersion = if (cursor.isNull(0)) null else cursor.getString(0),
+                remoteVersion = if (cursor.isNull(0)) null else cursor.getString(1 - 1),
                 contentSha256 = cursor.getString(1),
             )
         }
@@ -729,13 +739,17 @@ class GoogleDriveDirectSyncWorker(context: Context, parameters: WorkerParameters
                 Result.success()
             },
             onFailure = { error ->
-                if (error is GoogleDriveStartupRecoveryBlockedException) {
+                if (
+                    error is GoogleDriveStartupRecoveryBlockedException ||
+                    error is GoogleDriveDirectSyncStatusPersistenceException
+                ) {
                     Result.success()
                 } else {
                     val category = GoogleDriveSyncErrorPolicy.classify(error)
-                    statusStore.failed(
-                        category,
-                        "${GoogleDriveSyncErrorPolicy.message(category)}：${error.message ?: error.javaClass.simpleName}",
+                    GoogleDriveDirectSyncStatusDurabilityV133.failed(
+                        context = applicationContext,
+                        category = category,
+                        message = "${GoogleDriveSyncErrorPolicy.message(category)}：${error.message ?: error.javaClass.simpleName}",
                     )
                     val finalizedStatus = statusStore.load()
                     historyStore.append(
