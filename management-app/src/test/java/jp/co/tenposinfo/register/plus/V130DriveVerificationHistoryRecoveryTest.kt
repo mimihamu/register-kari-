@@ -81,6 +81,12 @@ class V130DriveVerificationHistoryRecoveryTest {
                 history = emptyList(),
             ),
         )
+        assertFalse(
+            GoogleDriveVerificationHistoryRecoveryPolicyV130.hasNewFinalization(
+                status = status,
+                observedCompletedAt = 2_000L,
+            ),
+        )
     }
 
     @Test
@@ -137,5 +143,47 @@ class V130DriveVerificationHistoryRecoveryTest {
 
         requireNotNull(recovered)
         assertEquals(6_000L, recovered.recordedAt)
+        assertTrue(
+            GoogleDriveVerificationHistoryRecoveryPolicyV130.hasNewFinalization(
+                status = status,
+                observedCompletedAt = 5_999L,
+            ),
+        )
+    }
+
+    @Test
+    fun observedFinalizationWatermarkSuppressesAlreadySeenStatus() {
+        val status = GoogleDriveDirectSyncStatus(
+            running = false,
+            lastCompletedAt = 8_000L,
+        )
+
+        assertFalse(
+            GoogleDriveVerificationHistoryRecoveryPolicyV130.hasNewFinalization(
+                status = status,
+                observedCompletedAt = 8_000L,
+            ),
+        )
+        assertFalse(
+            GoogleDriveVerificationHistoryRecoveryPolicyV130.hasNewFinalization(
+                status = status,
+                observedCompletedAt = 9_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun newerFinalizationIsRecoverableAfterOlderObservedWatermark() {
+        val status = GoogleDriveDirectSyncStatus(
+            running = false,
+            lastCompletedAt = 10_000L,
+        )
+
+        assertTrue(
+            GoogleDriveVerificationHistoryRecoveryPolicyV130.hasNewFinalization(
+                status = status,
+                observedCompletedAt = 9_999L,
+            ),
+        )
     }
 }
