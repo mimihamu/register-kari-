@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.io.IOException
 
 class V126DriveFailureHistoryConsistencyTest {
     @Test
@@ -22,7 +23,7 @@ class V126DriveFailureHistoryConsistencyTest {
         )
         val record = GoogleDriveFailureVerificationRecordV126.fromDirectStatus(
             status = status,
-            error = IllegalStateException("second page failed"),
+            error = IOException("second page failed"),
             recordedAt = 1234L,
         )
 
@@ -48,7 +49,7 @@ class V126DriveFailureHistoryConsistencyTest {
         )
         val record = GoogleDriveFailureVerificationRecordV126.fromDirectStatus(
             status = resetStatus,
-            error = IllegalStateException("authorization required"),
+            error = GoogleDriveSyncAuthorizationRequiredException("authorization required"),
             recordedAt = 5678L,
         )
 
