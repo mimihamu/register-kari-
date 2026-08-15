@@ -29,6 +29,9 @@ object GoogleDriveOrphanedRunRecoveryV131 {
             return null
         }
 
+        statusStore.recoverStaleRun(
+            "前回のアプリprocess終了により実行中runを中断扱いで復旧しました",
+        )
         check(finalizePersistedRunDurably(appContext)) {
             "前回Drive同期runの中断状態を永続化できませんでした"
         }
