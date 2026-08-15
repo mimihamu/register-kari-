@@ -5,17 +5,28 @@ object GoogleDriveFailureVerificationRecordV126 {
         status: GoogleDriveDirectSyncStatus,
         error: Throwable,
         recordedAt: Long,
-    ): GoogleDriveSyncVerificationRecord = GoogleDriveSyncVerificationRecord(
-        recordedAt = recordedAt,
-        mode = GoogleDriveResolvedMode.DRIVE_API,
-        success = false,
-        listedCount = status.listedCount,
-        importedCount = status.importedCount,
-        duplicateCount = status.duplicateCount,
-        rejectedCount = status.rejectedCount,
-        errorCount = maxOf(status.errorCount, 1),
-        message = error.message ?: error.javaClass.simpleName,
-    )
+    ): GoogleDriveSyncVerificationRecord {
+        if (!ownsFinalizedFailure(status, error)) {
+            return genericFailure(
+                mode = GoogleDriveResolvedMode.DRIVE_API,
+                error = error,
+                recordedAt = recordedAt,
+            ).copy(
+                message = "${error.message ?: error.javaClass.simpleName}（別の同期runがdirect statusを所有しているため件数は関連付けていません）",
+            )
+        }
+        return GoogleDriveSyncVerificationRecord(
+            recordedAt = recordedAt,
+            mode = GoogleDriveResolvedMode.DRIVE_API,
+            success = false,
+            listedCount = status.listedCount,
+            importedCount = status.importedCount,
+            duplicateCount = status.duplicateCount,
+            rejectedCount = status.rejectedCount,
+            errorCount = maxOf(status.errorCount, 1),
+            message = error.message ?: error.javaClass.simpleName,
+        )
+    }
 
     fun genericFailure(
         mode: GoogleDriveResolvedMode,
@@ -32,4 +43,11 @@ object GoogleDriveFailureVerificationRecordV126 {
         errorCount = 1,
         message = error.message ?: error.javaClass.simpleName,
     )
+
+    internal fun ownsFinalizedFailure(
+        status: GoogleDriveDirectSyncStatus,
+        error: Throwable,
+    ): Boolean = !status.running &&
+        status.lastFailureCategory != null &&
+        status.lastFailureCategory == GoogleDriveSyncErrorPolicy.classify(error)
 }
