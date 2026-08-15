@@ -3,10 +3,19 @@ package jp.co.tenposinfo.register.plus
 import android.content.ContentProvider
 import android.content.ContentValues
 import android.content.Context
+import android.content.SharedPreferences
 import android.database.Cursor
 import android.net.Uri
 
 object GoogleDriveVerificationHistoryRecoveryPolicyV130 {
+    fun hasNewFinalization(
+        status: GoogleDriveDirectSyncStatus,
+        observedCompletedAt: Long,
+    ): Boolean {
+        val completedAt = status.lastCompletedAt ?: return false
+        return !status.running && completedAt > observedCompletedAt
+    }
+
     fun recoverableRecord(
         status: GoogleDriveDirectSyncStatus,
         history: List<GoogleDriveSyncVerificationRecord>,
@@ -58,24 +67,92 @@ object GoogleDriveVerificationHistoryRecoveryPolicyV130 {
         if (status.lastFailureCategory != null) maxOf(status.errorCount, 1) else status.errorCount
 }
 
+class GoogleDriveVerificationHistoryRecoveryStateStoreV130(context: Context) {
+    private val preferences = context.applicationContext.getSharedPreferences(
+        PREFS_NAME,
+        Context.MODE_PRIVATE,
+    )
+
+    fun observedCompletedAt(): Long? =
+        if (preferences.contains(KEY_OBSERVED_COMPLETED_AT)) {
+            preferences.getLong(KEY_OBSERVED_COMPLETED_AT, 0L)
+        } else {
+            null
+        }
+
+    fun markObserved(completedAt: Long?) {
+        preferences.edit()
+            .putLong(KEY_OBSERVED_COMPLETED_AT, completedAt ?: 0L)
+            .apply()
+    }
+
+    companion object {
+        private const val PREFS_NAME = "tsuguregi_plus_drive_history_recovery_v130"
+        private const val KEY_OBSERVED_COMPLETED_AT = "observed_completed_at"
+    }
+}
+
 object GoogleDriveVerificationHistoryRecoveryV130 {
+    private const val HISTORY_PREFS_NAME = "tsuguregi_plus_drive_sync_verification_history"
+    private const val HISTORY_KEY = "history"
+
+    @Volatile
+    private var installedListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
+
+    @Synchronized
+    fun install(context: Context): GoogleDriveSyncVerificationRecord? {
+        val appContext = context.applicationContext
+        if (installedListener == null) {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                if (key == HISTORY_KEY) {
+                    markCurrentFinalizationObserved(appContext)
+                }
+            }
+            appContext.getSharedPreferences(HISTORY_PREFS_NAME, Context.MODE_PRIVATE)
+                .registerOnSharedPreferenceChangeListener(listener)
+            installedListener = listener
+        }
+        return reconcile(appContext)
+    }
+
     fun reconcile(context: Context): GoogleDriveSyncVerificationRecord? {
         val appContext = context.applicationContext
         val status = GoogleDriveDirectSyncStatusStore(appContext).load()
+        val stateStore = GoogleDriveVerificationHistoryRecoveryStateStoreV130(appContext)
+        val observedCompletedAt = stateStore.observedCompletedAt()
+        if (observedCompletedAt == null) {
+            stateStore.markObserved(status.lastCompletedAt)
+            return null
+        }
+        if (!GoogleDriveVerificationHistoryRecoveryPolicyV130.hasNewFinalization(status, observedCompletedAt)) {
+            return null
+        }
+
         val historyStore = GoogleDriveSyncVerificationHistoryStore(appContext)
         val record = GoogleDriveVerificationHistoryRecoveryPolicyV130.recoverableRecord(
             status = status,
             history = historyStore.load(),
-        ) ?: return null
-        historyStore.append(record)
+        )
+        if (record != null) {
+            historyStore.append(record)
+        }
+        stateStore.markObserved(status.lastCompletedAt)
         return record
+    }
+
+    private fun markCurrentFinalizationObserved(context: Context) {
+        val status = GoogleDriveDirectSyncStatusStore(context).load()
+        if (!status.running) {
+            GoogleDriveVerificationHistoryRecoveryStateStoreV130(context)
+                .markObserved(status.lastCompletedAt)
+        }
     }
 }
 
 class GoogleDriveVerificationHistoryRecoveryProviderV130 : ContentProvider() {
     override fun onCreate(): Boolean {
         val appContext = context?.applicationContext ?: return false
-        runCatching { GoogleDriveVerificationHistoryRecoveryV130.reconcile(appContext) }
+        runCatching { GoogleDriveVerificationHistoryRecoveryV130.install(appContext) }
         return true
     }
 
