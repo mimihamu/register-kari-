@@ -106,6 +106,7 @@ object GoogleDriveVerificationHistoryRecoveryV130 {
 
     @Synchronized
     fun install(context: Context): GoogleDriveSyncVerificationRecord? {
+        if (GoogleDriveStartupRecoveryBarrierV132.isBlocked()) return null
         val appContext = context.applicationContext
         if (installedListener == null) {
             val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -121,12 +122,15 @@ object GoogleDriveVerificationHistoryRecoveryV130 {
     }
 
     fun reconcile(context: Context): GoogleDriveSyncVerificationRecord? {
+        if (GoogleDriveStartupRecoveryBarrierV132.isBlocked()) return null
         val appContext = context.applicationContext
         val status = GoogleDriveDirectSyncStatusStore(appContext).load()
         val stateStore = GoogleDriveVerificationHistoryRecoveryStateStoreV130(appContext)
         val observedCompletedAt = stateStore.observedCompletedAt()
         if (observedCompletedAt == null) {
-            stateStore.markObservedDurably(status.lastCompletedAt)
+            check(stateStore.markObservedDurably(status.lastCompletedAt)) {
+                "Drive verification history recovery baselineを永続化できませんでした"
+            }
             return null
         }
         if (!GoogleDriveVerificationHistoryRecoveryPolicyV130.hasNewFinalization(status, observedCompletedAt)) {
@@ -146,6 +150,7 @@ object GoogleDriveVerificationHistoryRecoveryV130 {
     }
 
     private fun markCurrentFinalizationObserved(context: Context) {
+        if (GoogleDriveStartupRecoveryBarrierV132.isBlocked()) return
         val status = GoogleDriveDirectSyncStatusStore(context).load()
         if (!status.running) {
             GoogleDriveVerificationHistoryRecoveryStateStoreV130(context)
@@ -157,7 +162,14 @@ object GoogleDriveVerificationHistoryRecoveryV130 {
 class GoogleDriveVerificationHistoryRecoveryProviderV130 : ContentProvider() {
     override fun onCreate(): Boolean {
         val appContext = context?.applicationContext ?: return false
-        runCatching { GoogleDriveVerificationHistoryRecoveryV130.install(appContext) }
+        if (GoogleDriveStartupRecoveryBarrierV132.isBlocked()) return true
+        val recovery = runCatching { GoogleDriveVerificationHistoryRecoveryV130.install(appContext) }
+        recovery.exceptionOrNull()?.let { error ->
+            GoogleDriveStartupRecoveryBarrierV132.block(
+                stage = "v1.30 verification-history startup recovery",
+                error = error,
+            )
+        }
         return true
     }
 

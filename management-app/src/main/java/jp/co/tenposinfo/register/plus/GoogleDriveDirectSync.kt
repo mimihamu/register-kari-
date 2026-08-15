@@ -500,6 +500,7 @@ class GoogleDriveDirectSyncRepository(
 
     fun synchronize(accessToken: String, forceReimport: Boolean = false): GoogleDriveDirectSyncResult =
         GoogleDriveSyncSingleFlightV121.run {
+            GoogleDriveStartupRecoveryBarrierV132.requireDriveSyncAllowed()
             val statusStore = GoogleDriveDirectSyncStatusStore(appContext)
             val runToken = statusStore.running()
             try {
@@ -709,6 +710,7 @@ class GoogleDriveDirectSyncRepository(
 class GoogleDriveDirectSyncWorker(context: Context, parameters: WorkerParameters) :
     Worker(context, parameters) {
     override fun doWork(): Result {
+        if (GoogleDriveStartupRecoveryBarrierV132.isBlocked()) return Result.success()
         val account = GoogleDriveAccountStore(applicationContext).load()
         if (account.email == null) return Result.success()
         val statusStore = GoogleDriveDirectSyncStatusStore(applicationContext)
@@ -727,19 +729,23 @@ class GoogleDriveDirectSyncWorker(context: Context, parameters: WorkerParameters
                 Result.success()
             },
             onFailure = { error ->
-                val category = GoogleDriveSyncErrorPolicy.classify(error)
-                statusStore.failed(
-                    category,
-                    "${GoogleDriveSyncErrorPolicy.message(category)}：${error.message ?: error.javaClass.simpleName}",
-                )
-                val finalizedStatus = statusStore.load()
-                historyStore.append(
-                    GoogleDriveWorkerVerificationRecordV127.failure(
-                        status = finalizedStatus,
-                        error = error,
-                    ),
-                )
-                if (category.retryable) Result.retry() else Result.success()
+                if (error is GoogleDriveStartupRecoveryBlockedException) {
+                    Result.success()
+                } else {
+                    val category = GoogleDriveSyncErrorPolicy.classify(error)
+                    statusStore.failed(
+                        category,
+                        "${GoogleDriveSyncErrorPolicy.message(category)}：${error.message ?: error.javaClass.simpleName}",
+                    )
+                    val finalizedStatus = statusStore.load()
+                    historyStore.append(
+                        GoogleDriveWorkerVerificationRecordV127.failure(
+                            status = finalizedStatus,
+                            error = error,
+                        ),
+                    )
+                    if (category.retryable) Result.retry() else Result.success()
+                }
             },
         )
     }
@@ -752,6 +758,7 @@ object GoogleDriveDirectSyncScheduler {
     fun setAutomaticSyncEnabled(context: Context, enabled: Boolean) {
         val appContext = context.applicationContext
         if (enabled) {
+            if (GoogleDriveStartupRecoveryBarrierV132.isBlocked()) return
             ensurePeriodic(appContext)
             enqueueStartup(appContext)
         } else {
@@ -761,6 +768,7 @@ object GoogleDriveDirectSyncScheduler {
     }
 
     fun ensurePeriodic(context: Context) {
+        if (GoogleDriveStartupRecoveryBarrierV132.isBlocked()) return
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .setRequiresStorageNotLow(true)
@@ -776,15 +784,18 @@ object GoogleDriveDirectSyncScheduler {
     }
 
     fun enqueueStartup(context: Context) {
+        if (GoogleDriveStartupRecoveryBarrierV132.isBlocked()) return
         if (!GoogleDriveDirectSyncStatusStore(context).load().autoSyncOnLaunch) return
         enqueueImmediate(context, ExistingWorkPolicy.KEEP)
     }
 
     fun enqueueNow(context: Context) {
+        if (GoogleDriveStartupRecoveryBarrierV132.isBlocked()) return
         enqueueImmediate(context, ExistingWorkPolicy.APPEND_OR_REPLACE)
     }
 
     private fun enqueueImmediate(context: Context, policy: ExistingWorkPolicy) {
+        if (GoogleDriveStartupRecoveryBarrierV132.isBlocked()) return
         val request = OneTimeWorkRequestBuilder<GoogleDriveDirectSyncWorker>()
             .setConstraints(
                 Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build(),
@@ -797,6 +808,7 @@ object GoogleDriveDirectSyncScheduler {
 class GoogleDriveDirectSyncBootstrapProvider : ContentProvider() {
     override fun onCreate(): Boolean {
         val appContext = context?.applicationContext ?: return false
+        if (GoogleDriveStartupRecoveryBarrierV132.isBlocked()) return true
         runCatching {
             val enabled = GoogleDriveDirectSyncStatusStore(appContext).load().autoSyncOnLaunch
             GoogleDriveDirectSyncScheduler.setAutomaticSyncEnabled(appContext, enabled)

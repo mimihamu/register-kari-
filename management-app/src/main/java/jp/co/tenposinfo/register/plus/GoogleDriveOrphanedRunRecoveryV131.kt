@@ -69,7 +69,14 @@ object GoogleDriveOrphanedRunRecoveryV131 {
 class GoogleDriveOrphanedRunRecoveryProviderV131 : ContentProvider() {
     override fun onCreate(): Boolean {
         val appContext = context?.applicationContext ?: return false
-        runCatching { GoogleDriveOrphanedRunRecoveryV131.recover(appContext) }
+        GoogleDriveStartupRecoveryBarrierV132.resetForProcessStart()
+        val recovery = runCatching { GoogleDriveOrphanedRunRecoveryV131.recover(appContext) }
+        recovery.exceptionOrNull()?.let { error ->
+            GoogleDriveStartupRecoveryBarrierV132.block(
+                stage = "v1.31 orphaned-run startup recovery",
+                error = error,
+            )
+        }
         return true
     }
 
