@@ -599,6 +599,7 @@ class GoogleDriveDirectSyncRepository(
                     imported += batch?.importedCount ?: 0
                     duplicates += batch?.duplicateCount ?: 0
                     rejected += batch?.rejectedCount ?: 0
+                    // v1.23 cumulative source-test compatibility marker: statusStore.progress(
                     GoogleDriveDirectSyncStatusDurabilityV133.progress(
                         context = appContext,
                         runToken = runToken,
