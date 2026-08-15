@@ -79,6 +79,7 @@ concurrency:
 # V129DriveVerificationHistoryMutationGateTest.kt
 # V130DriveVerificationHistoryRecoveryTest.kt
 # V131DriveOrphanedRunRecoveryTest.kt
+# V132DriveStartupRecoveryFailureBarrierTest.kt
 
 # Cumulative feature markers retained for source-level compatibility gates.
 # SETTLEMENT_RECONCILIATION=true
@@ -138,6 +139,9 @@ concurrency:
 # DRIVE_ORPHANED_RUN_STARTUP_RECOVERY=true
 # DRIVE_ORPHANED_RUN_PROGRESS_PRESERVED=true
 # DRIVE_ORPHANED_RUN_BEFORE_BOOTSTRAP=true
+# DRIVE_STARTUP_RECOVERY_FAILURE_BARRIER=true
+# DRIVE_STARTUP_RECOVERY_FAIL_CLOSED=true
+# DRIVE_STARTUP_RECOVERY_EXISTING_WORK_BLOCKED=true
 # IMPORT_PROCESSOR_SIGNATURE=true
 # IMPORT_COMPATIBILITY_AUTO_REPLAY=true
 # IMPORT_TRANSPORT_FINGERPRINT_RESET_ATOMIC=true
@@ -270,6 +274,7 @@ concurrency:
 # REAL_DEVICE_DRIVE_HISTORY_CONCURRENCY_VERIFICATION=deferred-final-acceptance
 # REAL_DEVICE_DRIVE_HISTORY_CRASH_RECOVERY_VERIFICATION=deferred-final-acceptance
 # REAL_DEVICE_DRIVE_ORPHANED_RUN_RECOVERY_VERIFICATION=deferred-final-acceptance
+# REAL_DEVICE_DRIVE_STARTUP_RECOVERY_FAILURE_BARRIER_VERIFICATION=deferred-final-acceptance
 
 jobs:
   build-debug-apk:
@@ -303,9 +308,10 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v1.31 sources
+      - name: Verify cumulative v0.14-v1.32 sources
         shell: bash
         env:
+          V131_FINAL_HEAD: 6cdc8de0f53a085f0f6f3a79a77219f42139b969
           V130_FINAL_HEAD: 9cbb234e04fb5a7917b105f4d76fbf1850691a49
           V129_FINAL_HEAD: 81ccc9caef5b949b6d9e4a6ed83dc3f6f4434dfc
           V128_FINAL_HEAD: 0ee6fdeb430a3222e6b60f23035331b03a2b33fe
@@ -341,15 +347,15 @@ jobs:
           V093_FINAL_HEAD: 5c8d0d95175bb7dd6cf8b70f52b31162c415a5e7
         run: |
           set -euo pipefail
-          git show "$V130_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v130-build-apk.yml
+          git show "$V131_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v131-build-apk.yml
           awk '
-            /^      - name: Verify cumulative v0.14-v1.30 sources/ { capture=1; next }
+            /^      - name: Verify cumulative v0.14-v1.31 sources/ { capture=1; next }
             capture && /^      - name: Verify launcher and orientation configuration/ { exit }
             capture && /^        run: \|/ { inrun=1; next }
             capture && inrun { sub(/^          /, ""); print }
-          ' /tmp/v130-build-apk.yml > /tmp/v130-cumulative-checks.sh
-          test -s /tmp/v130-cumulative-checks.sh
-          bash -euxo pipefail /tmp/v130-cumulative-checks.sh
+          ' /tmp/v131-build-apk.yml > /tmp/v131-cumulative-checks.sh
+          test -s /tmp/v131-cumulative-checks.sh
+          bash -euxo pipefail /tmp/v131-cumulative-checks.sh
 
           python3 - <<'PY'
           from pathlib import Path
@@ -363,48 +369,74 @@ jobs:
 
           app_build = active_gradle('app/build.gradle.kts')
           plus_build = active_gradle('management-app/build.gradle.kts')
-          assert 'versionCode = 161' in app_build
-          assert 'versionName = "1.31.0-dev.1"' in app_build
-          assert 'versionCode = 30' in plus_build
-          assert 'versionName = "0.30.0-dev.1"' in plus_build
+          assert 'versionCode = 162' in app_build
+          assert 'versionName = "1.32.0-dev.1"' in app_build
+          assert 'versionCode = 31' in plus_build
+          assert 'versionName = "0.31.0-dev.1"' in plus_build
 
+          barrier = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveStartupRecoveryBarrierV132.kt').read_text()
           orphan = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveOrphanedRunRecoveryV131.kt').read_text()
+          history = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveVerificationHistoryRecoveryV130.kt').read_text()
+          direct = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt').read_text()
           manifest = Path('management-app/src/main/AndroidManifest.xml').read_text()
-          test = Path('management-app/src/test/java/jp/co/tenposinfo/register/plus/V131DriveOrphanedRunRecoveryTest.kt').read_text()
-          docs = Path('docs/V1.31_DRIVE_ORPHANED_RUN_STARTUP_RECOVERY.md').read_text()
+          test = Path('management-app/src/test/java/jp/co/tenposinfo/register/plus/V132DriveStartupRecoveryFailureBarrierTest.kt').read_text()
+          docs = Path('docs/V1.32_DRIVE_STARTUP_RECOVERY_FAILURE_BARRIER.md').read_text()
 
-          assert 'fun shouldRecoverAtProcessStart' in orphan
-          assert '= status.running' in orphan
-          recover = orphan.split('fun recover(context: Context)', 1)[1].split('class GoogleDriveOrphanedRunRecoveryProviderV131', 1)[0]
-          recover_stale = recover.index('statusStore.recoverStaleRun(')
-          load_finalized = recover.index('val finalized = statusStore.load()', recover_stale)
-          build_record = recover.index('recordFromRecoveredStatus(finalized)', load_finalized)
-          append_history = recover.index('GoogleDriveSyncVerificationHistoryStore(appContext).append(record)', build_record)
-          assert recover_stale >= 0
-          assert load_finalized > recover_stale
-          assert build_record > load_finalized
-          assert append_history > build_record
-          assert 'GoogleDriveVerificationHistoryRecoveryPolicyV130.recordFromFinalizedStatus(status)' in orphan
-          assert '前回process中断run' in orphan
+          assert 'object GoogleDriveStartupRecoveryBarrierV132' in barrier
+          assert '@Volatile' in barrier
+          assert 'fun resetForProcessStart()' in barrier
+          assert 'fun block(stage: String, error: Throwable)' in barrier
+          assert 'fun requireDriveSyncAllowed()' in barrier
+          assert 'GoogleDriveStartupRecoveryBlockedException' in barrier
 
-          orphan_provider = manifest.split('android:name=".GoogleDriveOrphanedRunRecoveryProviderV131"', 1)[1].split('/>', 1)[0]
-          history_provider = manifest.split('android:name=".GoogleDriveVerificationHistoryRecoveryProviderV130"', 1)[1].split('/>', 1)[0]
-          bootstrap_provider = manifest.split('android:name=".GoogleDriveDirectSyncBootstrapProvider"', 1)[1].split('/>', 1)[0]
-          assert 'android:initOrder="300"' in orphan_provider
-          assert 'android:initOrder="200"' in history_provider
-          assert 'android:initOrder="100"' in bootstrap_provider
+          orphan_provider = orphan.split('class GoogleDriveOrphanedRunRecoveryProviderV131', 1)[1]
+          reset = orphan_provider.index('GoogleDriveStartupRecoveryBarrierV132.resetForProcessStart()')
+          recovery = orphan_provider.index('val recovery = runCatching', reset)
+          block = orphan_provider.index('GoogleDriveStartupRecoveryBarrierV132.block(', recovery)
+          assert reset >= 0
+          assert recovery > reset
+          assert block > recovery
+
+          install = history.split('fun install(context: Context)', 1)[1].split('fun reconcile(context: Context)', 1)[0]
+          assert 'GoogleDriveStartupRecoveryBarrierV132.isBlocked()' in install
+          assert install.index('GoogleDriveStartupRecoveryBarrierV132.isBlocked()') < install.index('OnSharedPreferenceChangeListener')
+          reconcile = history.split('fun reconcile(context: Context)', 1)[1].split('private fun markCurrentFinalizationObserved', 1)[0]
+          assert 'GoogleDriveStartupRecoveryBarrierV132.isBlocked()' in reconcile
+          assert 'check(stateStore.markObservedDurably(status.lastCompletedAt))' in reconcile
+          history_provider = history.split('class GoogleDriveVerificationHistoryRecoveryProviderV130', 1)[1]
+          assert 'GoogleDriveStartupRecoveryBarrierV132.isBlocked()' in history_provider
+          assert 'GoogleDriveStartupRecoveryBarrierV132.block(' in history_provider
+
+          repository = direct.split('class GoogleDriveDirectSyncRepository', 1)[1].split('class GoogleDriveDirectSyncWorker', 1)[0]
+          assert repository.index('GoogleDriveStartupRecoveryBarrierV132.requireDriveSyncAllowed()') < repository.index('val runToken = statusStore.running()')
+          worker = direct.split('class GoogleDriveDirectSyncWorker', 1)[1].split('object GoogleDriveDirectSyncScheduler', 1)[0]
+          assert 'if (GoogleDriveStartupRecoveryBarrierV132.isBlocked()) return Result.success()' in worker
+          assert worker.index('if (GoogleDriveStartupRecoveryBarrierV132.isBlocked()) return Result.success()') < worker.index('GoogleDriveAccountStore(applicationContext).load()')
+          assert worker.index('error is GoogleDriveStartupRecoveryBlockedException') < worker.index('statusStore.failed(')
+          scheduler = direct.split('object GoogleDriveDirectSyncScheduler', 1)[1].split('class GoogleDriveDirectSyncBootstrapProvider', 1)[0]
+          assert scheduler.count('GoogleDriveStartupRecoveryBarrierV132.isBlocked()') >= 5
+          bootstrap = direct.split('class GoogleDriveDirectSyncBootstrapProvider', 1)[1]
+          assert bootstrap.index('GoogleDriveStartupRecoveryBarrierV132.isBlocked()') < bootstrap.index('GoogleDriveDirectSyncScheduler.setAutomaticSyncEnabled')
+
+          orphan_manifest = manifest.split('android:name=".GoogleDriveOrphanedRunRecoveryProviderV131"', 1)[1].split('/>', 1)[0]
+          history_manifest = manifest.split('android:name=".GoogleDriveVerificationHistoryRecoveryProviderV130"', 1)[1].split('/>', 1)[0]
+          bootstrap_manifest = manifest.split('android:name=".GoogleDriveDirectSyncBootstrapProvider"', 1)[1].split('/>', 1)[0]
+          assert 'android:initOrder="300"' in orphan_manifest
+          assert 'android:initOrder="200"' in history_manifest
+          assert 'android:initOrder="100"' in bootstrap_manifest
           assert manifest.index('GoogleDriveOrphanedRunRecoveryProviderV131') < manifest.index('GoogleDriveVerificationHistoryRecoveryProviderV130') < manifest.index('GoogleDriveDirectSyncBootstrapProvider')
 
-          assert 'persistedRunningStatusIsRecoverableAtFreshProcessStart' in test
-          assert 'finalizedStatusIsNotTreatedAsOrphanedRun' in test
-          assert 'recoveredRunHistoryPreservesCommittedProgressAndMarksFailure' in test
-          assert 'running=true' in docs
+          assert 'barrierBlocksDriveSyncUntilNextProcessReset' in test
+          assert 'blockedBarrierRejectsRepositoryStartWithoutStatusMutation' in test
+          assert 'startupProvidersAndAllDriveStartPathsAreFailClosed' in test
+          assert 'fail closed' in docs
+          assert 'statusStore.running()' in docs
           assert '300 -> 200 -> 100' in docs
           PY
 
-          grep -Fq 'DRIVE_ORPHANED_RUN_STARTUP_RECOVERY=true' .github/workflows/build-apk.yml
-          grep -Fq 'DRIVE_ORPHANED_RUN_PROGRESS_PRESERVED=true' .github/workflows/build-apk.yml
-          grep -Fq 'DRIVE_ORPHANED_RUN_BEFORE_BOOTSTRAP=true' .github/workflows/build-apk.yml
+          grep -Fq 'DRIVE_STARTUP_RECOVERY_FAILURE_BARRIER=true' .github/workflows/build-apk.yml
+          grep -Fq 'DRIVE_STARTUP_RECOVERY_FAIL_CLOSED=true' .github/workflows/build-apk.yml
+          grep -Fq 'DRIVE_STARTUP_RECOVERY_EXISTING_WORK_BLOCKED=true' .github/workflows/build-apk.yml
 
       - name: Verify launcher and orientation configuration
         shell: bash
@@ -432,10 +464,10 @@ jobs:
       - name: Verify built APK release identity and integrity
         shell: bash
         env:
-          POS_VERSION_CODE: 161
-          POS_VERSION_NAME: 1.31.0-dev.1
-          PLUS_VERSION_CODE: 30
-          PLUS_VERSION_NAME: 0.30.0-dev.1
+          POS_VERSION_CODE: 162
+          POS_VERSION_NAME: 1.32.0-dev.1
+          PLUS_VERSION_CODE: 31
+          PLUS_VERSION_NAME: 0.31.0-dev.1
           BUILD_TOOLS_VERSION: 36.0.0
         run: |
           set -euo pipefail
@@ -448,8 +480,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v1.31.0_dev1_drive_orphaned_run_startup_recovery_debug.apk
-          plus_apk=artifacts/TSUGUREGI_PLUS_v0.30.0_dev1_drive_orphaned_run_startup_recovery_debug.apk
+          register_apk=artifacts/TSUGUREGI_v1.32.0_dev1_drive_startup_recovery_failure_barrier_debug.apk
+          plus_apk=artifacts/TSUGUREGI_PLUS_v0.31.0_dev1_drive_startup_recovery_failure_barrier_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
           cp management-app/build/outputs/apk/debug/management-app-debug.apk "$plus_apk"
@@ -461,10 +493,10 @@ jobs:
           stat --printf='MANAGEMENT_APP_APK_SIZE_BYTES=%s\n' "$plus_apk" | tee -a artifacts/build-summary.txt
           stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' "$cd_apk" | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=1.31.0-dev.1
-          REGISTER_VERSION_CODE=161
-          MANAGEMENT_APP_VERSION_NAME=0.30.0-dev.1
-          MANAGEMENT_APP_VERSION_CODE=30
+          REGISTER_VERSION_NAME=1.32.0-dev.1
+          REGISTER_VERSION_CODE=162
+          MANAGEMENT_APP_VERSION_NAME=0.31.0-dev.1
+          MANAGEMENT_APP_VERSION_CODE=31
           DRIVE_REMOTE_VERSION_FINGERPRINT=true
           DRIVE_PAGINATION_COMPLETE=true
           DRIVE_SYNC_SINGLE_FLIGHT=true
@@ -488,12 +520,16 @@ jobs:
           DRIVE_ORPHANED_RUN_STARTUP_RECOVERY=true
           DRIVE_ORPHANED_RUN_PROGRESS_PRESERVED=true
           DRIVE_ORPHANED_RUN_BEFORE_BOOTSTRAP=true
+          DRIVE_STARTUP_RECOVERY_FAILURE_BARRIER=true
+          DRIVE_STARTUP_RECOVERY_FAIL_CLOSED=true
+          DRIVE_STARTUP_RECOVERY_EXISTING_WORK_BLOCKED=true
           REAL_DEVICE_DRIVE_FAILURE_HISTORY_VERIFICATION=deferred-final-acceptance
           REAL_DEVICE_DRIVE_WORKER_HISTORY_VERIFICATION=deferred-final-acceptance
           REAL_DEVICE_DRIVE_FAILURE_HISTORY_OWNERSHIP_VERIFICATION=deferred-final-acceptance
           REAL_DEVICE_DRIVE_HISTORY_CONCURRENCY_VERIFICATION=deferred-final-acceptance
           REAL_DEVICE_DRIVE_HISTORY_CRASH_RECOVERY_VERIFICATION=deferred-final-acceptance
           REAL_DEVICE_DRIVE_ORPHANED_RUN_RECOVERY_VERIFICATION=deferred-final-acceptance
+          REAL_DEVICE_DRIVE_STARTUP_RECOVERY_FAILURE_BARRIER_VERIFICATION=deferred-final-acceptance
           EOF
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
@@ -501,7 +537,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v1.31.0-dev1-drive-orphaned-run-startup-recovery-apks
+          name: TSUGUREGI-v1.32.0-dev1-drive-startup-recovery-failure-barrier-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
