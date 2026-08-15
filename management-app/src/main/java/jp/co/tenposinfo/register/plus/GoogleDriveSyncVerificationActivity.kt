@@ -157,7 +157,40 @@ class GoogleDriveSyncVerificationHistoryStore(context: Context) {
         Context.MODE_PRIVATE,
     )
 
-    fun load(): List<GoogleDriveSyncVerificationRecord> {
+    fun load(): List<GoogleDriveSyncVerificationRecord> =
+        GoogleDriveVerificationHistoryMutationGateV129.exclusive {
+            loadUnlocked()
+        }
+
+    fun append(record: GoogleDriveSyncVerificationRecord): List<GoogleDriveSyncVerificationRecord> =
+        GoogleDriveVerificationHistoryMutationGateV129.exclusive {
+            val records = (listOf(record) + loadUnlocked()).take(MAX_HISTORY)
+            val array = JSONArray()
+            records.forEach { item ->
+                array.put(
+                    JSONObject()
+                        .put("recordedAt", item.recordedAt)
+                        .put("mode", item.mode.name)
+                        .put("success", item.success)
+                        .put("listedCount", item.listedCount)
+                        .put("importedCount", item.importedCount)
+                        .put("duplicateCount", item.duplicateCount)
+                        .put("rejectedCount", item.rejectedCount)
+                        .put("errorCount", item.errorCount)
+                        .put("message", item.message.take(240)),
+                )
+            }
+            preferences.edit().putString("history", array.toString()).apply()
+            records
+        }
+
+    fun clear(): List<GoogleDriveSyncVerificationRecord> =
+        GoogleDriveVerificationHistoryMutationGateV129.exclusive {
+            preferences.edit().remove("history").apply()
+            emptyList()
+        }
+
+    private fun loadUnlocked(): List<GoogleDriveSyncVerificationRecord> {
         val raw = preferences.getString("history", null) ?: return emptyList()
         return runCatching {
             val array = JSONArray(raw)
@@ -182,32 +215,6 @@ class GoogleDriveSyncVerificationHistoryStore(context: Context) {
                 }
             }
         }.getOrDefault(emptyList())
-    }
-
-    fun append(record: GoogleDriveSyncVerificationRecord): List<GoogleDriveSyncVerificationRecord> {
-        val records = (listOf(record) + load()).take(MAX_HISTORY)
-        val array = JSONArray()
-        records.forEach { item ->
-            array.put(
-                JSONObject()
-                    .put("recordedAt", item.recordedAt)
-                    .put("mode", item.mode.name)
-                    .put("success", item.success)
-                    .put("listedCount", item.listedCount)
-                    .put("importedCount", item.importedCount)
-                    .put("duplicateCount", item.duplicateCount)
-                    .put("rejectedCount", item.rejectedCount)
-                    .put("errorCount", item.errorCount)
-                    .put("message", item.message.take(240)),
-            )
-        }
-        preferences.edit().putString("history", array.toString()).apply()
-        return records
-    }
-
-    fun clear(): List<GoogleDriveSyncVerificationRecord> {
-        preferences.edit().remove("history").apply()
-        return emptyList()
     }
 
     companion object {
