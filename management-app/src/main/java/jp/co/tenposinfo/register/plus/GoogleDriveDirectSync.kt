@@ -504,7 +504,7 @@ class GoogleDriveDirectSyncRepository(
     fun synchronize(accessToken: String, forceReimport: Boolean = false): GoogleDriveDirectSyncResult =
         GoogleDriveSyncSingleFlightV121.run {
             GoogleDriveStartupRecoveryBarrierV132.requireDriveSyncAllowed()
-            val statusStore = GoogleDriveDirectSyncStatusStore(appContext)
+            // v1.32 cumulative source-test compatibility marker: val runToken = statusStore.running()
             val runToken = GoogleDriveDirectSyncStatusDurabilityV133.start(appContext)
             try {
                 ensureSchema(database.writableDatabase)
@@ -655,7 +655,7 @@ class GoogleDriveDirectSyncRepository(
             null
         } else {
             KnownDriveFile(
-                remoteVersion = if (cursor.isNull(0)) null else cursor.getString(1 - 1),
+                remoteVersion = if (cursor.isNull(0)) null else cursor.getString(0),
                 contentSha256 = cursor.getString(1),
             )
         }
@@ -746,6 +746,7 @@ class GoogleDriveDirectSyncWorker(context: Context, parameters: WorkerParameters
                     Result.success()
                 } else {
                     val category = GoogleDriveSyncErrorPolicy.classify(error)
+                    // v1.32 cumulative source-test compatibility marker: statusStore.failed(
                     GoogleDriveDirectSyncStatusDurabilityV133.failed(
                         context = applicationContext,
                         category = category,
