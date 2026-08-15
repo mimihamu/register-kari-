@@ -86,6 +86,11 @@ class GoogleDriveVerificationHistoryRecoveryStateStoreV130(context: Context) {
             .apply()
     }
 
+    fun markObservedDurably(completedAt: Long?): Boolean =
+        preferences.edit()
+            .putLong(KEY_OBSERVED_COMPLETED_AT, completedAt ?: 0L)
+            .commit()
+
     companion object {
         private const val PREFS_NAME = "tsuguregi_plus_drive_history_recovery_v130"
         private const val KEY_OBSERVED_COMPLETED_AT = "observed_completed_at"
@@ -121,7 +126,7 @@ object GoogleDriveVerificationHistoryRecoveryV130 {
         val stateStore = GoogleDriveVerificationHistoryRecoveryStateStoreV130(appContext)
         val observedCompletedAt = stateStore.observedCompletedAt()
         if (observedCompletedAt == null) {
-            stateStore.markObserved(status.lastCompletedAt)
+            stateStore.markObservedDurably(status.lastCompletedAt)
             return null
         }
         if (!GoogleDriveVerificationHistoryRecoveryPolicyV130.hasNewFinalization(status, observedCompletedAt)) {
