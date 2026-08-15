@@ -29,7 +29,7 @@ object GoogleDriveVerificationHistoryRecoveryPolicyV130 {
     fun matchesFinalizedStatus(
         record: GoogleDriveSyncVerificationRecord,
         status: GoogleDriveDirectSyncStatus,
-        completedAt: Long = status.lastCompletedAt ?: return false,
+        completedAt: Long,
     ): Boolean =
         record.mode == GoogleDriveResolvedMode.DRIVE_API &&
             record.recordedAt >= completedAt &&
