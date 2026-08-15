@@ -75,6 +75,7 @@ concurrency:
 # V125DriveFailureProgressOwnershipTest.kt
 # V126DriveFailureHistoryConsistencyTest.kt
 # V127DriveWorkerVerificationHistoryTest.kt
+# V128DriveFailureHistoryRunOwnershipTest.kt
 
 # Cumulative feature markers retained for source-level compatibility gates.
 # SETTLEMENT_RECONCILIATION=true
@@ -124,6 +125,8 @@ concurrency:
 # DRIVE_FAILURE_HISTORY_FINALIZED_STATUS=true
 # DRIVE_WORKER_VERIFICATION_HISTORY=true
 # DRIVE_WORKER_HISTORY_FINALIZED_STATUS=true
+# DRIVE_FAILURE_HISTORY_RUN_OWNERSHIP=true
+# DRIVE_FAILURE_HISTORY_FOREIGN_STATUS_NOT_ATTRIBUTED=true
 # IMPORT_PROCESSOR_SIGNATURE=true
 # IMPORT_COMPATIBILITY_AUTO_REPLAY=true
 # IMPORT_TRANSPORT_FINGERPRINT_RESET_ATOMIC=true
@@ -252,6 +255,7 @@ concurrency:
 # REAL_DEVICE_DRIVE_FAILURE_PROGRESS_VERIFICATION=deferred-final-acceptance
 # REAL_DEVICE_DRIVE_FAILURE_HISTORY_VERIFICATION=deferred-final-acceptance
 # REAL_DEVICE_DRIVE_WORKER_HISTORY_VERIFICATION=deferred-final-acceptance
+# REAL_DEVICE_DRIVE_FAILURE_HISTORY_OWNERSHIP_VERIFICATION=deferred-final-acceptance
 
 jobs:
   build-debug-apk:
@@ -285,9 +289,10 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v1.27 sources
+      - name: Verify cumulative v0.14-v1.28 sources
         shell: bash
         env:
+          V127_FINAL_HEAD: 908f90f29f15857831bd742e29bd2db53c3807dd
           V126_FINAL_HEAD: 93071841b79d1e9a07fb589b8af2246e82b12807
           V125_FINAL_HEAD: 6d72ca30e1f830d2ff728621581939e08f29f35d
           V124_FINAL_HEAD: 97ca2424e312970c4fe2ec3f9d33dedcdabd774c
@@ -319,15 +324,15 @@ jobs:
           V093_FINAL_HEAD: 5c8d0d95175bb7dd6cf8b70f52b31162c415a5e7
         run: |
           set -euo pipefail
-          git show "$V126_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v126-build-apk.yml
+          git show "$V127_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v127-build-apk.yml
           awk '
-            /^      - name: Verify cumulative v0.14-v1.26 sources/ { capture=1; next }
+            /^      - name: Verify cumulative v0.14-v1.27 sources/ { capture=1; next }
             capture && /^      - name: Verify launcher and orientation configuration/ { exit }
             capture && /^        run: \|/ { inrun=1; next }
             capture && inrun { sub(/^          /, ""); print }
-          ' /tmp/v126-build-apk.yml > /tmp/v126-cumulative-checks.sh
-          test -s /tmp/v126-cumulative-checks.sh
-          bash -euxo pipefail /tmp/v126-cumulative-checks.sh
+          ' /tmp/v127-build-apk.yml > /tmp/v127-cumulative-checks.sh
+          test -s /tmp/v127-cumulative-checks.sh
+          bash -euxo pipefail /tmp/v127-cumulative-checks.sh
 
           python3 - <<'PY'
           from pathlib import Path
@@ -341,34 +346,30 @@ jobs:
 
           app_build = active_gradle('app/build.gradle.kts')
           plus_build = active_gradle('management-app/build.gradle.kts')
-          assert 'versionCode = 157' in app_build
-          assert 'versionName = "1.27.0-dev.1"' in app_build
-          assert 'versionCode = 26' in plus_build
-          assert 'versionName = "0.26.0-dev.1"' in plus_build
+          assert 'versionCode = 158' in app_build
+          assert 'versionName = "1.28.0-dev.1"' in app_build
+          assert 'versionCode = 27' in plus_build
+          assert 'versionName = "0.27.0-dev.1"' in plus_build
 
-          worker_source = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt').read_text()
-          mapper = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveWorkerVerificationV127.kt').read_text()
-          test = Path('management-app/src/test/java/jp/co/tenposinfo/register/plus/V127DriveWorkerVerificationHistoryTest.kt').read_text()
-          docs = Path('docs/V1.27_DRIVE_WORKER_VERIFICATION_HISTORY.md').read_text()
+          helper = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveFailureVerificationV126.kt').read_text()
+          test = Path('management-app/src/test/java/jp/co/tenposinfo/register/plus/V128DriveFailureHistoryRunOwnershipTest.kt').read_text()
+          docs = Path('docs/V1.28_DRIVE_FAILURE_HISTORY_RUN_OWNERSHIP.md').read_text()
 
-          worker = worker_source.split('class GoogleDriveDirectSyncWorker', 1)[1].split('object GoogleDriveDirectSyncScheduler', 1)[0]
-          success_load = worker.index('val finalizedStatus = statusStore.load()')
-          success_record = worker.index('GoogleDriveWorkerVerificationRecordV127.success', success_load)
-          failure = worker.index('onFailure = { error ->')
-          failed = worker.index('statusStore.failed(', failure)
-          failure_load = worker.index('val finalizedStatus = statusStore.load()', failed)
-          failure_record = worker.index('GoogleDriveWorkerVerificationRecordV127.failure', failure_load)
-          retry = worker.index('if (category.retryable)', failure_record)
-          assert success_record > success_load >= 0
-          assert failed > failure >= 0 and failure_load > failed and failure_record > failure_load and retry > failure_record
-          assert 'success = status.errorCount == 0 && status.rejectedCount == 0' in mapper
-          assert 'GoogleDriveFailureVerificationRecordV126.fromDirectStatus' in mapper
-          assert 'failedWorkerRecordKeepsFinalizedPartialProgressAndMinimumErrorCount' in test
-          assert 'WorkManagerによるDrive API同期成功時も同期検証履歴を1件追加' in docs
+          assert 'internal fun ownsFinalizedFailure' in helper
+          assert '!status.running' in helper
+          assert 'status.lastFailureCategory != null' in helper
+          assert 'status.lastFailureCategory == GoogleDriveSyncErrorPolicy.classify(error)' in helper
+          assert '件数は関連付けていません' in helper
+          assert 'activeForeignRunCountersAreNotAttributedToPreflightFailure' in test
+          assert 'newerSuccessfulStatusIsNotAttributedToOlderFailure' in test
+          assert 'differentFailureCategoryIsNotTreatedAsOwnedFinalization' in test
+          assert 'matchingFinalizedFailureStillKeepsCommittedProgress' in test
+          assert 'running=true' in docs
+          assert '別run' in docs
           PY
 
-          grep -Fq 'DRIVE_WORKER_VERIFICATION_HISTORY=true' .github/workflows/build-apk.yml
-          grep -Fq 'DRIVE_WORKER_HISTORY_FINALIZED_STATUS=true' .github/workflows/build-apk.yml
+          grep -Fq 'DRIVE_FAILURE_HISTORY_RUN_OWNERSHIP=true' .github/workflows/build-apk.yml
+          grep -Fq 'DRIVE_FAILURE_HISTORY_FOREIGN_STATUS_NOT_ATTRIBUTED=true' .github/workflows/build-apk.yml
 
       - name: Verify launcher and orientation configuration
         shell: bash
@@ -396,10 +397,10 @@ jobs:
       - name: Verify built APK release identity and integrity
         shell: bash
         env:
-          POS_VERSION_CODE: 157
-          POS_VERSION_NAME: 1.27.0-dev.1
-          PLUS_VERSION_CODE: 26
-          PLUS_VERSION_NAME: 0.26.0-dev.1
+          POS_VERSION_CODE: 158
+          POS_VERSION_NAME: 1.28.0-dev.1
+          PLUS_VERSION_CODE: 27
+          PLUS_VERSION_NAME: 0.27.0-dev.1
           BUILD_TOOLS_VERSION: 36.0.0
         run: |
           set -euo pipefail
@@ -412,8 +413,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v1.27.0_dev1_drive_worker_verification_history_debug.apk
-          plus_apk=artifacts/TSUGUREGI_PLUS_v0.26.0_dev1_drive_worker_verification_history_debug.apk
+          register_apk=artifacts/TSUGUREGI_v1.28.0_dev1_drive_failure_history_run_ownership_debug.apk
+          plus_apk=artifacts/TSUGUREGI_PLUS_v0.27.0_dev1_drive_failure_history_run_ownership_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
           cp management-app/build/outputs/apk/debug/management-app-debug.apk "$plus_apk"
@@ -425,10 +426,10 @@ jobs:
           stat --printf='MANAGEMENT_APP_APK_SIZE_BYTES=%s\n' "$plus_apk" | tee -a artifacts/build-summary.txt
           stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' "$cd_apk" | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=1.27.0-dev.1
-          REGISTER_VERSION_CODE=157
-          MANAGEMENT_APP_VERSION_NAME=0.26.0-dev.1
-          MANAGEMENT_APP_VERSION_CODE=26
+          REGISTER_VERSION_NAME=1.28.0-dev.1
+          REGISTER_VERSION_CODE=158
+          MANAGEMENT_APP_VERSION_NAME=0.27.0-dev.1
+          MANAGEMENT_APP_VERSION_CODE=27
           DRIVE_REMOTE_VERSION_FINGERPRINT=true
           DRIVE_PAGINATION_COMPLETE=true
           DRIVE_SYNC_SINGLE_FLIGHT=true
@@ -442,8 +443,11 @@ jobs:
           DRIVE_FAILURE_HISTORY_FINALIZED_STATUS=true
           DRIVE_WORKER_VERIFICATION_HISTORY=true
           DRIVE_WORKER_HISTORY_FINALIZED_STATUS=true
+          DRIVE_FAILURE_HISTORY_RUN_OWNERSHIP=true
+          DRIVE_FAILURE_HISTORY_FOREIGN_STATUS_NOT_ATTRIBUTED=true
           REAL_DEVICE_DRIVE_FAILURE_HISTORY_VERIFICATION=deferred-final-acceptance
           REAL_DEVICE_DRIVE_WORKER_HISTORY_VERIFICATION=deferred-final-acceptance
+          REAL_DEVICE_DRIVE_FAILURE_HISTORY_OWNERSHIP_VERIFICATION=deferred-final-acceptance
           EOF
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
@@ -451,7 +455,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v1.27.0-dev1-drive-worker-verification-history-apks
+          name: TSUGUREGI-v1.28.0-dev1-drive-failure-history-run-ownership-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
