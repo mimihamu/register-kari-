@@ -63,7 +63,8 @@ class V122DriveImportFingerprintAtomicityTest {
             "src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt",
         ).readText()
         assertTrue(driveSource.contains("private fun recordFingerprint(\n        db: SQLiteDatabase,"))
-        assertTrue(driveSource.contains("recordFingerprint(database.writableDatabase, remote, sha256)"))
+        assertTrue(driveSource.contains("processed.forEach { recordFingerprint(db, it.remote, it.sha256) }"))
+        assertTrue(driveSource.contains("recordFingerprint(pageDb, it.remote, it.sha256)"))
         assertFalse(driveSource.contains("private fun recordFingerprint(remote:"))
     }
 
