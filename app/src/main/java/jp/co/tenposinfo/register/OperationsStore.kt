@@ -200,14 +200,28 @@ class OperationsStore(context: Context) {
             "SELECT COUNT(*) FROM sales WHERE business_session_id = ?",
             arrayOf(sessionId.toString()),
         ).toInt()
-        val reversalGross = longQuery(
+        val linkedReversalGross = longQuery(
             "SELECT COALESCE(SUM(gross_amount), 0) FROM reversal_transactions WHERE business_session_id = ?",
             arrayOf(sessionId.toString()),
         )
-        val reversalCount = longQuery(
+        val linkedReversalCount = longQuery(
             "SELECT COUNT(*) FROM reversal_transactions WHERE business_session_id = ?",
             arrayOf(sessionId.toString()),
         ).toInt()
+        val manualReturnGross = if (SchemaMigration.tableExists(db, "manual_return_transactions")) {
+            -longQuery(
+                "SELECT COALESCE(SUM(gross_amount), 0) FROM manual_return_transactions WHERE business_session_id = ?",
+                arrayOf(sessionId.toString()),
+            )
+        } else 0L
+        val manualReturnCount = if (SchemaMigration.tableExists(db, "manual_return_transactions")) {
+            longQuery(
+                "SELECT COUNT(*) FROM manual_return_transactions WHERE business_session_id = ?",
+                arrayOf(sessionId.toString()),
+            ).toInt()
+        } else 0
+        val reversalGross = linkedReversalGross + manualReturnGross
+        val reversalCount = linkedReversalCount + manualReturnCount
 
         val paymentMap = linkedMapOf<String, Long>()
         db.rawQuery(
@@ -237,6 +251,24 @@ class OperationsStore(context: Context) {
             while (cursor.moveToNext()) {
                 val method = cursor.getString(0)
                 paymentMap[method] = (paymentMap[method] ?: 0L) - cursor.getLong(1)
+            }
+        }
+        if (SchemaMigration.tableExists(db, "manual_return_payments")) {
+            db.rawQuery(
+                """
+                SELECT p.payment_method, COALESCE(SUM(p.amount), 0)
+                FROM manual_return_payments p
+                INNER JOIN manual_return_transactions r ON r.id = p.manual_return_id
+                WHERE r.business_session_id = ?
+                GROUP BY p.payment_method
+                ORDER BY p.payment_method
+                """.trimIndent(),
+                arrayOf(sessionId.toString()),
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val method = cursor.getString(0)
+                    paymentMap[method] = (paymentMap[method] ?: 0L) + cursor.getLong(1)
+                }
             }
         }
 
