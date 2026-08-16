@@ -5,6 +5,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
+// Keep this source-contract test revision tied to the current v1.34 checkpoint implementation.
+// A source change here also prevents an obsolete compiled test class from being reused by CI.
 class V134DrivePageCommitCheckpointRecoveryTest {
     @Test
     fun recoveryPolicyAppliesOnlyMatchingRunningRun() {
