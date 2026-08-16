@@ -41,7 +41,14 @@ class V135CorrectionAccountingSafetyTest {
     @Test
     fun cor010ConfirmedBusinessTablesHaveNoPhysicalDeletePathInNormalApplicationKotlin() {
         val sourceRoot = File("src/main/java")
-        val protectedTables = listOf("sales", "reversal_transactions", "cash_movements")
+        val protectedTables = listOf(
+            "sales",
+            "reversal_transactions",
+            "cash_movements",
+            "manual_return_transactions",
+            "manual_return_items",
+            "manual_return_payments",
+        )
         val violations = mutableListOf<String>()
 
         sourceRoot.walkTopDown()
