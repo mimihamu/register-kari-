@@ -19,14 +19,14 @@ class V135OriginalSaleReturnSafetyTest {
     @Test
     fun repeatedSplitTenderReturnUsesPriorRefundsBeforeNewAllocation() {
         val source = File("src/main/java/jp/co/tenposinfo/register/OperationsStore.kt").readText()
-        val priorRefundQuery = source.indexOf("WHERE r.original_sale_id = ?")
-        val allocation = source.indexOf("refundedPayments = refundedPayments")
-        val reversalInsert = source.indexOf("\"reversal_transactions\"")
+        val priorRefundQuery = source.indexOf("FROM reversal_payments rp")
+        val allocation = source.indexOf("refundedPayments = refundedPayments", priorRefundQuery)
+        val reversalInsert = source.indexOf("val reversalId = insertOrThrow(", allocation)
 
         assertTrue(priorRefundQuery >= 0)
         assertTrue(allocation > priorRefundQuery)
         assertTrue(reversalInsert > allocation)
-        assertTrue(source.contains("FROM reversal_payments rp"))
+        assertTrue(source.contains("WHERE r.original_sale_id = ?"))
         assertTrue(source.contains("GROUP BY rp.payment_method"))
     }
 
