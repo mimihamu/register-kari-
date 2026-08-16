@@ -1,0 +1,70 @@
+name: Build つぐレジ APK
+
+on:
+  push:
+    branches:
+      - develop/v1.35
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-cor004:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout v1.35 branch
+        uses: actions/checkout@v4
+        with:
+          ref: develop/v1.35
+          fetch-depth: 0
+
+      - name: Patch exact legacy transaction-abort button
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt")
+          source = path.read_text(encoding="utf-8")
+          new_marker = "TransactionAbortButtonV135("
+          if new_marker in source:
+              print("COR-004 button already wired")
+              raise SystemExit(0)
+          old = '''                                Button(
+                                    onClick = onCancelTransaction,
+                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFFFBE9E7),
+                                        contentColor = Danger,
+                                    ),
+                                ) { Text("取引中止", fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
+'''
+          new = '''                                TransactionAbortButtonV135(
+                                    items = cart,
+                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                    onAbortCommitted = onCancelTransaction,
+                                )
+'''
+          count = source.count(old)
+          if count != 1:
+              raise SystemExit(f"Expected exactly one legacy abort button; found {count}")
+          patched = source.replace(old, new, 1)
+          if patched.count(new_marker) != 1:
+              raise SystemExit("Expected exactly one audited abort button after patch")
+          path.write_text(patched, encoding="utf-8")
+          PY
+
+      - name: Verify and push only MainActivity patch
+        run: |
+          if git diff --quiet; then
+            echo "No source change required"
+            exit 0
+          fi
+          git diff --check
+          test "$(git diff --name-only | wc -l)" -eq 1
+          test "$(git diff --name-only)" = "app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt"
+          git diff -- app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          git commit -m "Wire COR-004 audited transaction abort button"
+          git push origin HEAD:develop/v1.35
