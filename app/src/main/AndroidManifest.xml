@@ -274,6 +274,11 @@
             android:screenOrientation="landscape" />
 
         <activity
+            android:name=".ManualReturnActivityV135"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
             android:name=".ManualRefundMethodActivityV135"
             android:exported="false"
             android:screenOrientation="landscape" />
