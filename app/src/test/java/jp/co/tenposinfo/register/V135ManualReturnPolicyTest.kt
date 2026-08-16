@@ -118,4 +118,40 @@ class V135ManualReturnPolicyTest {
         assertTrue(block.contains("android:exported=\"false\""))
         assertTrue(block.contains("android:screenOrientation=\"landscape\""))
     }
+
+    @Test
+    fun submissionGatePreventsDoubleConfirmationUntilReleased() {
+        val gate = ManualReturnSubmissionGateV135()
+        assertTrue(gate.tryStart())
+        assertTrue(gate.isSubmitting())
+        assertFalse(gate.tryStart())
+        gate.release()
+        assertFalse(gate.isSubmitting())
+        assertTrue(gate.tryStart())
+    }
+
+    @Test
+    fun activityKeepsConfirmationLockedUntilFailureOrSuccessAcknowledgement() {
+        val source = File("src/main/java/jp/co/tenposinfo/register/ManualReturnActivityV135.kt").readText()
+        assertTrue(source.contains("if (!submissionGate.tryStart()) return"))
+        assertTrue(source.contains("confirmButton.isEnabled = false"))
+        assertTrue(source.contains(".setCancelable(false)"))
+        assertTrue(source.contains("submissionGate.release()"))
+        assertTrue(source.contains("confirmButton.isEnabled = true"))
+    }
+
+    @Test
+    fun receiptlessReturnPrintJobUsesStoredPayloadThroughUnifiedQueue() {
+        val manualReturn = File("src/main/java/jp/co/tenposinfo/register/ManualReturnV135.kt").readText()
+        val advanced = File("src/main/java/jp/co/tenposinfo/register/AdvancedOperationsStore.kt").readText()
+        val unified = File("src/main/java/jp/co/tenposinfo/register/UnifiedPrintQueue.kt").readText()
+        val worker = File("src/main/java/jp/co/tenposinfo/register/AutomaticPrintWorker.kt").readText()
+
+        assertTrue(manualReturn.contains("put(\"document_type\", OperationDocumentType.REVERSAL_RECEIPT.name)"))
+        assertTrue(manualReturn.contains("put(\"reference_id\", -id)"))
+        assertTrue(manualReturn.contains("put(\"payload_text\", preview)"))
+        assertTrue(advanced.contains("gateway.send(TextEscPosEncoder.encode(job.payloadText))"))
+        assertTrue(unified.contains("OperationDocumentType.REVERSAL_RECEIPT -> UnifiedPrintJobType.REVERSAL_RECEIPT"))
+        assertTrue(worker.contains("operations.processDocumentPrint(candidate.sourceId, gateway).isSuccess"))
+    }
 }
