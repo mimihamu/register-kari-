@@ -28,24 +28,19 @@ jobs:
 
           path = Path("app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt")
           text = path.read_text(encoding="utf-8")
-          old = '''                                OutlinedButton(
-                                      onClick = onRemove,
-                                      modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
-                                  ) { Text("訂正", fontSize = 13.sp, maxLines = 1) }'''.replace("                                      ", "                                    ")
-          new = '''                                OutlinedButton(
-                                      onClick = {
-                                          if (NumericCorrectionPolicyV135.shouldClearInput(numericInput)) {
-                                              numericInput = ""
-                                          } else {
-                                              onRemove()
-                                          }
-                                      },
-                                      modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
-                                  ) { Text("訂正", fontSize = 13.sp, maxLines = 1) }'''.replace("                                      ", "                                    ")
+          old = "                                    onClick = onRemove,\n"
+          new = """                                    onClick = {
+                                        if (NumericCorrectionPolicyV135.shouldClearInput(numericInput)) {
+                                            numericInput = ""
+                                        } else {
+                                            onRemove()
+                                        }
+                                    },
+"""
 
           matches = text.count(old)
           if matches != 1:
-              raise SystemExit(f"Expected exactly one correction-button block, found {matches}")
+              raise SystemExit(f"Expected exactly one onClick = onRemove line, found {matches}")
           path.write_text(text.replace(old, new, 1), encoding="utf-8")
           PY
 
