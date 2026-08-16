@@ -1034,7 +1034,13 @@ private fun SalesScreen(
                                 horizontalArrangement = Arrangement.spacedBy(keypad.gapDp.dp),
                             ) {
                                 OutlinedButton(
-                                    onClick = onRemove,
+                                    onClick = {
+                                        if (NumericCorrectionPolicyV135.shouldClearInput(numericInput)) {
+                                            numericInput = ""
+                                        } else {
+                                            onRemove()
+                                        }
+                                    },
                                     modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
                                 ) { Text("訂正", fontSize = 13.sp, maxLines = 1) }
                                 OutlinedButton(
