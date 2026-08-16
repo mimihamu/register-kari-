@@ -1,0 +1,34 @@
+name: COR-005 one-shot accounting patch
+
+on:
+  push:
+    branches:
+      - develop/v1.35
+    paths:
+      - scripts/cor005_patch_operations_store.py
+      - .github/workflows/cor005-operations-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.35
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Patch OperationsStore accounting
+        run: python scripts/cor005_patch_operations_store.py
+      - name: Commit patched source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt
+          git diff --cached --exit-code && exit 0
+          git commit -m "Integrate COR-005 manual returns into settlement accounting"
+          git push origin HEAD:develop/v1.35
