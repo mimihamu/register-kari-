@@ -51,6 +51,7 @@ data class CartItem(
     val unitPrice: Long = product.unitPrice,
     val discountAmount: Long = 0,
     val note: String = "",
+    val lineId: String = "",
 ) {
     init {
         require(quantity > 0) { "quantity must be greater than zero" }

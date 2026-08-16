@@ -192,6 +192,9 @@ private fun RegisterApp() {
         V11CatalogRuntime.visibleProducts(context.applicationContext, database.loadProducts())
     }
     val cart = remember { mutableStateListOf<CartItem>().apply { addAll(database.loadCart()) } }
+    val corrections = remember {
+        mutableStateListOf<CartCorrectionRecordV135>().apply { addAll(database.loadCartCorrections()) }
+    }
     var selectedIndex by remember { mutableStateOf<Int?>(null) }
     var paymentState by remember { mutableStateOf(PaymentState()) }
     var lastSaleId by remember { mutableStateOf<Long?>(null) }
@@ -220,6 +223,28 @@ private fun RegisterApp() {
         cart[index] = item
         selectedIndex = index
         database.saveCart(cart.toList())
+    }
+
+    fun applyCartCorrection(index: Int, quantity: Int, type: CartCorrectionTypeV135) {
+        if (index !in cart.indices) return
+        runCatching {
+            database.applyCartCorrection(
+                targetIndex = index,
+                cancelQuantity = quantity,
+                correctionType = type,
+                operatorName = operatorName,
+            )
+        }.onSuccess { result ->
+            cart.clear()
+            cart.addAll(result.items)
+            corrections.clear()
+            corrections.addAll(database.loadCartCorrections())
+            selectedIndex = null
+            paymentDraftStore.clear()
+            paymentCommitKey = null
+        }.onFailure { error ->
+            accessMessage = error.message ?: "訂正できませんでした"
+        }
     }
 
     fun openUnifiedPrintQueue() {
@@ -269,6 +294,7 @@ private fun RegisterApp() {
                 operatorName = operatorName,
                 products = products,
                 cart = cart,
+                corrections = corrections,
                 selectedIndex = selectedIndex,
                 printerHealth = printerHealth,
                 onSelect = { selectedIndex = it },
@@ -284,27 +310,55 @@ private fun RegisterApp() {
                             it.note.isEmpty()
                     }
                     if (index >= 0) {
-                        cart[index] = cart[index].copy(quantity = cart[index].quantity + 1)
+                        val updated = cart[index].copy(quantity = cart[index].quantity + 1)
+                        cart.removeAt(index)
+                        cart += updated
+                        selectedIndex = null
                     } else {
-                        cart += CartItem(product = product, quantity = 1)
+                        cart += CartItem(
+                            product = product,
+                            quantity = 1,
+                            lineId = CartLineIdentityV135.newId(),
+                        )
                     }
                     database.saveCart(cart.toList())
                 },
                 onChangeQuantity = { quantity ->
                     val index = selectedIndex
                     if (index != null && index in cart.indices && quantity > 0) {
-                        updateCartItem(index, cart[index].copy(quantity = quantity))
+                        val current = cart[index]
+                        if (quantity < current.quantity) {
+                            applyCartCorrection(
+                                index,
+                                current.quantity - quantity,
+                                CartCorrectionTypeV135.SELECTED_LINE,
+                            )
+                        } else {
+                            updateCartItem(index, current.copy(quantity = quantity))
+                        }
                     }
                 },
                 onRemove = {
-                    val index = selectedIndex ?: cart.lastIndex
+                    val index = cart.lastIndex
                     if (index in cart.indices) {
-                        cart.removeAt(index)
-                        selectedIndex = null
-                        database.saveCart(cart.toList())
+                        applyCartCorrection(
+                            index,
+                            cart[index].quantity,
+                            CartCorrectionTypeV135.LAST_LINE,
+                        )
                     }
                 },
-                onCancelTransaction = { replaceCart(emptyList()) },
+                onCancelSelected = { quantity ->
+                    val index = selectedIndex
+                    if (index != null && index in cart.indices) {
+                        applyCartCorrection(index, quantity, CartCorrectionTypeV135.SELECTED_LINE)
+                    }
+                },
+                onCancelTransaction = {
+                    database.clearCartCorrections()
+                    corrections.clear()
+                    replaceCart(emptyList())
+                },
                 onDiscount = { screen = AppScreen.DISCOUNT },
                 onTickets = {
                     if (currentOperator?.allows(RegisterPermission.HOLD_TICKET) == true) {
@@ -322,6 +376,8 @@ private fun RegisterApp() {
                         val existing = database.listHeldTickets()
                         val name = HeldTicketSafetyPolicy.defaultName(existing.map { it.name })
                         database.holdCart(name, operatorName, cart.toList())
+                        database.clearCartCorrections()
+                        corrections.clear()
                         replaceCart(emptyList())
                         ticketMessage = "$name として保留しました"
                     }
@@ -421,6 +477,8 @@ private fun RegisterApp() {
                             operatorName = operatorName,
                         )
                     }.onSuccess { result ->
+                        database.clearCartCorrections()
+                        corrections.clear()
                         replaceCart(result.loadedItems)
                         ticketMessage = result.message
                         screen = AppScreen.SALES
@@ -560,6 +618,7 @@ private fun RegisterApp() {
                         DriveOutboxScheduler.enqueueNow(context.applicationContext)
                         lastSaleId = saleId
                         selectedSaleId = saleId
+                        corrections.clear()
                         replaceCart(emptyList())
                         paymentMessage = null
                         screen = AppScreen.COMPLETE
@@ -886,6 +945,7 @@ private fun SalesScreen(
     operatorName: String,
     products: List<Product>,
     cart: List<CartItem>,
+    corrections: List<CartCorrectionRecordV135>,
     selectedIndex: Int?,
     printerHealth: PrinterHealthSnapshot,
     onSelect: (Int) -> Unit,
@@ -893,6 +953,7 @@ private fun SalesScreen(
     onAddProduct: (Product) -> Unit,
     onChangeQuantity: (Int) -> Unit,
     onRemove: () -> Unit,
+    onCancelSelected: (Int) -> Unit,
     onCancelTransaction: () -> Unit,
     onDiscount: () -> Unit,
     onTickets: () -> Unit,
@@ -973,6 +1034,33 @@ private fun SalesScreen(
                             Text(yen(item.baseAmount), fontWeight = FontWeight.Bold)
                         }
                     }
+                    if (corrections.isNotEmpty()) {
+                        item {
+                            Text(
+                                "訂正履歴",
+                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
+                                color = Danger,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        itemsIndexed(corrections) { _, correction ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("取消 ${correction.productName}", color = Danger, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "${correction.cancelledQuantity} × ${yen(correction.unitPrice)} / 元行 ${correction.lineId.takeLast(8)}",
+                                        fontSize = 12.sp,
+                                        color = Color.Gray,
+                                    )
+                                }
+                                Text("-${yen(correction.cancelledAmount)}", color = Danger, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
                 }
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text("${cart.sumOf { it.quantity }}点")
@@ -1043,6 +1131,18 @@ private fun SalesScreen(
                                     },
                                     modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
                                 ) { Text("訂正", fontSize = 13.sp, maxLines = 1) }
+                                OutlinedButton(
+                                    onClick = {
+                                        val selected = selectedIndex?.let { cart.getOrNull(it) }
+                                        if (selected != null) {
+                                            val quantity = numericInput.toIntOrNull() ?: selected.quantity
+                                            onCancelSelected(quantity)
+                                            numericInput = ""
+                                        }
+                                    },
+                                    enabled = selectedIndex != null,
+                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                ) { Text("行取消", fontSize = 13.sp, maxLines = 1) }
                                 OutlinedButton(
                                     onClick = { selectedIndex?.let(onEdit) },
                                     enabled = selectedIndex != null,
