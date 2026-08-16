@@ -149,14 +149,28 @@ class SecureOperationsCoordinator(
         return executionGuard.runExclusive(executionKey, "返品・取消を処理中です") {
             val operator = requireOperator(OperationsAction.REVERSAL)
             val managerName = requireManagerName(managerPin)
-            store.createReversal(
+            val actor = OperationsActorFormatter.approved(operator, managerName)
+            val refundContext = ApprovedRefundContextV135(
                 originalSaleId = originalSaleId,
-                type = type,
-                requestedQuantities = requestedQuantities,
-                reason = reason,
-                operatorName = OperationsActorFormatter.approved(operator, managerName),
+                reversalType = type,
                 requestId = requestId,
+                actorName = actor,
             )
+            val result = ManualRefundFallbackRuntimeV135.withApprovedContext(
+                context = appContext,
+                approvedContext = refundContext,
+            ) {
+                store.createReversal(
+                    originalSaleId = originalSaleId,
+                    type = type,
+                    requestedQuantities = requestedQuantities,
+                    reason = reason,
+                    operatorName = actor,
+                    requestId = requestId,
+                )
+            }
+            ManualRefundFallbackRuntimeV135.complete(appContext, refundContext, result.refundAmount)
+            result
         }
     }
 

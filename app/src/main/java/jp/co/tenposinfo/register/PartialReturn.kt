@@ -88,8 +88,19 @@ object PartialReturnPolicy {
         fallbackMethod: String = "OTHER",
     ): List<PaymentTotal> {
         require(refundTotal > 0) { "返金額が0円です" }
-        val source = originalPayments.filter { it.amount > 0 }.ifEmpty {
-            listOf(PaymentTotal(fallbackMethod, refundTotal))
+        val source = originalPayments.filter { it.amount > 0 }
+        if (source.isEmpty()) {
+            // v1.35 COR-008:
+            // Production reversal writes run inside SecureOperationsCoordinator's approved
+            // refund context. In that context a missing original payment breakdown must not
+            // silently fall back to CASH/OTHER; a manager explicitly selects the refund method.
+            // Calls outside that approved runtime context retain the legacy pure-function
+            // fallback so existing calculations/tests and read-only tooling remain compatible.
+            val selectedMethod = ManualRefundFallbackRuntimeV135.resolveMethodOrRequest(
+                refundTotal = refundTotal,
+                suggestedMethod = fallbackMethod,
+            ) ?: fallbackMethod
+            return listOf(PaymentTotal(selectedMethod, refundTotal))
         }
         val sourceTotal = source.sumOf { it.amount }.coerceAtLeast(1)
         val result = mutableListOf<PaymentTotal>()
