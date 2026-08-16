@@ -75,13 +75,19 @@ class V135CorrectionAccountingSafetyTest {
     }
 
     @Test
-    fun normalSalesLookupStillNeedsVoidedStatusIntegration() {
+    fun normalSalesLookupShowsVoidedStatusAndOppositeTransactionReferences() {
         val source = File("src/main/java/jp/co/tenposinfo/register/BusinessDateSalesLookupActivity.kt").readText()
+        val traceSource = File("src/main/java/jp/co/tenposinfo/register/SaleReversalTraceV135.kt").readText()
 
-        // This is intentionally a gap detector rather than a completed-requirement assertion.
-        // When COR-007 is fully closed, replace this with positive assertions for VOIDED status
-        // and original<->reversal navigation in the normal sales lookup UI.
-        assertFalse(source.contains("ReversalTraceV135"))
+        assertTrue(source.contains("SaleReversalTraceReadStoreV135"))
+        assertTrue(source.contains("val pageReversalTraces"))
+        assertTrue(source.contains("selectedReversalTrace.state.displayLabel"))
+        assertTrue(source.contains("反対取引 \${reference.type.displayName} No.\${reference.reversalId}"))
+        assertTrue(source.contains("enabled = !selectedReversalTrace.blocksFurtherReversal"))
+        assertTrue(source.contains("全量処理済み（再返品・取消不可）"))
+        assertTrue(traceSource.contains("VOIDED(\"取消済（VOIDED）\", true)"))
+        assertTrue(traceSource.contains("RETURNED(\"返品済\", true)"))
+        assertTrue(traceSource.contains("PARTIAL_RETURN(\"一部返品\", false)"))
     }
 
     private fun String.functionBody(startMarker: String, nextMarker: String): String {
