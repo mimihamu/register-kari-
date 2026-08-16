@@ -9,39 +9,31 @@ import java.util.Date
 import java.util.Locale
 import java.util.UUID
 
-enum class ManualRefundMethodV135(val displayName: String) {
-    CASH("現金"),
-    CARD("カード"),
-    GIFT_CERTIFICATE("商品券"),
-    ACCOUNT_RECEIVABLE("掛売"),
-    OTHER("その他"),
-}
-
-data class ManualReturnLineRequestV135(
+internal data class ManualReturnLineRequestV135(
     val product: Product,
     val quantity: Int,
 )
 
-data class ManualReturnRequestV135(
+internal data class ManualReturnRequestV135(
     val lines: List<ManualReturnLineRequestV135>,
     val reason: String,
     val refundMethod: ManualRefundMethodV135,
 )
 
-data class ManualReturnResultV135(
+internal data class ManualReturnResultV135(
     val manualReturnId: Long,
     val signedGrossAmount: Long,
     val printJobId: Long,
     val previewText: String,
 )
 
-data class ManualReturnAccountingContributionV135(
+internal data class ManualReturnAccountingContributionV135(
     val returnCount: Int,
     val signedGrossAmount: Long,
     val signedPaymentTotals: Map<String, Long>,
 )
 
-object ManualReturnPolicyV135 {
+internal object ManualReturnPolicyV135 {
     fun toPositiveCartItems(
         request: ManualReturnRequestV135,
         reasonRequired: Boolean,
@@ -70,7 +62,7 @@ object ManualReturnPolicyV135 {
     }
 }
 
-class ManualReturnSettingsV135(context: Context) {
+internal class ManualReturnSettingsV135(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     fun isReasonRequired(): Boolean = prefs.getBoolean(KEY_REASON_REQUIRED, true)
@@ -85,7 +77,7 @@ class ManualReturnSettingsV135(context: Context) {
     }
 }
 
-class ManualReturnStoreV135(context: Context) : AutoCloseable {
+internal class ManualReturnStoreV135(context: Context) : AutoCloseable {
     private val appContext = context.applicationContext
     private val database = RegisterDatabase(appContext)
     private val db: SQLiteDatabase = database.writableDatabase
@@ -313,7 +305,7 @@ class ManualReturnStoreV135(context: Context) : AutoCloseable {
     }
 }
 
-class ManualReturnCoordinatorV135(context: Context) : AutoCloseable {
+internal class ManualReturnCoordinatorV135(context: Context) : AutoCloseable {
     private val appContext = context.applicationContext
     private val store = ManualReturnStoreV135(appContext)
 
@@ -352,7 +344,7 @@ class ManualReturnCoordinatorV135(context: Context) : AutoCloseable {
     }
 }
 
-object ManualReturnAccountingV135 {
+internal object ManualReturnAccountingV135 {
     fun apply(context: Context, base: DailyOperationsSummary): DailyOperationsSummary {
         ManualReturnStoreV135(context.applicationContext).use { store ->
             val contribution = store.accountingContribution(base.businessSessionId)
@@ -381,7 +373,7 @@ object ManualReturnAccountingV135 {
     }
 }
 
-object ManualReturnDocumentRendererV135 {
+internal object ManualReturnDocumentRendererV135 {
     fun render(
         manualReturnId: Long,
         businessDate: String,
