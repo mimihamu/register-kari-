@@ -90,9 +90,22 @@ class V135ManualReturnPolicyTest {
     }
 
     @Test
-    fun hubAppliesManualReturnAccountingAndExposesManagerOnlyEntry() {
+    fun operationsSummaryIncludesManualReturnsExactlyOnceAndHubUsesUnifiedSummary() {
+        val operations = File("src/main/java/jp/co/tenposinfo/register/OperationsStore.kt").readText()
+        val hub = File("src/main/java/jp/co/tenposinfo/register/OperationsHubActivityV030.kt").readText()
+
+        assertTrue(operations.contains("val manualReturnGross = if (SchemaMigration.tableExists(db, \"manual_return_transactions\"))"))
+        assertTrue(operations.contains("val reversalGross = linkedReversalGross + manualReturnGross"))
+        assertTrue(operations.contains("val reversalCount = linkedReversalCount + manualReturnCount"))
+        assertTrue(operations.contains("FROM manual_return_payments p"))
+        assertTrue(operations.contains("paymentMap[method] = (paymentMap[method] ?: 0L) + cursor.getLong(1)"))
+        assertTrue(hub.contains("store.dailySummary()"))
+        assertFalse(hub.contains("ManualReturnAccountingV135.apply(context.applicationContext, store.dailySummary())"))
+    }
+
+    @Test
+    fun hubExposesReceiptlessReturnOnlyWithReversalPermission() {
         val source = File("src/main/java/jp/co/tenposinfo/register/OperationsHubActivityV030.kt").readText()
-        assertTrue(source.contains("ManualReturnAccountingV135.apply"))
         assertTrue(source.contains("ManualReturnActivityV135::class.java"))
         assertTrue(source.contains("\"元取引なし返品\""))
         assertTrue(source.contains("RegisterPermission.REVERSAL in permissions"))
