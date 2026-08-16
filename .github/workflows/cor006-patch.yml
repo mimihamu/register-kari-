@@ -1,0 +1,39 @@
+name: COR-006 one-shot patch
+
+on:
+  push:
+    branches:
+      - develop/v1.35
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cor006-one-shot-patch
+  cancel-in-progress: true
+
+jobs:
+  patch:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: develop/v1.35
+          fetch-depth: 0
+
+      - name: Apply exact COR-006 patch
+        shell: bash
+        run: |
+          if [ ! -f .github/scripts/cor006_patch.py ]; then
+            echo "Patch script not present yet; nothing to do."
+            exit 0
+          fi
+          python3 .github/scripts/cor006_patch.py
+          rm -f .github/scripts/cor006_patch.py .github/workflows/cor006-patch.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt .github/scripts/cor006_patch.py .github/workflows/cor006-patch.yml
+          git diff --cached --check
+          git commit -m "fix(v1.35): enforce original tender remaining refund caps"
+          git push origin HEAD:develop/v1.35
