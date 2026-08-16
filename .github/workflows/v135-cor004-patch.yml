@@ -1,0 +1,67 @@
+name: v1.35 COR-004 one-shot source patch
+
+on:
+  push:
+    branches:
+      - develop/v1.35
+
+permissions:
+  contents: write
+
+jobs:
+  patch-main-activity:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.35
+          fetch-depth: 0
+
+      - name: Replace only the legacy direct-clear abort button
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt')
+          source = path.read_text(encoding='utf-8')
+          old = '''                                Button(
+                                    onClick = onCancelTransaction,
+                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFFFBE9E7),
+                                        contentColor = Danger,
+                                    ),
+                                ) { Text("取引中止", fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
+'''
+          new = '''                                TransactionAbortButtonV135(
+                                    items = cart,
+                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                    onAbortCommitted = onCancelTransaction,
+                                )
+'''
+          count = source.count(old)
+          if count != 1:
+              raise SystemExit(f'Expected exactly one legacy abort button, found {count}')
+          patched = source.replace(old, new, 1)
+          if patched.count('TransactionAbortButtonV135(') != 1:
+              raise SystemExit('Audited abort button was not inserted exactly once')
+          path.write_text(patched, encoding='utf-8')
+
+      - name: Verify narrow diff
+        run: |
+          git diff --check
+          git diff -- app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          test "$(git diff --name-only | wc -l)" -eq 1
+          test "$(git diff --name-only)" = "app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt"
+
+      - name: Commit patch
+        run: |
+          if git diff --quiet; then
+            echo 'Nothing to patch'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          git commit -m 'Wire COR-004 audited transaction abort button'
+          git push origin HEAD:develop/v1.35
