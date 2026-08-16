@@ -119,7 +119,7 @@ private fun OperationsHubRouteV030(
             current.allows(RegisterPermission.X_INSPECTION) ||
             current.allows(RegisterPermission.Z_SETTLEMENT)
         ) {
-            ManualReturnAccountingV135.apply(context.applicationContext, store.dailySummary())
+            store.dailySummary()
         } else null
         OperationsHubScreenV030(
             operatorName = current.name,
