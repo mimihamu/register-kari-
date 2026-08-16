@@ -1053,14 +1053,11 @@ private fun SalesScreen(
                                     enabled = cart.isNotEmpty(),
                                     modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
                                 ) { Text("値引・割引", fontSize = 13.sp, maxLines = 1) }
-                                Button(
-                                    onClick = onCancelTransaction,
+                                TransactionAbortButtonV135(
+                                    items = cart,
                                     modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Color(0xFFFBE9E7),
-                                        contentColor = Danger,
-                                    ),
-                                ) { Text("取引中止", fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
+                                    onAbortCommitted = onCancelTransaction,
+                                )
                             }
                         }
                     }
