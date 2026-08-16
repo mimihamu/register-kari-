@@ -34,6 +34,12 @@
             android:initOrder="140" />
 
         <provider
+            android:name=".MixedTaxCartBootstrapProviderV135"
+            android:authorities="${applicationId}.mixed-tax-cart-bootstrap-v135"
+            android:exported="false"
+            android:initOrder="139" />
+
+        <provider
             android:name=".CatalogBootstrapProvider"
             android:authorities="${applicationId}.catalog-bootstrap"
             android:exported="false"
