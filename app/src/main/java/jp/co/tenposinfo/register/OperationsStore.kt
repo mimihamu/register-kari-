@@ -497,8 +497,29 @@ class OperationsStore(context: Context) {
             ).use { cursor ->
                 while (cursor.moveToNext()) originalPayments += PaymentTotal(cursor.getString(0), cursor.getLong(1))
             }
+            val refundedPayments = mutableListOf<PaymentTotal>()
+            rawQuery(
+                """
+                SELECT rp.payment_method, COALESCE(SUM(rp.amount), 0)
+                FROM reversal_payments rp
+                INNER JOIN reversal_transactions r ON r.id = rp.reversal_id
+                WHERE r.original_sale_id = ?
+                GROUP BY rp.payment_method
+                ORDER BY rp.payment_method
+                """.trimIndent(),
+                arrayOf(originalSaleId.toString()),
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    refundedPayments += PaymentTotal(cursor.getString(0), cursor.getLong(1))
+                }
+            }
             val fallbackMethod = if (sale.second.contains("現金")) PaymentMethod.CASH.name else "OTHER"
-            val refundPayments = PartialReturnPolicy.allocateRefundPayments(refundTotal, originalPayments, fallbackMethod)
+            val refundPayments = PartialReturnPolicy.allocateRefundPayments(
+                refundTotal = refundTotal,
+                originalPayments = originalPayments,
+                fallbackMethod = fallbackMethod,
+                refundedPayments = refundedPayments,
+            )
 
             val reversalId = insertOrThrow(
                 "reversal_transactions",
