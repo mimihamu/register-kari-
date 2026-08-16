@@ -445,8 +445,27 @@ private fun RegisterApp() {
                 } else {
                     LineEditScreen(
                         item = item,
-                        onSave = {
-                            updateCartItem(index, it)
+                        onSave = { edited ->
+                            val original = cart.getOrNull(index)
+                            if (original != null && edited.quantity < original.quantity) {
+                                applyCartCorrection(
+                                    index,
+                                    original.quantity - edited.quantity,
+                                    CartCorrectionTypeV135.SELECTED_LINE,
+                                )
+                                val remainingIndex = cart.indexOfFirst { it.lineId == original.lineId }
+                                if (remainingIndex >= 0) {
+                                    updateCartItem(
+                                        remainingIndex,
+                                        edited.copy(
+                                            quantity = edited.quantity,
+                                            lineId = original.lineId,
+                                        ),
+                                    )
+                                }
+                            } else {
+                                updateCartItem(index, edited)
+                            }
                             screen = AppScreen.SALES
                         },
                         onDiscount = { screen = AppScreen.DISCOUNT },
