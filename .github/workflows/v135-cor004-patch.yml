@@ -3,9 +3,6 @@ name: COR-004 patch helper
 on:
   pull_request:
 
-permissions:
-  contents: write
-
 jobs:
   patch-main-activity:
     runs-on: ubuntu-22.04
