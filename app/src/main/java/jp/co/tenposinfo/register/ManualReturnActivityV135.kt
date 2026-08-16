@@ -22,6 +22,7 @@ class ManualReturnActivityV135 : ComponentActivity() {
     private lateinit var coordinator: ManualReturnCoordinatorV135
     private lateinit var products: List<Product>
     private val lines = mutableListOf<ManualReturnLineRequestV135>()
+    private val submissionGate = ManualReturnSubmissionGateV135()
 
     private lateinit var productSpinner: Spinner
     private lateinit var quantityInput: EditText
@@ -31,6 +32,7 @@ class ManualReturnActivityV135 : ComponentActivity() {
     private lateinit var refundSpinner: Spinner
     private lateinit var managerPinInput: EditText
     private lateinit var reasonRequiredCheck: CheckBox
+    private lateinit var confirmButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -158,10 +160,11 @@ class ManualReturnActivityV135 : ComponentActivity() {
             text = "戻る"
             setOnClickListener { finish() }
         }, LinearLayout.LayoutParams(0, dp(58), 1f))
-        actionRow.addView(Button(this).apply {
+        confirmButton = Button(this).apply {
             text = "責任者承認して返品確定"
             setOnClickListener { executeReturn() }
-        }, LinearLayout.LayoutParams(0, dp(58), 2f).apply { marginStart = dp(12) })
+        }
+        actionRow.addView(confirmButton, LinearLayout.LayoutParams(0, dp(58), 2f).apply { marginStart = dp(12) })
         root.addView(actionRow, matchWrap(top = 8))
         return scroll
     }
@@ -205,6 +208,9 @@ class ManualReturnActivityV135 : ComponentActivity() {
     }
 
     private fun executeReturn() {
+        if (!submissionGate.tryStart()) return
+        confirmButton.isEnabled = false
+
         val method = ManualRefundMethodV135.entries[refundSpinner.selectedItemPosition]
         val request = ManualReturnRequestV135(
             lines = lines.toList(),
@@ -217,14 +223,21 @@ class ManualReturnActivityV135 : ComponentActivity() {
             AlertDialog.Builder(this)
                 .setTitle("返品を確定しました")
                 .setMessage("返品No. MR-${result.manualReturnId}\n返金額 ${yen(result.signedGrossAmount)}\n印刷ジョブ No.${result.printJobId}")
+                .setCancelable(false)
                 .setPositiveButton("OK") { _, _ ->
                     lines.clear()
                     reasonInput.text.clear()
                     managerPinInput.text.clear()
                     refreshLines()
+                    submissionGate.release()
+                    confirmButton.isEnabled = true
                 }
                 .show()
-        }.onFailure { showError(it.message ?: "返品を確定できませんでした") }
+        }.onFailure {
+            submissionGate.release()
+            confirmButton.isEnabled = true
+            showError(it.message ?: "返品を確定できませんでした")
+        }
     }
 
     private fun showError(message: String) = toastDialog("確認", message)
