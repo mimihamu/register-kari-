@@ -507,7 +507,10 @@ class GoogleDriveDirectSyncRepository(
             // v1.32 cumulative source-test compatibility marker: val runToken = statusStore.running()
             val runToken = GoogleDriveDirectSyncStatusDurabilityV133.start(appContext)
             try {
-                ensureSchema(database.writableDatabase)
+                val initialDb = database.writableDatabase
+                ensureSchema(initialDb)
+                GoogleDrivePageCommitCheckpointStoreV134.ensureSchema(initialDb)
+                GoogleDrivePageCommitCheckpointStoreV134.clear(initialDb)
                 val client = GoogleDriveSyncRestClient(accessToken)
                 val visitedPageTokens = mutableSetOf<String>()
                 var pageToken: String? = null
@@ -530,6 +533,7 @@ class GoogleDriveDirectSyncRepository(
                     listed += page.files.size
                     val documents = mutableListOf<SalesJournalImportDocument>()
                     val processed = mutableListOf<ProcessedDriveFile>()
+                    val unchangedFingerprints = mutableListOf<ProcessedDriveFile>()
 
                     page.files.forEach { remote ->
                         val known = known(remote.id)
@@ -554,7 +558,7 @@ class GoogleDriveDirectSyncRepository(
                             val rawJson = bytes.toString(Charsets.UTF_8)
                             val sha256 = sha256(bytes)
                             if (!forceReimport && known != null && known.contentSha256 == sha256) {
-                                recordFingerprint(database.writableDatabase, remote, sha256)
+                                unchangedFingerprints += ProcessedDriveFile(remote, sha256)
                                 unchanged += 1
                             } else {
                                 documents += SalesJournalImportDocument(
@@ -588,30 +592,52 @@ class GoogleDriveDirectSyncRepository(
                         }
                     }
 
-                    val batch = if (documents.isEmpty()) {
-                        null
-                    } else {
-                        SalesJournalImportRepository(database).importDocumentsWithCommitHook(documents) { db ->
-                            processed.forEach { recordFingerprint(db, it.remote, it.sha256) }
+                    val pageDb = database.writableDatabase
+                    var committedPageResult: GoogleDriveDirectSyncResult? = null
+                    pageDb.beginTransaction()
+                    try {
+                        val batch = if (documents.isEmpty()) {
+                            null
+                        } else {
+                            // Android SQLiteDatabase supports nested transactions; the existing importer
+                            // transaction therefore commits only when this outer page transaction succeeds.
+                            SalesJournalImportRepository(database).importDocumentsWithCommitHook(documents) { db ->
+                                processed.forEach { recordFingerprint(db, it.remote, it.sha256) }
+                            }
                         }
+                        unchangedFingerprints.forEach {
+                            recordFingerprint(pageDb, it.remote, it.sha256)
+                        }
+                        val result = GoogleDriveDirectSyncResult(
+                            listedCount = listed,
+                            downloadedCount = downloaded + documents.size,
+                            unchangedCount = unchanged,
+                            importedCount = imported + (batch?.importedCount ?: 0),
+                            duplicateCount = duplicates + (batch?.duplicateCount ?: 0),
+                            rejectedCount = rejected + (batch?.rejectedCount ?: 0),
+                            errorCount = errors,
+                        )
+                        GoogleDrivePageCommitCheckpointStoreV134.persist(
+                            db = pageDb,
+                            runToken = runToken,
+                            result = result,
+                        )
+                        pageDb.setTransactionSuccessful()
+                        committedPageResult = result
+                    } finally {
+                        pageDb.endTransaction()
                     }
-                    downloaded += documents.size
-                    imported += batch?.importedCount ?: 0
-                    duplicates += batch?.duplicateCount ?: 0
-                    rejected += batch?.rejectedCount ?: 0
+
+                    val pageResult = checkNotNull(committedPageResult)
+                    downloaded = pageResult.downloadedCount
+                    imported = pageResult.importedCount
+                    duplicates = pageResult.duplicateCount
+                    rejected = pageResult.rejectedCount
                     // v1.23 cumulative source-test compatibility marker: statusStore.progress(
                     GoogleDriveDirectSyncStatusDurabilityV133.progress(
                         context = appContext,
                         runToken = runToken,
-                        result = GoogleDriveDirectSyncResult(
-                            listedCount = listed,
-                            downloadedCount = downloaded,
-                            unchangedCount = unchanged,
-                            importedCount = imported,
-                            duplicateCount = duplicates,
-                            rejectedCount = rejected,
-                            errorCount = errors,
-                        ),
+                        result = pageResult,
                     )
                     pageToken = page.nextPageToken
                 } while (pageToken != null)

@@ -11,6 +11,12 @@
         android:theme="@style/Theme.TsuguRegiPlus">
 
         <provider
+            android:name=".GoogleDrivePageCommitRecoveryProviderV134"
+            android:authorities="${applicationId}.google-drive-page-commit-recovery-v134"
+            android:exported="false"
+            android:initOrder="400" />
+
+        <provider
             android:name=".GoogleDriveOrphanedRunRecoveryProviderV131"
             android:authorities="${applicationId}.google-drive-orphaned-run-recovery-v131"
             android:exported="false"

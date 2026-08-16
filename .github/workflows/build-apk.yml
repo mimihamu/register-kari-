@@ -81,6 +81,7 @@ concurrency:
 # V131DriveOrphanedRunRecoveryTest.kt
 # V132DriveStartupRecoveryFailureBarrierTest.kt
 # V133DriveDirectSyncStatusDurabilityTest.kt
+# V134DrivePageCommitCheckpointRecoveryTest.kt
 
 # Cumulative feature markers retained for source-level compatibility gates.
 # SETTLEMENT_RECONCILIATION=true
@@ -147,6 +148,10 @@ concurrency:
 # DRIVE_DIRECT_STATUS_DURABLE_PROGRESS=true
 # DRIVE_DIRECT_STATUS_DURABLE_FINALIZATION=true
 # DRIVE_DIRECT_STATUS_PERSISTENCE_FAIL_CLOSED=true
+# DRIVE_PAGE_CHECKPOINT_ATOMIC_COMMIT=true
+# DRIVE_PAGE_CHECKPOINT_STARTUP_RECOVERY=true
+# DRIVE_PAGE_CHECKPOINT_RUN_OWNERSHIP=true
+# DRIVE_PAGE_CHECKPOINT_FAIL_CLOSED=true
 # IMPORT_PROCESSOR_SIGNATURE=true
 # IMPORT_COMPATIBILITY_AUTO_REPLAY=true
 # IMPORT_TRANSPORT_FINGERPRINT_RESET_ATOMIC=true
@@ -281,6 +286,7 @@ concurrency:
 # REAL_DEVICE_DRIVE_ORPHANED_RUN_RECOVERY_VERIFICATION=deferred-final-acceptance
 # REAL_DEVICE_DRIVE_STARTUP_RECOVERY_FAILURE_BARRIER_VERIFICATION=deferred-final-acceptance
 # REAL_DEVICE_DRIVE_DIRECT_STATUS_DURABILITY_VERIFICATION=deferred-final-acceptance
+# REAL_DEVICE_DRIVE_PAGE_CHECKPOINT_RECOVERY_VERIFICATION=deferred-final-acceptance
 
 jobs:
   build-debug-apk:
@@ -314,9 +320,10 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Verify cumulative v0.14-v1.33 sources
+      - name: Verify cumulative v0.14-v1.34 sources
         shell: bash
         env:
+          V133_FINAL_HEAD: 0da5d36a3899bedacdd0f28bea16468d191f784e
           V132_FINAL_HEAD: ce4965a9c8847d07243b9ca82a556b81874a52a6
           V131_FINAL_HEAD: 6cdc8de0f53a085f0f6f3a79a77219f42139b969
           V130_FINAL_HEAD: 9cbb234e04fb5a7917b105f4d76fbf1850691a49
@@ -354,15 +361,15 @@ jobs:
           V093_FINAL_HEAD: 5c8d0d95175bb7dd6cf8b70f52b31162c415a5e7
         run: |
           set -euo pipefail
-          git show "$V132_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v132-build-apk.yml
+          git show "$V133_FINAL_HEAD:.github/workflows/build-apk.yml" > /tmp/v133-build-apk.yml
           awk '
-            /^      - name: Verify cumulative v0.14-v1.32 sources/ { capture=1; next }
+            /^      - name: Verify cumulative v0.14-v1.33 sources/ { capture=1; next }
             capture && /^      - name: Verify launcher and orientation configuration/ { exit }
             capture && /^        run: \|/ { inrun=1; next }
             capture && inrun { sub(/^          /, ""); print }
-          ' /tmp/v132-build-apk.yml > /tmp/v132-cumulative-checks.sh
-          test -s /tmp/v132-cumulative-checks.sh
-          bash -euxo pipefail /tmp/v132-cumulative-checks.sh
+          ' /tmp/v133-build-apk.yml > /tmp/v133-cumulative-checks.sh
+          test -s /tmp/v133-cumulative-checks.sh
+          bash -euxo pipefail /tmp/v133-cumulative-checks.sh
 
           python3 - <<'PY'
           from pathlib import Path
@@ -376,68 +383,81 @@ jobs:
 
           app_build = active_gradle('app/build.gradle.kts')
           plus_build = active_gradle('management-app/build.gradle.kts')
+          direct = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt').read_text()
+          checkpoint = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDrivePageCommitCheckpointV134.kt').read_text()
+          orphan = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveOrphanedRunRecoveryV131.kt').read_text()
+          manifest = Path('management-app/src/main/AndroidManifest.xml').read_text()
+          test = Path('management-app/src/test/java/jp/co/tenposinfo/register/plus/V134DrivePageCommitCheckpointRecoveryTest.kt').read_text()
+          docs = Path('docs/V1.34_DRIVE_PAGE_COMMIT_CHECKPOINT_RECOVERY.md').read_text()
+
+          assert 'versionCode = 164' in app_build
+          assert 'versionName = "1.34.0-dev.1"' in app_build
           assert 'versionCode = 163' in app_build
           assert 'versionName = "1.33.0-dev.1"' in app_build
+          assert 'versionCode = 33' in plus_build
+          assert 'versionName = "0.33.0-dev.1"' in plus_build
           assert 'versionCode = 32' in plus_build
           assert 'versionName = "0.32.0-dev.1"' in plus_build
 
-          durability = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSyncStatusDurabilityV133.kt').read_text()
-          direct = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt').read_text()
-          manifest = Path('management-app/src/main/AndroidManifest.xml').read_text()
-          test = Path('management-app/src/test/java/jp/co/tenposinfo/register/plus/V133DriveDirectSyncStatusDurabilityTest.kt').read_text()
-          docs = Path('docs/V1.33_DRIVE_DIRECT_STATUS_DURABILITY.md').read_text()
-
-          assert 'class GoogleDriveDirectSyncStatusPersistenceException' in durability
-          assert 'object GoogleDriveDirectSyncStatusDurabilityV133' in durability
-          assert 'fun start(context: Context): String' in durability
-          assert 'fun progress(' in durability
-          assert 'fun complete(' in durability
-          assert 'fun failedForRun(' in durability
-          assert 'fun failed(' in durability
-          assert 'if (editor.commit()) return' in durability
-          assert 'GoogleDriveStartupRecoveryBarrierV132.block(' in durability
-          assert 'throw error' in durability
+          assert 'object GoogleDrivePageCommitCheckpointStoreV134' in checkpoint
+          assert 'drive_sync_progress_checkpoint_v134' in checkpoint
+          assert 'GoogleDrivePageCommitRecoveryPolicyV134' in checkpoint
+          assert 'statusRunning && statusRunToken == checkpointRunToken' in checkpoint
+          assert 'GoogleDriveDirectSyncStatusDurabilityV133.progress(' in checkpoint
+          assert 'GoogleDrivePageCommitCheckpointStoreV134.clear(db)' in checkpoint
+          assert 'GoogleDriveStartupRecoveryBarrierV132.resetForProcessStart()' in checkpoint
+          assert 'GoogleDriveStartupRecoveryBarrierV132.block(' in checkpoint
 
           repository = direct.split('class GoogleDriveDirectSyncRepository', 1)[1].split('class GoogleDriveDirectSyncWorker', 1)[0]
-          durable_start = repository.index('GoogleDriveDirectSyncStatusDurabilityV133.start(appContext)')
-          durable_progress = repository.index('GoogleDriveDirectSyncStatusDurabilityV133.progress(', durable_start)
-          durable_complete = repository.index('GoogleDriveDirectSyncStatusDurabilityV133.complete(', durable_progress)
-          durable_failure = repository.index('GoogleDriveDirectSyncStatusDurabilityV133.failedForRun(', durable_start)
-          assert durable_start >= 0
-          assert durable_progress > durable_start
-          assert durable_complete > durable_progress
-          assert durable_failure > durable_start
-          assert repository.index('GoogleDriveStartupRecoveryBarrierV132.requireDriveSyncAllowed()') < durable_start
-          assert 'if (error is GoogleDriveDirectSyncStatusPersistenceException) throw error' in repository
+          outer_begin = repository.index('pageDb.beginTransaction()')
+          importer = repository.index('SalesJournalImportRepository(database).importDocumentsWithCommitHook(documents) { db ->', outer_begin)
+          changed_fingerprint = repository.index('processed.forEach { recordFingerprint(db, it.remote, it.sha256) }', importer)
+          unchanged_fingerprint = repository.index('recordFingerprint(pageDb, it.remote, it.sha256)', changed_fingerprint)
+          checkpoint_write = repository.index('GoogleDrivePageCommitCheckpointStoreV134.persist(', unchanged_fingerprint)
+          outer_success = repository.index('pageDb.setTransactionSuccessful()', checkpoint_write)
+          outer_end = repository.index('pageDb.endTransaction()', outer_success)
+          durable_progress = repository.index('GoogleDriveDirectSyncStatusDurabilityV133.progress(', outer_end)
+          next_page = repository.index('pageToken = page.nextPageToken', durable_progress)
+          assert outer_begin >= 0
+          assert importer > outer_begin
+          assert changed_fingerprint > importer
+          assert unchanged_fingerprint > changed_fingerprint
+          assert checkpoint_write > unchanged_fingerprint
+          assert outer_success > checkpoint_write
+          assert outer_end > outer_success
+          assert durable_progress > outer_end
+          assert next_page > durable_progress
+          assert repository.index('unchangedFingerprints += ProcessedDriveFile(remote, sha256)') < outer_begin
 
-          worker = direct.split('class GoogleDriveDirectSyncWorker', 1)[1].split('object GoogleDriveDirectSyncScheduler', 1)[0]
-          persistence_guard = worker.index('error is GoogleDriveDirectSyncStatusPersistenceException')
-          durable_worker_failure = worker.index('GoogleDriveDirectSyncStatusDurabilityV133.failed(', persistence_guard)
-          failure_history = worker.index('GoogleDriveWorkerVerificationRecordV127.failure(', durable_worker_failure)
-          assert persistence_guard >= 0
-          assert durable_worker_failure > persistence_guard
-          assert failure_history > durable_worker_failure
-
+          checkpoint_provider = manifest.split('android:name=".GoogleDrivePageCommitRecoveryProviderV134"', 1)[1].split('/>', 1)[0]
           orphan_provider = manifest.split('android:name=".GoogleDriveOrphanedRunRecoveryProviderV131"', 1)[1].split('/>', 1)[0]
           history_provider = manifest.split('android:name=".GoogleDriveVerificationHistoryRecoveryProviderV130"', 1)[1].split('/>', 1)[0]
           bootstrap_provider = manifest.split('android:name=".GoogleDriveDirectSyncBootstrapProvider"', 1)[1].split('/>', 1)[0]
+          assert 'android:initOrder="400"' in checkpoint_provider
           assert 'android:initOrder="300"' in orphan_provider
           assert 'android:initOrder="200"' in history_provider
           assert 'android:initOrder="100"' in bootstrap_provider
-          assert manifest.index('GoogleDriveOrphanedRunRecoveryProviderV131') < manifest.index('GoogleDriveVerificationHistoryRecoveryProviderV130') < manifest.index('GoogleDriveDirectSyncBootstrapProvider')
+          assert manifest.index('GoogleDrivePageCommitRecoveryProviderV134') < manifest.index('GoogleDriveOrphanedRunRecoveryProviderV131') < manifest.index('GoogleDriveVerificationHistoryRecoveryProviderV130') < manifest.index('GoogleDriveDirectSyncBootstrapProvider')
 
-          assert 'durableStatusPublisherUsesSynchronousCommitForRunLifecycle' in test
-          assert 'repositoryUsesDurablePublicationForStartProgressSuccessAndOwnedFailure' in test
-          assert 'workerDoesNotPublishHistoryForUncertainStatusPersistence' in test
-          assert 'cross-store' in docs
-          assert 'commit()' in docs
-          assert '解消済み' in docs
+          orphan_provider_source = orphan.split('class GoogleDriveOrphanedRunRecoveryProviderV131', 1)[1]
+          assert 'if (GoogleDriveStartupRecoveryBarrierV132.isBlocked()) return true' in orphan_provider_source
+          assert 'GoogleDriveStartupRecoveryBarrierV132.resetForProcessStart()' in orphan_provider_source
+
+          assert 'recoveryPolicyAppliesOnlyMatchingRunningRun' in test
+          assert 'pageImportFingerprintAndCheckpointShareOutermostTransaction' in test
+          assert 'sameContentFingerprintIsDeferredUntilPageTransaction' in test
+          assert 'checkpointRecoveryRunsBeforeOrphanHistoryAndBootstrap' in test
+          assert 'checkpointRecoveryDurablyRepublishesBeforeDeletingCheckpoint' in test
+          assert 'cross-store crash window' in docs
+          assert '400' in docs and '300' in docs and '200' in docs and '100' in docs
+          assert '最終総合実機試験' in docs
           PY
 
-          grep -Fq 'DRIVE_DIRECT_STATUS_DURABLE_START=true' .github/workflows/build-apk.yml
-          grep -Fq 'DRIVE_DIRECT_STATUS_DURABLE_PROGRESS=true' .github/workflows/build-apk.yml
-          grep -Fq 'DRIVE_DIRECT_STATUS_DURABLE_FINALIZATION=true' .github/workflows/build-apk.yml
-          grep -Fq 'DRIVE_DIRECT_STATUS_PERSISTENCE_FAIL_CLOSED=true' .github/workflows/build-apk.yml
+          grep -Fq 'DRIVE_PAGE_CHECKPOINT_ATOMIC_COMMIT=true' .github/workflows/build-apk.yml
+          grep -Fq 'DRIVE_PAGE_CHECKPOINT_STARTUP_RECOVERY=true' .github/workflows/build-apk.yml
+          grep -Fq 'DRIVE_PAGE_CHECKPOINT_RUN_OWNERSHIP=true' .github/workflows/build-apk.yml
+          grep -Fq 'DRIVE_PAGE_CHECKPOINT_FAIL_CLOSED=true' .github/workflows/build-apk.yml
+          grep -Fq 'REAL_DEVICE_DRIVE_PAGE_CHECKPOINT_RECOVERY_VERIFICATION=deferred-final-acceptance' .github/workflows/build-apk.yml
 
       - name: Verify launcher and orientation configuration
         shell: bash
@@ -465,10 +485,10 @@ jobs:
       - name: Verify built APK release identity and integrity
         shell: bash
         env:
-          POS_VERSION_CODE: 163
-          POS_VERSION_NAME: 1.33.0-dev.1
-          PLUS_VERSION_CODE: 32
-          PLUS_VERSION_NAME: 0.32.0-dev.1
+          POS_VERSION_CODE: 164
+          POS_VERSION_NAME: 1.34.0-dev.1
+          PLUS_VERSION_CODE: 33
+          PLUS_VERSION_NAME: 0.33.0-dev.1
           BUILD_TOOLS_VERSION: 36.0.0
         run: |
           set -euo pipefail
@@ -481,8 +501,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v1.33.0_dev1_drive_direct_status_durability_debug.apk
-          plus_apk=artifacts/TSUGUREGI_PLUS_v0.32.0_dev1_drive_direct_status_durability_debug.apk
+          register_apk=artifacts/TSUGUREGI_v1.34.0_dev1_drive_page_commit_checkpoint_recovery_debug.apk
+          plus_apk=artifacts/TSUGUREGI_PLUS_v0.33.0_dev1_drive_page_commit_checkpoint_recovery_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
           cp management-app/build/outputs/apk/debug/management-app-debug.apk "$plus_apk"
@@ -494,10 +514,10 @@ jobs:
           stat --printf='MANAGEMENT_APP_APK_SIZE_BYTES=%s\n' "$plus_apk" | tee -a artifacts/build-summary.txt
           stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' "$cd_apk" | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=1.33.0-dev.1
-          REGISTER_VERSION_CODE=163
-          MANAGEMENT_APP_VERSION_NAME=0.32.0-dev.1
-          MANAGEMENT_APP_VERSION_CODE=32
+          REGISTER_VERSION_NAME=1.34.0-dev.1
+          REGISTER_VERSION_CODE=164
+          MANAGEMENT_APP_VERSION_NAME=0.33.0-dev.1
+          MANAGEMENT_APP_VERSION_CODE=33
           DRIVE_REMOTE_VERSION_FINGERPRINT=true
           DRIVE_PAGINATION_COMPLETE=true
           DRIVE_SYNC_SINGLE_FLIGHT=true
@@ -528,6 +548,10 @@ jobs:
           DRIVE_DIRECT_STATUS_DURABLE_PROGRESS=true
           DRIVE_DIRECT_STATUS_DURABLE_FINALIZATION=true
           DRIVE_DIRECT_STATUS_PERSISTENCE_FAIL_CLOSED=true
+          DRIVE_PAGE_CHECKPOINT_ATOMIC_COMMIT=true
+          DRIVE_PAGE_CHECKPOINT_STARTUP_RECOVERY=true
+          DRIVE_PAGE_CHECKPOINT_RUN_OWNERSHIP=true
+          DRIVE_PAGE_CHECKPOINT_FAIL_CLOSED=true
           REAL_DEVICE_DRIVE_FAILURE_HISTORY_VERIFICATION=deferred-final-acceptance
           REAL_DEVICE_DRIVE_WORKER_HISTORY_VERIFICATION=deferred-final-acceptance
           REAL_DEVICE_DRIVE_FAILURE_HISTORY_OWNERSHIP_VERIFICATION=deferred-final-acceptance
@@ -536,6 +560,7 @@ jobs:
           REAL_DEVICE_DRIVE_ORPHANED_RUN_RECOVERY_VERIFICATION=deferred-final-acceptance
           REAL_DEVICE_DRIVE_STARTUP_RECOVERY_FAILURE_BARRIER_VERIFICATION=deferred-final-acceptance
           REAL_DEVICE_DRIVE_DIRECT_STATUS_DURABILITY_VERIFICATION=deferred-final-acceptance
+          REAL_DEVICE_DRIVE_PAGE_CHECKPOINT_RECOVERY_VERIFICATION=deferred-final-acceptance
           EOF
           git rev-parse HEAD | sed 's/^/HEAD=/' >> artifacts/build-summary.txt
 
@@ -543,7 +568,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v1.33.0-dev1-drive-direct-status-durability-apks
+          name: TSUGUREGI-v1.34.0-dev1-drive-page-commit-checkpoint-recovery-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
