@@ -14,45 +14,21 @@ jobs:
   patch-main-activity:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout target branch
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: develop/v1.35
           fetch-depth: 0
-
-      - name: Apply exact COR-001 wiring patch
-        shell: bash
+      - name: Apply deterministic patch
+        run: python3 .github/scripts/v135_cor001_patch.py
+      - name: Validate diff
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt")
-          text = path.read_text(encoding="utf-8")
-          old = "                                    onClick = onRemove,\n"
-          new = """                                    onClick = {
-                                        if (NumericCorrectionPolicyV135.shouldClearInput(numericInput)) {
-                                            numericInput = ""
-                                        } else {
-                                            onRemove()
-                                        }
-                                    },
-"""
-
-          matches = text.count(old)
-          if matches != 1:
-              raise SystemExit(f"Expected exactly one onClick = onRemove line, found {matches}")
-          path.write_text(text.replace(old, new, 1), encoding="utf-8")
-          PY
-
           git diff --check
           git diff -- app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-
       - name: Commit exact patch
-        shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
-          git diff --cached --quiet && { echo "No patch produced"; exit 1; }
+          git diff --cached --quiet && exit 1
           git commit -m "Wire COR-001 numeric correction precedence"
           git push origin HEAD:develop/v1.35
