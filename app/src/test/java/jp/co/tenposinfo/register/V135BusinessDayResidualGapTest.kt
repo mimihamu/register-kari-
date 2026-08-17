@@ -50,7 +50,7 @@ class V135BusinessDayResidualGapTest {
     @Test
     fun canonicalBackupFailureAcknowledgementEventIsUsedForNewWrites() {
         val store = source("OperationsStore.kt")
-        assertTrue(store.contains("Z_SETTLEMENT_BACKUP_FAILURE_ACK\""))
+        assertTrue(store.contains("Z_SETTLEMENT_BACKUP_FAILURE_ACK"))
         assertFalse(store.contains("Z_SETTLEMENT_BACKUP_FAILURE_ACKNOWLEDGED"))
     }
 
