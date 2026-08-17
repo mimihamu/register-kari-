@@ -78,7 +78,6 @@ internal class TransactionAbortCoordinatorV135(context: Context) : AutoCloseable
 
         db.beginTransaction()
         try {
-            // 監査を先に書き、後続の作業カート削除まで成功した時だけtransactionをcommitする。
             db.insertOrThrow(
                 "operation_audit",
                 null,
@@ -93,16 +92,14 @@ internal class TransactionAbortCoordinatorV135(context: Context) : AutoCloseable
                     put("created_at", now)
                 },
             )
-            // cart_items は未確定の作業領域。確定取引テーブルは変更しない。
             db.delete("cart_items", null, null)
             db.delete(
                 "line_tax_snapshots",
                 "scope = ? AND owner_id = ?",
                 arrayOf(LineTaxSnapshotStore.SCOPE_CART, "0"),
             )
-            if (SchemaMigration.tableExists(db, "sale_guest_count_pending_v135")) {
-                // 中止した取引の客数を次取引へ持ち越さない。
-                db.delete("sale_guest_count_pending_v135", "id = 1", null)
+            if (SchemaMigration.tableExists(db, SaleGuestCountRuntimeV135.PENDING_TABLE)) {
+                SaleGuestCountRuntimeV135.clearPendingGuestCount(db)
             }
             db.setTransactionSuccessful()
         } finally {
@@ -141,17 +138,24 @@ internal fun TransactionAbortButtonV135(
     DisposableEffect(guestRuntime) {
         onDispose { guestRuntime.close() }
     }
-    LaunchedEffect(items.isEmpty()) {
-        if (items.isEmpty() && guestCount != 0) {
-            guestRuntime.clear()
+    // The cart list changes on add/correction/hold/recall/sale. Re-read the SQLite source of truth so a
+    // recalled held ticket immediately restores its saved guest count on the button as well as at sale.
+    LaunchedEffect(items) {
+        val persisted = guestRuntime.current()
+        if (items.isEmpty()) {
+            if (persisted != 0) guestRuntime.clear()
             guestCount = 0
+        } else {
+            guestCount = persisted
         }
     }
 
     Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         OutlinedButton(
             onClick = {
-                guestInput = guestCount.takeIf { it > 0 }?.toString().orEmpty()
+                val persisted = guestRuntime.current()
+                guestCount = persisted
+                guestInput = persisted.takeIf { it > 0 }?.toString().orEmpty()
                 guestError = null
                 guestDialogOpen = true
             },
@@ -280,7 +284,6 @@ internal fun TransactionAbortButtonV135(
                             coordinator.abort(cartSnapshot, reason)
                         }
                     }.onSuccess {
-                        // DB上の監査＋作業カート削除がcommit済みになってから画面上のカートを消す。
                         guestCount = 0
                         onAbortCommitted()
                         abortDialogOpen = false
