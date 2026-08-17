@@ -10,6 +10,9 @@ class MixedTaxCartBootstrapProviderV135 : ContentProvider() {
     override fun onCreate(): Boolean {
         context?.applicationContext?.let { appContext ->
             MixedTaxCartRuntimeV135.initialize(appContext)
+            // Install guest-count sales/held-ticket compatibility columns and triggers before any UI
+            // can create or recall a ticket.
+            SaleGuestCountRuntimeV135(appContext).close()
             SettlementReportingRuntimeV135.initialize(appContext)
         }
         return true
