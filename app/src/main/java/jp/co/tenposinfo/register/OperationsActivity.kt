@@ -894,6 +894,9 @@ private fun SettlementScreen(
                             }
                         }
                     }
+                    if (summary.heldTickets > 0) {
+                        Text("未会計伝票があるためZ精算は禁止されています", color = OpDanger, fontWeight = FontWeight.Bold)
+                    }
                     zPreflight.message?.let { Text(it, color = OpDanger, fontWeight = FontWeight.Bold) }
                 }
                 Spacer(Modifier.height(8.dp))
