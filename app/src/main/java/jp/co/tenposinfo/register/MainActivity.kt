@@ -531,6 +531,21 @@ private fun RegisterApp() {
                     ticketMessage = null
                     screen = AppScreen.TICKET_SPLIT
                 },
+                onPrint = { ticket ->
+                    runCatching {
+                        val service = HeldTicketProvisionalPrintServiceV135(context.applicationContext)
+                        try {
+                            service.enqueue(ticket.id, operatorName)
+                        } finally {
+                            service.close()
+                        }
+                    }.onSuccess { result ->
+                        ticketMessage = "${ticket.name}の仮締め票を印刷キューへ登録しました（Job.${result.jobId}）"
+                        runCatching { AutomaticPrintScheduler.enqueueNow(context.applicationContext) }
+                    }.onFailure { error ->
+                        ticketMessage = error.message ?: "仮締め票を登録できませんでした"
+                    }
+                },
                 onBack = { screen = AppScreen.SALES },
             )
 
@@ -1529,6 +1544,7 @@ private fun TicketListScreen(
     onDelete: (HeldTicket) -> Unit,
     onMerge: (HeldTicket, HeldTicket) -> Unit,
     onSplit: (HeldTicket) -> Unit,
+    onPrint: (HeldTicket) -> Unit,
     onBack: () -> Unit,
 ) {
     var editingTicketId by remember { mutableStateOf<Long?>(null) }
@@ -1700,6 +1716,10 @@ private fun TicketListScreen(
                                       maxLines = 1,
                                   )
                               }
+                              OutlinedButton(
+                                  onClick = { onPrint(ticket) },
+                                  modifier = Modifier.weight(0.9f).height(42.dp),
+                              ) { Text("仮締め", fontSize = 12.sp, maxLines = 1) }
                               BlueButton(
                                   if (currentCartCount > 0) "退避して呼出" else "呼出",
                                   { onLoad(ticket) },
@@ -1743,6 +1763,11 @@ private fun TicketListScreen(
                                   fontWeight = FontWeight.Bold,
                               )
                           }
+                          Spacer(Modifier.width(8.dp))
+                          OutlinedButton(
+                              onClick = { onPrint(ticket) },
+                              modifier = Modifier.width(92.dp),
+                          ) { Text("仮締め") }
                           Spacer(Modifier.width(8.dp))
                           BlueButton(
                               if (currentCartCount > 0) "退避して呼出" else "呼出",

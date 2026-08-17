@@ -100,6 +100,7 @@ data class SettlementSaveResult(
 
 enum class OperationDocumentType(val displayName: String) {
     REVERSAL_RECEIPT("返品・取消レシート"),
+    HELD_TICKET_PROVISIONAL("仮締め票"),
     SETTLEMENT_REPORT("点検・精算票"),
     RECEIPT_VOUCHER("領収書"),
 }
