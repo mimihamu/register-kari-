@@ -1,0 +1,32 @@
+name: fix-rep003-actual-cash-scope-v135
+
+on:
+  push:
+    branches:
+      - develop/v1.35
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.35
+      - name: Apply deterministic scope fix
+        run: python3 .github/scripts/fix_rep003_actual_cash_scope_v135.py
+      - name: Commit fix
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/jp/co/tenposinfo/register/SettlementActivityV030.kt
+          git commit -m "fix(v1.35): preserve v1.05 actual-cash guard in REP-003 panel"
+          git push origin HEAD:develop/v1.35
