@@ -4,7 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -65,7 +67,7 @@ private val SettlementDangerV030 = Color(0xFFC62828)
 private val SettlementGreenV030 = Color(0xFF2E7D32)
 private val SettlementPaleBlueV030 = Color(0xFFEAF3FA)
 
-/** v0.30のレスポンシブX点検・Z精算画面。 */
+/** v0.30のレスポンシブX点検・Z精算画面。v1.35 REP-001/003を統合。 */
 class SettlementActivityV030 : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -169,13 +171,32 @@ private fun SettlementScreenV030(
     onExecute: (Long?, String, Boolean, Boolean) -> Unit,
     onClose: () -> Unit,
 ) {
+    val context = LocalContext.current
     val metrics = rememberRegisterResponsiveMetrics()
     val isZ = reportType == SettlementReportType.Z_SETTLEMENT
+    val rep001Totals = SettlementReportingRuntimeV135.currentTotals(summary.businessSessionId)
     var actualCash by remember { mutableStateOf("") }
     var managerPin by remember { mutableStateOf("") }
     var pendingAcknowledged by remember { mutableStateOf(false) }
     var backupFailureAcknowledged by remember { mutableStateOf(false) }
     var showConfirmation by remember { mutableStateOf(false) }
+    var pdfMessage by remember { mutableStateOf<String?>(null) }
+    val latestRecord = history.firstOrNull()
+    val pdfLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(SettlementPdfExportPolicyV135.MIME_TYPE),
+    ) { uri ->
+        if (uri != null) {
+            val record = latestRecord
+            pdfMessage = if (record == null) {
+                "PDF保存対象の点検・精算履歴がありません"
+            } else {
+                runCatching { SettlementPdfExportV135.write(context, record.id, uri) }.fold(
+                    onSuccess = { "PDFを保存しました（No.${record.id}）" },
+                    onFailure = { it.message ?: "PDF保存に失敗しました" },
+                )
+            }
+        }
+    }
     val actual = actualCash.toLongOrNull()
     val previewActual = if (isZ) actual else actual ?: summary.expectedCash
     val variance = previewActual?.let { OperationsMath.variance(it, summary.expectedCash) }
@@ -202,6 +223,7 @@ private fun SettlementScreenV030(
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("営業日 ${summary.businessDate} / セッションNo.${summary.businessSessionId}")
                     Text("純売上 ${settlementYenV030(summary.netSales)}")
+                    Text("客数 ${rep001Totals.guestCount}名 / 点数 ${rep001Totals.itemCount}点")
                     Text("現金実査 ${settlementYenV030(previewActual)} / 過不足 ${settlementSignedYenV030(variance)}")
                     preflight.items.forEach { Text("${it.category.displayName}: ${it.statusText}") }
                     Text("完了後、この営業セッションでは販売できません。", color = SettlementDangerV030, fontWeight = FontWeight.Bold)
@@ -244,8 +266,12 @@ private fun SettlementScreenV030(
                             } else onExecute(actual, "", false, false)
                         },
                     )
-                    SettlementPreviewPanelV030(Modifier.fillMaxWidth(), summary, previewActual, variance, preflight, isZ)
-                    SettlementHistoryPanelV030(Modifier.fillMaxWidth().heightIn(min = 180.dp), history)
+                    SettlementPreviewPanelV030(
+                        Modifier.fillMaxWidth(), summary, rep001Totals, previewActual, variance, preflight, isZ,
+                    )
+                    SettlementHistoryPanelV030(
+                        Modifier.fillMaxWidth().heightIn(min = 180.dp), history, pdfMessage,
+                    )
                 }
             } else {
                 Row(
@@ -266,12 +292,25 @@ private fun SettlementScreenV030(
                             } else onExecute(actual, "", false, false)
                         },
                     )
-                    SettlementPreviewPanelV030(Modifier.weight(0.9f).fillMaxHeight(), summary, previewActual, variance, preflight, isZ)
-                    SettlementHistoryPanelV030(Modifier.weight(1.05f).fillMaxHeight(), history)
+                    SettlementPreviewPanelV030(
+                        Modifier.weight(0.9f).fillMaxHeight(), summary, rep001Totals, previewActual, variance, preflight, isZ,
+                    )
+                    SettlementHistoryPanelV030(
+                        Modifier.weight(1.05f).fillMaxHeight(), history, pdfMessage,
+                    )
                 }
             }
         }
-        SettlementBottomV030(metrics, onClose)
+        SettlementBottomV030(
+            metrics = metrics,
+            pdfEnabled = latestRecord != null,
+            onPdfSave = {
+                val record = latestRecord ?: return@SettlementBottomV030
+                pdfMessage = null
+                pdfLauncher.launch(SettlementPdfExportPolicyV135.fileName(record))
+            },
+            onClose = onClose,
+        )
     }
 }
 
@@ -297,21 +336,38 @@ private fun SettlementInputPanelV030(
     val isZ = reportType == SettlementReportType.Z_SETTLEMENT
     val actualCashMaySubmit = SettlementActualCashSafetyV105.maySubmit(reportType, actualCash.toLongOrNull())
     SettlementPanelV030(modifier) {
-        Text(if (isZ) "Z精算・営業終了" else "X点検", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = if (isZ) SettlementDangerV030 else SettlementNavyV030)
+        Text(
+            if (isZ) "Z精算・営業終了" else "X点検",
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (isZ) SettlementDangerV030 else SettlementNavyV030,
+        )
         Spacer(Modifier.height(6.dp))
-        Text(session?.let { "対象: ${it.businessDate} / セッションNo.${it.id}" } ?: "営業中のセッションがありません", color = if (session == null) SettlementDangerV030 else SettlementGreenV030, fontWeight = FontWeight.Bold)
+        Text(
+            session?.let { "対象: ${it.businessDate} / セッションNo.${it.id}" } ?: "営業中のセッションがありません",
+            color = if (session == null) SettlementDangerV030 else SettlementGreenV030,
+            fontWeight = FontWeight.Bold,
+        )
         Spacer(Modifier.height(10.dp))
         OutlinedTextField(
             value = actualCash,
             onValueChange = onActualCashChanged,
             label = { Text(if (isZ) "現金実査額（必須）" else "現金実査額（空欄は理論額）") },
-            supportingText = { Text(if (isZ) SettlementActualCashSafetyV105.Z_REQUIRED_MESSAGE else "X点検では未入力の場合、理論現金を実在高として使用します。") },
+            supportingText = {
+                Text(
+                    if (isZ) SettlementActualCashSafetyV105.Z_REQUIRED_MESSAGE
+                    else "X点検では未入力の場合、理論現金を実在高として使用します。",
+                )
+            },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(8.dp))
-        Row(Modifier.fillMaxWidth().background(SettlementPaleBlueV030, RoundedCornerShape(8.dp)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().background(SettlementPaleBlueV030, RoundedCornerShape(8.dp)).padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text("操作担当", color = Color.DarkGray)
             Spacer(Modifier.weight(1f))
             Text(operatorName, fontWeight = FontWeight.Bold, color = SettlementNavyV030)
@@ -329,15 +385,24 @@ private fun SettlementInputPanelV030(
             Spacer(Modifier.height(8.dp))
             Text("精算前確認（REP-003）", fontWeight = FontWeight.Bold, color = SettlementNavyV030)
             preflight.items.forEach { item ->
-                Text("${item.category.displayName}: ${item.statusText}（${item.continuation.displayName}）", color = if (item.active) SettlementDangerV030 else SettlementGreenV030)
+                Text(
+                    "${item.category.displayName}: ${item.statusText}（${item.continuation.displayName}）",
+                    color = if (item.active) SettlementDangerV030 else SettlementGreenV030,
+                )
                 if (item.active && item.category == SettlementPreflightCategoryV135.PENDING_PRINT) {
-                    Row(Modifier.fillMaxWidth().clickable { onPendingAcknowledgedChanged(!pendingAcknowledged) }, verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onPendingAcknowledgedChanged(!pendingAcknowledged) },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Checkbox(checked = pendingAcknowledged, onCheckedChange = onPendingAcknowledgedChanged)
                         Text("未印刷のまま精算することを責任者確認", color = SettlementDangerV030)
                     }
                 }
                 if (item.active && item.category == SettlementPreflightCategoryV135.BACKUP_FAILURE) {
-                    Row(Modifier.fillMaxWidth().clickable { onBackupFailureAcknowledgedChanged(!backupFailureAcknowledged) }, verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onBackupFailureAcknowledgedChanged(!backupFailureAcknowledged) },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Checkbox(checked = backupFailureAcknowledged, onCheckedChange = onBackupFailureAcknowledgedChanged)
                         Text("バックアップ失敗を確認して精算を継続", color = SettlementDangerV030)
                     }
@@ -351,10 +416,16 @@ private fun SettlementInputPanelV030(
             enabled = session != null && actualCashMaySubmit && (!isZ || (!summary.settled && preflight.mayProceed)),
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             colors = ButtonDefaults.buttonColors(containerColor = if (isZ) SettlementDangerV030 else SettlementBlueV030),
-        ) { Text(if (isZ) "Z精算の確認へ" else "X点検を実行", fontWeight = FontWeight.Bold) }
+        ) {
+            Text(if (isZ) "Z精算の確認へ" else "X点検を実行", fontWeight = FontWeight.Bold)
+        }
         if (message != null) {
             Spacer(Modifier.height(8.dp))
-            Text(message, color = if (message.contains("保存しました") || message.contains("終了しました")) SettlementGreenV030 else SettlementDangerV030, fontWeight = FontWeight.SemiBold)
+            Text(
+                message,
+                color = if (message.contains("保存しました") || message.contains("終了しました")) SettlementGreenV030 else SettlementDangerV030,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
     }
 }
@@ -363,6 +434,7 @@ private fun SettlementInputPanelV030(
 private fun SettlementPreviewPanelV030(
     modifier: Modifier,
     summary: DailyOperationsSummary,
+    rep001Totals: SettlementRep001TotalsV135,
     previewActual: Long?,
     variance: Long?,
     preflight: ZSettlementPreflightResult,
@@ -374,8 +446,17 @@ private fun SettlementPreviewPanelV030(
         SettlementAmountV030("営業セッション", if (summary.businessSessionId > 0) "No.${summary.businessSessionId}" else "未開始")
         SettlementAmountV030("営業日", summary.businessDate)
         SettlementAmountV030("売上総額", settlementYenV030(summary.salesGross))
+        SettlementAmountV030("値引・割引", settlementYenV030(rep001Totals.discountTotalYen))
+        SettlementAmountV030("消費税", settlementYenV030(rep001Totals.taxTotalYen))
         SettlementAmountV030("返品・取消", "-${settlementYenV030(summary.reversalGross)}")
         SettlementAmountV030("純売上", settlementYenV030(summary.netSales), true)
+        SettlementAmountV030("売上件数", "${summary.transactionCount}件")
+        SettlementAmountV030("客数", "${rep001Totals.guestCount}名")
+        SettlementAmountV030("点数", "${rep001Totals.itemCount}点")
+        SettlementAmountV030(
+            "客単価",
+            if (rep001Totals.guestCount > 0) settlementYenV030(summary.netSales / rep001Totals.guestCount) else "-",
+        )
         SettlementAmountV030("現金理論", settlementYenV030(summary.expectedCash))
         SettlementAmountV030("現金実査", previewActual?.let(::settlementYenV030) ?: "未入力")
         SettlementAmountV030("過不足", variance?.let(::settlementSignedYenV030) ?: "未計算", true)
@@ -386,7 +467,12 @@ private fun SettlementPreviewPanelV030(
         SettlementAmountV030("バックアップ", if (summary.backupFailureMessage == null) "問題なし" else "失敗")
         if (isZ) {
             Spacer(Modifier.height(8.dp))
-            preflight.items.forEach { Text("${it.category.displayName}: ${it.statusText}", color = if (it.active) SettlementDangerV030 else SettlementGreenV030) }
+            preflight.items.forEach {
+                Text(
+                    "${it.category.displayName}: ${it.statusText}",
+                    color = if (it.active) SettlementDangerV030 else SettlementGreenV030,
+                )
+            }
         }
     }
 }
@@ -395,9 +481,19 @@ private fun SettlementPreviewPanelV030(
 private fun SettlementHistoryPanelV030(
     modifier: Modifier,
     history: List<SettlementRecord>,
+    pdfMessage: String?,
 ) {
     SettlementPanelV030(modifier) {
         Text("保存履歴", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = SettlementNavyV030)
+        if (!pdfMessage.isNullOrBlank()) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                pdfMessage,
+                color = if (pdfMessage.contains("保存しました")) SettlementGreenV030 else SettlementDangerV030,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+            )
+        }
         Spacer(Modifier.height(8.dp))
         if (history.isEmpty()) {
             Box(Modifier.fillMaxWidth().heightIn(min = 100.dp), contentAlignment = Alignment.Center) {
@@ -470,16 +566,31 @@ private fun SettlementHeaderV030(
             .padding(horizontal = metrics.screenPaddingDp.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("つぐレジ", color = Color.White, fontSize = if (metrics.isCompact) 19.sp else 23.sp, fontWeight = FontWeight.Bold)
+        Text(
+            "つぐレジ",
+            color = Color.White,
+            fontSize = if (metrics.isCompact) 19.sp else 23.sp,
+            fontWeight = FontWeight.Bold,
+        )
         Spacer(Modifier.width(if (metrics.isCompact) 12.dp else 24.dp))
-        Text(title, color = Color.White, fontSize = if (metrics.isCompact) 17.sp else 21.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            title,
+            color = Color.White,
+            fontSize = if (metrics.isCompact) 17.sp else 21.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
         Spacer(Modifier.weight(1f))
         if (!metrics.isCompact) Text("オフライン管理", color = Color.White, fontSize = 14.sp)
     }
 }
 
 @Composable
-private fun SettlementBottomV030(metrics: RegisterResponsiveMetrics, onClose: () -> Unit) {
+private fun SettlementBottomV030(
+    metrics: RegisterResponsiveMetrics,
+    pdfEnabled: Boolean,
+    onPdfSave: () -> Unit,
+    onClose: () -> Unit,
+) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -487,9 +598,18 @@ private fun SettlementBottomV030(metrics: RegisterResponsiveMetrics, onClose: ()
             .background(Color.White)
             .padding(horizontal = metrics.screenPaddingDp.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
     ) {
         OutlinedButton(onClick = onClose, modifier = Modifier.weight(1f).fillMaxHeight()) {
             Text("レジ管理へ戻る", fontWeight = FontWeight.Bold)
+        }
+        Button(
+            onClick = onPdfSave,
+            enabled = pdfEnabled,
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+            colors = ButtonDefaults.buttonColors(containerColor = SettlementBlueV030),
+        ) {
+            Text("最新の保存履歴をPDF保存", fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -501,7 +621,12 @@ private fun SettlementDeniedV030(permission: RegisterPermission, onClose: () -> 
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("${permission.displayName}を利用できません", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = SettlementDangerV030)
+        Text(
+            "${permission.displayName}を利用できません",
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+            color = SettlementDangerV030,
+        )
         Spacer(Modifier.height(12.dp))
         Text("権限がないか、ログインセッションが失効しています。")
         Spacer(Modifier.height(24.dp))
