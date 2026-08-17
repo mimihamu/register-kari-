@@ -64,9 +64,7 @@ object OperationDocumentRenderer {
         data.items.forEach { item ->
             lines += fit("${item.product.name} [${item.product.taxSymbol}]", width)
             lines += amountLine("${item.quantity} × ${yen(item.unitPrice)}", "-${yen(item.baseAmount)}", width)
-            if (item.discountAmount > 0) {
-                lines += amountLine("  元値引配賦", yen(item.discountAmount), width)
-            }
+            if (item.discountAmount > 0) lines += amountLine("  元値引配賦", yen(item.discountAmount), width)
         }
         lines += separator(width, '-')
         data.taxSummary.buckets.forEach { bucket ->
@@ -82,9 +80,7 @@ object OperationDocumentRenderer {
         }
         lines += separator(width, '-')
         lines += "※は軽減税率対象商品です"
-        if (data.issuer.registrationNumber.isNotBlank()) {
-            lines += "登録番号 ${data.issuer.registrationNumber}"
-        }
+        if (data.issuer.registrationNumber.isNotBlank()) lines += "登録番号 ${data.issuer.registrationNumber}"
         return lines.joinToString("\n")
     }
 
@@ -97,6 +93,14 @@ object OperationDocumentRenderer {
             businessSessionId = data.businessSessionId,
             createdAt = data.createdAt,
         )
+        val taxBreakdown = SettlementTaxBreakdownRuntimeV135.document(
+            businessSessionId = data.businessSessionId,
+            createdAt = data.createdAt,
+        )
+        val netTax = taxBreakdown.sumOf { it.taxAmountYen }
+        val cashSales = data.paymentTotals.firstOrNull { it.method == PaymentMethod.CASH.name }?.amount ?: 0L
+        val nonCashSales = data.paymentTotals.filterNot { it.method == PaymentMethod.CASH.name }.sumOf { it.amount }
+
         lines += center(issuer.storeName, width)
         if (issuer.address.isNotBlank()) lines += center(issuer.address, width)
         if (issuer.phone.isNotBlank()) lines += center(issuer.phone, width)
@@ -113,28 +117,33 @@ object OperationDocumentRenderer {
         lines += separator(width, '-')
         lines += amountLine("売上総額", yen(data.salesGross), width)
         lines += amountLine("値引・割引", yen(rep001Totals.discountTotalYen), width)
-        lines += amountLine("消費税", yen(rep001Totals.taxTotalYen), width)
+        lines += amountLine("消費税(返品反映後)", signedYen(netTax), width)
         lines += amountLine("返品・取消", "-${yen(data.reversalGross)}", width)
         lines += amountLine("純売上", yen(data.netSales), width)
         lines += separator(width, '-')
         lines += amountLine("売上件数", "${data.transactionCount}件", width)
         lines += amountLine("客数", "${rep001Totals.guestCount}名", width)
         lines += amountLine("点数", "${rep001Totals.itemCount}点", width)
-        lines += amountLine(
-            "客単価",
-            if (rep001Totals.guestCount > 0) yen(data.netSales / rep001Totals.guestCount) else "-",
-            width,
-        )
+        lines += amountLine("客単価", if (rep001Totals.guestCount > 0) yen(data.netSales / rep001Totals.guestCount) else "-", width)
         lines += amountLine("返品取消件数", "${data.reversalCount}件", width)
+        lines += separator(width, '-')
+        lines += center("税率別", width)
+        if (taxBreakdown.isEmpty()) {
+            lines += amountLine("税対象", yen(0), width)
+        } else {
+            taxBreakdown.forEach { bucket ->
+                lines += amountLine("${bucket.label}額", signedYen(bucket.targetAmountYen), width)
+                if (bucket.taxable) lines += amountLine("${bucket.ratePercent}%税額", signedYen(bucket.taxAmountYen), width)
+            }
+        }
+        lines += separator(width, '-')
+        lines += amountLine("現金売上", signedYen(cashSales), width)
+        lines += amountLine("非現金売上", signedYen(nonCashSales), width)
+        data.paymentTotals.forEach { payment -> lines += amountLine(paymentLabel(payment.method), signedYen(payment.amount), width) }
         lines += separator(width, '-')
         lines += amountLine("開始釣銭", yen(data.openingCash), width)
         lines += amountLine("入金", yen(data.cashIn), width)
         lines += amountLine("出金", "-${yen(data.cashOut)}", width)
-        lines += separator(width, '-')
-        data.paymentTotals.forEach { payment ->
-            lines += amountLine(paymentLabel(payment.method), yen(payment.amount), width)
-        }
-        lines += separator(width, '-')
         lines += amountLine("現金理論", yen(data.expectedCash), width)
         lines += amountLine("現金実査", yen(data.actualCash), width)
         lines += amountLine("現金過不足", signedYen(data.variance), width)
@@ -142,11 +151,10 @@ object OperationDocumentRenderer {
         lines += amountLine("未印刷", "${data.pendingPrints}件", width)
         lines += amountLine("未会計伝票", "${data.heldTickets}件", width)
         lines += separator(width, '=')
-        if (data.type == SettlementReportType.Z_SETTLEMENT) {
-            lines += center("営業日を精算しました", width)
-        } else {
-            lines += center("営業日は継続中です", width)
-        }
+        lines += center(
+            if (data.type == SettlementReportType.Z_SETTLEMENT) "営業日を精算しました" else "営業日は継続中です",
+            width,
+        )
         return lines.joinToString("\n")
     }
 
@@ -185,16 +193,15 @@ object OperationDocumentRenderer {
         var used = 0
         value.forEach { char ->
             val charWidth = if (char.code <= 0xFF) 1 else 2
-            if (used + charWidth > width) return@forEach
-            result.append(char)
-            used += charWidth
+            if (used + charWidth <= width) {
+                result.append(char)
+                used += charWidth
+            }
         }
         return result.toString()
     }
 
-    private fun padRight(value: String, width: Int): String =
-        value + " ".repeat((width - displayWidth(value)).coerceAtLeast(0))
-
+    private fun padRight(value: String, width: Int): String = value + " ".repeat((width - displayWidth(value)).coerceAtLeast(0))
     private fun displayWidth(value: String): Int = value.sumOf { if (it.code <= 0xFF) 1 else 2 }
 }
 
