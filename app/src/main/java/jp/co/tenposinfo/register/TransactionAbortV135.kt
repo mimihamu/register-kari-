@@ -2,20 +2,29 @@ package jp.co.tenposinfo.register
 
 import android.content.ContentValues
 import android.content.Context
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
 
 internal data class TransactionAbortSnapshotV135(
     val lineCount: Int,
@@ -91,6 +100,10 @@ internal class TransactionAbortCoordinatorV135(context: Context) : AutoCloseable
                 "scope = ? AND owner_id = ?",
                 arrayOf(LineTaxSnapshotStore.SCOPE_CART, "0"),
             )
+            if (SchemaMigration.tableExists(db, "sale_guest_count_pending_v135")) {
+                // 中止した取引の客数を次取引へ持ち越さない。
+                db.delete("sale_guest_count_pending_v135", "id = 1", null)
+            }
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
@@ -102,8 +115,10 @@ internal class TransactionAbortCoordinatorV135(context: Context) : AutoCloseable
 }
 
 /**
- * 販売画面の既存「取引中止」ボタンをCOR-004準拠にする。
- * 監査transaction成功前には onAbortCommitted を絶対に呼ばない。
+ * 販売画面のv1.35追加操作。
+ *
+ * 既存の「取引中止」領域を二分して「客数」と「取引中止」を提供する。
+ * 客数は会計件数から推測せず、担当者が明示入力した値だけを次の確定売上へ保存する。
  */
 @Composable
 internal fun TransactionAbortButtonV135(
@@ -112,32 +127,128 @@ internal fun TransactionAbortButtonV135(
     onAbortCommitted: () -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    var dialogOpen by remember { mutableStateOf(false) }
+    val guestRuntime = remember(context.applicationContext) {
+        SaleGuestCountRuntimeV135(context.applicationContext)
+    }
+    var guestCount by remember { mutableStateOf(guestRuntime.current()) }
+    var guestDialogOpen by remember { mutableStateOf(false) }
+    var guestInput by remember { mutableStateOf("") }
+    var guestError by remember { mutableStateOf<String?>(null) }
+    var abortDialogOpen by remember { mutableStateOf(false) }
     var reason by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    Button(
-        onClick = {
-            errorMessage = null
-            reason = ""
-            dialogOpen = true
-        },
-        enabled = items.isNotEmpty(),
-        modifier = modifier,
-        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-            containerColor = androidx.compose.ui.graphics.Color(0xFFFBE9E7),
-            contentColor = MaterialTheme.colorScheme.error,
-        ),
-    ) {
-        Text("取引中止", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, maxLines = 1)
+    DisposableEffect(guestRuntime) {
+        onDispose { guestRuntime.close() }
+    }
+    LaunchedEffect(items.isEmpty()) {
+        if (items.isEmpty() && guestCount != 0) {
+            guestRuntime.clear()
+            guestCount = 0
+        }
     }
 
-    if (!dialogOpen) return
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        OutlinedButton(
+            onClick = {
+                guestInput = guestCount.takeIf { it > 0 }?.toString().orEmpty()
+                guestError = null
+                guestDialogOpen = true
+            },
+            enabled = items.isNotEmpty(),
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+        ) {
+            Text(
+                if (guestCount > 0) "客数 ${guestCount}名" else "客数",
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                maxLines = 1,
+            )
+        }
+        Button(
+            onClick = {
+                errorMessage = null
+                reason = ""
+                abortDialogOpen = true
+            },
+            enabled = items.isNotEmpty(),
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                containerColor = androidx.compose.ui.graphics.Color(0xFFFBE9E7),
+                contentColor = MaterialTheme.colorScheme.error,
+            ),
+        ) {
+            Text("取引中止", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, maxLines = 1)
+        }
+    }
+
+    if (guestDialogOpen) {
+        AlertDialog(
+            onDismissRequest = {
+                guestError = null
+                guestDialogOpen = false
+            },
+            title = { Text("客数を入力") },
+            text = {
+                Column {
+                    Text("この取引の実際のお客様人数を入力します。未入力の場合は0名として保存し、会計件数からは推測しません。")
+                    OutlinedTextField(
+                        value = guestInput,
+                        onValueChange = {
+                            guestInput = it.filter(Char::isDigit).take(3)
+                            guestError = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("客数（1〜999名）") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
+                    guestError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        runCatching {
+                            guestRuntime.set(guestInput.toIntOrNull() ?: 0)
+                        }.onSuccess {
+                            guestCount = guestInput.toInt()
+                            guestDialogOpen = false
+                            guestError = null
+                        }.onFailure { error ->
+                            guestError = error.message ?: "客数を保存できませんでした"
+                        }
+                    },
+                    enabled = guestInput.toIntOrNull() != null,
+                ) { Text("客数を設定") }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(
+                        onClick = {
+                            guestRuntime.clear()
+                            guestCount = 0
+                            guestInput = ""
+                            guestError = null
+                            guestDialogOpen = false
+                        },
+                    ) { Text("未入力に戻す") }
+                    TextButton(
+                        onClick = {
+                            guestError = null
+                            guestDialogOpen = false
+                        },
+                    ) { Text("戻る") }
+                }
+            },
+        )
+    }
+
+    if (!abortDialogOpen) return
 
     AlertDialog(
         onDismissRequest = {
             errorMessage = null
-            dialogOpen = false
+            abortDialogOpen = false
         },
         title = { Text("未確定取引を中止") },
         text = {
@@ -170,8 +281,9 @@ internal fun TransactionAbortButtonV135(
                         }
                     }.onSuccess {
                         // DB上の監査＋作業カート削除がcommit済みになってから画面上のカートを消す。
+                        guestCount = 0
                         onAbortCommitted()
-                        dialogOpen = false
+                        abortDialogOpen = false
                         reason = ""
                         errorMessage = null
                     }.onFailure { error ->
@@ -185,7 +297,7 @@ internal fun TransactionAbortButtonV135(
             TextButton(
                 onClick = {
                     errorMessage = null
-                    dialogOpen = false
+                    abortDialogOpen = false
                 },
             ) { Text("戻る") }
         },
