@@ -177,7 +177,6 @@ private fun SettlementScreenV030(
     var backupFailureAcknowledged by remember { mutableStateOf(false) }
     var showConfirmation by remember { mutableStateOf(false) }
     val actual = actualCash.toLongOrNull()
-    val actualCashMaySubmit = SettlementActualCashSafetyV105.maySubmit(reportType, actualCash.toLongOrNull())
     val previewActual = if (isZ) actual else actual ?: summary.expectedCash
     val variance = previewActual?.let { OperationsMath.variance(it, summary.expectedCash) }
     val preflight = if (isZ) {
@@ -296,6 +295,7 @@ private fun SettlementInputPanelV030(
     onExecute: () -> Unit,
 ) {
     val isZ = reportType == SettlementReportType.Z_SETTLEMENT
+    val actualCashMaySubmit = SettlementActualCashSafetyV105.maySubmit(reportType, actualCash.toLongOrNull())
     SettlementPanelV030(modifier) {
         Text(if (isZ) "Z精算・営業終了" else "X点検", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = if (isZ) SettlementDangerV030 else SettlementNavyV030)
         Spacer(Modifier.height(6.dp))
