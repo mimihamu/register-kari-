@@ -52,12 +52,21 @@ class SecureOperationsCoordinator(
         return store.recordCashMovement(type, amount, reason, OperationsActorFormatter.direct(operator))
     }
 
+    fun inspectX(): DailyOperationsSummary =
+        executionGuard.runExclusive("X_INSPECTION:LIVE", "X点検を更新中です") {
+            requireOperator(OperationsAction.X_INSPECTION)
+            store.inspectX()
+        }
+
     fun recordSettlement(
         type: SettlementReportType,
         actualCash: Long?,
         managerPin: String,
         pendingPrintsAcknowledged: Boolean = false,
     ): Long {
+        require(type == SettlementReportType.Z_SETTLEMENT) {
+            "X点検はリアルタイム表示のみで固定スナップショットを保存しません"
+        }
         SettlementActualCashSafetyV105.validate(type, actualCash)
         val session = store.activeBusinessSession()
             ?: throw IllegalStateException("営業中の営業日がありません")

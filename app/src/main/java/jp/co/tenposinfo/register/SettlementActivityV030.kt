@@ -120,9 +120,11 @@ private fun SettlementRouteV030(
         @Suppress("UNUSED_VARIABLE") val refresh = revision
         val session = store.activeBusinessSession()
         val summary = store.dailySummary()
-        val history = session?.let {
-            store.recentSettlementsForSession(it.id, reportType)
-        }.orEmpty()
+        val history = if (reportType == SettlementReportType.X_INSPECTION) {
+            emptyList()
+        } else {
+            session?.let { store.recentSettlementsForSession(it.id, reportType) }.orEmpty()
+        }
         SettlementScreenV030(
             reportType = reportType,
             session = session,
@@ -131,25 +133,28 @@ private fun SettlementRouteV030(
             operatorName = current.name,
             message = message,
             onExecute = { actualCash, managerPin, pendingAcknowledged ->
-                val result = runCatching {
-                    secureStore.recordSettlement(
-                        type = reportType,
-                        actualCash = actualCash,
-                        managerPin = managerPin,
-                        pendingPrintsAcknowledged = pendingAcknowledged,
+                if (reportType == SettlementReportType.X_INSPECTION) {
+                    val result = runCatching { secureStore.inspectX() }
+                    message = result.fold(
+                        onSuccess = { "X点検を更新しました（固定スナップショットは保存しません）" },
+                        onFailure = { it.message ?: "X点検の更新に失敗しました" },
                     )
+                    if (result.isSuccess) revision++
+                } else {
+                    val result = runCatching {
+                        secureStore.recordSettlement(
+                            type = reportType,
+                            actualCash = actualCash,
+                            managerPin = managerPin,
+                            pendingPrintsAcknowledged = pendingAcknowledged,
+                        )
+                    }
+                    message = result.fold(
+                        onSuccess = { "Z精算を保存し、営業を終了しました（No.$it）" },
+                        onFailure = { it.message ?: "保存に失敗しました" },
+                    )
+                    if (result.isSuccess) revision++
                 }
-                message = result.fold(
-                    onSuccess = {
-                        if (reportType == SettlementReportType.Z_SETTLEMENT) {
-                            "Z精算を保存し、営業を終了しました（No.$it）"
-                        } else {
-                            "X点検を保存しました（No.$it）"
-                        }
-                    },
-                    onFailure = { it.message ?: "保存に失敗しました" },
-                )
-                if (result.isSuccess) revision++
                 operator = OperatorSessionRegistry.current(appContext)
             },
             onClose = onClose,
@@ -264,6 +269,7 @@ private fun SettlementScreenV030(
                     )
                     SettlementHistoryPanelV030(
                         Modifier.fillMaxWidth().heightIn(min = 180.dp),
+                        reportType,
                         history,
                     )
                 }
@@ -302,6 +308,7 @@ private fun SettlementScreenV030(
                     )
                     SettlementHistoryPanelV030(
                         Modifier.weight(1.05f).fillMaxHeight(),
+                        reportType,
                         history,
                     )
                 }
@@ -461,12 +468,18 @@ private fun SettlementPreviewPanelV030(
 @Composable
 private fun SettlementHistoryPanelV030(
     modifier: Modifier,
+    reportType: SettlementReportType,
     history: List<SettlementRecord>,
 ) {
+    val isZ = reportType == SettlementReportType.Z_SETTLEMENT
     SettlementPanelV030(modifier) {
-        Text("保存履歴", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = SettlementNavyV030)
+        Text(if (isZ) "保存履歴" else "X点検の扱い", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = SettlementNavyV030)
         Spacer(Modifier.height(8.dp))
-        if (history.isEmpty()) {
+        if (!isZ) {
+            Box(Modifier.fillMaxWidth().heightIn(min = 100.dp), contentAlignment = Alignment.Center) {
+                Text("X点検はリアルタイム表示のみです。固定履歴・固定帳票・印刷ジョブは作成しません。", color = Color.Gray)
+            }
+        } else if (history.isEmpty()) {
             Box(Modifier.fillMaxWidth().heightIn(min = 100.dp), contentAlignment = Alignment.Center) {
                 Text("履歴はありません", color = Color.Gray)
             }

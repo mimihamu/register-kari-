@@ -184,6 +184,9 @@ class OperationsStore(context: Context) {
         return summaryForSession(session)
     }
 
+    /** REP-003: X点検は現在値を読み取るだけで固定スナップショットを保存しない。 */
+    fun inspectX(): DailyOperationsSummary = dailySummary()
+
     fun summaryForSession(sessionId: Long): DailyOperationsSummary {
         val session = BusinessSessionSchema.sessionById(db, sessionId)
             ?: error("営業セッションNo.${sessionId}が見つかりません")
@@ -682,6 +685,9 @@ class OperationsStore(context: Context) {
         operatorName: String,
         pendingPrintsAcknowledged: Boolean = false,
     ): Long {
+        require(type == SettlementReportType.Z_SETTLEMENT) {
+            "X点検はリアルタイム表示のみで固定スナップショットを保存しません"
+        }
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
         val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
         val now = System.currentTimeMillis()
