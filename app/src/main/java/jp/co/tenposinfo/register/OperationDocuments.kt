@@ -92,6 +92,11 @@ object OperationDocumentRenderer {
         val width = paper.charsPerLine
         val lines = mutableListOf<String>()
         val issuer = TaxInvoiceSettingsRegistry.current().issuer
+        val rep001Totals = SettlementReportingRuntimeV135.documentTotals(
+            reportId = data.reportId,
+            businessSessionId = data.businessSessionId,
+            createdAt = data.createdAt,
+        )
         lines += center(issuer.storeName, width)
         if (issuer.address.isNotBlank()) lines += center(issuer.address, width)
         if (issuer.phone.isNotBlank()) lines += center(issuer.phone, width)
@@ -107,6 +112,8 @@ object OperationDocumentRenderer {
         data.reprintedBy?.takeIf(String::isNotBlank)?.let { lines += "再印字担当 $it" }
         lines += separator(width, '-')
         lines += amountLine("売上総額", yen(data.salesGross), width)
+        lines += amountLine("値引・割引", yen(rep001Totals.discountTotalYen), width)
+        lines += amountLine("消費税", yen(rep001Totals.taxTotalYen), width)
         lines += amountLine("返品・取消", "-${yen(data.reversalGross)}", width)
         lines += amountLine("純売上", yen(data.netSales), width)
         lines += amountLine("開始釣銭", yen(data.openingCash), width)

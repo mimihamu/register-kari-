@@ -5,10 +5,13 @@ import android.content.ContentValues
 import android.database.Cursor
 import android.net.Uri
 
-/** Initializes the v1.35 TAX-004 registration guard before the sales UI starts. */
+/** Initializes v1.35 guards before the sales / operations UI starts. */
 class MixedTaxCartBootstrapProviderV135 : ContentProvider() {
     override fun onCreate(): Boolean {
-        context?.applicationContext?.let(MixedTaxCartRuntimeV135::initialize)
+        context?.applicationContext?.let { appContext ->
+            MixedTaxCartRuntimeV135.initialize(appContext)
+            SettlementReportingRuntimeV135.initialize(appContext)
+        }
         return true
     }
 
