@@ -40,6 +40,32 @@ class V135SettlementReportingTest {
     }
 
     @Test
+    fun taxRateBreakdownSubtractsReturnsAndKeepsNonTaxableSeparate() {
+        val sale = TaxSummary(
+            listOf(
+                TaxBucket(10, true, setOf(TaxCategory.INCLUDED_10), 1_000, 100, 1_100),
+                TaxBucket(8, true, setOf(TaxCategory.INCLUDED_8), 500, 40, 540),
+                TaxBucket(0, false, setOf(TaxCategory.NON_TAXABLE), 300, 0, 300),
+            ),
+        )
+        val returned = TaxSummary(
+            listOf(
+                TaxBucket(10, true, setOf(TaxCategory.INCLUDED_10), 200, 20, 220),
+                TaxBucket(0, false, setOf(TaxCategory.NON_TAXABLE), 100, 0, 100),
+            ),
+        )
+        val result = SettlementTaxBreakdownPolicyV135.aggregate(listOf(1 to sale, -1 to returned))
+        assertEquals(
+            listOf(
+                SettlementTaxRateBucketV135(10, true, 880, 80),
+                SettlementTaxRateBucketV135(8, true, 540, 40),
+                SettlementTaxRateBucketV135(0, false, 200, 0),
+            ),
+            result,
+        )
+    }
+
+    @Test
     fun pdfFileNameContainsTypeDateAndSnapshotNumber() {
         val record = SettlementRecord(
             id = 42L,
