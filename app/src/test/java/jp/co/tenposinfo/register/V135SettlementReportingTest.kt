@@ -32,6 +32,14 @@ class V135SettlementReportingTest {
     }
 
     @Test
+    fun guestCountRequiresExplicitPositiveValueWithinBounds() {
+        assertEquals(1, SaleGuestCountPolicyV135.validate(1))
+        assertEquals(999, SaleGuestCountPolicyV135.validate(999))
+        assertTrue(runCatching { SaleGuestCountPolicyV135.validate(0) }.isFailure)
+        assertTrue(runCatching { SaleGuestCountPolicyV135.validate(1000) }.isFailure)
+    }
+
+    @Test
     fun pdfFileNameContainsTypeDateAndSnapshotNumber() {
         val record = SettlementRecord(
             id = 42L,
