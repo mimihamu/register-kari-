@@ -14,6 +14,7 @@ class MixedTaxCartBootstrapProviderV135 : ContentProvider() {
             // can create or recall a ticket.
             SaleGuestCountRuntimeV135(appContext).close()
             SettlementReportingRuntimeV135.initialize(appContext)
+            SettlementTaxBreakdownRuntimeV135.initialize(appContext)
         }
         return true
     }
