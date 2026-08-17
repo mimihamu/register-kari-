@@ -1,0 +1,28 @@
+name: v1.35 revert wrong REP-003 interpretation
+
+on:
+  push:
+    branches:
+      - develop/v1.35
+    paths:
+      - '.github/workflows/v135-revert-wrong-rep003.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  revert:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.35
+          fetch-depth: 0
+      - name: Revert wrong REP-003 product commits only
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git revert --no-edit 2d5421133468b4c537f008b4f0406b03f6cd0c79
+          git revert --no-edit 5bee74527822e3e4643557c85cc02c8a6f8fbbaa
+          git revert --no-edit 8da646b9b91ebdbae4aa75884336b018c1090cb3
+          git push origin HEAD:develop/v1.35
