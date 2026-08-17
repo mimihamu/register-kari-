@@ -172,28 +172,23 @@ private fun OperationsApp(
         }
     }
 
-    fun inspectX() {
-        val result = runCatching { secureStore.inspectX() }
-        message = result.fold(
-            onSuccess = { "X点検を更新しました（固定スナップショットは保存しません）" },
-            onFailure = { it.message ?: "X点検の更新に失敗しました" },
-        )
-        if (result.isSuccess) revision++
-        activeOperator = OperatorSessionRegistry.current(appContext)
-    }
-
     fun executeSettlement(
         type: SettlementReportType,
         actualCash: Long?,
         pin: String,
         pendingPrintsAcknowledged: Boolean,
     ) {
-        require(type == SettlementReportType.Z_SETTLEMENT) { "永続化する精算はZ精算だけです" }
         val result = runCatching {
             secureStore.recordSettlement(type, actualCash, pin, pendingPrintsAcknowledged)
         }
         message = result.fold(
-            onSuccess = { "Z精算を保存し、営業を終了しました（No.$it）" },
+            onSuccess = {
+                if (type == SettlementReportType.Z_SETTLEMENT) {
+                    "Z精算を保存し、営業を終了しました（No.$it）"
+                } else {
+                    "X点検を保存しました（No.$it）"
+                }
+            },
             onFailure = { it.message ?: "保存に失敗しました" },
         )
         if (result.isSuccess) revision++
@@ -266,10 +261,19 @@ private fun OperationsApp(
                 title = "X点検",
                 session = store.activeBusinessSession(),
                 summary = store.dailySummary(),
-                history = emptyList(),
+                history = store.activeBusinessSession()?.let {
+                    store.recentSettlementsForSession(it.id, SettlementReportType.X_INSPECTION)
+                } ?: emptyList(),
                 operatorName = operator.name,
                 revision = revision,
-                onExecute = { _, _, _ -> inspectX() },
+                onExecute = { actualCash, pin, pendingPrintsAcknowledged ->
+                    executeSettlement(
+                        SettlementReportType.X_INSPECTION,
+                        actualCash,
+                        pin,
+                        pendingPrintsAcknowledged,
+                    )
+                },
                 message = message,
                 onBack = { screen = OperationsScreen.MENU },
             )
@@ -874,7 +878,7 @@ private fun SettlementScreen(
                     if (isZSettlement) {
                         "Z精算は現在の営業セッションに対して1回だけ実行し、完了と同時に営業終了します。同じ営業日で再開する場合は新しい営業セッションになります。"
                     } else {
-                        "X点検は現在の営業セッションをリアルタイム集計します。固定スナップショットや印刷ジョブは保存せず、営業状態も変更しません。"
+                        "X点検は現在の営業セッションの値を保存します。営業は終了せず、そのまま販売を継続できます。"
                     },
                     color = Color.DarkGray,
                 )
@@ -924,17 +928,9 @@ private fun SettlementScreen(
             }
 
             OpPanel(Modifier.weight(1f).fillMaxHeight()) {
-                Text(if (isZSettlement) "保存履歴" else "X点検の扱い", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = OpNavy)
+                Text("保存履歴", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = OpNavy)
                 Spacer(Modifier.height(8.dp))
-                if (!isZSettlement) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            "X点検は現在値の表示のみです。\n固定履歴・固定帳票・印刷ジョブは作成しません。",
-                            color = Color.Gray,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                } else if (history.isEmpty()) {
+                if (history.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("履歴はありません", color = Color.Gray) }
                 } else {
                     LazyColumn {
