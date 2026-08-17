@@ -57,6 +57,6 @@ class V135HeldTicketProvisionalPrintTest {
         val main = source("MainActivity.kt")
         assertTrue(main.contains("onPrint: (HeldTicket) -> Unit"))
         assertTrue(main.contains("HeldTicketProvisionalPrintServiceV135"))
-        assertTrue(main.contains("Text("仮締め""))
+        assertTrue(main.contains("Text(\"仮締め\""))
     }
 }
