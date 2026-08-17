@@ -1,0 +1,32 @@
+name: v1.35 REP-003 v0.26 compatibility patch
+
+on:
+  push:
+    branches:
+      - develop/v1.35
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.35
+          fetch-depth: 0
+      - name: Apply exact compatibility patch
+        run: python3 .github/scripts/v135_rep003_v026_test_compat.py
+      - name: Commit patch if needed
+        run: |
+          if git diff --quiet; then
+            echo "No patch required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt
+          git commit -m "fix(v1.35): preserve REP-003 legacy held-ticket guidance"
+          git push origin HEAD:develop/v1.35
