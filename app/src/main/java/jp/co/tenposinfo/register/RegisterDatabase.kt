@@ -12,8 +12,8 @@ data class HeldTicket(
     val operatorName: String,
     val createdAt: Long,
     val itemCount: Int,
-    val guestCount: Int = 0,
     val totalAmount: Long,
+    val guestCount: Int = 0,
 )
 
 class RegisterDatabase(context: Context) : SQLiteOpenHelper(
