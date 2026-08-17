@@ -1,0 +1,34 @@
+name: v1.35 corrected REP-003 preflight patch
+
+on:
+  push:
+    branches:
+      - develop/v1.35
+    paths:
+      - '.github/workflows/v135-rep003-correct-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.35
+          fetch-depth: 0
+      - name: Apply exact-match corrected REP-003 patch
+        run: python3 .github/scripts/v135_rep003_correct_patch.py
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/SettlementActivityV030.kt
+          git diff --cached --check
+          git diff --cached --quiet && { echo 'No changes produced'; exit 1; }
+          git commit -m "feat(v1.35): implement complete REP-003 settlement preflight"
+          git push origin HEAD:develop/v1.35
