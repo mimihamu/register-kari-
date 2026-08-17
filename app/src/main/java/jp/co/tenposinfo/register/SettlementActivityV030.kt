@@ -177,6 +177,7 @@ private fun SettlementScreenV030(
     var backupFailureAcknowledged by remember { mutableStateOf(false) }
     var showConfirmation by remember { mutableStateOf(false) }
     val actual = actualCash.toLongOrNull()
+    val actualCashMaySubmit = SettlementActualCashSafetyV105.maySubmit(reportType, actualCash.toLongOrNull())
     val previewActual = if (isZ) actual else actual ?: summary.expectedCash
     val variance = previewActual?.let { OperationsMath.variance(it, summary.expectedCash) }
     val preflight = if (isZ) {
@@ -347,7 +348,7 @@ private fun SettlementInputPanelV030(
         Spacer(Modifier.height(12.dp))
         Button(
             onClick = onExecute,
-            enabled = session != null && (!isZ || (!summary.settled && preflight.mayProceed)),
+            enabled = session != null && actualCashMaySubmit && (!isZ || (!summary.settled && preflight.mayProceed)),
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             colors = ButtonDefaults.buttonColors(containerColor = if (isZ) SettlementDangerV030 else SettlementBlueV030),
         ) { Text(if (isZ) "Z精算の確認へ" else "X点検を実行", fontWeight = FontWeight.Bold) }
