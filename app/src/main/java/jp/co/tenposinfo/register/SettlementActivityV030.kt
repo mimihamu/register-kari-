@@ -122,9 +122,7 @@ private fun SettlementRouteV030(
         @Suppress("UNUSED_VARIABLE") val refresh = revision
         val session = store.activeBusinessSession()
         val summary = store.dailySummary()
-        val history = session?.let {
-            store.recentSettlementsForSession(it.id, reportType)
-        }.orEmpty()
+        val history = session?.let { store.recentSettlementsForSession(it.id, reportType) }.orEmpty()
         SettlementScreenV030(
             reportType = reportType,
             session = session,
@@ -175,6 +173,7 @@ private fun SettlementScreenV030(
     val metrics = rememberRegisterResponsiveMetrics()
     val isZ = reportType == SettlementReportType.Z_SETTLEMENT
     val rep001Totals = SettlementReportingRuntimeV135.currentTotals(summary.businessSessionId)
+    val taxBreakdown = SettlementTaxBreakdownRuntimeV135.current(summary.businessSessionId)
     var actualCash by remember { mutableStateOf("") }
     var managerPin by remember { mutableStateOf("") }
     var pendingAcknowledged by remember { mutableStateOf(false) }
@@ -260,18 +259,12 @@ private fun SettlementScreenV030(
                         { managerPin = it.filter(Char::isDigit).take(8) },
                         { pendingAcknowledged = it },
                         { backupFailureAcknowledged = it },
-                        {
-                            if (isZ) {
-                                if (preflight.mayProceed) showConfirmation = true
-                            } else onExecute(actual, "", false, false)
-                        },
+                        { if (isZ) { if (preflight.mayProceed) showConfirmation = true } else onExecute(actual, "", false, false) },
                     )
                     SettlementPreviewPanelV030(
-                        Modifier.fillMaxWidth(), summary, rep001Totals, previewActual, variance, preflight, isZ,
+                        Modifier.fillMaxWidth(), summary, rep001Totals, taxBreakdown, previewActual, variance, preflight, isZ,
                     )
-                    SettlementHistoryPanelV030(
-                        Modifier.fillMaxWidth().heightIn(min = 180.dp), history, pdfMessage,
-                    )
+                    SettlementHistoryPanelV030(Modifier.fillMaxWidth().heightIn(min = 180.dp), history, pdfMessage)
                 }
             } else {
                 Row(
@@ -286,18 +279,12 @@ private fun SettlementScreenV030(
                         { managerPin = it.filter(Char::isDigit).take(8) },
                         { pendingAcknowledged = it },
                         { backupFailureAcknowledged = it },
-                        {
-                            if (isZ) {
-                                if (preflight.mayProceed) showConfirmation = true
-                            } else onExecute(actual, "", false, false)
-                        },
+                        { if (isZ) { if (preflight.mayProceed) showConfirmation = true } else onExecute(actual, "", false, false) },
                     )
                     SettlementPreviewPanelV030(
-                        Modifier.weight(0.9f).fillMaxHeight(), summary, rep001Totals, previewActual, variance, preflight, isZ,
+                        Modifier.weight(0.9f).fillMaxHeight(), summary, rep001Totals, taxBreakdown, previewActual, variance, preflight, isZ,
                     )
-                    SettlementHistoryPanelV030(
-                        Modifier.weight(1.05f).fillMaxHeight(), history, pdfMessage,
-                    )
+                    SettlementHistoryPanelV030(Modifier.weight(1.05f).fillMaxHeight(), history, pdfMessage)
                 }
             }
         }
@@ -435,11 +422,15 @@ private fun SettlementPreviewPanelV030(
     modifier: Modifier,
     summary: DailyOperationsSummary,
     rep001Totals: SettlementRep001TotalsV135,
+    taxBreakdown: List<SettlementTaxRateBucketV135>,
     previewActual: Long?,
     variance: Long?,
     preflight: ZSettlementPreflightResult,
     isZ: Boolean,
 ) {
+    val netTax = taxBreakdown.sumOf { it.taxAmountYen }
+    val cashSales = summary.paymentTotals.firstOrNull { it.method == PaymentMethod.CASH.name }?.amount ?: 0L
+    val nonCashSales = summary.paymentTotals.filterNot { it.method == PaymentMethod.CASH.name }.sumOf { it.amount }
     SettlementPanelV030(modifier) {
         Text("プレビュー", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = SettlementNavyV030)
         Spacer(Modifier.height(10.dp))
@@ -447,16 +438,30 @@ private fun SettlementPreviewPanelV030(
         SettlementAmountV030("営業日", summary.businessDate)
         SettlementAmountV030("売上総額", settlementYenV030(summary.salesGross))
         SettlementAmountV030("値引・割引", settlementYenV030(rep001Totals.discountTotalYen))
-        SettlementAmountV030("消費税", settlementYenV030(rep001Totals.taxTotalYen))
+        SettlementAmountV030("消費税(返品反映後)", settlementSignedYenV030(netTax))
         SettlementAmountV030("返品・取消", "-${settlementYenV030(summary.reversalGross)}")
         SettlementAmountV030("純売上", settlementYenV030(summary.netSales), true)
         SettlementAmountV030("売上件数", "${summary.transactionCount}件")
         SettlementAmountV030("客数", "${rep001Totals.guestCount}名")
         SettlementAmountV030("点数", "${rep001Totals.itemCount}点")
-        SettlementAmountV030(
-            "客単価",
-            if (rep001Totals.guestCount > 0) settlementYenV030(summary.netSales / rep001Totals.guestCount) else "-",
-        )
+        SettlementAmountV030("客単価", if (rep001Totals.guestCount > 0) settlementYenV030(summary.netSales / rep001Totals.guestCount) else "-")
+        Spacer(Modifier.height(6.dp))
+        Text("税率別", fontWeight = FontWeight.Bold, color = SettlementNavyV030)
+        if (taxBreakdown.isEmpty()) {
+            SettlementAmountV030("税対象", settlementYenV030(0))
+        } else {
+            taxBreakdown.forEach { bucket ->
+                SettlementAmountV030("${bucket.label}額", settlementSignedYenV030(bucket.targetAmountYen))
+                if (bucket.taxable) SettlementAmountV030("${bucket.ratePercent}%税額", settlementSignedYenV030(bucket.taxAmountYen))
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        SettlementAmountV030("現金売上", settlementSignedYenV030(cashSales))
+        SettlementAmountV030("非現金売上", settlementSignedYenV030(nonCashSales))
+        summary.paymentTotals.forEach { payment ->
+            val label = runCatching { PaymentMethod.valueOf(payment.method).displayName }.getOrElse { payment.method }
+            SettlementAmountV030(label, settlementSignedYenV030(payment.amount))
+        }
         SettlementAmountV030("現金理論", settlementYenV030(summary.expectedCash))
         SettlementAmountV030("現金実査", previewActual?.let(::settlementYenV030) ?: "未入力")
         SettlementAmountV030("過不足", variance?.let(::settlementSignedYenV030) ?: "未計算", true)
@@ -468,10 +473,7 @@ private fun SettlementPreviewPanelV030(
         if (isZ) {
             Spacer(Modifier.height(8.dp))
             preflight.items.forEach {
-                Text(
-                    "${it.category.displayName}: ${it.statusText}",
-                    color = if (it.active) SettlementDangerV030 else SettlementGreenV030,
-                )
+                Text("${it.category.displayName}: ${it.statusText}", color = if (it.active) SettlementDangerV030 else SettlementGreenV030)
             }
         }
     }
@@ -559,26 +561,13 @@ private fun SettlementHeaderV030(
 ) {
     val title = if (reportType == SettlementReportType.Z_SETTLEMENT) "SCR-500-Z  Z精算・営業終了" else "SCR-500-X  X点検"
     Row(
-        Modifier
-            .fillMaxWidth()
-            .height(metrics.headerHeightDp.dp)
-            .background(SettlementNavyV030)
+        Modifier.fillMaxWidth().height(metrics.headerHeightDp.dp).background(SettlementNavyV030)
             .padding(horizontal = metrics.screenPaddingDp.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            "つぐレジ",
-            color = Color.White,
-            fontSize = if (metrics.isCompact) 19.sp else 23.sp,
-            fontWeight = FontWeight.Bold,
-        )
+        Text("つぐレジ", color = Color.White, fontSize = if (metrics.isCompact) 19.sp else 23.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(if (metrics.isCompact) 12.dp else 24.dp))
-        Text(
-            title,
-            color = Color.White,
-            fontSize = if (metrics.isCompact) 17.sp else 21.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
+        Text(title, color = Color.White, fontSize = if (metrics.isCompact) 17.sp else 21.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.weight(1f))
         if (!metrics.isCompact) Text("オフライン管理", color = Color.White, fontSize = 14.sp)
     }
@@ -592,10 +581,7 @@ private fun SettlementBottomV030(
     onClose: () -> Unit,
 ) {
     Row(
-        Modifier
-            .fillMaxWidth()
-            .height(metrics.bottomBarHeightDp.dp)
-            .background(Color.White)
+        Modifier.fillMaxWidth().height(metrics.bottomBarHeightDp.dp).background(Color.White)
             .padding(horizontal = metrics.screenPaddingDp.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
@@ -621,12 +607,7 @@ private fun SettlementDeniedV030(permission: RegisterPermission, onClose: () -> 
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
-            "${permission.displayName}を利用できません",
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
-            color = SettlementDangerV030,
-        )
+        Text("${permission.displayName}を利用できません", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = SettlementDangerV030)
         Spacer(Modifier.height(12.dp))
         Text("権限がないか、ログインセッションが失効しています。")
         Spacer(Modifier.height(24.dp))
@@ -634,8 +615,7 @@ private fun SettlementDeniedV030(permission: RegisterPermission, onClose: () -> 
     }
 }
 
-private fun settlementYenV030(value: Long): String =
-    NumberFormat.getCurrencyInstance(Locale.JAPAN).format(value)
+private fun settlementYenV030(value: Long): String = NumberFormat.getCurrencyInstance(Locale.JAPAN).format(value)
 
 private fun settlementSignedYenV030(value: Long): String = when {
     value > 0 -> "+${settlementYenV030(value)}"
