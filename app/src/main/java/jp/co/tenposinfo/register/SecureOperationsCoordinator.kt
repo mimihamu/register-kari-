@@ -8,6 +8,7 @@ enum class OperationsAction(
     val managerApprovalRequired: Boolean,
 ) {
     DAILY_SALES(RegisterPermission.VIEW_SALES, false),
+    BUSINESS_START(RegisterPermission.BUSINESS_START, false),
     X_INSPECTION(RegisterPermission.X_INSPECTION, false),
     Z_SETTLEMENT(RegisterPermission.Z_SETTLEMENT, false),
     CASH_MOVEMENT(RegisterPermission.CASH_MOVEMENT, false),
@@ -43,7 +44,7 @@ class SecureOperationsCoordinator(
 
     fun startBusinessDay(businessDate: LocalDate, openingCash: Long): Long =
         executionGuard.runExclusive("BUSINESS_OPEN:$businessDate", "営業開始を処理中です") {
-            val operator = requireOperator(OperationsAction.Z_SETTLEMENT)
+            val operator = requireOperator(OperationsAction.BUSINESS_START)
             store.startBusinessDay(businessDate, openingCash, OperationsActorFormatter.direct(operator))
         }
 

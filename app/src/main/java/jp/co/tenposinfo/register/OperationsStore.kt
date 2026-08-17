@@ -835,7 +835,7 @@ class OperationsStore(context: Context) {
             }
             if (type == SettlementReportType.Z_SETTLEMENT && summary.backupFailureMessage != null) {
                 insertAudit(
-                    eventType = "Z_SETTLEMENT_BACKUP_FAILURE_ACKNOWLEDGED",
+                    eventType = "Z_SETTLEMENT_BACKUP_FAILURE_ACK",
                     referenceId = id,
                     detail = "直近バックアップ失敗を確認してZ精算を継続: ${summary.backupFailureMessage}",
                     operatorName = operatorName,

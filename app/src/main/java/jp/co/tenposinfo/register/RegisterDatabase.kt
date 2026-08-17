@@ -12,6 +12,7 @@ data class HeldTicket(
     val operatorName: String,
     val createdAt: Long,
     val itemCount: Int,
+    val guestCount: Int = 0,
     val totalAmount: Long,
 )
 
@@ -45,6 +46,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
     override fun onOpen(db: SQLiteDatabase) {
         super.onOpen(db)
         CartCorrectionSchemaV135.ensure(db)
+        SaleGuestCountRuntimeV135.ensureSchema(db)
     }
 
     fun loadProducts(): List<Product> {
@@ -188,9 +190,11 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         readableDatabase.rawQuery(
             """
             SELECT t.id, t.name, t.operator_name, t.created_at,
-                   COALESCE(SUM(i.quantity), 0) AS item_count
+                   COALESCE(SUM(i.quantity), 0) AS item_count,
+                   COALESCE(MAX(g.guest_count), 0) AS guest_count
             FROM held_tickets t
             LEFT JOIN held_ticket_items i ON i.ticket_id = t.id
+            LEFT JOIN held_ticket_guest_count_v135 g ON g.ticket_id = t.id
             GROUP BY t.id, t.name, t.operator_name, t.created_at
             ORDER BY t.created_at DESC
             """.trimIndent(),
@@ -205,6 +209,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     operatorName = cursor.getString(2),
                     createdAt = cursor.getLong(3),
                     itemCount = cursor.getInt(4),
+                    guestCount = cursor.getInt(5),
                     totalAmount = TaxEngine.calculate(items).grossAmount,
                 )
             }

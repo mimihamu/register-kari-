@@ -2,12 +2,12 @@ package jp.co.tenposinfo.register
 
 /**
  * v0.30の営業開始導線判定。
- * 旧SETTLEMENTは保存データ読込時にRegisterPermissionCompatibilityV026で展開されるため、
- * 新規UI・認可判定ではZ_SETTLEMENTだけを参照する。
+ * v1.35では営業開始をZ精算から分離し、新規UI・認可判定はBUSINESS_STARTだけを参照する。
+ * 旧SETTLEMENTは互換レイヤーでBUSINESS_START/X/Zへ展開される。
  */
 object BusinessStartNavigationPolicyV030 {
     fun canOpenBusinessStart(permissions: Set<RegisterPermission>): Boolean =
-        RegisterPermission.Z_SETTLEMENT in permissions
+        RegisterPermission.BUSINESS_START in permissions
 }
 
 /** レジ管理メニューを表示できる権限の共通判定。 */
@@ -15,6 +15,7 @@ object ManagementNavigationPolicyV030 {
     private val managementPermissions = setOf(
         RegisterPermission.VIEW_SALES,
         RegisterPermission.CASH_MOVEMENT,
+        RegisterPermission.BUSINESS_START,
         RegisterPermission.X_INSPECTION,
         RegisterPermission.Z_SETTLEMENT,
         RegisterPermission.REVERSAL,

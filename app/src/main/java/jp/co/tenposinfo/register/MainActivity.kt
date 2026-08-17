@@ -1653,7 +1653,7 @@ private fun TicketListScreen(
                           Column(Modifier.weight(1f)) {
                               Text(ticket.name, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Navy, maxLines = 1)
                               Text(
-                                  "${formatDate(ticket.createdAt)} / ${ticket.operatorName} / ${ticket.itemCount}点",
+                                  "${formatDate(ticket.createdAt)} / ${ticket.operatorName}${if (ticket.guestCount > 0) " / ${ticket.guestCount}名" else ""} / ${ticket.itemCount}点",
                                   color = Color.Gray,
                                   fontSize = 11.sp,
                                   maxLines = 1,
@@ -1712,7 +1712,7 @@ private fun TicketListScreen(
                           Column(Modifier.weight(1f)) {
                               Text(ticket.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Navy)
                               Text(
-                                  "${formatDate(ticket.createdAt)} / 担当 ${ticket.operatorName} / ${ticket.itemCount}点",
+                                  "${formatDate(ticket.createdAt)} / 担当 ${ticket.operatorName}${if (ticket.guestCount > 0) " / ${ticket.guestCount}名" else ""} / ${ticket.itemCount}点",
                                   color = Color.Gray,
                               )
                           }

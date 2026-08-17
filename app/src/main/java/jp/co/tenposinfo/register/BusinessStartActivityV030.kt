@@ -63,7 +63,7 @@ private val BusinessPaleBlueV030 = Color(0xFFEAF3FA)
 
 /**
  * 営業開始ゲートから直接開くv0.30専用画面。
- * 管理メニューを経由せず、画面表示時と保存直前の両方でZ_SETTLEMENTを検証する。
+ * 管理メニューを経由せず、画面表示時と保存直前の両方でBUSINESS_STARTを検証する。
  */
 class BusinessStartActivityV030 : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

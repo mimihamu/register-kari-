@@ -149,14 +149,14 @@ object ZSettlementPreflightPolicy {
     }
 }
 
-/** 旧SETTLEMENT権限を、X点検とZ精算へ安全に展開する互換レイヤー。 */
+/** 旧SETTLEMENT権限を、営業開始・X点検・Z精算へ安全に展開する互換レイヤー。 */
 object RegisterPermissionCompatibilityV026 {
     val selectablePermissions: List<RegisterPermission>
         get() = RegisterPermission.entries.filterNot { it == RegisterPermission.SETTLEMENT }
 
     fun expand(stored: Set<RegisterPermission>): Set<RegisterPermission> {
         if (RegisterPermission.SETTLEMENT !in stored) return stored
-        return stored + RegisterPermission.X_INSPECTION + RegisterPermission.Z_SETTLEMENT
+        return stored + RegisterPermission.BUSINESS_START + RegisterPermission.X_INSPECTION + RegisterPermission.Z_SETTLEMENT
     }
 
     fun normalizeForSave(selected: Set<RegisterPermission>): Set<RegisterPermission> =

@@ -10,10 +10,18 @@ class V030BusinessStartNavigationTest {
     private fun source(name: String) = File("src/main/java/jp/co/tenposinfo/register/$name").readText()
 
     @Test
-    fun caseA_salesAndZSettlementShowsBusinessStartNavigation() {
-        val permissions = setOf(RegisterPermission.SALES, RegisterPermission.Z_SETTLEMENT)
+    fun caseA_salesAndBusinessStartShowsBusinessStartNavigation() {
+        val permissions = setOf(RegisterPermission.SALES, RegisterPermission.BUSINESS_START)
 
         assertTrue(BusinessStartNavigationPolicyV030.canOpenBusinessStart(permissions))
+        assertTrue(OperationsAccessPolicyV030.canEnter(permissions))
+    }
+
+    @Test
+    fun zSettlementAloneNoLongerGrantsBusinessStart() {
+        val permissions = setOf(RegisterPermission.SALES, RegisterPermission.Z_SETTLEMENT)
+
+        assertFalse(BusinessStartNavigationPolicyV030.canOpenBusinessStart(permissions))
         assertTrue(OperationsAccessPolicyV030.canEnter(permissions))
     }
 
@@ -39,6 +47,7 @@ class V030BusinessStartNavigationTest {
             setOf(RegisterPermission.SALES, RegisterPermission.SETTLEMENT),
         )
 
+        assertTrue(RegisterPermission.BUSINESS_START in expanded)
         assertTrue(RegisterPermission.X_INSPECTION in expanded)
         assertTrue(RegisterPermission.Z_SETTLEMENT in expanded)
         assertTrue(BusinessStartNavigationPolicyV030.canOpenBusinessStart(expanded))
@@ -46,6 +55,7 @@ class V030BusinessStartNavigationTest {
 
     @Test
     fun managementPolicyIncludesSplitInspectionAndSettlementPermissions() {
+        assertTrue(ManagementNavigationPolicyV030.canOpenManagement(setOf(RegisterPermission.BUSINESS_START)))
         assertTrue(ManagementNavigationPolicyV030.canOpenManagement(setOf(RegisterPermission.X_INSPECTION)))
         assertTrue(ManagementNavigationPolicyV030.canOpenManagement(setOf(RegisterPermission.Z_SETTLEMENT)))
         assertTrue(ManagementNavigationPolicyV030.canOpenManagement(setOf(RegisterPermission.VIEW_SALES)))
@@ -87,6 +97,7 @@ class V030BusinessStartNavigationTest {
 
         assertEquals(listOf("SettlementPreflightV026.kt"), references)
         assertFalse(source("SecureOperationsCoordinator.kt").contains("OperationsAction.SETTLEMENT"))
+        assertTrue(source("SecureOperationsCoordinator.kt").contains("requireOperator(OperationsAction.BUSINESS_START)"))
     }
 
     @Test
