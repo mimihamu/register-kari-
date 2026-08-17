@@ -23,6 +23,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git revert --no-edit 2d5421133468b4c537f008b4f0406b03f6cd0c79
-          git revert --no-edit 5bee74527822e3e4643557c85cc02c8a6f8fbbaa
+          git revert --no-edit 5be8e73caee7701ddd70ca437b936ed577706837
           git revert --no-edit 8da646b9b91ebdbae4aa75884336b018c1090cb3
           git push origin HEAD:develop/v1.35
