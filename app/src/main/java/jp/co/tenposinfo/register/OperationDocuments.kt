@@ -116,6 +116,17 @@ object OperationDocumentRenderer {
         lines += amountLine("消費税", yen(rep001Totals.taxTotalYen), width)
         lines += amountLine("返品・取消", "-${yen(data.reversalGross)}", width)
         lines += amountLine("純売上", yen(data.netSales), width)
+        lines += separator(width, '-')
+        lines += amountLine("売上件数", "${data.transactionCount}件", width)
+        lines += amountLine("客数", "${rep001Totals.guestCount}名", width)
+        lines += amountLine("点数", "${rep001Totals.itemCount}点", width)
+        lines += amountLine(
+            "客単価",
+            if (rep001Totals.guestCount > 0) yen(data.netSales / rep001Totals.guestCount) else "-",
+            width,
+        )
+        lines += amountLine("返品取消件数", "${data.reversalCount}件", width)
+        lines += separator(width, '-')
         lines += amountLine("開始釣銭", yen(data.openingCash), width)
         lines += amountLine("入金", yen(data.cashIn), width)
         lines += amountLine("出金", "-${yen(data.cashOut)}", width)
@@ -128,8 +139,6 @@ object OperationDocumentRenderer {
         lines += amountLine("現金実査", yen(data.actualCash), width)
         lines += amountLine("現金過不足", signedYen(data.variance), width)
         lines += separator(width, '-')
-        lines += amountLine("売上件数", "${data.transactionCount}件", width)
-        lines += amountLine("返品取消件数", "${data.reversalCount}件", width)
         lines += amountLine("未印刷", "${data.pendingPrints}件", width)
         lines += amountLine("未会計伝票", "${data.heldTickets}件", width)
         lines += separator(width, '=')
