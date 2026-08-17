@@ -57,6 +57,7 @@ class SecureOperationsCoordinator(
         actualCash: Long?,
         managerPin: String,
         pendingPrintsAcknowledged: Boolean = false,
+        backupFailureAcknowledged: Boolean = false,
     ): Long {
         SettlementActualCashSafetyV105.validate(type, actualCash)
         val session = store.activeBusinessSession()
@@ -77,7 +78,13 @@ class SecureOperationsCoordinator(
                 OperationsActorFormatter.direct(operator)
             }
             backupActor = actor
-            store.recordSettlement(type, actualCash, actor, pendingPrintsAcknowledged)
+            store.recordSettlement(
+                type = type,
+                actualCash = actualCash,
+                operatorName = actor,
+                pendingPrintsAcknowledged = pendingPrintsAcknowledged,
+                backupFailureAcknowledged = backupFailureAcknowledged,
+            )
         }
 
         runCatching { AutomaticPrintScheduler.enqueueNow(appContext) }

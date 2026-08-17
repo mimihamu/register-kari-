@@ -41,6 +41,9 @@ data class DailyOperationsSummary(
     val pendingPrints: Int,
     val heldTickets: Int,
     val settled: Boolean,
+    val openCartItems: Int = 0,
+    val incompletePayments: Int = 0,
+    val backupFailureMessage: String? = null,
 )
 
 data class CashMovementRecord(
@@ -290,6 +293,20 @@ class OperationsStore(context: Context) {
             )
         ).toInt()
         val heldTickets = longQuery("SELECT COUNT(*) FROM held_tickets").toInt()
+        val openCartItems = longQuery("SELECT COUNT(*) FROM cart_items").toInt()
+        val incompletePayments = if (
+            openCartItems > 0 && SchemaMigration.tableExists(db, "payment_draft_meta")
+        ) {
+            longQuery("SELECT COUNT(*) FROM payment_draft_meta").coerceAtMost(1L).toInt()
+        } else {
+            0
+        }
+        val backupStatus = AutoBackupStatusStore(appContext).load()
+        val backupFailureMessage = when (backupStatus.lastResult) {
+            AutoBackupResultState.FAILED -> backupStatus.lastError ?: "直近バックアップが失敗しました"
+            AutoBackupResultState.SKIPPED_LOW_STORAGE -> backupStatus.lastError ?: "容量不足でバックアップを実行できませんでした"
+            else -> null
+        }
         val settled = longQuery(
             "SELECT COUNT(*) FROM settlement_reports WHERE business_session_id = ? AND report_type = ?",
             arrayOf(sessionId.toString(), SettlementReportType.Z_SETTLEMENT.name),
@@ -311,6 +328,9 @@ class OperationsStore(context: Context) {
             pendingPrints = pendingPrints,
             heldTickets = heldTickets,
             settled = settled,
+            openCartItems = openCartItems,
+            incompletePayments = incompletePayments,
+            backupFailureMessage = backupFailureMessage,
         )
     }
 
@@ -681,6 +701,7 @@ class OperationsStore(context: Context) {
         actualCash: Long?,
         operatorName: String,
         pendingPrintsAcknowledged: Boolean = false,
+        backupFailureAcknowledged: Boolean = false,
     ): Long {
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
         val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
@@ -707,6 +728,11 @@ class OperationsStore(context: Context) {
                     heldTickets = summary.heldTickets,
                     pendingPrints = summary.pendingPrints,
                     pendingPrintsAcknowledged = pendingPrintsAcknowledged,
+                    openCartItems = summary.openCartItems,
+                    incompletePayments = summary.incompletePayments,
+                    backupFailureMessage = summary.backupFailureMessage,
+                    actualCashEntered = actualCash != null,
+                    backupFailureAcknowledged = backupFailureAcknowledged,
                 )
                 check(preflight.mayProceed) { preflight.message ?: "Z精算前の確認に失敗しました" }
             }
@@ -803,6 +829,15 @@ class OperationsStore(context: Context) {
                     eventType = "Z_SETTLEMENT_PENDING_PRINTS_ACKNOWLEDGED",
                     referenceId = id,
                     detail = "未印刷データ ${summary.pendingPrints}件を確認し、責任者承認でZ精算を継続",
+                    operatorName = operatorName,
+                    createdAt = now,
+                )
+            }
+            if (type == SettlementReportType.Z_SETTLEMENT && summary.backupFailureMessage != null) {
+                insertAudit(
+                    eventType = "Z_SETTLEMENT_BACKUP_FAILURE_ACKNOWLEDGED",
+                    referenceId = id,
+                    detail = "直近バックアップ失敗を確認してZ精算を継続: ${summary.backupFailureMessage}",
                     operatorName = operatorName,
                     createdAt = now,
                 )
