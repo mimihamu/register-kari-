@@ -142,6 +142,11 @@
             android:screenOrientation="landscape" />
 
         <activity
+            android:name=".InitialReleaseSettingsActivityV135"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
             android:name=".CustomerDisplaySettingsActivity"
             android:exported="false"
             android:label="つぐレジ CD 接続設定"

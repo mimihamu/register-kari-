@@ -390,7 +390,7 @@ class InitialReleaseSettingsStoreV135(context: Context) {
         private const val KEY_OPERATOR_SWITCH = "sale.operatorSwitchInCart"
         private const val KEY_SOUND_LEVEL = "sale.soundLevel"
         private const val KEY_CHECK_AUTO = "check.autoNumber"
-        private const val KEY_CHECK_MAX = "check.numberMax"
+        private const val KEY_CHECK_MAX = "check.numberRange"
         private const val KEY_LONG_OPEN = "check.longOpenMinutes"
         private const val KEY_PRINT_HOLD = "check.printOnHold"
         private const val KEY_BUSINESS_MODE = "businessDate.mode"

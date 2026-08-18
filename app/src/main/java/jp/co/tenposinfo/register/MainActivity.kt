@@ -100,6 +100,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
+        DeviceAppRuntimeV135.applyWindowPolicy(
+            window,
+            InitialReleaseSettingsStoreV135(applicationContext).loadDevice(),
+        )
         setContent {
             MaterialTheme {
                 RegisterApp()
@@ -129,6 +133,7 @@ private fun RegisterApp() {
     val context = LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val database = remember { RegisterDatabase(context.applicationContext) }
+    val initialReleaseSettingsStore = remember { InitialReleaseSettingsStoreV135(context.applicationContext) }
     val authStore = remember { OperatorAuthenticationStore(context.applicationContext) }
     var currentOperator by remember { mutableStateOf(OperatorSessionRegistry.current(context.applicationContext)) }
     var screen by remember { mutableStateOf(if (currentOperator == null) AppScreen.DIAGNOSTIC else AppScreen.SALES) }
@@ -303,12 +308,13 @@ private fun RegisterApp() {
                     screen = AppScreen.LINE_EDIT
                 },
                 onAddProduct = { product ->
-                    val index = cart.indexOfFirst {
+                    val mergeSameItem = initialReleaseSettingsStore.loadSales().mergeSameItem
+                    val index = if (mergeSameItem) cart.indexOfFirst {
                         it.product.id == product.id &&
                             it.unitPrice == product.unitPrice &&
                             it.discountAmount == 0L &&
                             it.note.isEmpty()
-                    }
+                    } else -1
                     if (index >= 0) {
                         val updated = cart[index].copy(quantity = cart[index].quantity + 1)
                         cart.removeAt(index)
