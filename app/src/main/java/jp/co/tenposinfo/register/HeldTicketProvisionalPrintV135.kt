@@ -125,7 +125,7 @@ internal class HeldTicketProvisionalPrintServiceV135(context: Context) : AutoClo
         val payload = HeldTicketProvisionalReceiptRendererV135.render(
             ticket = ticket,
             items = items,
-            paper = ReceiptPaper.fromWidth(paperWidthMm),
+            paper = ReceiptPaper.fromWidthMm(paperWidthMm),
         )
 
         db.beginTransaction()
