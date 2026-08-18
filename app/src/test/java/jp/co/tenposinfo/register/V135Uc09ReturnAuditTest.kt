@@ -83,10 +83,11 @@ class V135Uc09ReturnAuditTest {
 
     @Test
     fun linkedReturnQueuesReceiptAndKeepsDriveEventSchedulingHook() {
-        val source = File("src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt").readText()
+        val activity = File("src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt").readText()
+        val store = File("src/main/java/jp/co/tenposinfo/register/OperationsStore.kt").readText()
 
-        assertTrue(source.contains("AutomaticPrintScheduler.enqueueNow(appContext)"))
-        assertTrue(source.contains("DriveOutboxScheduler.enqueueNow(appContext)"))
-        assertTrue(source.contains("OperationDocumentType.REVERSAL_RECEIPT"))
+        assertTrue(activity.contains("AutomaticPrintScheduler.enqueueNow(appContext)"))
+        assertTrue(activity.contains("DriveOutboxScheduler.enqueueNow(appContext)"))
+        assertTrue(store.contains("OperationDocumentType.REVERSAL_RECEIPT"))
     }
 }
