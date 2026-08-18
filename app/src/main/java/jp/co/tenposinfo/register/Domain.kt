@@ -229,9 +229,10 @@ object DiscountEngine {
 
 enum class PaymentMethod(val displayName: String) {
     CASH("現金"),
-    CARD("カード"),
+    CARD("クレジット"),
     GIFT_CERTIFICATE("商品券"),
     ACCOUNT_RECEIVABLE("掛売"),
+    OTHER("その他"),
 }
 
 data class PaymentAllocation(
@@ -265,8 +266,9 @@ object PaymentEngine {
             require(received > 0) { "cash received must be positive" }
             PaymentAllocation(method, received.coerceAtMost(remaining), received)
         } else {
-            val applied = (inputAmount ?: remaining).coerceAtMost(remaining)
+            val applied = inputAmount ?: remaining
             require(applied > 0) { "payment amount must be positive" }
+            require(applied <= remaining) { "non-cash payment must not exceed remaining amount" }
             PaymentAllocation(method, applied, applied)
         }
         return state.copy(allocations = state.allocations + allocation)
