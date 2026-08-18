@@ -86,8 +86,9 @@ class V030BusinessStartNavigationTest {
         assertTrue(application.contains("OperationsAccessPolicyV030.canEnter"))
         assertTrue(application.contains("OperationsNavigationContractV030.OPEN_BUSINESS_START"))
     }
+
     @Test
-    fun legacySettlementIsOnlyReferencedByCompatibilityMigration() {
+    fun legacySettlementIsOnlyReferencedByCompatibilityAndOneTimeMigration() {
         val sourceRoot = File("src/main/java/jp/co/tenposinfo/register")
         val references = sourceRoot.listFiles()
             .orEmpty()
@@ -95,7 +96,10 @@ class V030BusinessStartNavigationTest {
             .map(File::getName)
             .sorted()
 
-        assertEquals(listOf("SettlementPreflightV026.kt"), references)
+        assertEquals(
+            listOf("AdminSettingsStore.kt", "SettlementPreflightV026.kt"),
+            references,
+        )
         assertFalse(source("SecureOperationsCoordinator.kt").contains("OperationsAction.SETTLEMENT"))
         assertTrue(source("SecureOperationsCoordinator.kt").contains("requireOperator(OperationsAction.BUSINESS_START)"))
     }
@@ -108,5 +112,4 @@ class V030BusinessStartNavigationTest {
         assertTrue(main.contains("OperationsHubActivityV030::class.java"))
         assertFalse(main.contains("RegisterPermission.SETTLEMENT"))
     }
-
 }
