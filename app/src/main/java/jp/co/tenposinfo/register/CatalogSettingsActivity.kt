@@ -369,6 +369,8 @@ private fun ProductMasterScreen(
     var selected by remember { mutableStateOf<ProductMasterRecord?>(null) }
     var productId by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
+    var kana by remember { mutableStateOf("") }
+    var barcode by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("0") }
     var tax by remember { mutableStateOf(TaxCategory.INCLUDED_10) }
     var departmentId by remember { mutableStateOf<Long?>(null) }
@@ -382,6 +384,8 @@ private fun ProductMasterScreen(
     LaunchedEffect(selected?.productId) {
         productId = selected?.productId.orEmpty()
         name = selected?.name.orEmpty()
+        kana = selected?.kana.orEmpty()
+        barcode = selected?.barcode.orEmpty()
         price = selected?.basePrice?.toString() ?: "0"
         tax = selected?.baseTaxCategory ?: TaxCategory.INCLUDED_10
         departmentId = selected?.departmentId ?: departments.firstOrNull()?.id
@@ -413,6 +417,8 @@ private fun ProductMasterScreen(
             Spacer(Modifier.height(10.dp))
             MasterField(productId, { productId = it }, "商品コード", enabled = selected == null)
             MasterField(name, { name = it }, "商品名")
+            MasterField(kana, { kana = it.take(60) }, "かな（検索用・任意）")
+            MasterField(barcode, { barcode = it.filterNot(Char::isWhitespace).take(64) }, "バーコード（任意・一意）")
             MasterField(price, { price = it.filter(Char::isDigit).take(8) }, "基準価格（円）", KeyboardType.Number)
             CycleButton("税区分", tax.displayName) { tax = TaxCategory.entries[(tax.ordinal + 1) % TaxCategory.entries.size] }
             CycleButton("部門", departments.firstOrNull { it.id == departmentId }?.name ?: "未設定") {
@@ -450,6 +456,8 @@ private fun ProductMasterScreen(
                         pageNo = page.toIntOrNull() ?: 1,
                         slotNo = slot.toIntOrNull() ?: 1,
                         actor = actor,
+                        kana = kana,
+                        barcode = barcode,
                     )
                     onSaved()
                     selected = null

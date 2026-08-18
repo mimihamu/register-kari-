@@ -97,6 +97,11 @@ internal object RegisterLayoutPolicy {
 }
 
 class MainActivity : ComponentActivity() {
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (BarcodeScannerRuntimeV135.handle(event)) return true
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
@@ -307,7 +312,8 @@ private fun RegisterApp() {
                     selectedIndex = it
                     screen = AppScreen.LINE_EDIT
                 },
-                onAddProduct = { product ->
+                onAddProduct = { product, quantity ->
+                    require(quantity > 0) { "数量は1以上で指定してください" }
                     val mergeSameItem = initialReleaseSettingsStore.loadSales().mergeSameItem
                     val index = if (mergeSameItem) cart.indexOfFirst {
                         it.product.id == product.id &&
@@ -316,17 +322,17 @@ private fun RegisterApp() {
                             it.note.isEmpty()
                     } else -1
                     if (index >= 0) {
-                        val updated = cart[index].copy(quantity = cart[index].quantity + 1)
+                        val updated = cart[index].copy(quantity = cart[index].quantity + quantity)
                         cart.removeAt(index)
                         cart += updated
-                        selectedIndex = null
                     } else {
                         cart += CartItem(
                             product = product,
-                            quantity = 1,
+                            quantity = quantity,
                             lineId = CartLineIdentityV135.newId(),
                         )
                     }
+                    selectedIndex = null
                     database.saveCart(cart.toList())
                 },
                 onChangeQuantity = { quantity ->
@@ -990,7 +996,7 @@ private fun SalesScreen(
     printerHealth: PrinterHealthSnapshot,
     onSelect: (Int) -> Unit,
     onEdit: (Int) -> Unit,
-    onAddProduct: (Product) -> Unit,
+    onAddProduct: (Product, Int) -> Unit,
     onChangeQuantity: (Int) -> Unit,
     onRemove: () -> Unit,
     onCancelSelected: (Int) -> Unit,
@@ -1011,7 +1017,41 @@ private fun SalesScreen(
 ) {
     val summary = TaxEngine.calculate(cart)
     var numericInput by remember { mutableStateOf("") }
+    var pendingQuantity by remember { mutableStateOf<Int?>(null) }
+    var showProductSearch by remember { mutableStateOf(false) }
+    var lookupMessage by remember { mutableStateOf<String?>(null) }
     val responsive = rememberRegisterResponsiveMetrics()
+
+    androidx.compose.runtime.DisposableEffect(products, pendingQuantity, onAddProduct) {
+        val listener: (String) -> Unit = { scanned ->
+            val product = ProductLookupPolicyV135.findExact(products, scanned)
+            if (product == null) {
+                lookupMessage = "商品未登録: ${scanned.take(20)}"
+            } else {
+                onAddProduct(product, pendingQuantity ?: 1)
+                pendingQuantity = null
+                numericInput = ""
+                lookupMessage = null
+            }
+        }
+        BarcodeScannerRuntimeV135.setListener(listener)
+        onDispose { BarcodeScannerRuntimeV135.clearListener(listener) }
+    }
+
+    if (showProductSearch) {
+        SalesProductSearchDialogV135(
+            products = products,
+            onDismiss = { showProductSearch = false },
+            onRegister = { product ->
+                onAddProduct(product, pendingQuantity ?: 1)
+                pendingQuantity = null
+                numericInput = ""
+                lookupMessage = null
+                showProductSearch = false
+            },
+        )
+    }
+
     Column(Modifier.fillMaxSize()) {
         Header("SCR-100", "販売画面")
         PrinterHealthBanner(printerHealth, onPrinterStatus)
@@ -1128,7 +1168,7 @@ private fun SalesScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                "置数・機能",
+                                lookupMessage ?: pendingQuantity?.let { "次商品 ${it}点" } ?: "置数・機能",
                                 fontSize = if (responsive.isCompact) 16.sp else 18.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Navy,
@@ -1148,7 +1188,11 @@ private fun SalesScreen(
                             onClear = { numericInput = "" },
                             bottomActionLabel = "数量",
                             onBottomAction = {
-                                numericInput.toIntOrNull()?.let(onChangeQuantity)
+                                ProductQuantityKeyPolicyV135.decide(numericInput, selectedIndex != null)?.let { decision ->
+                                    decision.selectedLineQuantity?.let(onChangeQuantity)
+                                    decision.pendingProductQuantity?.let { pendingQuantity = it }
+                                    lookupMessage = null
+                                }
                                 numericInput = ""
                             },
                             compact = true,
@@ -1199,6 +1243,10 @@ private fun SalesScreen(
                                     enabled = cart.isNotEmpty(),
                                     modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
                                 ) { Text("値引・割引", fontSize = 13.sp, maxLines = 1) }
+                                OutlinedButton(
+                                    onClick = { showProductSearch = true; lookupMessage = null },
+                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                ) { Text("商品検索", fontSize = 13.sp, maxLines = 1) }
                                 TransactionAbortButtonV135(
                                     items = cart,
                                     modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
@@ -1245,7 +1293,12 @@ private fun SalesScreen(
                                     Spacer(Modifier.weight(1f).height(72.dp))
                                 } else {
                                     Button(
-                                        onClick = { onAddProduct(product) },
+                                        onClick = {
+                                            onAddProduct(product, pendingQuantity ?: 1)
+                                            pendingQuantity = null
+                                            numericInput = ""
+                                            lookupMessage = null
+                                        },
                                         modifier = Modifier.weight(1f).height(72.dp),
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = ProductButtonPalette.background(product.buttonColor),

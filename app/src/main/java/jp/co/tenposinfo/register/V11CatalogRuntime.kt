@@ -13,8 +13,13 @@ object V11CatalogRuntime {
         val metadata = CatalogMasterStore(appContext).use { store ->
             store.listProducts(includeDisabled = true).associateBy { it.productId }
         }
+        val searchableProducts = products.map { product ->
+            metadata[product.id]?.let { meta ->
+                product.copy(kana = meta.kana, barcode = meta.barcode)
+            } ?: product
+        }
         DynamicCatalogStore(appContext).use { store ->
-            store.runtimeProducts(products, metadata, businessDate)
+            store.runtimeProducts(searchableProducts, metadata, businessDate)
         }
     }.getOrElse { products }
 

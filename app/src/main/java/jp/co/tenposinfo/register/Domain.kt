@@ -32,6 +32,8 @@ data class Product(
     val buttonColor: String = "BLUE",
     val pageNo: Int = ((displayOrder.coerceAtLeast(1) - 1) / 24) + 1,
     val slotNo: Int = ((displayOrder.coerceAtLeast(1) - 1) % 24) + 1,
+    val kana: String = "",
+    val barcode: String = "",
 ) {
     fun withLegacyTaxCategory(category: TaxCategory): Product = copy(
         taxCategory = category,

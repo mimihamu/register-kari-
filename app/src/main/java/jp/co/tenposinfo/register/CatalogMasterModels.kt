@@ -31,6 +31,8 @@ data class ProductMasterRecord(
     val pageNo: Int,
     val slotNo: Int,
     val displayOrder: Int,
+    val kana: String = "",
+    val barcode: String = "",
 )
 
 data class TaxMasterRecord(
@@ -112,6 +114,21 @@ object CatalogValidation {
         require(name.isNotBlank()) { "${label}を入力してください" }
         require(name.length <= 60) { "${label}は60文字以内です" }
         return name
+    }
+
+    fun normalizeKana(value: String): String {
+        val kana = value.trim()
+        require(kana.length <= 60) { "かなは60文字以内です" }
+        return kana
+    }
+
+    fun normalizeBarcode(value: String): String {
+        val barcode = value.trim()
+        require(barcode.length <= 64) { "バーコードは64文字以内です" }
+        require(barcode.none { it.isWhitespace() || it.code < 0x20 || it.code == 0x7f }) {
+            "バーコードに空白・制御文字は使用できません"
+        }
+        return barcode
     }
 
     fun parseTime(value: String): Int {
