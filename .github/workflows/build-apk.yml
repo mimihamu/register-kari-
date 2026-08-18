@@ -23,27 +23,116 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
-      - name: Apply prepared UC-07 patch
+      - name: Apply UC-07 source patch and restore formal CI
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'RUNNER'
+          python3 - <<'PY'
           from pathlib import Path
-          workflow = Path('.github/workflows/v135-uc07-apply.yml').read_text(encoding='utf-8')
-          start_marker = "          python3 - <<'PY'\n"
-          end_marker = "\n          PY\n"
-          if start_marker not in workflow:
-              raise SystemExit('prepared patch start marker not found')
-          body = workflow.split(start_marker, 1)[1].split(end_marker, 1)[0]
-          script = '\n'.join(
-              line[10:] if line.startswith('          ') else line
-              for line in body.splitlines()
-          )
-          exec(compile(script, 'v135-uc07-apply.py', 'exec'))
-          RUNNER
 
-          # Restore the formal CI exactly from the parent commit and remove all temporary applicator files.
-          git show HEAD^:.github/workflows/build-apk.yml > .github/workflows/build-apk.yml
+          def replace_one(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected 1 match, got {count}: {old[:80]!r}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          main = 'app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt'
+          replace_one(
+              main,
+              "CustomerDisplaySnapshotFactory.accounting(\n                            cart.toList(),\n                            paymentState,\n                            CustomerDisplaySettingsStore(context.applicationContext).load().storeName,\n                        )",
+              "CustomerDisplaySnapshotFactory.subtotal(\n                            cart.toList(),\n                            CustomerDisplaySettingsStore(context.applicationContext).load().storeName,\n                        )",
+          )
+
+          old_payment = (
+              "                LazyColumn(Modifier.weight(1f)) {\n"
+              "                    itemsIndexed(items) { _, item ->\n"
+              "                        AmountRow(\"${item.product.name} × ${item.quantity} ${item.product.taxSymbol}\", yen(item.baseAmount))\n"
+              "                    }\n"
+              "                }\n"
+              "                summary.buckets.forEach { bucket ->\n"
+              "                    val label = if (bucket.taxable) \"${bucket.ratePercent}% 消費税\" else \"非課税\"\n"
+              "                    AmountRow(label, yen(bucket.taxAmount))\n"
+              "                }"
+          )
+          new_payment = (
+              "                LazyColumn(Modifier.weight(1f)) {\n"
+              "                    itemsIndexed(items) { _, item ->\n"
+              "                        AmountRow(\n"
+              "                            \"${item.product.name} × ${item.quantity} ${item.product.taxSymbol}\",\n"
+              "                            yen(item.amountBeforeDiscount),\n"
+              "                        )\n"
+              "                        if (item.discountAmount > 0L) {\n"
+              "                            AmountRow(\"  値引\", \"-${yen(item.discountAmount)}\")\n"
+              "                        }\n"
+              "                    }\n"
+              "                }\n"
+              "                AmountRow(\"商品計\", yen(items.sumOf { it.baseAmount }))\n"
+              "                summary.buckets.forEach { bucket ->\n"
+              "                    if (bucket.taxable) {\n"
+              "                        AmountRow(\n"
+              "                            \"${bucket.ratePercent}%対象\",\n"
+              "                            \"${yen(bucket.grossAmount)} / 税 ${yen(bucket.taxAmount)}\",\n"
+              "                        )\n"
+              "                    } else {\n"
+              "                        AmountRow(\"非課税\", yen(bucket.grossAmount))\n"
+              "                    }\n"
+              "                }\n"
+              "                AmountRow(\"合計\", yen(summary.grossAmount), emphasized = true)"
+          )
+          replace_one(main, old_payment, new_payment)
+
+          protocol = 'app/src/main/java/jp/co/tenposinfo/register/CustomerDisplayProtocol.kt'
+          replace_one(
+              protocol,
+              "enum class CustomerDisplayMode {\n    STANDBY,\n    SALES,\n    ACCOUNTING,\n    COMPLETE,\n    DISCONNECTED,\n}",
+              "enum class CustomerDisplayMode {\n    STANDBY,\n    SALES,\n    SUBTOTAL,\n    ACCOUNTING,\n    COMPLETE,\n    DISCONNECTED,\n}",
+          )
+          subtotal_method = (
+              "    /**\n"
+              "     * v2.5 UC-07: SCR-100 の小計／会計押下時に送る明示的な小計 snapshot。\n"
+              "     * SALES / ACCOUNTING の完全な v2.5 状態名移行は v1.37 で行う。\n"
+              "     */\n"
+              "    fun subtotal(\n"
+              "        items: List<CartItem>,\n"
+              "        storeName: String,\n"
+              "        presentation: CustomerDisplayPresentation = CustomerDisplayPresentation(),\n"
+              "    ): CustomerDisplaySnapshot {\n"
+              "        if (items.isEmpty()) return standby(storeName, presentation)\n"
+              "        val total = TaxEngine.calculate(items).grossAmount\n"
+              "        return CustomerDisplaySnapshot(\n"
+              "            mode = CustomerDisplayMode.SUBTOTAL,\n"
+              "            storeName = storeName,\n"
+              "            numberOfProducts = items.sumOf { it.quantity },\n"
+              "            subtotalAmount = total,\n"
+              "            totalAmount = total,\n"
+              "            message = \"小計をご確認ください\",\n"
+              "            orderItems = orderItems(items),\n"
+              "            presentation = presentation,\n"
+              "        )\n"
+              "    }\n\n"
+          )
+          replace_one(protocol, "    fun accounting(\n", subtotal_method + "    fun accounting(\n")
+
+          cd_model = 'customer-display/src/main/java/jp/co/tenposinfo/register/cd/CustomerDisplayModel.kt'
+          replace_one(
+              cd_model,
+              "enum class CustomerDisplayMode {\n    STANDBY,\n    SALES,\n    ACCOUNTING,\n    COMPLETE,\n    DISCONNECTED,\n}",
+              "enum class CustomerDisplayMode {\n    STANDBY,\n    SALES,\n    SUBTOTAL,\n    ACCOUNTING,\n    COMPLETE,\n    DISCONNECTED,\n}",
+          )
+
+          cd_main = 'customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt'
+          sales_case = "                        CustomerDisplayMode.SALES -> SalesScreen(state.snapshot, layoutMode)\n"
+          replace_one(
+              cd_main,
+              sales_case,
+              sales_case + "                        CustomerDisplayMode.SUBTOTAL -> AccountingScreen(state.snapshot, layoutMode)\n",
+          )
+          PY
+
+          # 36715e... contains the untouched formal CI before this temporary trusted-path replacement.
+          git show 36715e426600467d0e8b492dffd2f39b2badaa3b:.github/workflows/build-apk.yml > .github/workflows/build-apk.yml
           git rm .github/workflows/v135-uc07-apply.yml docs/.v135-uc07-trigger
 
           git diff --check
