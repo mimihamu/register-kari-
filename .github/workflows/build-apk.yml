@@ -21,6 +21,24 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
+      - name: Tighten ambiguous selector
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/v135_uc0506_patch.py')
+          s = p.read_text(encoding='utf-8')
+          old = "'''                    put(\"slot_no\", slotNo)\\n                    put(\"updated_at\", System.currentTimeMillis())''',"
+          new = "'''                    put(\"page_no\", pageNo)\\n                    put(\"slot_no\", slotNo)\\n                    put(\"updated_at\", System.currentTimeMillis())''',"
+          if s.count(old) != 1:
+              raise SystemExit(f'patch selector literal expected once, got {s.count(old)}')
+          s = s.replace(old, new, 1)
+          old2 = "'''                    put(\"slot_no\", slotNo)\\n                    put(\"kana\", cleanKana)\\n                    put(\"barcode\", cleanBarcode)\\n                    put(\"updated_at\", System.currentTimeMillis())''',"
+          new2 = "'''                    put(\"page_no\", pageNo)\\n                    put(\"slot_no\", slotNo)\\n                    put(\"kana\", cleanKana)\\n                    put(\"barcode\", cleanBarcode)\\n                    put(\"updated_at\", System.currentTimeMillis())''',"
+          if s.count(old2) != 1:
+              raise SystemExit(f'patch replacement literal expected once, got {s.count(old2)}')
+          p.write_text(s.replace(old2, new2, 1), encoding='utf-8')
+          PY
       - name: Apply fail-closed UC-05/06 implementation
         run: |
           python3 scripts/v135_uc0506_patch.py
