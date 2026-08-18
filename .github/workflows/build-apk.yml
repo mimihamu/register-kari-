@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -299,6 +299,48 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
+
+      - name: Patch UC-08 payment UI and commit
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop/v1.35'
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+
+          path = Path("app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt")
+          text = path.read_text(encoding="utf-8")
+          if 'add(PaymentMethod.OTHER)' in text and 'Text("クレジット", fontSize = 13.sp' in text:
+              print("UC-08 payment UI already patched")
+              raise SystemExit(0)
+
+          old_card = ') { Text("カード", fontSize = 13.sp, maxLines = 1) }'
+          new_card = ') { Text("クレジット", fontSize = 13.sp, maxLines = 1) }'
+          if text.count(old_card) != 1:
+              raise SystemExit(f"expected one card button, found {text.count(old_card)}")
+          text = text.replace(old_card, new_card, 1)
+
+          anchor = '''                                OutlinedButton(
+                                    onClick = { add(PaymentMethod.ACCOUNT_RECEIVABLE) },
+                                    enabled = remaining > 0 && !completing,
+                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                ) { Text("掛売", fontSize = 13.sp, maxLines = 1) }
+'''
+          replacement = anchor + '''                                OutlinedButton(
+                                    onClick = { add(PaymentMethod.OTHER) },
+                                    enabled = remaining > 0 && !completing,
+                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                ) { Text("その他", fontSize = 13.sp, maxLines = 1) }
+'''
+          if text.count(anchor) != 1:
+              raise SystemExit(f"expected one account-receivable button, found {text.count(anchor)}")
+          path.write_text(text.replace(anchor, replacement, 1), encoding="utf-8")
+
+          subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
+          subprocess.run(["git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"], check=True)
+          subprocess.run(["git", "add", str(path)], check=True)
+          subprocess.run(["git", "diff", "--cached", "--check"], check=True)
+          subprocess.run(["git", "commit", "-m", "feat(v1.35): expose UC-08 other payment method"], check=True)
+          subprocess.run(["git", "push", "origin", "HEAD:develop/v1.35"], check=True)
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
