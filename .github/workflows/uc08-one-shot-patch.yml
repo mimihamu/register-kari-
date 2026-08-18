@@ -1,22 +1,21 @@
 name: UC-08 one-shot UI patch
 
 on:
-  push:
+  pull_request:
     branches:
-      - develop/v1.35
-    paths:
-      - .github/workflows/uc08-one-shot-patch.yml
+      - develop/v1.34
 
 permissions:
   contents: write
 
 jobs:
   patch:
+    if: github.event.pull_request.head.ref == 'develop/v1.35'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: develop/v1.35
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
       - name: Patch payment UI
         shell: python
@@ -57,5 +56,3 @@ jobs:
           git diff --cached --check
           git commit -m "feat(v1.35): expose UC-08 other payment method"
           git push origin HEAD:develop/v1.35
-
-# retrigger: 2026-08-19T02:26+09:00
