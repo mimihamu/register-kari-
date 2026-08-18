@@ -185,6 +185,7 @@ private fun CustomerDisplayScreen(
                     when (state.snapshot.mode) {
                         CustomerDisplayMode.STANDBY -> StandbyScreen(state.snapshot, layoutMode)
                         CustomerDisplayMode.SALES -> SalesScreen(state.snapshot, layoutMode)
+                        CustomerDisplayMode.SUBTOTAL -> AccountingScreen(state.snapshot, layoutMode)
                         CustomerDisplayMode.ACCOUNTING -> AccountingScreen(state.snapshot, layoutMode)
                         CustomerDisplayMode.COMPLETE -> CompleteScreen(state.snapshot, layoutMode)
                         CustomerDisplayMode.DISCONNECTED -> DisconnectedScreen(state.snapshot.message, layoutMode)

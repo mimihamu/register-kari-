@@ -9,6 +9,7 @@ internal const val CUSTOMER_DISPLAY_PATH = "/customer-display/v1"
 enum class CustomerDisplayMode {
     STANDBY,
     SALES,
+    SUBTOTAL,
     ACCOUNTING,
     COMPLETE,
     DISCONNECTED,

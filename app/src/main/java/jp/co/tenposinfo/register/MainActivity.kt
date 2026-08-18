@@ -406,9 +406,8 @@ private fun RegisterApp() {
                     saleCommitInProgress = false
                     saleCommitGuard.resetForNewPayment()
                     CustomerDisplayRuntime.publish(
-                        CustomerDisplaySnapshotFactory.accounting(
+                        CustomerDisplaySnapshotFactory.subtotal(
                             cart.toList(),
-                            paymentState,
                             CustomerDisplaySettingsStore(context.applicationContext).load().storeName,
                         ),
                     )
@@ -2182,13 +2181,27 @@ private fun PaymentScreen(
                 Spacer(Modifier.height(10.dp))
                 LazyColumn(Modifier.weight(1f)) {
                     itemsIndexed(items) { _, item ->
-                        AmountRow("${item.product.name} × ${item.quantity} ${item.product.taxSymbol}", yen(item.baseAmount))
+                        AmountRow(
+                            "${item.product.name} × ${item.quantity} ${item.product.taxSymbol}",
+                            yen(item.amountBeforeDiscount),
+                        )
+                        if (item.discountAmount > 0L) {
+                            AmountRow("  値引", "-${yen(item.discountAmount)}")
+                        }
                     }
                 }
+                AmountRow("商品計", yen(items.sumOf { it.baseAmount }))
                 summary.buckets.forEach { bucket ->
-                    val label = if (bucket.taxable) "${bucket.ratePercent}% 消費税" else "非課税"
-                    AmountRow(label, yen(bucket.taxAmount))
+                    if (bucket.taxable) {
+                        AmountRow(
+                            "${bucket.ratePercent}%対象",
+                            "${yen(bucket.grossAmount)} / 税 ${yen(bucket.taxAmount)}",
+                        )
+                    } else {
+                        AmountRow("非課税", yen(bucket.grossAmount))
+                    }
                 }
+                AmountRow("合計", yen(summary.grossAmount), emphasized = true)
                 if (mixed.hasMixedTax) {
                     val instruction = when (mixedPolicy) {
                         MixedTaxPolicy.ALLOW -> "設定により許可されています。税率単位で一度だけ端数処理します。"
