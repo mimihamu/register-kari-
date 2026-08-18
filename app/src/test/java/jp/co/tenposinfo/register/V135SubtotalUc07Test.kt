@@ -35,10 +35,10 @@ class V135SubtotalUc07Test {
         val source = File("src/main/java/jp/co/tenposinfo/register/MainActivity.kt").readText()
 
         assertTrue(source.contains("yen(item.amountBeforeDiscount)"))
-        assertTrue(source.contains("AmountRow(\"  値引\", \"-${yen(item.discountAmount)}\")"))
+        assertTrue(source.contains("AmountRow(\"  値引\", \"-${'$'}{yen(item.discountAmount)}\")"))
         assertTrue(source.contains("AmountRow(\"商品計\", yen(items.sumOf { it.baseAmount }))"))
-        assertTrue(source.contains("\"${bucket.ratePercent}%対象\""))
-        assertTrue(source.contains("\"${yen(bucket.grossAmount)} / 税 ${yen(bucket.taxAmount)}\""))
+        assertTrue(source.contains("\"${'$'}{bucket.ratePercent}%対象\""))
+        assertTrue(source.contains("\"${'$'}{yen(bucket.grossAmount)} / 税 ${'$'}{yen(bucket.taxAmount)}\""))
         assertTrue(source.contains("AmountRow(\"非課税\", yen(bucket.grossAmount))"))
         assertTrue(source.contains("AmountRow(\"合計\", yen(summary.grossAmount), emphasized = true)"))
     }
@@ -47,7 +47,7 @@ class V135SubtotalUc07Test {
     fun subtotalActionIsDisabledWhenEmptyAndPublishesBeforePaymentScreen() {
         val source = File("src/main/java/jp/co/tenposinfo/register/MainActivity.kt").readText()
 
-        assertTrue(source.contains("\"小計／会計  ${yen(summary.grossAmount)}\""))
+        assertTrue(source.contains("\"小計／会計  ${'$'}{yen(summary.grossAmount)}\""))
         assertTrue(source.contains("cart.isNotEmpty(),"))
         val subtotalIndex = source.indexOf("CustomerDisplaySnapshotFactory.subtotal(")
         val paymentIndex = source.indexOf("screen = AppScreen.PAYMENT", startIndex = subtotalIndex)
