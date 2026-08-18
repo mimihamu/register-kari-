@@ -1,0 +1,59 @@
+name: UC-08 one-shot UI patch
+
+on:
+  push:
+    branches:
+      - develop/v1.35
+    paths:
+      - .github/workflows/uc08-one-shot-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.35
+          fetch-depth: 0
+      - name: Patch payment UI
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt")
+          text = path.read_text(encoding="utf-8")
+
+          old_card = ') { Text("カード", fontSize = 13.sp, maxLines = 1) }'
+          new_card = ') { Text("クレジット", fontSize = 13.sp, maxLines = 1) }'
+          if text.count(old_card) != 1:
+              raise SystemExit(f"expected one card button, found {text.count(old_card)}")
+          text = text.replace(old_card, new_card, 1)
+
+          anchor = '''                                OutlinedButton(
+                                    onClick = { add(PaymentMethod.ACCOUNT_RECEIVABLE) },
+                                    enabled = remaining > 0 && !completing,
+                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                ) { Text("掛売", fontSize = 13.sp, maxLines = 1) }
+'''
+          replacement = anchor + '''                                OutlinedButton(
+                                    onClick = { add(PaymentMethod.OTHER) },
+                                    enabled = remaining > 0 && !completing,
+                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                ) { Text("その他", fontSize = 13.sp, maxLines = 1) }
+'''
+          if text.count(anchor) != 1:
+              raise SystemExit(f"expected one account-receivable button, found {text.count(anchor)}")
+          text = text.replace(anchor, replacement, 1)
+
+          path.write_text(text, encoding="utf-8")
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt
+          git diff --cached --check
+          git commit -m "feat(v1.35): expose UC-08 other payment method"
+          git push origin HEAD:develop/v1.35
