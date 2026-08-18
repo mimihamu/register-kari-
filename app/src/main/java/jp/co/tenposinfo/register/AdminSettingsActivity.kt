@@ -245,7 +245,8 @@ private fun AdminMenuScreen(
         AsHeader("SCR-690", "各種設定", "認証：$actorName")
         Row(Modifier.weight(1f).padding(20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             AsPanel(Modifier.width(360.dp).fillMaxHeight()) {
-                Text("設定状態", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AsNavy)
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    Text("設定状態", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AsNavy)
                 Spacer(Modifier.height(18.dp))
                 AsValueRow("有効担当者", "${operatorCount}名")
                 AsValueRow("プリンター", if (printer.usable) "接続設定済み" else "未設定")
@@ -254,8 +255,8 @@ private fun AdminMenuScreen(
                 AsValueRow("用紙幅", "${printer.paperWidthMm}mm")
                 AsValueRow("ドロア", if (printer.drawerEnabled) "DK${printer.drawerPort + 1} 有効" else "無効")
                 AsValueRow("監査ログ", "${auditCount}件")
-                Spacer(Modifier.weight(1f))
-                Button(
+                    Spacer(Modifier.height(10.dp))
+                    Button(
                     onClick = onInitialReleaseSettings,
                     modifier = Modifier.fillMaxWidth().height(58.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = AsBlue),
@@ -268,6 +269,7 @@ private fun AdminMenuScreen(
                     color = Color.DarkGray,
                     lineHeight = 23.sp,
                 )
+                }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
