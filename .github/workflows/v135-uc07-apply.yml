@@ -1,24 +1,24 @@
 name: TEMP apply v1.35 UC-07
 
 on:
-  push:
+  pull_request:
     branches:
-      - develop/v1.35
+      - develop/v1.34
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.event.head_commit.message == 'chore: apply v1.35 UC-07 patch'
+    if: github.event.pull_request.number == 138 && github.event.pull_request.head.ref == 'develop/v1.35'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: develop/v1.35
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
-      - name: Apply UC-07 source changes
+      - name: Apply UC-07 source changes and remove temporary files
         shell: bash
         run: |
           python3 - <<'PY'
@@ -111,8 +111,8 @@ jobs:
               '''    fun accounting(
         items: List<CartItem>,''',
               '''    /**
-     * v2.5 UC-07: explicit subtotal snapshot emitted when SCR-100 小計／会計 is pressed.
-     * SALES / ACCOUNTING remain as legacy wire modes until the full v1.37 display-state migration.
+     * v2.5 UC-07: SCR-100 の小計／会計押下時に送る明示的な小計 snapshot。
+     * SALES / ACCOUNTING の完全な v2.5 状態名移行は v1.37 で行う。
      */
     fun subtotal(
         items: List<CartItem>,
@@ -175,11 +175,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class V135SubtotalUc07Test {
-    private fun product(
-        id: String,
-        price: Long,
-        category: TaxCategory,
-    ) = Product(
+    private fun product(id: String, price: Long, category: TaxCategory) = Product(
         id = id,
         name = id,
         unitPrice = price,
@@ -191,15 +187,15 @@ class V135SubtotalUc07Test {
     fun subtotalSnapshotHasDedicatedModeAndCalculatedTotal() {
         val items = listOf(
             CartItem(product("内税", 1_100, TaxCategory.INCLUDED_10), 1),
-            CartItem(product("外税", 1_000, TaxCategory.EXCLUDED_10), 1),
+            CartItem(product("非課税", 500, TaxCategory.NON_TAXABLE), 2),
         )
 
         val snapshot = CustomerDisplaySnapshotFactory.subtotal(items, "つぐレジ")
 
         assertEquals(CustomerDisplayMode.SUBTOTAL, snapshot.mode)
-        assertEquals(2, snapshot.numberOfProducts)
-        assertEquals(2_200L, snapshot.subtotalAmount)
-        assertEquals(2_200L, snapshot.totalAmount)
+        assertEquals(3, snapshot.numberOfProducts)
+        assertEquals(2_100L, snapshot.subtotalAmount)
+        assertEquals(2_100L, snapshot.totalAmount)
         assertEquals("小計をご確認ください", snapshot.message)
     }
 
@@ -232,7 +228,7 @@ class V135SubtotalUc07Test {
         val heldSource = File("src/main/java/jp/co/tenposinfo/register/HeldTicketSafety.kt").readText()
         assertTrue(guestSource.contains("const val MIN = 1"))
         assertTrue(guestSource.contains("const val MAX = 999"))
-        assertTrue(guestSource.contains("next `held_tickets` INSERT"))
+        assertTrue(guestSource.contains("held_ticket_guest_count_v135"))
         assertTrue(heldSource.contains("restoreHeldGuestCountToPending"))
     }
 }
@@ -310,9 +306,8 @@ UC-07のPOS小計契機とは分離し、Customer Display全体の確定状態�
 ''', encoding='utf-8')
           PY
 
-      - name: Commit implementation
-        shell: bash
-        run: |
+          git rm .github/workflows/v135-uc07-apply.yml docs/.v135-uc07-trigger
+          git diff --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt \
@@ -322,6 +317,5 @@ UC-07のPOS小計契機とは分離し、Customer Display全体の確定状態�
                   customer-display/src/main/java/jp/co/tenposinfo/register/cd/MainActivity.kt \
                   customer-display/src/test/java/jp/co/tenposinfo/register/cd/V135SubtotalCompatibilityTest.kt \
                   docs/v1.35-uc-07-subtotal-audit.md
-          git diff --cached --check
           git commit -m "feat(v1.35): complete UC-07 subtotal POS flow"
           git push origin HEAD:develop/v1.35
