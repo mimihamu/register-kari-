@@ -40,7 +40,7 @@ data class SettlementDocumentData(
     val heldTickets: Int,
     val paymentTotals: List<PaymentTotal>,
     val businessSessionId: Long = 0L,
-    val snapshotVersion: Int = SettlementSnapshotSchemaV027.SNAPSHOT_VERSION,
+    val snapshotVersion: Int = SettlementSnapshotSchemaV135.SNAPSHOT_VERSION,
     val reprintedAt: Long? = null,
     val reprintedBy: String? = null,
 )
@@ -87,21 +87,26 @@ object OperationDocumentRenderer {
     fun renderSettlement(data: SettlementDocumentData, paper: ReceiptPaper): String {
         val width = paper.charsPerLine
         val lines = mutableListOf<String>()
-        val issuer = TaxInvoiceSettingsRegistry.current().issuer
-        val rep001Totals = SettlementReportingRuntimeV135.documentTotals(
+        // REP-004: post-commit preview/reprint/PDF must use the immutable v1.35 snapshot. During the
+        // original uncommitted render the row is not visible to this read-only runtime, so the existing
+        // deterministic current/cutoff sources remain the fallback and produce the same first payload.
+        val frozen = SettlementSnapshotRuntimeV135.document(data.reportId)
+        val issuer = frozen?.issuer ?: TaxInvoiceSettingsRegistry.current().issuer
+        val rep001Totals = frozen?.rep001Totals ?: SettlementReportingRuntimeV135.documentTotals(
             reportId = data.reportId,
             businessSessionId = data.businessSessionId,
             createdAt = data.createdAt,
         )
-        val taxBreakdown = SettlementTaxBreakdownRuntimeV135.document(
+        val taxBreakdown = frozen?.taxBreakdown ?: SettlementTaxBreakdownRuntimeV135.document(
             businessSessionId = data.businessSessionId,
             createdAt = data.createdAt,
         )
         val netTax = taxBreakdown.sumOf { it.taxAmountYen }
         val cashSales = data.paymentTotals.firstOrNull { it.method == PaymentMethod.CASH.name }?.amount ?: 0L
         val nonCashSales = data.paymentTotals.filterNot { it.method == PaymentMethod.CASH.name }.sumOf { it.amount }
-        val actualCashEntered = data.type == SettlementReportType.Z_SETTLEMENT ||
-            SettlementActualCashPresentationV135.wasEntered(data.reportId)
+        val actualCashEntered = frozen?.actualCashEntered ?: (
+            data.type == SettlementReportType.Z_SETTLEMENT || SettlementActualCashPresentationV135.wasEntered(data.reportId)
+        )
 
         lines += center(issuer.storeName, width)
         if (issuer.address.isNotBlank()) lines += center(issuer.address, width)
