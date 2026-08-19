@@ -100,6 +100,8 @@ object OperationDocumentRenderer {
         val netTax = taxBreakdown.sumOf { it.taxAmountYen }
         val cashSales = data.paymentTotals.firstOrNull { it.method == PaymentMethod.CASH.name }?.amount ?: 0L
         val nonCashSales = data.paymentTotals.filterNot { it.method == PaymentMethod.CASH.name }.sumOf { it.amount }
+        val actualCashEntered = data.type == SettlementReportType.Z_SETTLEMENT ||
+            SettlementActualCashPresentationV135.wasEntered(data.reportId)
 
         lines += center(issuer.storeName, width)
         if (issuer.address.isNotBlank()) lines += center(issuer.address, width)
@@ -145,8 +147,8 @@ object OperationDocumentRenderer {
         lines += amountLine("入金", yen(data.cashIn), width)
         lines += amountLine("出金", "-${yen(data.cashOut)}", width)
         lines += amountLine("現金理論", yen(data.expectedCash), width)
-        lines += amountLine("現金実査", yen(data.actualCash), width)
-        lines += amountLine("現金過不足", signedYen(data.variance), width)
+        lines += amountLine("現金実査", if (actualCashEntered) yen(data.actualCash) else "", width)
+        lines += amountLine("現金過不足", if (actualCashEntered) signedYen(data.variance) else "", width)
         lines += separator(width, '-')
         lines += amountLine("未印刷", "${data.pendingPrints}件", width)
         lines += amountLine("未会計伝票", "${data.heldTickets}件", width)
