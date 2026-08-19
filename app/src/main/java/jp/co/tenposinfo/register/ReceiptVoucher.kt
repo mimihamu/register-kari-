@@ -68,12 +68,14 @@ internal data class ReceiptVoucherReprintResult(
 )
 
 internal object ReceiptVoucherPolicy {
-    const val MAX_COPIES = 200
+    /** v2.5 設定値の絶対範囲。実際の発行上限は店舗設定（初期100枚）を使う。 */
+    const val MAX_COPIES = ReceiptVoucherBatchSettingsV135.MAX_BATCH_COPIES
     const val MAX_TEXT_LENGTH = 80
 
     fun plan(
         request: ReceiptVoucherBatchRequest,
         availability: ReceiptVoucherAvailability,
+        maxCopies: Int = ReceiptVoucherBatchSettingsV135.DEFAULT_MAX_BATCH_COPIES,
     ): ReceiptVoucherPlan {
         val requestId = request.requestId.trim()
         require(runCatching { UUID.fromString(requestId) }.isSuccess) { "発行要求IDが不正です" }
@@ -81,7 +83,8 @@ internal object ReceiptVoucherPolicy {
         require(availability.saleTotal > 0) { "売上金額が0円のため領収書を発行できません" }
         require(availability.allocatedAmount in 0..availability.saleTotal) { "領収済み金額が売上金額を超えています" }
         require(request.unitAmount > 0) { "領収金額は1円以上で入力してください" }
-        require(request.copies in 1..MAX_COPIES) { "発行枚数は1～${MAX_COPIES}枚で指定してください" }
+        require(maxCopies in 1..MAX_COPIES) { "一括発行上限の設定値が不正です" }
+        require(request.copies in 1..maxCopies) { "発行枚数は1～${maxCopies}枚で指定してください" }
         val total = BigInteger.valueOf(request.unitAmount)
             .multiply(BigInteger.valueOf(request.copies.toLong()))
         require(total <= BigInteger.valueOf(Long.MAX_VALUE)) { "領収金額が大きすぎます" }
@@ -95,22 +98,25 @@ internal object ReceiptVoucherPolicy {
             unitAmount = request.unitAmount,
             copies = request.copies,
             totalAmount = totalAmount,
-            addressee = normalizeRequired(request.addressee, "宛名"),
+            addressee = normalizeOptional(request.addressee),
             purpose = normalizeRequired(request.purpose, "但し書き"),
             operatorName = normalizeRequired(request.operatorName, "担当者"),
         )
     }
 
     fun normalizeRequired(raw: String, label: String): String {
-        val normalized = raw
-            .replace(Regex("[\\r\\n\\t]+"), " ")
-            .trim()
-            .take(MAX_TEXT_LENGTH)
+        val normalized = normalizeOptional(raw)
         require(normalized.isNotBlank()) { "${label}を入力してください" }
         return normalized
     }
 
+    fun normalizeOptional(raw: String): String = raw
+        .replace(Regex("[\\r\\n\\t]+"), " ")
+        .trim()
+        .take(MAX_TEXT_LENGTH)
+
     fun addresseeForPrint(value: String): String = when {
+        value.isBlank() -> "________________ 様"
         value.endsWith("様") || value.endsWith("御中") -> value
         else -> "$value 様"
     }
@@ -127,11 +133,14 @@ internal data class ReceiptVoucherDocumentData(
     val operatorName: String,
     val issuedAt: Long,
     val issuer: InvoiceIssuerProfile,
+    val batchId: Long = 0L,
+    val supplementary: Boolean = sequenceCount > 1,
     val reprintedAt: Long? = null,
     val reprintedBy: String? = null,
 )
 
 internal object ReceiptVoucherRenderer {
+    const val NOT_QUALIFIED_LABEL = "適格簡易請求書ではありません"
     private val formatter = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss")
 
     fun render(data: ReceiptVoucherDocumentData, paper: ReceiptPaper): String {
@@ -142,11 +151,11 @@ internal object ReceiptVoucherRenderer {
         if (data.issuer.phone.isNotBlank()) lines += center(data.issuer.phone, width)
         lines += center("【領収書】", width)
         if (data.reprintedAt != null) lines += center("【再発行】", width)
+        if (data.supplementary) lines += center("【$NOT_QUALIFIED_LABEL】", width)
         lines += separator(width, '=')
         lines += fit("領収書No.R${data.issuanceId} / 元売上No.${data.saleId}", width)
-        if (data.sequenceCount > 1) {
-            lines += fit("一括発行 ${data.sequenceNo}/${data.sequenceCount}", width)
-        }
+        if (data.batchId > 0L) lines += fit("発行グループ RG-${data.batchId}", width)
+        if (data.sequenceCount > 1) lines += fit("枝番 ${data.sequenceNo}/${data.sequenceCount}", width)
         lines += "発行 ${formatDate(data.issuedAt)}"
         if (data.reprintedAt != null) lines += "再発行 ${formatDate(data.reprintedAt)}"
         data.reprintedBy?.takeIf(String::isNotBlank)?.let { lines += fit("再発行担当 $it", width) }
@@ -157,10 +166,15 @@ internal object ReceiptVoucherRenderer {
         lines += fit("但し ${data.purpose} として", width)
         lines += center("上記正に領収いたしました", width)
         lines += separator(width, '-')
+        if (data.supplementary) {
+            lines += fit(NOT_QUALIFIED_LABEL, width)
+            lines += fit("税率別対価額・税額は元売上の監査情報を参照してください", width)
+        } else {
+            lines += fit("税率別の取引内容・消費税額等は元売上レシートを参照してください", width)
+        }
         lines += fit("元売上レシート No.${data.saleId} と関連する領収書です", width)
-        lines += fit("税率別の取引内容・消費税額等は元売上レシートを参照してください", width)
         lines += fit("発行担当 ${data.operatorName}", width)
-        if (data.issuer.registrationNumber.isNotBlank()) {
+        if (!data.supplementary && data.issuer.registrationNumber.isNotBlank()) {
             lines += fit("登録番号 ${data.issuer.registrationNumber}", width)
         }
         return lines.joinToString("\n")
@@ -190,9 +204,10 @@ internal object ReceiptVoucherRenderer {
         var used = 0
         value.forEach { char ->
             val charWidth = if (char.code <= 0xFF) 1 else 2
-            if (used + charWidth > width) return@forEach
-            result.append(char)
-            used += charWidth
+            if (used + charWidth <= width) {
+                result.append(char)
+                used += charWidth
+            }
         }
         return result.toString()
     }
@@ -211,12 +226,15 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
     private val appContext = context.applicationContext
     private val baseDatabase = RegisterDatabase(appContext)
     private val db = baseDatabase.writableDatabase
+    private val batchSettings = ReceiptVoucherBatchSettingsV135(appContext)
 
     init {
         ensureSchema()
     }
 
     override fun close() = baseDatabase.close()
+
+    fun maxBatchCopies(): Int = batchSettings.maxBatchReceiptCopies()
 
     fun availability(saleId: Long): ReceiptVoucherAvailability {
         val sale = baseDatabase.loadSaleDetail(saleId) ?: error("売上No.${saleId}が見つかりません")
@@ -251,6 +269,7 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
                 val plan = ReceiptVoucherPolicy.plan(
                     request,
                     ReceiptVoucherAvailability(sale.summary.totalAmount, allocated),
+                    maxCopies = batchSettings.maxBatchReceiptCopies(),
                 )
                 val batchId = db.insertOrThrow(
                     "receipt_voucher_batches",
@@ -298,6 +317,8 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
                             operatorName = plan.operatorName,
                             issuedAt = now,
                             issuer = issuer,
+                            batchId = batchId,
+                            supplementary = plan.copies > 1,
                         ),
                         ReceiptPaper.fromWidth(paperWidthMm),
                     )
@@ -340,6 +361,8 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
                 operatorName = record.operatorName,
                 issuedAt = record.createdAt,
                 issuer = TaxInvoiceSettingsRegistry.current().issuer,
+                batchId = record.batchId,
+                supplementary = record.sequenceCount > 1,
                 reprintedAt = now,
                 reprintedBy = actor,
             ),
@@ -378,20 +401,7 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
         "created_at ASC, id ASC",
     ).use { cursor ->
         buildList {
-            while (cursor.moveToNext()) add(
-                ReceiptVoucherRecord(
-                    id = cursor.getLong(0),
-                    batchId = cursor.getLong(1),
-                    saleId = cursor.getLong(2),
-                    sequenceNo = cursor.getInt(3),
-                    sequenceCount = cursor.getInt(4),
-                    amount = cursor.getLong(5),
-                    addressee = cursor.getString(6),
-                    purpose = cursor.getString(7),
-                    operatorName = cursor.getString(8),
-                    createdAt = cursor.getLong(9),
-                ),
-            )
+            while (cursor.moveToNext()) add(cursor.toReceiptVoucherRecord())
         }
     }
 
@@ -404,20 +414,20 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
         null,
         null,
         "1",
-    ).use { cursor ->
-        if (!cursor.moveToFirst()) null else ReceiptVoucherRecord(
-            id = cursor.getLong(0),
-            batchId = cursor.getLong(1),
-            saleId = cursor.getLong(2),
-            sequenceNo = cursor.getInt(3),
-            sequenceCount = cursor.getInt(4),
-            amount = cursor.getLong(5),
-            addressee = cursor.getString(6),
-            purpose = cursor.getString(7),
-            operatorName = cursor.getString(8),
-            createdAt = cursor.getLong(9),
-        )
-    }
+    ).use { cursor -> if (!cursor.moveToFirst()) null else cursor.toReceiptVoucherRecord() }
+
+    private fun android.database.Cursor.toReceiptVoucherRecord() = ReceiptVoucherRecord(
+        id = getLong(0),
+        batchId = getLong(1),
+        saleId = getLong(2),
+        sequenceNo = getInt(3),
+        sequenceCount = getInt(4),
+        amount = getLong(5),
+        addressee = getString(6),
+        purpose = getString(7),
+        operatorName = getString(8),
+        createdAt = getLong(9),
+    )
 
     private fun existingBatchResult(requestId: String): ReceiptVoucherIssueResult? {
         if (requestId.isBlank()) return null
