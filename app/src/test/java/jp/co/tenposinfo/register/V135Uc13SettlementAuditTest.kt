@@ -1,6 +1,8 @@
 package jp.co.tenposinfo.register
 
-import java.io.File
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Paths
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -11,7 +13,7 @@ class V135Uc13SettlementAuditTest {
     fun rep004UsesVersion2JsonAndNormalizedSnapshotTables() {
         assertTrue(SettlementSnapshotSchemaV135.SNAPSHOT_VERSION >= 2)
 
-        val snapshot = File("src/main/java/jp/co/tenposinfo/register/SettlementSnapshotV135.kt").readText()
+        val snapshot = source("src/main/java/jp/co/tenposinfo/register/SettlementSnapshotV135.kt")
         listOf(
             "settlement_snapshot_metrics_v135",
             "settlement_snapshot_tax_v135",
@@ -30,12 +32,12 @@ class V135Uc13SettlementAuditTest {
 
     @Test
     fun snapshotWriteIsChainedToSettlementPaymentSnapshotInsideTheSameDatabaseTransaction() {
-        val history = File("src/main/java/jp/co/tenposinfo/register/SettlementHistoryPolicyV027.kt").readText()
+        val history = source("src/main/java/jp/co/tenposinfo/register/SettlementHistoryPolicyV027.kt")
         val save = history.functionBody("fun savePaymentTotals(", "fun loadPaymentTotals(")
         assertTrue(save.contains("db.insertOrThrow("))
         assertTrue(save.contains("SettlementSnapshotSchemaV135.save(db, reportId, totals)"))
 
-        val store = File("src/main/java/jp/co/tenposinfo/register/OperationsStore.kt").readText()
+        val store = source("src/main/java/jp/co/tenposinfo/register/OperationsStore.kt")
         val settlement = store.functionBody("fun recordSettlement(", "fun recentSettlements(")
         assertTrue(settlement.contains("SettlementSnapshotSchemaV027.savePaymentTotals(this, id, summary.paymentTotals)"))
         assertTrue(settlement.contains("insertOrThrow(\n                \"settlement_reports\""))
@@ -44,7 +46,7 @@ class V135Uc13SettlementAuditTest {
 
     @Test
     fun historicalPreviewReprintAndPdfPreferFrozenTaxIssuerAndCashPresentation() {
-        val renderer = File("src/main/java/jp/co/tenposinfo/register/OperationDocuments.kt").readText()
+        val renderer = source("src/main/java/jp/co/tenposinfo/register/OperationDocuments.kt")
         val body = renderer.functionBody("fun renderSettlement(", "private fun formatDate(")
         assertTrue(body.contains("SettlementSnapshotRuntimeV135.document(data.reportId)"))
         assertTrue(body.contains("frozen?.issuer ?: TaxInvoiceSettingsRegistry.current().issuer"))
@@ -52,13 +54,13 @@ class V135Uc13SettlementAuditTest {
         assertTrue(body.contains("frozen?.taxBreakdown ?: SettlementTaxBreakdownRuntimeV135.document"))
         assertTrue(body.contains("frozen?.actualCashEntered ?:"))
 
-        val pdf = File("src/main/java/jp/co/tenposinfo/register/SettlementPdfExportV135.kt").readText()
+        val pdf = source("src/main/java/jp/co/tenposinfo/register/SettlementPdfExportV135.kt")
         assertTrue(pdf.contains("store.previewSettlement(reportId)"))
     }
 
     @Test
     fun rep002BlocksDuplicateZAndClosesOnlyTheOpenBusinessSession() {
-        val store = File("src/main/java/jp/co/tenposinfo/register/OperationsStore.kt").readText()
+        val store = source("src/main/java/jp/co/tenposinfo/register/OperationsStore.kt")
         val settlement = store.functionBody("fun recordSettlement(", "fun recentSettlements(")
         assertTrue(settlement.contains("if (type == SettlementReportType.Z_SETTLEMENT && summary.settled)"))
         assertTrue(settlement.contains("OperationsIdempotencyPolicy.settlementKey"))
@@ -70,7 +72,7 @@ class V135Uc13SettlementAuditTest {
 
     @Test
     fun rep003RequiresCashAndKeepsAcknowledgedWarningsExplicit() {
-        val preflight = File("src/main/java/jp/co/tenposinfo/register/SettlementPreflightV026.kt").readText()
+        val preflight = source("src/main/java/jp/co/tenposinfo/register/SettlementPreflightV026.kt")
         listOf(
             "heldTickets",
             "pendingPrints",
@@ -85,7 +87,7 @@ class V135Uc13SettlementAuditTest {
 
     @Test
     fun rep005HasNoSettlementDeleteOrRollbackPathInNormalSettlementExecution() {
-        val store = File("src/main/java/jp/co/tenposinfo/register/OperationsStore.kt").readText()
+        val store = source("src/main/java/jp/co/tenposinfo/register/OperationsStore.kt")
         val settlement = store.functionBody("fun recordSettlement(", "fun recentSettlements(")
         assertFalse(settlement.contains("delete(\"settlement_reports\""))
         assertFalse(settlement.contains("DELETE FROM settlement_reports"))
@@ -95,13 +97,16 @@ class V135Uc13SettlementAuditTest {
 
     @Test
     fun uc13AuditKeepsRealDeviceAndV136RemoteSyncOutsideAutomatedPass() {
-        val audit = File("../docs/v1.35-uc-13-settlement-audit.md").readText()
+        val audit = source("../docs/v1.35-uc-13-settlement-audit.md")
         assertTrue(audit.contains("実機未確認"))
         assertTrue(audit.contains("58mm"))
         assertTrue(audit.contains("80mm"))
         assertTrue(audit.contains("Google Drive"))
         assertTrue(audit.contains("v1.36"))
     }
+
+    private fun source(path: String): String =
+        String(Files.readAllBytes(Paths.get(path)), StandardCharsets.UTF_8)
 
     private fun String.functionBody(startMarker: String, nextMarker: String): String {
         val start = indexOf(startMarker)
