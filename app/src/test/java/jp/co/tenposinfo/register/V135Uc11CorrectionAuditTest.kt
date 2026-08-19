@@ -10,7 +10,7 @@ import org.junit.Test
  * UC-11 cumulative acceptance gate.
  *
  * The v2.5 correction contract spans COR-001..004 for a working transaction and
- * COR-008..010 for a correction of an already confirmed sale. Confirmed sales are
+ * COR-005..010 for a correction of an already confirmed sale. Confirmed sales are
  * never edited in place: RETURN/CANCEL opposite transactions carry the monetary
  * correction, refund, execution business day, audit and print trail.
  */
@@ -142,7 +142,7 @@ class V135Uc11CorrectionAuditTest {
         assertTrue(reversal.contains("insertDocumentJob("))
         assertTrue(reversal.contains("insertAudit("))
         assertTrue(reversal.contains("eventType = type.name"))
-        assertTrue(reversal.contains("元売上 No.$originalSaleId"))
+        assertTrue(reversal.contains("元売上 No.${'$'}originalSaleId"))
         assertTrue(document.contains("元売上No.${'$'}{data.originalSaleId}"))
         assertTrue(document.contains("返金合計"))
         assertTrue(activity.contains("AutomaticPrintScheduler.enqueueNow(appContext)"))
