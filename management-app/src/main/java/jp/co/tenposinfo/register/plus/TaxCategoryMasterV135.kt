@@ -163,16 +163,16 @@ object ManagementTaxCategoryPolicyV135 {
 
     private fun parseRequiredDate(value: String, label: String): LocalDate {
         val clean = value.trim()
-        require(clean.isNotBlank()) { "$labelを入力してください" }
+        require(clean.isNotBlank()) { "${label}を入力してください" }
         return runCatching { LocalDate.parse(clean) }
-            .getOrElse { throw IllegalArgumentException("$labelはyyyy-MM-dd形式です") }
+            .getOrElse { throw IllegalArgumentException("${label}はyyyy-MM-dd形式です") }
     }
 
     private fun parseOptionalDate(value: String, label: String): LocalDate? {
         val clean = value.trim()
         if (clean.isBlank()) return null
         return runCatching { LocalDate.parse(clean) }
-            .getOrElse { throw IllegalArgumentException("$labelはyyyy-MM-dd形式です") }
+            .getOrElse { throw IllegalArgumentException("${label}はyyyy-MM-dd形式です") }
     }
 }
 
