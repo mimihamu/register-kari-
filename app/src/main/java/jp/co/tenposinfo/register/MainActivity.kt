@@ -1102,6 +1102,15 @@ private fun SalesScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
+                                if (selected) {
+                                    Text(
+                                        "選択中",
+                                        color = Navy,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                    )
+                                }
                                 Text(item.product.name, fontWeight = FontWeight.SemiBold)
                                 Text(
                                     "${item.quantity} × ${yen(item.unitPrice)}  ${item.product.taxSymbol}",
