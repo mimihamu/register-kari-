@@ -65,6 +65,11 @@
             android:screenOrientation="sensorPortrait" />
 
         <activity
+            android:name=".TaxCategoryMasterActivityV135"
+            android:exported="false"
+            android:screenOrientation="sensorPortrait" />
+
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:screenOrientation="sensorPortrait">
