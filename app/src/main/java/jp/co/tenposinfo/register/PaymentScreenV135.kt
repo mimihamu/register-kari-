@@ -139,8 +139,16 @@ internal fun PaymentScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .then(
-                                if (mixedPolicy == MixedTaxPolicy.WARN) {
-                                    Modifier.clickable { acknowledgedMixedTax = !acknowledgedMixedTax }
+                                if (mixedPolicy == MixedTaxPolicy.WARN && !acknowledgedMixedTax) {
+                                    Modifier.clickable {
+                                        if (MixedTaxPaymentAcknowledgementV135.record(context.applicationContext, items.toList())) {
+                                            acknowledgedMixedTax = true
+                                            operationMessage = null
+                                        } else {
+                                            acknowledgedMixedTax = false
+                                            operationMessage = "税混在の確認履歴を保存できないため、会計確定できません。"
+                                        }
+                                    }
                                 } else Modifier,
                             ),
                     ) {
