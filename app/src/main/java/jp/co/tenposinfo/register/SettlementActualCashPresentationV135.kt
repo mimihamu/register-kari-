@@ -26,6 +26,9 @@ internal object SettlementActualCashPresentationV135 {
     @Volatile
     private var applicationContext: Context? = null
 
+    fun shouldShowActualCash(type: SettlementReportType, entered: Boolean): Boolean =
+        type == SettlementReportType.Z_SETTLEMENT || entered
+
     @Synchronized
     fun initialize(context: Context) {
         val appContext = context.applicationContext
