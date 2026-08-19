@@ -19,7 +19,7 @@ import android.database.sqlite.SQLiteDatabase
  */
 internal object SettlementActualCashPresentationV135 {
     private const val TABLE = "settlement_actual_cash_input_v135"
-    private const val BLANK_MARKER = "現金実査 -"
+    private const val ACTUAL_CASH_LABEL = "現金実査"
 
     private val currentInput = ThreadLocal<Boolean?>()
 
@@ -107,7 +107,12 @@ internal object SettlementActualCashPresentationV135 {
             "id ASC",
             "1",
         ).use { cursor ->
-            if (!cursor.moveToFirst()) true else !cursor.getString(0).contains(BLANK_MARKER)
+            if (!cursor.moveToFirst()) return@use true
+            val actualCashLine = cursor.getString(0)
+                .lineSequence()
+                .firstOrNull { it.trimStart().startsWith(ACTUAL_CASH_LABEL) }
+                ?: return@use true
+            actualCashLine.any(Char::isDigit)
         }
 
     private fun ensureSchema(db: SQLiteDatabase) {
