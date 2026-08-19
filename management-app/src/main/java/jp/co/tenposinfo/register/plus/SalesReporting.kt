@@ -2,10 +2,14 @@ package jp.co.tenposinfo.register.plus
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import kotlin.math.max
 
 data class SalesReportFilter(
     val businessDate: String? = null,
+    val businessDateFrom: String? = null,
+    val businessDateTo: String? = null,
     val storeId: String? = null,
     val terminalId: String? = null,
 )
@@ -15,6 +19,60 @@ data class SalesReportFilterOptions(
     val storeIds: List<String> = emptyList(),
     val terminalIds: List<String> = emptyList(),
 )
+
+object SalesReportPeriodPolicy {
+    const val MAX_RANGE_DAYS = 31L
+
+    fun validationError(filter: SalesReportFilter): String? {
+        val exact = filter.businessDate.normalized()
+        if (exact != null) {
+            return if (parseDate(exact) == null) "営業日の形式が正しくありません" else null
+        }
+
+        val fromText = filter.businessDateFrom.normalized()
+        val toText = filter.businessDateTo.normalized()
+        if (fromText == null && toText == null) return null
+        if (fromText == null || toText == null) return "期間は開始日と終了日の両方を指定してください"
+
+        val from = parseDate(fromText) ?: return "期間開始日の形式が正しくありません"
+        val to = parseDate(toText) ?: return "期間終了日の形式が正しくありません"
+        if (from.isAfter(to)) return "期間開始日は終了日以前を指定してください"
+        val days = ChronoUnit.DAYS.between(from, to) + 1L
+        if (days > MAX_RANGE_DAYS) return "期間は最大${MAX_RANGE_DAYS}日です"
+        return null
+    }
+
+    fun matches(filter: SalesReportFilter, businessDate: String): Boolean {
+        if (validationError(filter) != null) return false
+        filter.businessDate.normalized()?.let { return businessDate == it }
+
+        val from = filter.businessDateFrom.normalized()
+        val to = filter.businessDateTo.normalized()
+        if (from == null && to == null) return true
+        return businessDate >= requireNotNull(from) && businessDate <= requireNotNull(to)
+    }
+
+    fun selectableToDates(from: String?, dates: List<String>): List<String> {
+        val fromDate = from.normalized()?.let(::parseDate) ?: return dates
+        return dates.filter { candidate ->
+            val toDate = parseDate(candidate) ?: return@filter false
+            !toDate.isBefore(fromDate) &&
+                ChronoUnit.DAYS.between(fromDate, toDate) + 1L <= MAX_RANGE_DAYS
+        }
+    }
+
+    fun displayLabel(filter: SalesReportFilter): String = when {
+        filter.businessDate.normalized() != null -> "単日 ${filter.businessDate.normalized()}"
+        filter.businessDateFrom.normalized() != null && filter.businessDateTo.normalized() != null ->
+            "${filter.businessDateFrom.normalized()} 〜 ${filter.businessDateTo.normalized()}"
+        filter.businessDateFrom.normalized() != null || filter.businessDateTo.normalized() != null -> "期間指定エラー"
+        else -> "全営業日"
+    }
+
+    private fun parseDate(value: String): LocalDate? = runCatching { LocalDate.parse(value) }.getOrNull()
+
+    private fun String?.normalized(): String? = this?.trim()?.takeIf(String::isNotEmpty)
+}
 
 data class SalesJournalReportEntry(
     val duplicateImportKey: String,
@@ -98,7 +156,7 @@ object SalesReportCalculator {
         filter: SalesReportFilter = SalesReportFilter(),
     ): SalesReport {
         val filtered = entries.filter { entry ->
-            (filter.businessDate == null || entry.businessDate == filter.businessDate) &&
+            SalesReportPeriodPolicy.matches(filter, entry.businessDate) &&
                 (filter.storeId == null || entry.storeId == filter.storeId) &&
                 (filter.terminalId == null || entry.terminalId == filter.terminalId)
         }
