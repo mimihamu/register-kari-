@@ -15,6 +15,7 @@ class MixedTaxCartBootstrapProviderV135 : ContentProvider() {
             SaleGuestCountRuntimeV135(appContext).close()
             SettlementReportingRuntimeV135.initialize(appContext)
             SettlementTaxBreakdownRuntimeV135.initialize(appContext)
+            SettlementSnapshotRuntimeV135.initialize(appContext)
         }
         return true
     }
