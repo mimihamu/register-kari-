@@ -42,6 +42,10 @@ class SecureOperationsCoordinator(
     private val appContext = context.applicationContext
     private val executionGuard = OperationExecutionGuard()
 
+    init {
+        SettlementActualCashPresentationV135.initialize(appContext)
+    }
+
     fun startBusinessDay(businessDate: LocalDate, openingCash: Long): Long =
         executionGuard.runExclusive("BUSINESS_OPEN:$businessDate", "営業開始を処理中です") {
             val operator = requireOperator(OperationsAction.BUSINESS_START)
@@ -71,23 +75,31 @@ class SecureOperationsCoordinator(
             SettlementReportType.Z_SETTLEMENT -> OperationsAction.Z_SETTLEMENT
         }
         var backupActor = "責任者"
-        val settlementId = executionGuard.runExclusive(executionKey, "点検・精算を処理中です") {
-            val operator = requireOperator(action)
-            val actor = if (OperationsAuthorizationPolicy.requiresManagerApproval(action, type)) {
-                OperationsActorFormatter.approved(operator, requireManagerName(managerPin))
-            } else {
-                OperationsActorFormatter.direct(operator)
+        val actualCashEntered = actualCash != null
+        val settlementId = SettlementActualCashPresentationV135.withInput(appContext, actualCashEntered) {
+            executionGuard.runExclusive(executionKey, "点検・精算を処理中です") {
+                val operator = requireOperator(action)
+                val actor = if (OperationsAuthorizationPolicy.requiresManagerApproval(action, type)) {
+                    OperationsActorFormatter.approved(operator, requireManagerName(managerPin))
+                } else {
+                    OperationsActorFormatter.direct(operator)
+                }
+                backupActor = actor
+                store.recordSettlement(
+                    type = type,
+                    actualCash = actualCash,
+                    operatorName = actor,
+                    pendingPrintsAcknowledged = pendingPrintsAcknowledged,
+                    backupFailureAcknowledged = backupFailureAcknowledged,
+                )
             }
-            backupActor = actor
-            store.recordSettlement(
-                type = type,
-                actualCash = actualCash,
-                operatorName = actor,
-                pendingPrintsAcknowledged = pendingPrintsAcknowledged,
-                backupFailureAcknowledged = backupFailureAcknowledged,
-            )
         }
 
+        // Presentation metadata must never invalidate an already committed X/Z record. The first
+        // print payload was rendered under withInput above; bind is for later PDF/reprint recovery.
+        runCatching {
+            SettlementActualCashPresentationV135.bind(appContext, settlementId, actualCashEntered)
+        }
         runCatching { AutomaticPrintScheduler.enqueueNow(appContext) }
 
         if (AutoBackupTriggerPolicy.shouldEnqueue(type, settlementCommitted = true)) {
