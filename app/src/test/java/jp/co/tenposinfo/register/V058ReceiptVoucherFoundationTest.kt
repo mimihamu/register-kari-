@@ -44,7 +44,7 @@ class V058ReceiptVoucherFoundationTest {
     }
 
     @Test
-    fun rendererReferencesOriginalReceiptInsteadOfInventingPartialTaxAllocation() {
+    fun rendererReferencesOriginalReceiptInsteadOfInventingQualifiedPartialTaxDisplay() {
         val text = ReceiptVoucherRenderer.render(
             ReceiptVoucherDocumentData(
                 issuanceId = 12,
@@ -60,14 +60,16 @@ class V058ReceiptVoucherFoundationTest {
                     storeName = "つぐ食堂",
                     registrationNumber = "T1234567890123",
                 ),
+                batchId = 7,
             ),
             ReceiptPaper.MM80,
         )
         assertTrue(text.contains("【領収書】"))
         assertTrue(text.contains("元売上No.99"))
-        assertTrue(text.contains("一括発行 1/30"))
-        assertTrue(text.contains("税率別の取引内容・消費税額等は元売上レシート"))
-        assertTrue(text.contains("登録番号 T1234567890123"))
+        assertTrue(text.contains("発行グループ RG-7"))
+        assertTrue(text.contains("枝番 1/30"))
+        assertTrue(text.contains(ReceiptVoucherRenderer.NOT_QUALIFIED_LABEL))
+        assertTrue(text.contains("税率別対価額・税額は元売上の監査情報"))
         assertFalse(text.contains("【再発行】"))
     }
 
