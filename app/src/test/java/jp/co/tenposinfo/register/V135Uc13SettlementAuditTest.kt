@@ -64,7 +64,7 @@ class V135Uc13SettlementAuditTest {
         val settlement = store.functionBody("fun recordSettlement(", "fun recentSettlements(")
         assertTrue(settlement.contains("if (type == SettlementReportType.Z_SETTLEMENT && summary.settled)"))
         assertTrue(settlement.contains("OperationsIdempotencyPolicy.settlementKey"))
-        assertTrue(settlement.contains("BusinessSessionTransitionPolicy.afterSettlement"))
+        assertTrue(settlement.contains("BusinessSessionLifecyclePolicy.resultStatus(type, session.status).name"))
         assertTrue(settlement.contains("\"id = ? AND status = ?\""))
         assertTrue(settlement.contains("BusinessSessionStatus.OPEN.name"))
         assertTrue(settlement.contains("check(updated == 1)"))
