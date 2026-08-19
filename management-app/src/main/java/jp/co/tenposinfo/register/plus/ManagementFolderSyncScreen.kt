@@ -110,6 +110,9 @@ fun TsuguRegiPlusFolderSyncScreen(
             onOpenGoogleAccount = {
                 context.startActivity(Intent(context, GoogleDriveEasyConnectActivity::class.java))
             },
+            onOpenTaxCategoryMaster = {
+                context.startActivity(Intent(context, TaxCategoryMasterActivityV135::class.java))
+            },
             onChooseFolder = { folderLauncher.launch(null) },
             onImportChanged = { onImportRegisteredFolder(false) },
             onForceRescan = { onImportRegisteredFolder(true) },
@@ -138,6 +141,7 @@ private fun ImportFolderBar(
     connection: DriveConnectionUiState,
     importing: Boolean,
     onOpenGoogleAccount: () -> Unit,
+    onOpenTaxCategoryMaster: () -> Unit,
     onChooseFolder: () -> Unit,
     onImportChanged: () -> Unit,
     onForceRescan: () -> Unit,
@@ -205,12 +209,24 @@ private fun ImportFolderBar(
                 }
             }
 
-            Button(
-                onClick = onOpenGoogleAccount,
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !importing && !folderState.scanning,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("Googleかんたん接続")
+                Button(
+                    onClick = onOpenGoogleAccount,
+                    modifier = Modifier.weight(1f),
+                    enabled = !importing && !folderState.scanning,
+                ) {
+                    Text("Googleかんたん接続")
+                }
+                OutlinedButton(
+                    onClick = onOpenTaxCategoryMaster,
+                    modifier = Modifier.weight(1f),
+                    enabled = !importing && !folderState.scanning,
+                ) {
+                    Text("税区分マスター")
+                }
             }
 
             if (expanded && registration != null) {
