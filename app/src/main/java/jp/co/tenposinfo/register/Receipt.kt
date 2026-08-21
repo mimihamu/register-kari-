@@ -67,6 +67,9 @@ data class ReceiptData(
     val changeAmount: Long,
     val reprint: Boolean = false,
     val invoiceAggregationBasis: InvoiceAggregationBasisV136 = InvoiceAggregationBasisV136.TAX_INCLUDED,
+    val documentCopies: Int = 1,
+    val documentHeader: String = "",
+    val documentFooter: String = "",
 )
 
 enum class ReceiptPaper(val widthMm: Int, val charsPerLine: Int) {
@@ -140,6 +143,7 @@ object ReceiptRenderer {
     fun render(data: ReceiptData, paper: ReceiptPaper): String {
         val width = paper.charsPerLine
         val lines = mutableListOf<String>()
+        data.documentHeader.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.forEach { lines += fit(it, width) }
         lines += center(data.storeName, width)
         if (data.storeAddress.isNotBlank()) lines += center(data.storeAddress, width)
         if (data.storePhone.isNotBlank()) lines += center("TEL ${data.storePhone}", width)
@@ -196,6 +200,7 @@ object ReceiptRenderer {
         lines += "※は軽減税率対象商品です"
         lines += "内/外は内税・外税区分です"
         lines += center("ありがとうございました", width)
+        data.documentFooter.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.forEach { lines += fit(it, width) }
         return lines.joinToString("\n")
     }
 
@@ -246,12 +251,15 @@ object EscPosEncoder {
             configuration.drawerOpenOnCashSale &&
             !data.reprint &&
             data.payments.any { it.method == PaymentMethod.CASH }
-        return PrinterCommandEncoder.encodeText(
-            text = ReceiptRenderer.render(data, PrinterPaperSettingPolicy.paper(configuration)),
-            configuration = configuration,
-            openDrawer = openDrawer,
-            appendCut = true,
-        )
+        val copies = DocumentPrintSettingsPolicyV136.normalizeCopies(data.documentCopies)
+        return (0 until copies).fold(ByteArray(0)) { payload, copyIndex ->
+            payload + PrinterCommandEncoder.encodeText(
+                text = ReceiptRenderer.render(data, PrinterPaperSettingPolicy.paper(configuration)),
+                configuration = configuration,
+                openDrawer = openDrawer && copyIndex == 0,
+                appendCut = true,
+            )
+        }
     }
 }
 
@@ -378,6 +386,7 @@ class MemoryPrinterGateway : PrinterGateway {
 class PrintQueueProcessor(
     private val database: RegisterDatabase,
     private val gateway: PrinterGateway,
+    private val saleReceiptSetting: DocumentPrintSettingV136 = DocumentPrintSettingV136(),
 ) {
     fun processNext(): Boolean {
         val job = database.claimNextPrintableJob() ?: return false
@@ -397,7 +406,8 @@ class PrintQueueProcessor(
         val configuredSnapshot = (PrinterConfigurationRegistry.current() ?: PrinterConfiguration()).copy(
             paperWidthMm = job.paperWidthMm,
         )
-        val result = gateway.send(EscPosEncoder.encode(receipt, configuredSnapshot))
+        val configuredReceipt = DocumentPrintSettingsPolicyV136.applyToReceipt(receipt, saleReceiptSetting)
+        val result = gateway.send(EscPosEncoder.encode(configuredReceipt, configuredSnapshot))
         result.onSuccess {
             database.markPrintCompleted(job.id)
         }.onFailure { error ->

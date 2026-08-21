@@ -369,6 +369,11 @@ class AdvancedOperationsStore(context: Context) {
         require(session.status == BusinessSessionStatus.OPEN) { "この営業セッションは既に終了しています" }
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
         val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
+        val documentPrintKind = when (type) {
+            SettlementReportType.X_INSPECTION -> DocumentPrintKindV136.INSPECTION
+            SettlementReportType.Z_SETTLEMENT -> DocumentPrintKindV136.SETTLEMENT
+        }
+        val documentPrintSetting = DocumentPrintSettingsStoreV136(appContext).load(documentPrintKind)
         val now = System.currentTimeMillis()
         var previewText = ""
         var printJobId = 0L
@@ -424,7 +429,16 @@ class AdvancedOperationsStore(context: Context) {
                 paymentTotals = summary.paymentTotals,
             )
             previewText = OperationDocumentRenderer.renderSettlement(document, ReceiptPaper.fromWidth(paperWidthMm))
-            printJobId = insertDocumentJob(OperationDocumentType.SETTLEMENT_REPORT, id, paperWidthMm, previewText, now)
+            if (documentPrintSetting.autoPrintEnabled) {
+                printJobId = insertDocumentJob(
+                    OperationDocumentType.SETTLEMENT_REPORT,
+                    id,
+                    paperWidthMm,
+                    previewText,
+                    now,
+                    documentPrintKind,
+                )
+            }
             if (type == SettlementReportType.Z_SETTLEMENT) {
                 val updated = update(
                     "business_sessions",
@@ -868,21 +882,32 @@ class AdvancedOperationsStore(context: Context) {
         paperWidthMm: Int,
         payloadText: String,
         now: Long,
-    ): Long = insertOrThrow(
-        "document_print_jobs",
-        null,
-        ContentValues().apply {
-            put("document_type", type.name)
-            put("reference_id", referenceId)
-            put("paper_width_mm", if (paperWidthMm >= 80) 80 else 58)
-            put("status", PrintJobStatus.PENDING.name)
-            put("attempt_count", 0)
-            putNull("last_error")
-            put("payload_text", payloadText)
-            put("created_at", now)
-            put("updated_at", now)
-        },
-    )
+        settingsKind: DocumentPrintKindV136? = DocumentPrintSettingsPolicyV136.kindFor(type),
+    ): Long {
+        val setting = settingsKind?.let { DocumentPrintSettingsStoreV136(appContext).load(it) }
+        val copies = setting?.copies?.let(DocumentPrintSettingsPolicyV136::normalizeCopies) ?: 1
+        val decoratedPayload = setting?.let { DocumentPrintSettingsPolicyV136.decorateText(payloadText, it) } ?: payloadText
+        var firstJobId = 0L
+        repeat(copies) { copyIndex ->
+            val jobId = insertOrThrow(
+                "document_print_jobs",
+                null,
+                ContentValues().apply {
+                    put("document_type", type.name)
+                    put("reference_id", referenceId)
+                    put("paper_width_mm", if (paperWidthMm >= 80) 80 else 58)
+                    put("status", PrintJobStatus.PENDING.name)
+                    put("attempt_count", 0)
+                    putNull("last_error")
+                    put("payload_text", decoratedPayload)
+                    put("created_at", now + copyIndex)
+                    put("updated_at", now + copyIndex)
+                },
+            )
+            if (copyIndex == 0) firstJobId = jobId
+        }
+        return firstJobId
+    }
 
     private fun android.database.Cursor.toDocumentPrintJob() = DocumentPrintJobRecord(
         id = getLong(0),

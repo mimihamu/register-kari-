@@ -261,6 +261,7 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
     private val documentStore = AdvancedOperationsStore(applicationContext)
     private val settingsStore = AdminSettingsStore(applicationContext)
     private val monitoringStore = PrinterMonitoringStore(applicationContext)
+    private val documentPrintSettingsStore = DocumentPrintSettingsStoreV136(applicationContext)
 
     override fun close() {
         monitoringStore.close()
@@ -285,7 +286,13 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
                         completedPrintCount = it.summary.printCount,
                     ),
                 )
-                ReceiptRenderer.render(receipt, ReceiptPaper.fromWidth(job.paperWidthMm))
+                ReceiptRenderer.render(
+                    DocumentPrintSettingsPolicyV136.applyToReceipt(
+                        receipt,
+                        documentPrintSettingsStore.load(DocumentPrintKindV136.SALE_RECEIPT),
+                    ),
+                    ReceiptPaper.fromWidth(job.paperWidthMm),
+                )
             } ?: "売上 No.${job.saleId} の明細が見つかりません"
             UnifiedPrintJob(
                 key = "SALE:${job.id}",
@@ -565,7 +572,10 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
             ),
         )
         val payload = EscPosEncoder.encode(
-            data = receipt,
+            data = DocumentPrintSettingsPolicyV136.applyToReceipt(
+                receipt,
+                documentPrintSettingsStore.load(DocumentPrintKindV136.SALE_RECEIPT),
+            ),
             configuration = configuration.copy(paperWidthMm = claimed.paperWidthMm),
         )
         val result = gateway.send(payload)

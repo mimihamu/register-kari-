@@ -585,6 +585,8 @@ private fun PrinterSettingsScreen(
                         }
                     }
                     Spacer(Modifier.height(8.dp))
+                    DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled = receiptAutoPrint)
+                    Spacer(Modifier.height(8.dp))
                     Text("用紙幅・カット", fontWeight = FontWeight.Bold, color = AsNavy)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         AsChoiceButton("58mm", paperWidth == 58, Modifier.weight(1f)) { paperWidth = 58 }

@@ -168,6 +168,7 @@ class AutomaticPrintWorker(
 
         val database = RegisterDatabase(applicationContext)
         val operations = AdvancedOperationsStore(applicationContext)
+        val saleReceiptSetting = DocumentPrintSettingsStoreV136(applicationContext).load(DocumentPrintKindV136.SALE_RECEIPT)
         try {
             while (!AutomaticPrintQueuePolicy.batchLimitReached(attempted)) {
                 val dispatch = runCatching {
@@ -188,7 +189,7 @@ class AutomaticPrintWorker(
                         )
                         val success = when (candidate.source) {
                             AutomaticPrintCandidateSource.SALE_RECEIPT ->
-                                PrintQueueProcessor(database, gateway).processNext()
+                                PrintQueueProcessor(database, gateway, saleReceiptSetting).processNext()
                             AutomaticPrintCandidateSource.DOCUMENT ->
                                 operations.processDocumentPrint(candidate.sourceId, gateway).isSuccess
                         }
