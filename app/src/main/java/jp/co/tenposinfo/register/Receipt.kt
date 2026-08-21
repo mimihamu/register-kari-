@@ -83,7 +83,9 @@ object ReceiptFactory {
     private fun issuer(): InvoiceIssuerProfile = TaxInvoiceSettingsRegistry.current().issuer
 
     fun fromSale(detail: SaleDetailRecord, reprint: Boolean = false): ReceiptData {
-        val issuer = issuer()
+        // NOTICE-001: loadSaleDetail() が復元した売上時発行者snapshotを最優先する。
+        // snapshot導入前のlegacy売上だけは現在設定へフォールバックする。
+        val issuer = SaleInvoiceIssuerSnapshotRegistryV136.forSale(detail.summary.id) ?: issuer()
         return ReceiptData(
             storeName = issuer.storeName,
             storeAddress = issuer.address,
