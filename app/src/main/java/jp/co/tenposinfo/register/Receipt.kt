@@ -386,7 +386,14 @@ class PrintQueueProcessor(
             database.markPrintFailed(job.id, "売上データが見つかりません", permanent = true)
             return false
         }
-        val receipt = ReceiptFactory.fromSale(detail, reprint = detail.summary.printCount > 0)
+        val receipt = ReceiptFactory.fromSale(
+            detail,
+            reprint = ReceiptReprintPolicyV136.isReprint(
+                jobCreatedAt = job.createdAt,
+                saleCreatedAt = detail.summary.createdAt,
+                completedPrintCount = detail.summary.printCount,
+            ),
+        )
         val configuredSnapshot = (PrinterConfigurationRegistry.current() ?: PrinterConfiguration()).copy(
             paperWidthMm = job.paperWidthMm,
         )

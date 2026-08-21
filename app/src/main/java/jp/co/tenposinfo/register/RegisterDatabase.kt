@@ -253,7 +253,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         require(items.isNotEmpty()) { "Cannot save an empty sale" }
         val taxSettings = TaxInvoiceSettingsStore(applicationContext).load()
         val mixedTaxPolicy = taxSettings.mixedTaxPolicy
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(applicationContext)
+        val printerConfiguration = PrinterPaperSettingPolicy.currentConfiguration(applicationContext)
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
         TaxEngine.validateMixedTax(items, mixedTaxPolicy)
         val summary = TaxEngine.calculate(items)
         require(paymentState.remaining(summary.grossAmount) == 0L) { "Payment is incomplete" }
@@ -333,7 +334,12 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     },
                 )
             }
-            insertPrintJob(this, saleId, paperWidthMm, createdAt)
+            if (ReceiptAutoPrintPolicyV136.shouldCreateAutomaticReceiptJob(
+                    printerConfiguration.receiptAutoPrintEnabled,
+                )
+            ) {
+                insertPrintJob(this, saleId, paperWidthMm, createdAt)
+            }
             LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_SALE, saleId, items)
             SaleTaxSnapshotStoreV136.save(
                 db = this,
@@ -493,9 +499,11 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
     }
 
     fun enqueueReprint(saleId: Long): Long {
-        require(loadSaleDetail(saleId) != null) { "Sale not found" }
+        val detail = loadSaleDetail(saleId) ?: throw IllegalArgumentException("Sale not found")
         val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(applicationContext)
-        val now = System.currentTimeMillis()
+        // RCP-002/RCP-004: 後レシートは自動発行OFFでも可能。初回自動ジョブと区別するため
+        // 売上確定時刻より必ず後の作成時刻を持たせる。
+        val now = maxOf(System.currentTimeMillis(), detail.summary.createdAt + 1L)
         return writableDatabase.insertOrThrow(
             "print_jobs",
             null,

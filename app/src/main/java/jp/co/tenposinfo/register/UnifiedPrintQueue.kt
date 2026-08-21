@@ -277,7 +277,14 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
         val saleJobs = salesDatabase.listPrintJobs(limitPerType).map { job ->
             val detail = salesDatabase.loadSaleDetail(job.saleId)
             val preview = detail?.let {
-                val receipt = ReceiptFactory.fromSale(it, reprint = it.summary.printCount > 0)
+                val receipt = ReceiptFactory.fromSale(
+                    it,
+                    reprint = ReceiptReprintPolicyV136.isReprint(
+                        jobCreatedAt = job.createdAt,
+                        saleCreatedAt = it.summary.createdAt,
+                        completedPrintCount = it.summary.printCount,
+                    ),
+                )
                 ReceiptRenderer.render(receipt, ReceiptPaper.fromWidth(job.paperWidthMm))
             } ?: "売上 No.${job.saleId} の明細が見つかりません"
             UnifiedPrintJob(
@@ -549,7 +556,14 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
             salesDatabase.markPrintFailed(claimed.id, "売上データが見つかりません", permanent = true)
             return Result.failure(IllegalArgumentException("売上データが見つかりません"))
         }
-        val receipt = ReceiptFactory.fromSale(detail, reprint = detail.summary.printCount > 0)
+        val receipt = ReceiptFactory.fromSale(
+            detail,
+            reprint = ReceiptReprintPolicyV136.isReprint(
+                jobCreatedAt = claimed.createdAt,
+                saleCreatedAt = detail.summary.createdAt,
+                completedPrintCount = detail.summary.printCount,
+            ),
+        )
         val payload = EscPosEncoder.encode(
             data = receipt,
             configuration = configuration.copy(paperWidthMm = claimed.paperWidthMm),

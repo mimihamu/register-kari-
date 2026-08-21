@@ -45,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +65,7 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 private val Navy = Color(0xFF173F6B)
 private val Blue = Color(0xFF1976B9)
@@ -218,6 +220,7 @@ private fun RegisterApp() {
     val heldTicketCoordinator = remember { HeldTicketSafetyCoordinator(database) }
     val paymentDraftStore = remember { PaymentDraftStore(database) }
     val saleCommitGuard = remember { SaleCommitGuard() }
+    val checkoutScope = rememberCoroutineScope()
 
     fun replaceCart(items: List<CartItem>) {
         cart.clear()
@@ -658,6 +661,18 @@ private fun RegisterApp() {
                                     CustomerDisplaySettingsStore(context.applicationContext).load().storeName,
                                 ),
                             )
+                        }
+                        val completedPaymentState = paymentState
+                        val completedOperatorName = operatorName
+                        checkoutScope.launch {
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                ReceiptAutoPrintRuntimeV136.dispatchDrawerIfNeeded(
+                                    context = context.applicationContext,
+                                    paymentState = completedPaymentState,
+                                    saleId = saleId,
+                                    actor = completedOperatorName,
+                                )
+                            }
                         }
                         AutomaticPrintScheduler.enqueueNow(context.applicationContext)
                         DriveOutboxScheduler.enqueueNow(context.applicationContext)

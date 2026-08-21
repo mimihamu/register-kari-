@@ -483,6 +483,7 @@ private fun PrinterSettingsScreen(
     var paperWidth by remember { mutableStateOf(initial.paperWidthMm) }
     var timeout by remember { mutableStateOf(initial.timeoutMillis.toString()) }
     var enabled by remember { mutableStateOf(initial.enabled) }
+    var receiptAutoPrint by remember { mutableStateOf(initial.receiptAutoPrintEnabled) }
     var profile by remember { mutableStateOf(initial.profile) }
     var cutMode by remember { mutableStateOf(initial.cutMode) }
     var drawerEnabled by remember { mutableStateOf(initial.drawerEnabled) }
@@ -502,6 +503,7 @@ private fun PrinterSettingsScreen(
         paperWidthMm = paperWidth,
         timeoutMillis = timeout.toIntOrNull() ?: 0,
         enabled = enabled,
+        receiptAutoPrintEnabled = receiptAutoPrint,
         profile = profile,
         cutMode = cutMode,
         drawerEnabled = drawerEnabled,
@@ -573,6 +575,15 @@ private fun PrinterSettingsScreen(
                         }
                     }
                     Text(profile.description, color = Color.Gray, fontSize = 13.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text("レシート発行", fontWeight = FontWeight.Bold, color = AsNavy)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = receiptAutoPrint, onCheckedChange = { receiptAutoPrint = it })
+                        Column {
+                            Text("会計確定時にレシートを自動発行")
+                            Text("OFFでも売上一覧・会計完了から後レシート／再印字できます", color = Color.Gray, fontSize = 12.sp)
+                        }
+                    }
                     Spacer(Modifier.height(8.dp))
                     Text("用紙幅・カット", fontWeight = FontWeight.Bold, color = AsNavy)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -664,6 +675,7 @@ private fun PrinterSettingsScreen(
                 AsValueRow("機種", profile.displayName)
                 AsValueRow("接続", "${host.ifBlank { "未設定" }}:${port.ifBlank { "9100" }}")
                 AsValueRow("用紙", "${paperWidth}mm")
+                AsValueRow("レシート自動発行", if (receiptAutoPrint) "ON" else "OFF（後レシート可）")
                 AsValueRow("カット", cutMode.displayName)
                 AsValueRow("ドロア", if (drawerEnabled) "DK${drawerPort + 1}" else "無効")
                 AsValueRow("自動オープン", if (drawerEnabled && drawerOpenOnCash) "現金会計時" else "なし")
@@ -675,7 +687,7 @@ private fun PrinterSettingsScreen(
                 AsFlowStep("5", "送信結果不明時は自動再印刷を停止")
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "現金会計の初回レシートだけにドロアキックを付加します。再発行、返品票、X点検票、Z精算票では自動でドロアを開きません。",
+                    "レシート自動発行ONでは初回レシートにドロアキックを付加します。OFFでは会計確定後にドロアだけを独立送信します。後レシート／再発行、返品票、X点検票、Z精算票では自動でドロアを開きません。",
                     color = Color.DarkGray,
                     lineHeight = 22.sp,
                 )

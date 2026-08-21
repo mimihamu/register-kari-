@@ -48,6 +48,7 @@ data class PrinterConfiguration(
     val paperWidthMm: Int = 80,
     val timeoutMillis: Int = 5_000,
     val enabled: Boolean = false,
+    val receiptAutoPrintEnabled: Boolean = true,
     val profile: PrinterProfile = PrinterProfile.EPSON_TM_JAPAN,
     val cutMode: PrinterCutMode = PrinterCutMode.PARTIAL,
     val drawerEnabled: Boolean = false,
@@ -362,7 +363,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
         arrayOf(
             "printer_name", "host", "port", "paper_width_mm", "timeout_millis", "enabled",
             "profile_key", "cut_mode", "drawer_enabled", "drawer_open_on_cash",
-            "drawer_port", "drawer_on_millis", "drawer_off_millis",
+            "drawer_port", "drawer_on_millis", "drawer_off_millis", "receipt_auto_print",
         ),
         "id = 1",
         null,
@@ -384,6 +385,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             drawerPort = cursor.getInt(10),
             drawerOnMillis = cursor.getInt(11),
             drawerOffMillis = cursor.getInt(12),
+            receiptAutoPrintEnabled = cursor.getInt(13) != 0,
         )
     }
 
@@ -408,6 +410,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
                     put("paper_width_mm", configuration.paperWidthMm)
                     put("timeout_millis", configuration.timeoutMillis)
                     put("enabled", if (configuration.enabled) 1 else 0)
+                    put("receipt_auto_print", if (configuration.receiptAutoPrintEnabled) 1 else 0)
                     put("profile_key", configuration.profile.name)
                     put("cut_mode", configuration.cutMode.name)
                     put("drawer_enabled", if (configuration.drawerEnabled) 1 else 0)
@@ -423,7 +426,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             insertAudit(
                 "PRINTER_SETTINGS_UPDATED",
                 1,
-                "${configuration.name} ${configuration.host}:${configuration.port} ${configuration.paperWidthMm}mm / ${configuration.profile.displayName} / ${configuration.cutMode.displayName} / ドロア${if (configuration.drawerEnabled) "有効" else "無効"}",
+                "${configuration.name} ${configuration.host}:${configuration.port} ${configuration.paperWidthMm}mm / ${configuration.profile.displayName} / ${configuration.cutMode.displayName} / レシート自動${if (configuration.receiptAutoPrintEnabled) "ON" else "OFF"} / ドロア${if (configuration.drawerEnabled) "有効" else "無効"}",
                 actor,
                 now,
             )
@@ -632,6 +635,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
                 paper_width_mm INTEGER NOT NULL,
                 timeout_millis INTEGER NOT NULL,
                 enabled INTEGER NOT NULL,
+                receipt_auto_print INTEGER NOT NULL DEFAULT 1,
                 profile_key TEXT NOT NULL DEFAULT 'EPSON_TM_JAPAN',
                 cut_mode TEXT NOT NULL DEFAULT 'PARTIAL',
                 drawer_enabled INTEGER NOT NULL DEFAULT 0,
@@ -643,6 +647,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             )
             """.trimIndent(),
         )
+        ensurePrinterColumn("receipt_auto_print", "INTEGER NOT NULL DEFAULT 1")
         ensurePrinterColumn("profile_key", "TEXT NOT NULL DEFAULT 'EPSON_TM_JAPAN'")
         ensurePrinterColumn("cut_mode", "TEXT NOT NULL DEFAULT 'PARTIAL'")
         ensurePrinterColumn("drawer_enabled", "INTEGER NOT NULL DEFAULT 0")
@@ -786,10 +791,10 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             INSERT OR IGNORE INTO printer_settings(
                 id, printer_name, host, port, paper_width_mm, timeout_millis, enabled,
                 profile_key, cut_mode, drawer_enabled, drawer_open_on_cash,
-                drawer_port, drawer_on_millis, drawer_off_millis, updated_at
+                drawer_port, drawer_on_millis, drawer_off_millis, receipt_auto_print, updated_at
             ) VALUES(
                 1, 'レシートプリンター', '', 9100, 80, 5000, 0,
-                'EPSON_TM_JAPAN', 'PARTIAL', 0, 1, 0, 100, 500, 0
+                'EPSON_TM_JAPAN', 'PARTIAL', 0, 1, 0, 100, 500, 1, 0
             )
             """.trimIndent(),
         )
