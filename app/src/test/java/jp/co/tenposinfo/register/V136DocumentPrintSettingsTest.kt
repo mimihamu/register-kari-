@@ -67,7 +67,7 @@ class V136DocumentPrintSettingsTest {
         assertTrue(source.contains("DocumentPrintKindV136.SETTLEMENT"))
         assertTrue(source.contains("if (documentPrintSetting.autoPrintEnabled)"))
         assertTrue(source.contains("normalizeCopies(settingsKind, setting.copies)"))
-        assertTrue(source.contains("repeat(copies)"))
+        assertTrue(source.contains("kotlin.repeat(copies)"))
     }
 
     @Test
@@ -86,9 +86,11 @@ class V136DocumentPrintSettingsTest {
         assertTrue(voucher.contains("if (documentPrintSetting.autoPrintEnabled)"))
         assertTrue(voucher.contains("decorateText(payload, documentPrintSetting)"))
         assertTrue(voucher.contains("normalizeCopies(documentPrintSetting.copies)"))
+        assertTrue(voucher.contains("kotlin.repeat("))
         assertTrue(provisional.contains("fun enqueueIfAutomatic"))
         assertTrue(provisional.contains("DocumentPrintKindV136.PROVISIONAL_RECEIPT"))
         assertTrue(provisional.contains("decorateText(payload, documentPrintSetting)"))
+        assertTrue(provisional.contains("kotlin.repeat("))
         assertTrue(main.contains("service.enqueueIfAutomatic(heldTicketId, operatorName)"))
     }
 }
