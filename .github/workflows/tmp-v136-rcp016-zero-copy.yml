@@ -1,0 +1,102 @@
+name: tmp-v136-rcp016-zero-copy
+
+on:
+  push:
+    branches: [develop/v1.36]
+    paths:
+      - .github/workflows/tmp-v136-rcp016-zero-copy.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.36
+          fetch-depth: 0
+      - name: Apply formal zero-copy rule
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one match, got {count}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          path = "app/src/main/java/jp/co/tenposinfo/register/DocumentPrintSettingsV136.kt"
+          replace_once(
+              path,
+              '''    fun load(kind: DocumentPrintKindV136): DocumentPrintSettingV136 = DocumentPrintSettingV136(\n        autoPrintEnabled = preferences.getBoolean("${kind.storageKey}.auto", kind.defaultAutoPrint),\n        copies = DocumentPrintSettingsPolicyV136.normalizeCopies(\n            preferences.getInt("${kind.storageKey}.copies", 1),\n        ),''',
+              '''    fun load(kind: DocumentPrintKindV136): DocumentPrintSettingV136 = DocumentPrintSettingV136(\n        autoPrintEnabled = preferences.getBoolean("${kind.storageKey}.auto", kind.defaultAutoPrint),\n        copies = DocumentPrintSettingsPolicyV136.normalizeCopies(\n            kind,\n            preferences.getInt("${kind.storageKey}.copies", 1),\n        ),''',
+          )
+          replace_once(
+              path,
+              '''            .putInt("${kind.storageKey}.copies", DocumentPrintSettingsPolicyV136.normalizeCopies(setting.copies))''',
+              '''            .putInt(\n                "${kind.storageKey}.copies",\n                DocumentPrintSettingsPolicyV136.normalizeCopies(kind, setting.copies),\n            )''',
+          )
+          replace_once(
+              path,
+              '''    fun normalizeCopies(value: Int): Int = value.coerceIn(MIN_COPIES, MAX_COPIES)\n\n    fun kindFor(type: OperationDocumentType): DocumentPrintKindV136? = when (type) {''',
+              '''    fun normalizeCopies(value: Int): Int = value.coerceIn(MIN_COPIES, MAX_COPIES)\n\n    fun minimumCopies(kind: DocumentPrintKindV136): Int = when (kind) {\n        DocumentPrintKindV136.INSPECTION,\n        DocumentPrintKindV136.SETTLEMENT,\n        -> 0\n        else -> MIN_COPIES\n    }\n\n    fun normalizeCopies(kind: DocumentPrintKindV136, value: Int): Int =\n        value.coerceIn(minimumCopies(kind), MAX_COPIES)\n\n    fun kindFor(type: OperationDocumentType): DocumentPrintKindV136? = when (type) {''',
+          )
+          replace_once(
+              path,
+              '''                onClick = { copies = DocumentPrintSettingsPolicyV136.normalizeCopies(copies - 1) },''',
+              '''                onClick = { copies = DocumentPrintSettingsPolicyV136.normalizeCopies(selected, copies - 1) },''',
+          )
+          replace_once(
+              path,
+              '''            Text("部数 $copies", modifier = Modifier.weight(1f))''',
+              '''            Text(\n                if (copies == 0) "部数 0（電子保存のみ）" else "部数 $copies",\n                modifier = Modifier.weight(1f),\n            )''',
+          )
+          replace_once(
+              path,
+              '''                onClick = { copies = DocumentPrintSettingsPolicyV136.normalizeCopies(copies + 1) },''',
+              '''                onClick = { copies = DocumentPrintSettingsPolicyV136.normalizeCopies(selected, copies + 1) },''',
+          )
+
+          replace_once(
+              "app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsStore.kt",
+              '''        val copies = setting?.copies?.let { DocumentPrintSettingsPolicyV136.normalizeCopies(it) } ?: 1''',
+              '''        val copies = if (setting != null && settingsKind != null) {\n            DocumentPrintSettingsPolicyV136.normalizeCopies(settingsKind, setting.copies)\n        } else {\n            1\n        }''',
+          )
+
+          test = "app/src/test/java/jp/co/tenposinfo/register/V136DocumentPrintSettingsTest.kt"
+          replace_once(
+              test,
+              '''    fun copiesAreClampedToFormalInitialRange() {\n        assertEquals(1, DocumentPrintSettingsPolicyV136.normalizeCopies(0))\n        assertEquals(1, DocumentPrintSettingsPolicyV136.normalizeCopies(1))\n        assertEquals(3, DocumentPrintSettingsPolicyV136.normalizeCopies(3))\n        assertEquals(3, DocumentPrintSettingsPolicyV136.normalizeCopies(9))\n    }''',
+              '''    fun copiesAreClampedToFormalRanges() {\n        assertEquals(1, DocumentPrintSettingsPolicyV136.normalizeCopies(0))\n        assertEquals(3, DocumentPrintSettingsPolicyV136.normalizeCopies(9))\n        assertEquals(1, DocumentPrintSettingsPolicyV136.normalizeCopies(DocumentPrintKindV136.SALE_RECEIPT, 0))\n        assertEquals(1, DocumentPrintSettingsPolicyV136.normalizeCopies(DocumentPrintKindV136.RECEIPT_VOUCHER, 0))\n        assertEquals(1, DocumentPrintSettingsPolicyV136.normalizeCopies(DocumentPrintKindV136.PROVISIONAL_RECEIPT, 0))\n        assertEquals(0, DocumentPrintSettingsPolicyV136.normalizeCopies(DocumentPrintKindV136.INSPECTION, -1))\n        assertEquals(0, DocumentPrintSettingsPolicyV136.normalizeCopies(DocumentPrintKindV136.SETTLEMENT, 0))\n        assertEquals(3, DocumentPrintSettingsPolicyV136.normalizeCopies(DocumentPrintKindV136.SETTLEMENT, 9))\n    }''',
+          )
+          replace_once(
+              test,
+              '''        assertTrue(source.contains("repeat(copies)"))''',
+              '''        assertTrue(source.contains("normalizeCopies(settingsKind, setting.copies)"))\n        assertTrue(source.contains("repeat(copies)"))''',
+          )
+
+          doc = "docs/V1.36_PRN_002_RCP_016_DOCUMENT_PRINT_SETTINGS.md"
+          replace_once(
+              doc,
+              '''各文書に `自動印刷 / 部数 / ヘッダ / フッタ` を保持する。部数は初版制約の1〜3部とする。''',
+              '''各文書に `自動印刷 / 部数 / ヘッダ / フッタ` を保持する。レシート・領収書・仮締め票は1〜3部、点検票・精算票は正式設定表に従い0〜3部とする。点検・精算の0部は物理印刷ジョブを作らず、帳票データだけを電子保存する。''',
+          )
+
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/jp/co/tenposinfo/register/DocumentPrintSettingsV136.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsStore.kt \
+                  app/src/test/java/jp/co/tenposinfo/register/V136DocumentPrintSettingsTest.kt \
+                  docs/V1.36_PRN_002_RCP_016_DOCUMENT_PRINT_SETTINGS.md
+          git rm .github/workflows/tmp-v136-rcp016-zero-copy.yml
+          git commit -m "fix: support zero-copy inspection and settlement"
+          git push origin HEAD:develop/v1.36
