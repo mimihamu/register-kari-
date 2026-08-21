@@ -17,20 +17,146 @@ jobs:
         with:
           ref: develop/v1.36
           fetch-depth: 0
-      - name: Execute staged patch
+      - name: Apply RCP-016 patch
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          workflow = Path('.github/workflows/tmp-v136-rcp016-patch.yml').read_text()
-          body = workflow.split("          python3 - <<'PY'\n", 1)[1].split("\n          PY", 1)[0]
-          body = '\n'.join(line[10:] if line.startswith('          ') else line for line in body.splitlines())
-          exec(compile(body, 'tmp-v136-rcp016-patch.py', 'exec'))
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'pattern not found: {path}: {old!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          admin = 'app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt'
+          anchor = '                    Spacer(Modifier.height(8.dp))\n                    Text("用紙幅・カット", fontWeight = FontWeight.Bold, color = AsNavy)'
+          replace_once(admin, anchor, '                    Spacer(Modifier.height(8.dp))\n                    DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled = receiptAutoPrint)\n                    Spacer(Modifier.height(8.dp))\n                    Text("用紙幅・カット", fontWeight = FontWeight.Bold, color = AsNavy)')
+
+          advanced = 'app/src/main/java/jp/co/tenposinfo/register/AdvancedOperationsStore.kt'
+          p = Path(advanced)
+          text = p.read_text()
+          marker = '    fun recordSettlement(\n'
+          start = text.index(marker)
+          width = text.index('        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)\n', start)
+          insert_at = width + len('        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)\n')
+          text = text[:insert_at] + '''        val documentPrintKind = when (type) {
+            SettlementReportType.X_INSPECTION -> DocumentPrintKindV136.INSPECTION
+            SettlementReportType.Z_SETTLEMENT -> DocumentPrintKindV136.SETTLEMENT
+        }
+        val documentPrintSetting = DocumentPrintSettingsStoreV136(appContext).load(documentPrintKind)
+''' + text[insert_at:]
+          old_line = '            printJobId = insertDocumentJob(OperationDocumentType.SETTLEMENT_REPORT, id, paperWidthMm, previewText, now)\n'
+          if old_line not in text[start:]:
+              raise SystemExit('settlement print job line not found')
+          text = text.replace(old_line, '''            if (documentPrintSetting.autoPrintEnabled) {
+                printJobId = insertDocumentJob(
+                    OperationDocumentType.SETTLEMENT_REPORT,
+                    id,
+                    paperWidthMm,
+                    previewText,
+                    now,
+                    documentPrintKind,
+                )
+            }
+''', 1)
+          function_start = text.index('    private fun SQLiteDatabase.insertDocumentJob(')
+          function_end = text.index('\n\n    private fun android.database.Cursor.toDocumentPrintJob()', function_start)
+          function = '''    private fun SQLiteDatabase.insertDocumentJob(
+        type: OperationDocumentType,
+        referenceId: Long,
+        paperWidthMm: Int,
+        payloadText: String,
+        now: Long,
+        settingsKind: DocumentPrintKindV136? = DocumentPrintSettingsPolicyV136.kindFor(type),
+    ): Long {
+        val setting = settingsKind?.let { DocumentPrintSettingsStoreV136(appContext).load(it) }
+        val copies = setting?.copies?.let(DocumentPrintSettingsPolicyV136::normalizeCopies) ?: 1
+        val decoratedPayload = setting?.let { DocumentPrintSettingsPolicyV136.decorateText(payloadText, it) } ?: payloadText
+        var firstJobId = 0L
+        repeat(copies) { copyIndex ->
+            val jobId = insertOrThrow(
+                "document_print_jobs",
+                null,
+                ContentValues().apply {
+                    put("document_type", type.name)
+                    put("reference_id", referenceId)
+                    put("paper_width_mm", if (paperWidthMm >= 80) 80 else 58)
+                    put("status", PrintJobStatus.PENDING.name)
+                    put("attempt_count", 0)
+                    putNull("last_error")
+                    put("payload_text", decoratedPayload)
+                    put("created_at", now + copyIndex)
+                    put("updated_at", now + copyIndex)
+                },
+            )
+            if (copyIndex == 0) firstJobId = jobId
+        }
+        return firstJobId
+    }'''
+          p.write_text(text[:function_start] + function + text[function_end:])
+
+          receipt = 'app/src/main/java/jp/co/tenposinfo/register/Receipt.kt'
+          replace_once(receipt,
+              '    val invoiceAggregationBasis: InvoiceAggregationBasisV136 = InvoiceAggregationBasisV136.TAX_INCLUDED,\n)',
+              '    val invoiceAggregationBasis: InvoiceAggregationBasisV136 = InvoiceAggregationBasisV136.TAX_INCLUDED,\n    val documentCopies: Int = 1,\n    val documentHeader: String = "",\n    val documentFooter: String = "",\n)')
+          replace_once(receipt,
+              '        val lines = mutableListOf<String>()\n        lines += center(data.storeName, width)',
+              '        val lines = mutableListOf<String>()\n        data.documentHeader.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.forEach { lines += fit(it, width) }\n        lines += center(data.storeName, width)')
+          replace_once(receipt,
+              '        lines += center("ありがとうございました", width)\n        return lines.joinToString("\\n")',
+              '        lines += center("ありがとうございました", width)\n        data.documentFooter.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.forEach { lines += fit(it, width) }\n        return lines.joinToString("\\n")')
+          p = Path(receipt)
+          text = p.read_text()
+          encoder_start = text.index('        return PrinterCommandEncoder.encodeText(', text.index('object EscPosEncoder'))
+          encoder_end = text.index('\n    }\n}', encoder_start)
+          old_encoder = text[encoder_start:encoder_end]
+          new_encoder = '''        val copies = DocumentPrintSettingsPolicyV136.normalizeCopies(data.documentCopies)
+        return (0 until copies).fold(ByteArray(0)) { payload, copyIndex ->
+            payload + PrinterCommandEncoder.encodeText(
+                text = ReceiptRenderer.render(data, PrinterPaperSettingPolicy.paper(configuration)),
+                configuration = configuration,
+                openDrawer = openDrawer && copyIndex == 0,
+                appendCut = true,
+            )
+        }'''
+          text = text[:encoder_start] + new_encoder + text[encoder_end:]
+          text = text.replace(
+              'class PrintQueueProcessor(\n    private val database: RegisterDatabase,\n    private val gateway: PrinterGateway,\n) {',
+              'class PrintQueueProcessor(\n    private val database: RegisterDatabase,\n    private val gateway: PrinterGateway,\n    private val saleReceiptSetting: DocumentPrintSettingV136 = DocumentPrintSettingV136(),\n) {',
+              1,
+          )
+          text = text.replace(
+              '        val result = gateway.send(EscPosEncoder.encode(receipt, configuredSnapshot))',
+              '        val configuredReceipt = DocumentPrintSettingsPolicyV136.applyToReceipt(receipt, saleReceiptSetting)\n        val result = gateway.send(EscPosEncoder.encode(configuredReceipt, configuredSnapshot))',
+              1,
+          )
+          p.write_text(text)
+
+          worker = 'app/src/main/java/jp/co/tenposinfo/register/AutomaticPrintWorker.kt'
+          replace_once(worker,
+              '        val database = RegisterDatabase(applicationContext)\n        val operations = AdvancedOperationsStore(applicationContext)\n        try {',
+              '        val database = RegisterDatabase(applicationContext)\n        val operations = AdvancedOperationsStore(applicationContext)\n        val saleReceiptSetting = DocumentPrintSettingsStoreV136(applicationContext).load(DocumentPrintKindV136.SALE_RECEIPT)\n        try {')
+          replace_once(worker,
+              '                                PrintQueueProcessor(database, gateway).processNext()',
+              '                                PrintQueueProcessor(database, gateway, saleReceiptSetting).processNext()')
+
+          unified = 'app/src/main/java/jp/co/tenposinfo/register/UnifiedPrintQueue.kt'
+          replace_once(unified,
+              '    private val monitoringStore = PrinterMonitoringStore(applicationContext)\n',
+              '    private val monitoringStore = PrinterMonitoringStore(applicationContext)\n    private val documentPrintSettingsStore = DocumentPrintSettingsStoreV136(applicationContext)\n')
+          replace_once(unified,
+              '                ReceiptRenderer.render(receipt, ReceiptPaper.fromWidth(job.paperWidthMm))',
+              '                ReceiptRenderer.render(DocumentPrintSettingsPolicyV136.applyToReceipt(receipt, documentPrintSettingsStore.load(DocumentPrintKindV136.SALE_RECEIPT)), ReceiptPaper.fromWidth(job.paperWidthMm))')
+          replace_once(unified,
+              '            data = receipt,\n            configuration = configuration.copy(paperWidthMm = claimed.paperWidthMm),',
+              '            data = DocumentPrintSettingsPolicyV136.applyToReceipt(receipt, documentPrintSettingsStore.load(DocumentPrintKindV136.SALE_RECEIPT)),\n            configuration = configuration.copy(paperWidthMm = claimed.paperWidthMm),')
           PY
           git diff --check
           git rm .github/workflows/tmp-v136-rcp016-patch.yml .github/workflows/tmp-v136-rcp016-trigger.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app/src/main/java app/src/test/java docs .github/workflows/tmp-v136-rcp016-patch.yml .github/workflows/tmp-v136-rcp016-trigger.yml
-          git commit -m 'feat: add RCP-016 document print settings'
+          git add app/src/main/java .github/workflows
+          git commit -m 'feat: add RCP-016 document print runtime'
           git push origin HEAD:develop/v1.36
