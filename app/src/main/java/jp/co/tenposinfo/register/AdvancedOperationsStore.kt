@@ -885,7 +885,7 @@ class AdvancedOperationsStore(context: Context) {
         settingsKind: DocumentPrintKindV136? = DocumentPrintSettingsPolicyV136.kindFor(type),
     ): Long {
         val setting = settingsKind?.let { DocumentPrintSettingsStoreV136(appContext).load(it) }
-        val copies = setting?.copies?.let(DocumentPrintSettingsPolicyV136::normalizeCopies) ?: 1
+        val copies = setting?.copies?.let { DocumentPrintSettingsPolicyV136.normalizeCopies(it) } ?: 1
         val decoratedPayload = setting?.let { DocumentPrintSettingsPolicyV136.decorateText(payloadText, it) } ?: payloadText
         var firstJobId = 0L
         repeat(copies) { copyIndex ->

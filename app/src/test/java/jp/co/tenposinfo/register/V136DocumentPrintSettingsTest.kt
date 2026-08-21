@@ -61,4 +61,20 @@ class V136DocumentPrintSettingsTest {
         val source = File("src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt").readText()
         assertTrue(source.contains("DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled = receiptAutoPrint)"))
     }
+
+    @Test
+    fun receiptVoucherAndProvisionalRoutesHonorRcp016() {
+        val voucher = File("src/main/java/jp/co/tenposinfo/register/ReceiptVoucher.kt").readText()
+        val provisional = File("src/main/java/jp/co/tenposinfo/register/HeldTicketProvisionalPrintV135.kt").readText()
+        val main = File("src/main/java/jp/co/tenposinfo/register/MainActivity.kt").readText()
+
+        assertTrue(voucher.contains("DocumentPrintKindV136.RECEIPT_VOUCHER"))
+        assertTrue(voucher.contains("if (documentPrintSetting.autoPrintEnabled)"))
+        assertTrue(voucher.contains("decorateText(payload, documentPrintSetting)"))
+        assertTrue(voucher.contains("normalizeCopies(documentPrintSetting.copies)"))
+        assertTrue(provisional.contains("fun enqueueIfAutomatic"))
+        assertTrue(provisional.contains("DocumentPrintKindV136.PROVISIONAL_RECEIPT"))
+        assertTrue(provisional.contains("decorateText(payload, documentPrintSetting)"))
+        assertTrue(main.contains("service.enqueueIfAutomatic(heldTicketId, operatorName)"))
+    }
 }

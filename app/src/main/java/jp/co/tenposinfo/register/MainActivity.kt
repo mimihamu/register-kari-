@@ -390,11 +390,24 @@ private fun RegisterApp() {
                         accessMessage = null
                         val existing = database.listHeldTickets()
                         val name = HeldTicketSafetyPolicy.defaultName(existing.map { it.name })
-                        database.holdCart(name, operatorName, cart.toList())
+                        val heldTicketId = database.holdCart(name, operatorName, cart.toList())
+                        val automaticProvisional = runCatching {
+                            val service = HeldTicketProvisionalPrintServiceV135(context.applicationContext)
+                            try {
+                                service.enqueueIfAutomatic(heldTicketId, operatorName)
+                            } finally {
+                                service.close()
+                            }
+                        }.getOrNull()
                         database.clearCartCorrections()
                         corrections.clear()
                         replaceCart(emptyList())
-                        ticketMessage = "$name として保留しました"
+                        if (automaticProvisional != null) {
+                            runCatching { AutomaticPrintScheduler.enqueueNow(context.applicationContext) }
+                            ticketMessage = "$name として保留し、仮締め票を自動印刷キューへ登録しました"
+                        } else {
+                            ticketMessage = "$name として保留しました"
+                        }
                     }
                 },
                 onPayment = {

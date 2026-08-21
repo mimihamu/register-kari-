@@ -254,6 +254,9 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
         val now = System.currentTimeMillis()
         val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
         val issuer = TaxInvoiceSettingsRegistry.current().issuer
+        val documentPrintSetting = DocumentPrintSettingsStoreV136(appContext).load(
+            DocumentPrintKindV136.RECEIPT_VOUCHER,
+        )
         var result: ReceiptVoucherIssueResult? = null
 
         db.beginTransaction()
@@ -322,9 +325,23 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
                         ),
                         ReceiptPaper.fromWidth(paperWidthMm),
                     )
-                    val printJobId = insertDocumentPrintJob(issuanceId, paperWidthMm, payload, now)
                     issuanceIds += issuanceId
-                    printJobIds += printJobId
+                    if (documentPrintSetting.autoPrintEnabled) {
+                        val decoratedPayload = DocumentPrintSettingsPolicyV136.decorateText(
+                            payload,
+                            documentPrintSetting,
+                        )
+                        val copyCount = DocumentPrintSettingsPolicyV136.normalizeCopies(documentPrintSetting.copies)
+                        val offsetBase = printJobIds.size
+                        repeat(copyCount) { copyIndex ->
+                            printJobIds += insertDocumentPrintJob(
+                                issuanceId,
+                                paperWidthMm,
+                                decoratedPayload,
+                                now + offsetBase + copyIndex,
+                            )
+                        }
+                    }
                 }
                 result = ReceiptVoucherIssueResult(
                     batchId = batchId,
@@ -340,7 +357,9 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
             db.endTransaction()
         }
         val completed = result ?: error("領収書発行を確定できませんでした")
-        if (!completed.idempotentReplay) AutomaticPrintScheduler.enqueueNow(appContext)
+        if (!completed.idempotentReplay && completed.printJobIds.isNotEmpty()) {
+            AutomaticPrintScheduler.enqueueNow(appContext)
+        }
         return completed
     }
 
@@ -349,6 +368,9 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
         val actor = ReceiptVoucherPolicy.normalizeRequired(operatorName, "再発行担当者")
         val now = System.currentTimeMillis()
         val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
+        val documentPrintSetting = DocumentPrintSettingsStoreV136(appContext).load(
+            DocumentPrintKindV136.RECEIPT_VOUCHER,
+        )
         val payload = ReceiptVoucherRenderer.render(
             ReceiptVoucherDocumentData(
                 issuanceId = record.id,
@@ -368,10 +390,16 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
             ),
             ReceiptPaper.fromWidth(paperWidthMm),
         )
+        val decoratedPayload = DocumentPrintSettingsPolicyV136.decorateText(payload, documentPrintSetting)
         var result: ReceiptVoucherReprintResult? = null
         db.beginTransaction()
         try {
-            val printJobId = insertDocumentPrintJob(record.id, paperWidthMm, payload, now)
+            val printJobIds = buildList {
+                repeat(DocumentPrintSettingsPolicyV136.normalizeCopies(documentPrintSetting.copies)) { copyIndex ->
+                    add(insertDocumentPrintJob(record.id, paperWidthMm, decoratedPayload, now + copyIndex))
+                }
+            }
+            val printJobId = printJobIds.first()
             val eventId = db.insertOrThrow(
                 "receipt_voucher_reprints",
                 null,
