@@ -3,6 +3,7 @@ package jp.co.tenposinfo.register
 import android.content.ContentValues
 import android.database.sqlite.SQLiteDatabase
 import java.math.BigInteger
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * TAX-012: 同一税率の内税・外税を適格請求書へ集約する際の対価額基準。
@@ -35,6 +36,8 @@ data class SaleTaxSnapshotV136(
     val invoiceAggregationBasis: InvoiceAggregationBasisV136,
     val buckets: List<InvoiceTaxBucketSnapshotV136>,
     val recordedAt: Long,
+    /** NOTICE-001: 売上確定時点の適格請求書発行者。null はv1.36以前のlegacy売上のみ。 */
+    val invoiceIssuer: InvoiceIssuerProfile? = null,
 ) {
     fun toTaxSummary(): TaxSummary = TaxSummary(
         buckets = buckets.map { bucket ->
@@ -54,10 +57,30 @@ data class SaleTaxSnapshotV136(
 }
 
 /**
- * TAX-005/TAX-012 sale-time immutable tax snapshot.
+ * loadSaleDetail() は必ず SaleTaxSnapshotStoreV136.load() を通るため、
+ * ReceiptFactory は同一saleIdの発行者snapshotをここから取得できる。
+ * DBが正本であり、このmapはReceiptFactoryへ受け渡すためのプロセス内cacheに限定する。
+ */
+object SaleInvoiceIssuerSnapshotRegistryV136 {
+    private val profiles = ConcurrentHashMap<Long, InvoiceIssuerProfile>()
+
+    fun remember(snapshot: SaleTaxSnapshotV136) {
+        val issuer = snapshot.invoiceIssuer
+        if (issuer == null) profiles.remove(snapshot.saleId) else profiles[snapshot.saleId] = issuer
+    }
+
+    fun forSale(saleId: Long): InvoiceIssuerProfile? = profiles[saleId]
+
+    fun forget(saleId: Long) {
+        profiles.remove(saleId)
+    }
+}
+
+/**
+ * TAX-005/TAX-012 + NOTICE-001 sale-time immutable snapshot.
  *
  * line_tax_snapshots が各明細の税区分・税率・内外税・軽減・記号を保持し、
- * 本テーブルは取引単位の端数規則・混在ポリシー・インボイス集計基準と、
+ * 本テーブルは取引単位の端数規則・混在ポリシー・インボイス集計基準、発行者情報と、
  * 税率単位で確定済みの対象額/税額/由来額を保持する。
  */
 object SaleTaxSnapshotStoreV136 {
@@ -75,11 +98,22 @@ object SaleTaxSnapshotStoreV136 {
                 tax_rounding_mode_snapshot TEXT NOT NULL,
                 tax_round_unit_snapshot TEXT NOT NULL,
                 invoice_aggregation_basis_snapshot TEXT NOT NULL,
+                issuer_snapshot_present INTEGER NOT NULL DEFAULT 0,
+                issuer_store_name TEXT NOT NULL DEFAULT '',
+                issuer_address TEXT NOT NULL DEFAULT '',
+                issuer_phone TEXT NOT NULL DEFAULT '',
+                issuer_registration_number TEXT NOT NULL DEFAULT '',
                 recorded_at INTEGER NOT NULL,
                 FOREIGN KEY(sale_id) REFERENCES sales(id) ON DELETE CASCADE
             )
             """.trimIndent(),
         )
+        // Run #2966以前に作成済みのv1.36 DBも破壊せずNOTICE-001列だけ追加する。
+        SchemaMigration.ensureColumn(db, SALE_TABLE, "issuer_snapshot_present", "INTEGER NOT NULL DEFAULT 0")
+        SchemaMigration.ensureColumn(db, SALE_TABLE, "issuer_store_name", "TEXT NOT NULL DEFAULT ''")
+        SchemaMigration.ensureColumn(db, SALE_TABLE, "issuer_address", "TEXT NOT NULL DEFAULT ''")
+        SchemaMigration.ensureColumn(db, SALE_TABLE, "issuer_phone", "TEXT NOT NULL DEFAULT ''")
+        SchemaMigration.ensureColumn(db, SALE_TABLE, "issuer_registration_number", "TEXT NOT NULL DEFAULT ''")
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS $BUCKET_TABLE (
@@ -114,7 +148,8 @@ object SaleTaxSnapshotStoreV136 {
         settings: TaxInvoiceSettings,
         recordedAt: Long,
     ): SaleTaxSnapshotV136 {
-        val basis = settings.invoiceAggregationBasis
+        val normalizedSettings = TaxInvoiceSettingsPolicy.normalize(settings)
+        val basis = normalizedSettings.invoiceAggregationBasis
         val buckets = summary.buckets.map { bucket ->
             val sourceItems = items.filter { item ->
                 item.product.taxable == bucket.taxable &&
@@ -157,12 +192,13 @@ object SaleTaxSnapshotStoreV136 {
         }
         return SaleTaxSnapshotV136(
             saleId = saleId,
-            sameRateMixedModePolicy = settings.mixedTaxPolicy,
+            sameRateMixedModePolicy = normalizedSettings.mixedTaxPolicy,
             taxRoundingMode = ROUNDING_MODE_FLOOR,
             taxRoundUnit = ROUND_UNIT_RATE_PER_INVOICE,
             invoiceAggregationBasis = basis,
             buckets = buckets,
             recordedAt = recordedAt,
+            invoiceIssuer = normalizedSettings.issuer,
         )
     }
 
@@ -178,6 +214,7 @@ object SaleTaxSnapshotStoreV136 {
         val snapshot = build(saleId, items, summary, settings, recordedAt)
         db.delete(BUCKET_TABLE, "sale_id = ?", arrayOf(saleId.toString()))
         db.delete(SALE_TABLE, "sale_id = ?", arrayOf(saleId.toString()))
+        val issuer = requireNotNull(snapshot.invoiceIssuer) { "新規売上の発行者snapshotがありません" }
         db.insertOrThrow(
             SALE_TABLE,
             null,
@@ -187,6 +224,11 @@ object SaleTaxSnapshotStoreV136 {
                 put("tax_rounding_mode_snapshot", snapshot.taxRoundingMode)
                 put("tax_round_unit_snapshot", snapshot.taxRoundUnit)
                 put("invoice_aggregation_basis_snapshot", snapshot.invoiceAggregationBasis.name)
+                put("issuer_snapshot_present", 1)
+                put("issuer_store_name", issuer.storeName)
+                put("issuer_address", issuer.address)
+                put("issuer_phone", issuer.phone)
+                put("issuer_registration_number", issuer.registrationNumber)
                 put("recorded_at", snapshot.recordedAt)
             },
         )
@@ -211,6 +253,7 @@ object SaleTaxSnapshotStoreV136 {
                 },
             )
         }
+        SaleInvoiceIssuerSnapshotRegistryV136.remember(snapshot)
         return snapshot
     }
 
@@ -223,6 +266,11 @@ object SaleTaxSnapshotStoreV136 {
                 "tax_rounding_mode_snapshot",
                 "tax_round_unit_snapshot",
                 "invoice_aggregation_basis_snapshot",
+                "issuer_snapshot_present",
+                "issuer_store_name",
+                "issuer_address",
+                "issuer_phone",
+                "issuer_registration_number",
                 "recorded_at",
             ),
             "sale_id = ?",
@@ -232,7 +280,20 @@ object SaleTaxSnapshotStoreV136 {
             null,
             "1",
         ).use { cursor ->
-            if (!cursor.moveToFirst()) return null
+            if (!cursor.moveToFirst()) {
+                SaleInvoiceIssuerSnapshotRegistryV136.forget(saleId)
+                return null
+            }
+            val issuer = if (cursor.getInt(4) != 0) {
+                InvoiceIssuerProfile(
+                    storeName = cursor.getString(5),
+                    address = cursor.getString(6),
+                    phone = cursor.getString(7),
+                    registrationNumber = cursor.getString(8),
+                )
+            } else {
+                null
+            }
             Header(
                 mixedPolicy = runCatching { MixedTaxPolicy.valueOf(cursor.getString(0)) }
                     .getOrDefault(MixedTaxPolicy.BLOCK),
@@ -240,7 +301,8 @@ object SaleTaxSnapshotStoreV136 {
                 roundUnit = cursor.getString(2),
                 basis = runCatching { InvoiceAggregationBasisV136.valueOf(cursor.getString(3)) }
                     .getOrDefault(InvoiceAggregationBasisV136.TAX_INCLUDED),
-                recordedAt = cursor.getLong(4),
+                issuer = issuer,
+                recordedAt = cursor.getLong(9),
             )
         }
         val buckets = mutableListOf<InvoiceTaxBucketSnapshotV136>()
@@ -286,8 +348,11 @@ object SaleTaxSnapshotStoreV136 {
                 )
             }
         }
-        if (buckets.isEmpty()) return null
-        return SaleTaxSnapshotV136(
+        if (buckets.isEmpty()) {
+            SaleInvoiceIssuerSnapshotRegistryV136.forget(saleId)
+            return null
+        }
+        val snapshot = SaleTaxSnapshotV136(
             saleId = saleId,
             sameRateMixedModePolicy = header.mixedPolicy,
             taxRoundingMode = header.roundingMode,
@@ -295,7 +360,10 @@ object SaleTaxSnapshotStoreV136 {
             invoiceAggregationBasis = header.basis,
             buckets = buckets,
             recordedAt = header.recordedAt,
+            invoiceIssuer = header.issuer,
         )
+        SaleInvoiceIssuerSnapshotRegistryV136.remember(snapshot)
+        return snapshot
     }
 
     /**
@@ -321,9 +389,16 @@ object SaleTaxSnapshotStoreV136 {
             append("\"totalAmount\":").append(summary.grossAmount).append(',')
             append("\"taxAmount\":").append(summary.taxAmount).append(',')
             append("\"sameRateMixedModePolicy\":\"").append(snapshot.sameRateMixedModePolicy.name).append("\",")
-            append("\"taxRoundingMode\":\"").append(snapshot.taxRoundingMode).append("\",")
-            append("\"taxRoundUnit\":\"").append(snapshot.taxRoundUnit).append("\",")
+            append("\"taxRoundingMode\":\"").append(jsonEscape(snapshot.taxRoundingMode)).append("\",")
+            append("\"taxRoundUnit\":\"").append(jsonEscape(snapshot.taxRoundUnit)).append("\",")
             append("\"invoiceAggregationBasis\":\"").append(snapshot.invoiceAggregationBasis.name).append("\",")
+            snapshot.invoiceIssuer?.let { issuer ->
+                append("\"invoiceIssuer\":{")
+                append("\"storeName\":\"").append(jsonEscape(issuer.storeName)).append("\",")
+                append("\"address\":\"").append(jsonEscape(issuer.address)).append("\",")
+                append("\"phone\":\"").append(jsonEscape(issuer.phone)).append("\",")
+                append("\"registrationNumber\":\"").append(jsonEscape(issuer.registrationNumber)).append("\"},")
+            }
             append("\"invoiceTaxes\":[")
             snapshot.buckets.forEachIndexed { index, bucket ->
                 if (index > 0) append(',')
@@ -341,13 +416,20 @@ object SaleTaxSnapshotStoreV136 {
                 append("\"sourceTaxKeys\":[")
                 bucket.sourceTaxKeys.sorted().forEachIndexed { keyIndex, key ->
                     if (keyIndex > 0) append(',')
-                    append('"').append(key).append('"')
+                    append('"').append(jsonEscape(key)).append('"')
                 }
                 append("]}")
             }
             append("]}")
         }
     }
+
+    private fun jsonEscape(value: String): String = value
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
 
     private fun includedTaxFloor(gross: Long, rate: Int): Long =
         ratioFloor(gross, rate, 100 + rate)
@@ -369,6 +451,7 @@ object SaleTaxSnapshotStoreV136 {
         val roundingMode: String,
         val roundUnit: String,
         val basis: InvoiceAggregationBasisV136,
+        val issuer: InvoiceIssuerProfile?,
         val recordedAt: Long,
     )
 }
