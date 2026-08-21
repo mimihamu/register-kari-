@@ -1,0 +1,54 @@
+name: Temporary v1.36 receipt auto-print trigger
+
+on:
+  push:
+    branches:
+      - develop/v1.36
+  pull_request:
+    branches:
+      - develop/v1.35
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.36
+          fetch-depth: 0
+
+      - name: Extract and run staged patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/tmp-v136-receipt-auto-print-patch.yml').read_text().splitlines()
+          start = next(i for i, line in enumerate(source) if "python3 - <<'PY'" in line) + 1
+          end = next(i for i in range(start, len(source)) if source[i] == '          PY')
+          code = '\n'.join(line[10:] if line.startswith('          ') else line for line in source[start:end]) + '\n'
+          Path('/tmp/v136_patch.py').write_text(code)
+          PY
+          python3 /tmp/v136_patch.py
+
+      - name: Commit implementation and remove temporary workflows
+        shell: bash
+        run: |
+          git rm .github/workflows/tmp-v136-receipt-auto-print-patch.yml \
+                 .github/workflows/tmp-v136-receipt-auto-print-trigger.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/jp/co/tenposinfo/register/AdminSettingsStore.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/Receipt.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/UnifiedPrintQueue.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/ReceiptAutoPrintV136.kt \
+                  app/src/test/java/jp/co/tenposinfo/register/V136ReceiptAutoPrintTest.kt \
+                  docs/V1.36_PRN_001_RCP_002_RECEIPT_AUTO_PRINT.md
+          git diff --cached --check
+          git commit -m "v1.36: implement receipt auto-print toggle"
+          git push origin HEAD:develop/v1.36
