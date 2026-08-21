@@ -1,0 +1,317 @@
+name: Temporary v1.36 receipt auto-print patch
+
+on:
+  push:
+    branches:
+      - develop/v1.36
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.36
+          fetch-depth: 0
+
+      - name: Apply PRN-001 / RCP-002 implementation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one match, got {count}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # AdminSettingsStore: dedicated receipt auto-print setting. Printer enabled remains hardware-output enable.
+          path = "app/src/main/java/jp/co/tenposinfo/register/AdminSettingsStore.kt"
+          replace_once(path,
+              "    val enabled: Boolean = false,\n    val profile: PrinterProfile = PrinterProfile.EPSON_TM_JAPAN,",
+              "    val enabled: Boolean = false,\n    val receiptAutoPrintEnabled: Boolean = true,\n    val profile: PrinterProfile = PrinterProfile.EPSON_TM_JAPAN,")
+          replace_once(path,
+              '            "drawer_port", "drawer_on_millis", "drawer_off_millis",\n',
+              '            "drawer_port", "drawer_on_millis", "drawer_off_millis", "receipt_auto_print",\n')
+          replace_once(path,
+              "            drawerOffMillis = cursor.getInt(12),\n        )",
+              "            drawerOffMillis = cursor.getInt(12),\n            receiptAutoPrintEnabled = cursor.getInt(13) != 0,\n        )")
+          replace_once(path,
+              '                    put("enabled", if (configuration.enabled) 1 else 0)\n                    put("profile_key", configuration.profile.name)',
+              '                    put("enabled", if (configuration.enabled) 1 else 0)\n                    put("receipt_auto_print", if (configuration.receiptAutoPrintEnabled) 1 else 0)\n                    put("profile_key", configuration.profile.name)')
+          replace_once(path,
+              '                "${configuration.name} ${configuration.host}:${configuration.port} ${configuration.paperWidthMm}mm / ${configuration.profile.displayName} / ${configuration.cutMode.displayName} / ドロア${if (configuration.drawerEnabled) "有効" else "無効"}",',
+              '                "${configuration.name} ${configuration.host}:${configuration.port} ${configuration.paperWidthMm}mm / ${configuration.profile.displayName} / ${configuration.cutMode.displayName} / レシート自動${if (configuration.receiptAutoPrintEnabled) "ON" else "OFF"} / ドロア${if (configuration.drawerEnabled) "有効" else "無効"}",')
+          replace_once(path,
+              "                enabled INTEGER NOT NULL,\n                profile_key TEXT NOT NULL DEFAULT 'EPSON_TM_JAPAN',",
+              "                enabled INTEGER NOT NULL,\n                receipt_auto_print INTEGER NOT NULL DEFAULT 1,\n                profile_key TEXT NOT NULL DEFAULT 'EPSON_TM_JAPAN',")
+          replace_once(path,
+              '        ensurePrinterColumn("profile_key", "TEXT NOT NULL DEFAULT \'EPSON_TM_JAPAN\'")',
+              '        ensurePrinterColumn("receipt_auto_print", "INTEGER NOT NULL DEFAULT 1")\n        ensurePrinterColumn("profile_key", "TEXT NOT NULL DEFAULT \'EPSON_TM_JAPAN\'")')
+          replace_once(path,
+              "                drawer_port, drawer_on_millis, drawer_off_millis, updated_at\n            ) VALUES(\n                1, 'レシートプリンター', '', 9100, 80, 5000, 0,\n                'EPSON_TM_JAPAN', 'PARTIAL', 0, 1, 0, 100, 500, 0",
+              "                drawer_port, drawer_on_millis, drawer_off_millis, receipt_auto_print, updated_at\n            ) VALUES(\n                1, 'レシートプリンター', '', 9100, 80, 5000, 0,\n                'EPSON_TM_JAPAN', 'PARTIAL', 0, 1, 0, 100, 500, 1, 0")
+
+          # RegisterDatabase: automatic job creation is gated; manual after-receipt stays independent.
+          path = "app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt"
+          replace_once(path,
+              "        val mixedTaxPolicy = taxSettings.mixedTaxPolicy\n        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(applicationContext)",
+              "        val mixedTaxPolicy = taxSettings.mixedTaxPolicy\n        val printerConfiguration = PrinterPaperSettingPolicy.currentConfiguration(applicationContext)\n        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)")
+          replace_once(path,
+              "            insertPrintJob(this, saleId, paperWidthMm, createdAt)\n            LineTaxSnapshotStore.save",
+              "            if (ReceiptAutoPrintPolicyV136.shouldCreateAutomaticReceiptJob(\n                    printerConfiguration.receiptAutoPrintEnabled,\n                )\n            ) {\n                insertPrintJob(this, saleId, paperWidthMm, createdAt)\n            }\n            LineTaxSnapshotStore.save")
+          replace_once(path,
+              "    fun enqueueReprint(saleId: Long): Long {\n        require(loadSaleDetail(saleId) != null) { \"Sale not found\" }\n        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(applicationContext)\n        val now = System.currentTimeMillis()",
+              "    fun enqueueReprint(saleId: Long): Long {\n        val detail = loadSaleDetail(saleId) ?: throw IllegalArgumentException(\"Sale not found\")\n        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(applicationContext)\n        // RCP-002/RCP-004: 後レシートは自動発行OFFでも可能。初回自動ジョブと区別するため\n        // 売上確定時刻より必ず後の作成時刻を持たせる。\n        val now = maxOf(System.currentTimeMillis(), detail.summary.createdAt + 1L)")
+
+          # Receipt queue: after-receipt must show REPRINT even if no automatic copy was printed.
+          path = "app/src/main/java/jp/co/tenposinfo/register/Receipt.kt"
+          replace_once(path,
+              "        val receipt = ReceiptFactory.fromSale(detail, reprint = detail.summary.printCount > 0)",
+              "        val receipt = ReceiptFactory.fromSale(\n            detail,\n            reprint = ReceiptReprintPolicyV136.isReprint(\n                jobCreatedAt = job.createdAt,\n                saleCreatedAt = detail.summary.createdAt,\n                completedPrintCount = detail.summary.printCount,\n            ),\n        )")
+
+          # Unified queue preview/manual send uses the same after-receipt decision.
+          path = "app/src/main/java/jp/co/tenposinfo/register/UnifiedPrintQueue.kt"
+          replace_once(path,
+              "                val receipt = ReceiptFactory.fromSale(it, reprint = it.summary.printCount > 0)",
+              "                val receipt = ReceiptFactory.fromSale(\n                    it,\n                    reprint = ReceiptReprintPolicyV136.isReprint(\n                        jobCreatedAt = job.createdAt,\n                        saleCreatedAt = it.summary.createdAt,\n                        completedPrintCount = it.summary.printCount,\n                    ),\n                )")
+          replace_once(path,
+              "        val receipt = ReceiptFactory.fromSale(detail, reprint = detail.summary.printCount > 0)",
+              "        val receipt = ReceiptFactory.fromSale(\n            detail,\n            reprint = ReceiptReprintPolicyV136.isReprint(\n                jobCreatedAt = claimed.createdAt,\n                saleCreatedAt = detail.summary.createdAt,\n                completedPrintCount = detail.summary.printCount,\n            ),\n        )")
+
+          # Admin UI: explicit ON/OFF separate from printer hardware enabled.
+          path = "app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt"
+          replace_once(path,
+              "    var enabled by remember { mutableStateOf(initial.enabled) }\n    var profile by remember",
+              "    var enabled by remember { mutableStateOf(initial.enabled) }\n    var receiptAutoPrint by remember { mutableStateOf(initial.receiptAutoPrintEnabled) }\n    var profile by remember")
+          replace_once(path,
+              "        enabled = enabled,\n        profile = profile,",
+              "        enabled = enabled,\n        receiptAutoPrintEnabled = receiptAutoPrint,\n        profile = profile,")
+          replace_once(path,
+              "                    Text(\"用紙幅・カット\", fontWeight = FontWeight.Bold, color = AsNavy)",
+              "                    Text(\"レシート発行\", fontWeight = FontWeight.Bold, color = AsNavy)\n                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {\n                        Checkbox(checked = receiptAutoPrint, onCheckedChange = { receiptAutoPrint = it })\n                        Column {\n                            Text(\"会計確定時にレシートを自動発行\")\n                            Text(\"OFFでも売上一覧・会計完了から後レシート／再印字できます\", color = Color.Gray, fontSize = 12.sp)\n                        }\n                    }\n                    Spacer(Modifier.height(8.dp))\n                    Text(\"用紙幅・カット\", fontWeight = FontWeight.Bold, color = AsNavy)")
+          replace_once(path,
+              "                AsValueRow(\"用紙\", \"${paperWidth}mm\")\n                AsValueRow(\"カット\", cutMode.displayName)",
+              "                AsValueRow(\"用紙\", \"${paperWidth}mm\")\n                AsValueRow(\"レシート自動発行\", if (receiptAutoPrint) \"ON\" else \"OFF（後レシート可）\")\n                AsValueRow(\"カット\", cutMode.displayName)")
+          replace_once(path,
+              "現金会計の初回レシートだけにドロアキックを付加します。再発行、返品票、X点検票、Z精算票では自動でドロアを開きません。",
+              "レシート自動発行ONでは初回レシートにドロアキックを付加します。OFFでは会計確定後にドロアだけを独立送信します。後レシート／再発行、返品票、X点検票、Z精算票では自動でドロアを開きません。")
+
+          # Checkout: when auto receipt is OFF, preserve cash-drawer linkage without creating a receipt job.
+          path = "app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt"
+          replace_once(path,
+              "import androidx.compose.runtime.remember\nimport androidx.compose.runtime.setValue",
+              "import androidx.compose.runtime.remember\nimport androidx.compose.runtime.rememberCoroutineScope\nimport androidx.compose.runtime.setValue")
+          replace_once(path,
+              "import java.util.Locale\n",
+              "import java.util.Locale\nimport kotlinx.coroutines.launch\n")
+          replace_once(path,
+              "    val saleCommitGuard = remember { SaleCommitGuard() }\n",
+              "    val saleCommitGuard = remember { SaleCommitGuard() }\n    val checkoutScope = rememberCoroutineScope()\n")
+          replace_once(path,
+              "                        AutomaticPrintScheduler.enqueueNow(context.applicationContext)\n                        DriveOutboxScheduler.enqueueNow(context.applicationContext)",
+              "                        val completedPaymentState = paymentState\n                        val completedOperatorName = operatorName\n                        checkoutScope.launch {\n                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {\n                                ReceiptAutoPrintRuntimeV136.dispatchDrawerIfNeeded(\n                                    context = context.applicationContext,\n                                    paymentState = completedPaymentState,\n                                    saleId = saleId,\n                                    actor = completedOperatorName,\n                                )\n                            }\n                        }\n                        AutomaticPrintScheduler.enqueueNow(context.applicationContext)\n                        DriveOutboxScheduler.enqueueNow(context.applicationContext)")
+
+          helper = r'''package jp.co.tenposinfo.register
+
+import android.content.Context
+
+/** Issue #137 #19 / formal v2.5 RCP-002. */
+object ReceiptAutoPrintPolicyV136 {
+    fun shouldCreateAutomaticReceiptJob(receiptAutoPrintEnabled: Boolean): Boolean =
+        receiptAutoPrintEnabled
+
+    fun shouldOpenDrawerSeparately(
+        receiptAutoPrintEnabled: Boolean,
+        printerUsable: Boolean,
+        drawerEnabled: Boolean,
+        drawerOpenOnCashSale: Boolean,
+        hasCashPayment: Boolean,
+    ): Boolean =
+        !receiptAutoPrintEnabled &&
+            printerUsable &&
+            drawerEnabled &&
+            drawerOpenOnCashSale &&
+            hasCashPayment
+}
+
+/**
+ * Initial automatic jobs are created at exactly the sale timestamp. A manual after-receipt is
+ * deliberately created later, so it remains a REPRINT even when print_count is still zero because
+ * automatic issuing was disabled.
+ */
+object ReceiptReprintPolicyV136 {
+    fun isReprint(
+        jobCreatedAt: Long,
+        saleCreatedAt: Long,
+        completedPrintCount: Int,
+    ): Boolean = completedPrintCount > 0 || jobCreatedAt > saleCreatedAt
+}
+
+object ReceiptAutoPrintRuntimeV136 {
+    fun dispatchDrawerIfNeeded(
+        context: Context,
+        paymentState: PaymentState,
+        saleId: Long,
+        actor: String,
+    ): Result<Boolean> {
+        val appContext = context.applicationContext
+        val configuration = PrinterPaperSettingPolicy.currentConfiguration(appContext)
+        val shouldOpen = ReceiptAutoPrintPolicyV136.shouldOpenDrawerSeparately(
+            receiptAutoPrintEnabled = configuration.receiptAutoPrintEnabled,
+            printerUsable = configuration.usable,
+            drawerEnabled = configuration.drawerEnabled,
+            drawerOpenOnCashSale = configuration.drawerOpenOnCashSale,
+            hasCashPayment = paymentState.allocations.any { it.method == PaymentMethod.CASH },
+        )
+        if (!shouldOpen) return Result.success(false)
+
+        val sendResult = TcpEscPosPrinterGateway(
+            host = configuration.host,
+            port = configuration.port,
+            timeoutMillis = configuration.timeoutMillis,
+        ).send(PrinterCommandEncoder.drawerOnly(configuration))
+
+        runCatching {
+            AdminSettingsStore(appContext).use { store ->
+                store.recordOperationalAudit(
+                    eventType = if (sendResult.isSuccess) {
+                        "SALE_DRAWER_AUTO_OPEN_SUCCEEDED"
+                    } else {
+                        "SALE_DRAWER_AUTO_OPEN_FAILED"
+                    },
+                    referenceId = saleId,
+                    detail = buildString {
+                        append("receiptAutoPrint=OFF / ")
+                        append(configuration.host).append(':').append(configuration.port)
+                        sendResult.exceptionOrNull()?.let { error ->
+                            append(" / ").append(error.message ?: error.javaClass.simpleName)
+                        }
+                    },
+                    actor = actor.ifBlank { "SYSTEM" },
+                )
+            }
+        }
+        return sendResult.map { true }
+    }
+}
+'''
+          Path("app/src/main/java/jp/co/tenposinfo/register/ReceiptAutoPrintV136.kt").write_text(helper)
+
+          test = r'''package jp.co.tenposinfo.register
+
+import java.io.File
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class V136ReceiptAutoPrintTest {
+    private fun source(name: String) =
+        File("src/main/java/jp/co/tenposinfo/register/$name").readText()
+
+    @Test
+    fun automaticReceiptJobFollowsDedicatedSetting() {
+        assertTrue(ReceiptAutoPrintPolicyV136.shouldCreateAutomaticReceiptJob(true))
+        assertFalse(ReceiptAutoPrintPolicyV136.shouldCreateAutomaticReceiptJob(false))
+    }
+
+    @Test
+    fun drawerIsPreservedOnlyAsSeparateCheckoutActionWhenAutoReceiptIsOff() {
+        assertTrue(
+            ReceiptAutoPrintPolicyV136.shouldOpenDrawerSeparately(
+                receiptAutoPrintEnabled = false,
+                printerUsable = true,
+                drawerEnabled = true,
+                drawerOpenOnCashSale = true,
+                hasCashPayment = true,
+            ),
+        )
+        assertFalse(
+            ReceiptAutoPrintPolicyV136.shouldOpenDrawerSeparately(
+                receiptAutoPrintEnabled = true,
+                printerUsable = true,
+                drawerEnabled = true,
+                drawerOpenOnCashSale = true,
+                hasCashPayment = true,
+            ),
+        )
+        assertFalse(
+            ReceiptAutoPrintPolicyV136.shouldOpenDrawerSeparately(
+                receiptAutoPrintEnabled = false,
+                printerUsable = false,
+                drawerEnabled = true,
+                drawerOpenOnCashSale = true,
+                hasCashPayment = true,
+            ),
+        )
+        assertFalse(
+            ReceiptAutoPrintPolicyV136.shouldOpenDrawerSeparately(
+                receiptAutoPrintEnabled = false,
+                printerUsable = true,
+                drawerEnabled = true,
+                drawerOpenOnCashSale = true,
+                hasCashPayment = false,
+            ),
+        )
+    }
+
+    @Test
+    fun afterReceiptIsReprintEvenWhenNoAutomaticCopyCompleted() {
+        assertFalse(ReceiptReprintPolicyV136.isReprint(1_000L, 1_000L, 0))
+        assertTrue(ReceiptReprintPolicyV136.isReprint(1_001L, 1_000L, 0))
+        assertTrue(ReceiptReprintPolicyV136.isReprint(1_000L, 1_000L, 1))
+    }
+
+    @Test
+    fun sourceContractsKeepAutoPrintReprintQueueAndDrawerIndependent() {
+        val settings = source("AdminSettingsStore.kt")
+        val database = source("RegisterDatabase.kt")
+        val receipt = source("Receipt.kt")
+        val queue = source("UnifiedPrintQueue.kt")
+        val activity = source("AdminSettingsActivity.kt")
+        val main = source("MainActivity.kt")
+
+        assertTrue(settings.contains("receipt_auto_print INTEGER NOT NULL DEFAULT 1"))
+        assertTrue(settings.contains("receiptAutoPrintEnabled: Boolean = true"))
+        assertTrue(database.contains("ReceiptAutoPrintPolicyV136.shouldCreateAutomaticReceiptJob"))
+        assertTrue(database.contains("detail.summary.createdAt + 1L"))
+        assertTrue(receipt.contains("ReceiptReprintPolicyV136.isReprint"))
+        assertTrue(queue.contains("ReceiptReprintPolicyV136.isReprint"))
+        assertTrue(activity.contains("会計確定時にレシートを自動発行"))
+        assertTrue(activity.contains("OFFでも売上一覧・会計完了から後レシート／再印字できます"))
+        assertTrue(main.contains("ReceiptAutoPrintRuntimeV136.dispatchDrawerIfNeeded"))
+    }
+}
+'''
+          Path("app/src/test/java/jp/co/tenposinfo/register/V136ReceiptAutoPrintTest.kt").write_text(test)
+
+          doc = '''# v1.36 PRN-001 / 正式仕様 RCP-002 レシート印刷 ON/OFF\n\n## 仕様対応\n\nIssue #137 の #19 `PRN-001 レシート印刷ON/OFF` は、正式仕様書 v2.5 の章16では `RCP-002 レシート自動印刷` に対応する。正式仕様の `RCP-001` は58mm/80mmのロール紙選択であり、Issue側の番号とは一致しない。\n\n## 実装\n\n- `receiptAutoPrintEnabled` をプリンター接続の `enabled` とは独立した設定として保存する。初期値は ON。\n- ON: 会計確定と同一DBトランザクション内で売上レシートの PENDING ジョブを作る。\n- OFF: 売上は通常どおり確定するが、自動売上レシートジョブを作らない。\n- OFFでも会計完了／売上一覧から後レシートを登録できる。後レシートは `【再発行】` 扱いとし、初回自動印刷が0回でも通常初回レシートと混同しない。\n- プリンター未設定・無効でも売上確定は妨げない。ONの場合はジョブを保持し、実送信は既存の印刷キュー／Workerの `configuration.usable` 判定に従う。\n- 自動ジョブも後レシートも作成時点のプリンター紙幅（58mm/80mm）をスナップショットする。\n- 現金ドロアは、レシート自動発行ONでは既存どおり初回レシートへ連動する。OFFでは会計確定後にドロアコマンドだけを独立送信し、後レシートで再度開かない。ドロア送信成否は売上確定を巻き戻さない。\n\n## 今回の境界\n\n正式仕様の文書別設定（レシート、領収書、仮締め票、点検票、精算票ごとの部数・ヘッダ・フッタ等）は #19 のレシート自動発行だけに混在させず、各残件で累積実装する。既存の印刷再試行、印刷キュー、紙幅設定、ESC/POS送信安全策は維持する。\n\n## 実機確認\n\n58mm/80mmの実機印字、実プリンターでの自動発行ON/OFF、紙切れ復旧、ドロア連動は未確認。最終統合受入へ繰り越す。\n'''
+          Path("docs/V1.36_PRN_001_RCP_002_RECEIPT_AUTO_PRINT.md").write_text(doc)
+          PY
+
+      - name: Remove temporary workflow from resulting tree
+        run: git rm .github/workflows/tmp-v136-receipt-auto-print-patch.yml
+
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/jp/co/tenposinfo/register/AdminSettingsStore.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/Receipt.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/UnifiedPrintQueue.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/ReceiptAutoPrintV136.kt \
+                  app/src/test/java/jp/co/tenposinfo/register/V136ReceiptAutoPrintTest.kt \
+                  docs/V1.36_PRN_001_RCP_002_RECEIPT_AUTO_PRINT.md
+          git diff --cached --check
+          git commit -m "v1.36: implement receipt auto-print toggle"
+          git push origin HEAD:develop/v1.36
