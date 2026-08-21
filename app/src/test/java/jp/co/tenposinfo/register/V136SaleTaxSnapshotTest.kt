@@ -144,4 +144,89 @@ class V136SaleTaxSnapshotTest {
         assertFalse(text.contains("10%対象額（税込）"))
         assertTrue(text.contains("【再発行】"))
     }
+
+    @Test
+    fun notice001BuildFreezesIssuerAndJournalUsesSaleTimeRegistration() {
+        val items = mixedTenPercentItems()
+        val issuer = InvoiceIssuerProfile(
+            storeName = "売上時店舗",
+            address = "埼玉県越谷市1-2-3",
+            phone = "048-000-0000",
+            registrationNumber = "T1234567890123",
+        )
+        val snapshot = SaleTaxSnapshotStoreV136.build(
+            saleId = 101L,
+            items = items,
+            summary = TaxEngine.calculate(items),
+            settings = TaxInvoiceSettings(
+                issuer = issuer,
+                invoiceAggregationBasis = InvoiceAggregationBasisV136.TAX_INCLUDED,
+            ),
+            recordedAt = 101L,
+        )
+
+        assertEquals(issuer, snapshot.invoiceIssuer)
+        val journal = SaleTaxSnapshotStoreV136.toJournalPayload(snapshot)
+        assertTrue(journal.contains("\"storeName\":\"売上時店舗\""))
+        assertTrue(journal.contains("\"registrationNumber\":\"T1234567890123\""))
+    }
+
+    @Test
+    fun notice001ReprintUsesSaleIssuerEvenAfterCurrentSettingsChange() {
+        val items = mixedTenPercentItems()
+        val previous = TaxInvoiceSettingsRegistry.current()
+        val saleIssuer = InvoiceIssuerProfile(
+            storeName = "売上時店舗",
+            address = "売上時住所",
+            phone = "048-111-2222",
+            registrationNumber = "T1234567890123",
+        )
+        val snapshot = SaleTaxSnapshotStoreV136.build(
+            saleId = 102L,
+            items = items,
+            summary = TaxEngine.calculate(items),
+            settings = TaxInvoiceSettings(issuer = saleIssuer),
+            recordedAt = 102L,
+        )
+        val detail = SaleDetailRecord(
+            summary = SaleSummaryRecord(
+                id = 102L,
+                operatorName = "担当",
+                paymentLabel = "現金",
+                totalAmount = snapshot.toTaxSummary().grossAmount,
+                taxAmount = snapshot.toTaxSummary().taxAmount,
+                changeAmount = 0L,
+                createdAt = 0L,
+                printCount = 1,
+            ),
+            items = items,
+            payments = emptyList(),
+            taxSummary = snapshot.toTaxSummary(),
+            invoiceAggregationBasis = snapshot.invoiceAggregationBasis,
+        )
+
+        try {
+            SaleInvoiceIssuerSnapshotRegistryV136.remember(snapshot)
+            TaxInvoiceSettingsRegistry.replace(
+                TaxInvoiceSettings(
+                    issuer = InvoiceIssuerProfile(
+                        storeName = "現在設定店舗",
+                        registrationNumber = "T9999999999999",
+                    ),
+                ),
+            )
+
+            val receipt = ReceiptFactory.fromSale(detail, reprint = true)
+            assertEquals("売上時店舗", receipt.storeName)
+            assertEquals("売上時住所", receipt.storeAddress)
+            assertEquals("048-111-2222", receipt.storePhone)
+            assertEquals("T1234567890123", receipt.registrationNumber)
+            val rendered = ReceiptRenderer.render(receipt, ReceiptPaper.MM80)
+            assertTrue(rendered.contains("T1234567890123"))
+            assertFalse(rendered.contains("T9999999999999"))
+        } finally {
+            SaleInvoiceIssuerSnapshotRegistryV136.forget(102L)
+            TaxInvoiceSettingsRegistry.replace(previous)
+        }
+    }
 }
