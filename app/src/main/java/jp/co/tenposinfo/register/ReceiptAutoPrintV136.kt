@@ -15,10 +15,10 @@ object ReceiptAutoPrintPolicyV136 {
         hasCashPayment: Boolean,
     ): Boolean =
         !receiptAutoPrintEnabled &&
-  printerUsable &&
-  drawerEnabled &&
-  drawerOpenOnCashSale &&
-  hasCashPayment
+            printerUsable &&
+            drawerEnabled &&
+            drawerOpenOnCashSale &&
+            hasCashPayment
 }
 
 /**
@@ -44,39 +44,39 @@ object ReceiptAutoPrintRuntimeV136 {
         val appContext = context.applicationContext
         val configuration = PrinterPaperSettingPolicy.currentConfiguration(appContext)
         val shouldOpen = ReceiptAutoPrintPolicyV136.shouldOpenDrawerSeparately(
-  receiptAutoPrintEnabled = configuration.receiptAutoPrintEnabled,
-  printerUsable = configuration.usable,
-  drawerEnabled = configuration.drawerEnabled,
-  drawerOpenOnCashSale = configuration.drawerOpenOnCashSale,
-  hasCashPayment = paymentState.allocations.any { it.method == PaymentMethod.CASH },
+            receiptAutoPrintEnabled = configuration.receiptAutoPrintEnabled,
+            printerUsable = configuration.usable,
+            drawerEnabled = configuration.drawerEnabled,
+            drawerOpenOnCashSale = configuration.drawerOpenOnCashSale,
+            hasCashPayment = paymentState.allocations.any { it.method == PaymentMethod.CASH },
         )
         if (!shouldOpen) return Result.success(false)
 
         val sendResult = TcpEscPosPrinterGateway(
-  host = configuration.host,
-  port = configuration.port,
-  timeoutMillis = configuration.timeoutMillis,
+            host = configuration.host,
+            port = configuration.port,
+            timeoutMillis = configuration.timeoutMillis,
         ).send(PrinterCommandEncoder.drawerOnly(configuration))
 
         runCatching {
-  AdminSettingsStore(appContext).use { store ->
-      store.recordOperationalAudit(
-          eventType = if (sendResult.isSuccess) {
-              "SALE_DRAWER_AUTO_OPEN_SUCCEEDED"
-          } else {
-              "SALE_DRAWER_AUTO_OPEN_FAILED"
-          },
-          referenceId = saleId,
-          detail = buildString {
-              append("receiptAutoPrint=OFF / ")
-              append(configuration.host).append(':').append(configuration.port)
-              sendResult.exceptionOrNull()?.let { error ->
-                  append(" / ").append(error.message ?: error.javaClass.simpleName)
-              }
-          },
-          actor = actor.ifBlank { "SYSTEM" },
-      )
-  }
+            AdminSettingsStore(appContext).use { store ->
+                store.recordOperationalAudit(
+                    eventType = if (sendResult.isSuccess) {
+                        "SALE_DRAWER_AUTO_OPEN_SUCCEEDED"
+                    } else {
+                        "SALE_DRAWER_AUTO_OPEN_FAILED"
+                    },
+                    referenceId = saleId,
+                    detail = buildString {
+                        append("receiptAutoPrint=OFF / ")
+                        append(configuration.host).append(':').append(configuration.port)
+                        sendResult.exceptionOrNull()?.let { error ->
+                            append(" / ").append(error.message ?: error.javaClass.simpleName)
+                        }
+                    },
+                    actor = actor.ifBlank { "SYSTEM" },
+                )
+            }
         }
         return sendResult.map { true }
     }
