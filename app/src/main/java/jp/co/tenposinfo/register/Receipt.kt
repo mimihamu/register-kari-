@@ -29,6 +29,8 @@ data class SaleDetailRecord(
     val items: List<CartItem>,
     val payments: List<PaymentAllocation>,
     val taxSummary: TaxSummary,
+    val invoiceAggregationBasis: InvoiceAggregationBasisV136 = InvoiceAggregationBasisV136.TAX_INCLUDED,
+    val taxSnapshotLegacyFallback: Boolean = false,
 )
 
 enum class PrintJobStatus {
@@ -64,6 +66,7 @@ data class ReceiptData(
     val payments: List<PaymentAllocation>,
     val changeAmount: Long,
     val reprint: Boolean = false,
+    val invoiceAggregationBasis: InvoiceAggregationBasisV136 = InvoiceAggregationBasisV136.TAX_INCLUDED,
 )
 
 enum class ReceiptPaper(val widthMm: Int, val charsPerLine: Int) {
@@ -94,6 +97,7 @@ object ReceiptFactory {
             payments = detail.payments,
             changeAmount = detail.summary.changeAmount,
             reprint = reprint,
+            invoiceAggregationBasis = detail.invoiceAggregationBasis,
         )
     }
 
@@ -105,7 +109,8 @@ object ReceiptFactory {
         payments: List<PaymentAllocation>,
         changeAmount: Long,
     ): ReceiptData {
-        val issuer = issuer()
+        val settings = TaxInvoiceSettingsRegistry.current()
+        val issuer = settings.issuer
         return ReceiptData(
             storeName = issuer.storeName,
             storeAddress = issuer.address,
@@ -118,6 +123,7 @@ object ReceiptFactory {
             taxSummary = TaxEngine.calculate(items),
             payments = payments,
             changeAmount = changeAmount,
+            invoiceAggregationBasis = settings.invoiceAggregationBasis,
         )
     }
 }
@@ -157,7 +163,15 @@ object ReceiptRenderer {
         lines += amountLine("税抜金額等", yen(data.taxSummary.netAmount), width)
         data.taxSummary.buckets.forEach { bucket ->
             if (bucket.taxable) {
-                lines += amountLine("${bucket.ratePercent}%対象額（税込）", yen(bucket.grossAmount), width)
+                val taxableAmount = when (data.invoiceAggregationBasis) {
+                    InvoiceAggregationBasisV136.TAX_INCLUDED -> bucket.grossAmount
+                    InvoiceAggregationBasisV136.TAX_EXCLUDED -> bucket.netAmount
+                }
+                val basisLabel = when (data.invoiceAggregationBasis) {
+                    InvoiceAggregationBasisV136.TAX_INCLUDED -> "税込"
+                    InvoiceAggregationBasisV136.TAX_EXCLUDED -> "税抜"
+                }
+                lines += amountLine("${bucket.ratePercent}%対象額（$basisLabel）", yen(taxableAmount), width)
                 lines += amountLine("  消費税等", yen(bucket.taxAmount), width)
             } else {
                 lines += amountLine("非課税対象額", yen(bucket.grossAmount), width)

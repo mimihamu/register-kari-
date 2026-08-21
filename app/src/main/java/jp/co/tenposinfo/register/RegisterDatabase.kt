@@ -47,6 +47,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         super.onOpen(db)
         CartCorrectionSchemaV135.ensure(db)
         SaleGuestCountRuntimeV135.ensureSchema(db)
+        SaleTaxSnapshotStoreV136.ensureSchema(db)
     }
 
     fun loadProducts(): List<Product> {
@@ -241,7 +242,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
     }
 
     /**
-     * 売上・明細・支払・印刷キューを同一SQLiteトランザクションで確定する。
+     * 売上・明細・支払・印刷キュー・税snapshotを同一SQLiteトランザクションで確定する。
      */
     fun saveSale(
         operatorName: String,
@@ -250,7 +251,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         commitKey: String? = null,
     ): Long {
         require(items.isNotEmpty()) { "Cannot save an empty sale" }
-        val mixedTaxPolicy = TaxInvoiceSettingsStore(applicationContext).load().mixedTaxPolicy
+        val taxSettings = TaxInvoiceSettingsStore(applicationContext).load()
+        val mixedTaxPolicy = taxSettings.mixedTaxPolicy
         val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(applicationContext)
         TaxEngine.validateMixedTax(items, mixedTaxPolicy)
         val summary = TaxEngine.calculate(items)
@@ -333,6 +335,14 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             }
             insertPrintJob(this, saleId, paperWidthMm, createdAt)
             LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_SALE, saleId, items)
+            SaleTaxSnapshotStoreV136.save(
+                db = this,
+                saleId = saleId,
+                items = items,
+                summary = summary,
+                settings = taxSettings,
+                recordedAt = createdAt,
+            )
             JournalOutboxSchema.recordSale(
                 db = this,
                 saleId = saleId,
@@ -342,6 +352,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 businessDate = businessLink.businessDate,
                 folderName = DriveSyncSettingsStore.load(applicationContext).folderName,
             )
+            SaleTaxSnapshotStoreV136.enrichSaleJournal(this, saleId)
             if (normalizedCommitKey != null) {
                 SaleCommitIdempotencySchema.record(
                     db = this,
@@ -469,7 +480,16 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             result
         }
         val snapshotItems = LineTaxSnapshotStore.apply(readableDatabase, LineTaxSnapshotStore.SCOPE_SALE, saleId, items)
-        return SaleDetailRecord(summary, snapshotItems, payments, TaxEngine.calculate(snapshotItems))
+        val saleTaxSnapshot = SaleTaxSnapshotStoreV136.load(readableDatabase, saleId)
+        return SaleDetailRecord(
+            summary = summary,
+            items = snapshotItems,
+            payments = payments,
+            taxSummary = saleTaxSnapshot?.toTaxSummary() ?: TaxEngine.calculate(snapshotItems),
+            invoiceAggregationBasis = saleTaxSnapshot?.invoiceAggregationBasis
+                ?: InvoiceAggregationBasisV136.TAX_INCLUDED,
+            taxSnapshotLegacyFallback = saleTaxSnapshot == null,
+        )
     }
 
     fun enqueueReprint(saleId: Long): Long {
