@@ -16,6 +16,15 @@ class V136DocumentPrintSettingsTest {
     }
 
     @Test
+    fun documentKindsKeepIndependentStorageKeys() {
+        assertEquals(5, DocumentPrintKindV136.entries.size)
+        assertEquals(
+            DocumentPrintKindV136.entries.size,
+            DocumentPrintKindV136.entries.map { it.storageKey }.distinct().size,
+        )
+    }
+
+    @Test
     fun backwardsCompatibleDefaultsPreserveExistingFlows() {
         assertTrue(DocumentPrintKindV136.SALE_RECEIPT.defaultAutoPrint)
         assertTrue(DocumentPrintKindV136.INSPECTION.defaultAutoPrint)
