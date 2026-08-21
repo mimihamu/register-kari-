@@ -434,26 +434,26 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
     }
 
     fun testPrinter(configuration: PrinterConfiguration): Result<Unit> {
-        require(configuration.host.isNotBlank()) { "IPアドレスまたはホスト名を入力してください" }
-        val now = Instant.now().toString()
-        val text = buildString {
-            append("つぐレジ プリンターテスト\n")
-            append("${configuration.name}\n")
-            append("${configuration.host}:${configuration.port}\n")
-            append("${configuration.profile.displayName}\n")
-            append("用紙 ${configuration.paperWidthMm}mm / ${configuration.cutMode.displayName}\n")
-            append("$now\n")
-            append("--------------------------------\n")
-            append("日本語印字テスト 1234567890\n")
-        }
-        val payload = PrinterCommandEncoder.encodeText(
-            text = text,
-            configuration = configuration,
-            openDrawer = false,
-            appendCut = true,
-        )
-        return printerGateway(configuration).send(payload)
+    require(configuration.host.isNotBlank()) { "IPアドレスまたはホスト名を入力してください" }
+    val now = Instant.now().toString()
+    val paper = PrinterPaperSettingPolicy.paper(configuration)
+    val text = buildString {
+        append("つぐレジ プリンターテスト\n")
+        append("${configuration.name}\n")
+        append("${configuration.host}:${configuration.port}\n")
+        append("${configuration.profile.displayName}\n")
+        append("用紙 ${paper.widthMm}mm / ${configuration.cutMode.displayName}\n")
+        append("$now\n\n")
+        append(PrinterPaperWidthTestV136.buildAll(paper, now))
     }
+    val payload = PrinterCommandEncoder.encodeText(
+        text = text,
+        configuration = configuration.copy(paperWidthMm = paper.widthMm),
+        openDrawer = false,
+        appendCut = true,
+    )
+    return printerGateway(configuration).send(payload)
+}
 
     fun testDrawer(configuration: PrinterConfiguration): Result<Unit> {
         require(configuration.host.isNotBlank()) { "IPアドレスまたはホスト名を入力してください" }
