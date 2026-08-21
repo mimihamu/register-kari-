@@ -333,7 +333,7 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
                         )
                         val copyCount = DocumentPrintSettingsPolicyV136.normalizeCopies(documentPrintSetting.copies)
                         val offsetBase = printJobIds.size
-                        repeat(copyCount) { copyIndex ->
+                        kotlin.repeat(copyCount) { copyIndex ->
                             printJobIds += insertDocumentPrintJob(
                                 issuanceId,
                                 paperWidthMm,
@@ -395,7 +395,7 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
         db.beginTransaction()
         try {
             val printJobIds = buildList {
-                repeat(DocumentPrintSettingsPolicyV136.normalizeCopies(documentPrintSetting.copies)) { copyIndex ->
+                kotlin.repeat(DocumentPrintSettingsPolicyV136.normalizeCopies(documentPrintSetting.copies)) { copyIndex ->
                     add(insertDocumentPrintJob(record.id, paperWidthMm, decoratedPayload, now + copyIndex))
                 }
             }

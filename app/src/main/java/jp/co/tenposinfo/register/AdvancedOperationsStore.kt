@@ -892,7 +892,7 @@ class AdvancedOperationsStore(context: Context) {
         }
         val decoratedPayload = setting?.let { DocumentPrintSettingsPolicyV136.decorateText(payloadText, it) } ?: payloadText
         var firstJobId = 0L
-        repeat(copies) { copyIndex ->
+        kotlin.repeat(copies) { copyIndex ->
             val jobId = insertOrThrow(
                 "document_print_jobs",
                 null,

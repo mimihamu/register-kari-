@@ -141,7 +141,7 @@ internal class HeldTicketProvisionalPrintServiceV135(context: Context) : AutoClo
         db.beginTransaction()
         val jobId = try {
             val jobIds = buildList {
-                repeat(DocumentPrintSettingsPolicyV136.normalizeCopies(documentPrintSetting.copies)) { copyIndex ->
+                kotlin.repeat(DocumentPrintSettingsPolicyV136.normalizeCopies(documentPrintSetting.copies)) { copyIndex ->
                     add(
                         db.insertOrThrow(
                             "document_print_jobs",
