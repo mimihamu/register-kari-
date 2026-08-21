@@ -8,11 +8,15 @@ import kotlin.test.assertTrue
 
 class V136DocumentPrintSettingsTest {
     @Test
-    fun copiesAreClampedToFormalInitialRange() {
+    fun copiesAreClampedToFormalRanges() {
         assertEquals(1, DocumentPrintSettingsPolicyV136.normalizeCopies(0))
-        assertEquals(1, DocumentPrintSettingsPolicyV136.normalizeCopies(1))
-        assertEquals(3, DocumentPrintSettingsPolicyV136.normalizeCopies(3))
         assertEquals(3, DocumentPrintSettingsPolicyV136.normalizeCopies(9))
+        assertEquals(1, DocumentPrintSettingsPolicyV136.normalizeCopies(DocumentPrintKindV136.SALE_RECEIPT, 0))
+        assertEquals(1, DocumentPrintSettingsPolicyV136.normalizeCopies(DocumentPrintKindV136.RECEIPT_VOUCHER, 0))
+        assertEquals(1, DocumentPrintSettingsPolicyV136.normalizeCopies(DocumentPrintKindV136.PROVISIONAL_RECEIPT, 0))
+        assertEquals(0, DocumentPrintSettingsPolicyV136.normalizeCopies(DocumentPrintKindV136.INSPECTION, -1))
+        assertEquals(0, DocumentPrintSettingsPolicyV136.normalizeCopies(DocumentPrintKindV136.SETTLEMENT, 0))
+        assertEquals(3, DocumentPrintSettingsPolicyV136.normalizeCopies(DocumentPrintKindV136.SETTLEMENT, 9))
     }
 
     @Test
@@ -62,6 +66,7 @@ class V136DocumentPrintSettingsTest {
         assertTrue(source.contains("DocumentPrintKindV136.INSPECTION"))
         assertTrue(source.contains("DocumentPrintKindV136.SETTLEMENT"))
         assertTrue(source.contains("if (documentPrintSetting.autoPrintEnabled)"))
+        assertTrue(source.contains("normalizeCopies(settingsKind, setting.copies)"))
         assertTrue(source.contains("repeat(copies)"))
     }
 

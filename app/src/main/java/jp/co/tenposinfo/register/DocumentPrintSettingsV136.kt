@@ -53,6 +53,7 @@ class DocumentPrintSettingsStoreV136(context: Context) {
     fun load(kind: DocumentPrintKindV136): DocumentPrintSettingV136 = DocumentPrintSettingV136(
         autoPrintEnabled = preferences.getBoolean("${kind.storageKey}.auto", kind.defaultAutoPrint),
         copies = DocumentPrintSettingsPolicyV136.normalizeCopies(
+            kind,
             preferences.getInt("${kind.storageKey}.copies", 1),
         ),
         header = preferences.getString("${kind.storageKey}.header", "").orEmpty(),
@@ -62,7 +63,10 @@ class DocumentPrintSettingsStoreV136(context: Context) {
     fun save(kind: DocumentPrintKindV136, setting: DocumentPrintSettingV136) {
         preferences.edit()
             .putBoolean("${kind.storageKey}.auto", setting.autoPrintEnabled)
-            .putInt("${kind.storageKey}.copies", DocumentPrintSettingsPolicyV136.normalizeCopies(setting.copies))
+            .putInt(
+                "${kind.storageKey}.copies",
+                DocumentPrintSettingsPolicyV136.normalizeCopies(kind, setting.copies),
+            )
             .putString("${kind.storageKey}.header", setting.header.trim().take(200))
             .putString("${kind.storageKey}.footer", setting.footer.trim().take(200))
             .apply()
@@ -74,6 +78,16 @@ object DocumentPrintSettingsPolicyV136 {
     const val MAX_COPIES = 3
 
     fun normalizeCopies(value: Int): Int = value.coerceIn(MIN_COPIES, MAX_COPIES)
+
+    fun minimumCopies(kind: DocumentPrintKindV136): Int = when (kind) {
+        DocumentPrintKindV136.INSPECTION,
+        DocumentPrintKindV136.SETTLEMENT,
+        -> 0
+        else -> MIN_COPIES
+    }
+
+    fun normalizeCopies(kind: DocumentPrintKindV136, value: Int): Int =
+        value.coerceIn(minimumCopies(kind), MAX_COPIES)
 
     fun kindFor(type: OperationDocumentType): DocumentPrintKindV136? = when (type) {
         OperationDocumentType.REVERSAL_RECEIPT -> null
@@ -150,12 +164,15 @@ fun DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled: Boolean) {
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
-                onClick = { copies = DocumentPrintSettingsPolicyV136.normalizeCopies(copies - 1) },
+                onClick = { copies = DocumentPrintSettingsPolicyV136.normalizeCopies(selected, copies - 1) },
                 modifier = Modifier.width(84.dp),
             ) { Text("－") }
-            Text("部数 $copies", modifier = Modifier.weight(1f))
+            Text(
+                if (copies == 0) "部数 0（電子保存のみ）" else "部数 $copies",
+                modifier = Modifier.weight(1f),
+            )
             OutlinedButton(
-                onClick = { copies = DocumentPrintSettingsPolicyV136.normalizeCopies(copies + 1) },
+                onClick = { copies = DocumentPrintSettingsPolicyV136.normalizeCopies(selected, copies + 1) },
                 modifier = Modifier.width(84.dp),
             ) { Text("＋") }
         }
