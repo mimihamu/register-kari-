@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -83,9 +84,9 @@ object DocumentPrintSettingsPolicyV136 {
     }
 
     fun decorateText(payloadText: String, setting: DocumentPrintSettingV136): String = buildList {
-        setting.header.trim().takeIf(String::isNotBlank)?.let(::add)
+        setting.header.trim().takeIf { it.isNotBlank() }?.let(::add)
         add(payloadText.trimEnd())
-        setting.footer.trim().takeIf(String::isNotBlank)?.let(::add)
+        setting.footer.trim().takeIf { it.isNotBlank() }?.let(::add)
     }.joinToString("\n")
 
     fun applyToReceipt(
