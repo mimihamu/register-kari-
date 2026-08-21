@@ -127,6 +127,7 @@ internal object HeldTicketMergeSplitPolicy {
 /**
  * 作業中伝票の退避、保留伝票の呼出、呼出元削除を同一SQLiteトランザクションで行う。
  * 途中で例外・電源断・プロセス停止が発生した場合は、全変更をロールバックする。
+ * v1.35では客数も同じトランザクション内で退避・復元する。
  */
 internal class HeldTicketSafetyCoordinator(
     private val database: RegisterDatabase,
@@ -137,11 +138,14 @@ internal class HeldTicketSafetyCoordinator(
         operatorName: String,
     ): HeldTicketLoadResult {
         val db = database.writableDatabase
+        SaleGuestCountRuntimeV135.ensureSchema(db)
         db.beginTransaction()
         return try {
             val selected = database.loadHeldTicket(ticket.id)
             require(selected.isNotEmpty()) { "呼出対象の伝票が空か、既に削除されています" }
 
+            // currentCartに客数が設定されていれば、held_tickets INSERT triggerが
+            // 作業中退避伝票へその客数を一緒に退避する。
             val parkedId = if (currentCart.isNotEmpty()) {
                 insertHeldTicket(
                     name = HeldTicketSafetyPolicy.parkedName(operatorName),
@@ -162,6 +166,9 @@ internal class HeldTicketSafetyCoordinator(
             }
             LineTaxSnapshotStore.save(db, LineTaxSnapshotStore.SCOPE_CART, 0L, selected)
 
+            // 削除前に保留伝票の客数を作業中客数へ戻す。held_tickets削除時はFK cascadeで
+            // guest mappingも消えるため、この順序が必要。
+            SaleGuestCountRuntimeV135.restoreHeldGuestCountToPending(db, ticket.id)
             val deleted = db.delete("held_tickets", "id = ?", arrayOf(ticket.id.toString()))
             require(deleted == 1) { "呼出対象の伝票を確定できませんでした" }
             db.delete(
@@ -202,6 +209,7 @@ internal class HeldTicketSafetyCoordinator(
     ): HeldTicketMergeResult {
         require(sourceTicket.id != targetTicket.id) { "同じ伝票同士は結合できません" }
         val db = database.writableDatabase
+        SaleGuestCountRuntimeV135.ensureSchema(db)
         db.beginTransaction()
         return try {
             val sourceItems = database.loadHeldTicket(sourceTicket.id)
@@ -223,6 +231,8 @@ internal class HeldTicketSafetyCoordinator(
                 mergedItems,
             )
 
+            // 伝票結合では客数も合算し、元伝票削除前に結合先へ固定する。
+            SaleGuestCountRuntimeV135.mergeHeldGuestCounts(db, sourceTicket.id, targetTicket.id)
             val deleted = db.delete("held_tickets", "id = ?", arrayOf(sourceTicket.id.toString()))
             require(deleted == 1) { "結合元の伝票を確定できませんでした" }
             db.delete(
@@ -249,6 +259,7 @@ internal class HeldTicketSafetyCoordinator(
         operatorName: String,
     ): HeldTicketSplitResult {
         val db = database.writableDatabase
+        SaleGuestCountRuntimeV135.ensureSchema(db)
         db.beginTransaction()
         return try {
             val originalItems = database.loadHeldTicket(ticket.id)
@@ -271,11 +282,19 @@ internal class HeldTicketSafetyCoordinator(
                 plan.remainingItems,
             )
 
+            // 分割時の人数配分は仕様に自動按分規則がないため捏造しない。
+            // 元伝票の客数を維持し、新伝票は客数未設定(0)として作成する。
+            // pending客数が別作業から残っていても新分割伝票へ誤消費させない。
+            val pendingBeforeSplit = SaleGuestCountRuntimeV135.pendingGuestCount(db)
+            SaleGuestCountRuntimeV135.clearPendingGuestCount(db)
             val newTicketId = insertHeldTicket(
                 name = normalizedName,
                 operatorName = operatorName,
                 items = plan.movedItems,
             )
+            if (pendingBeforeSplit > 0) {
+                SaleGuestCountRuntimeV135.setPendingGuestCount(db, pendingBeforeSplit)
+            }
 
             db.setTransactionSuccessful()
             HeldTicketSplitResult(
@@ -295,6 +314,7 @@ internal class HeldTicketSafetyCoordinator(
         items: List<CartItem>,
     ): Long {
         val db = database.writableDatabase
+        SaleGuestCountRuntimeV135.ensureSchema(db)
         val ticketId = db.insertOrThrow(
             "held_tickets",
             null,

@@ -1,5 +1,7 @@
 package jp.co.tenposinfo.register
 
+import java.math.BigInteger
+
 data class ReturnableSaleLine(
     val saleItemId: Long,
     val productId: String,
@@ -86,22 +88,82 @@ object PartialReturnPolicy {
         refundTotal: Long,
         originalPayments: List<PaymentTotal>,
         fallbackMethod: String = "OTHER",
+        refundedPayments: List<PaymentTotal> = emptyList(),
     ): List<PaymentTotal> {
         require(refundTotal > 0) { "返金額が0円です" }
-        val source = originalPayments.filter { it.amount > 0 }.ifEmpty {
-            listOf(PaymentTotal(fallbackMethod, refundTotal))
+
+        val originalByMethod = linkedMapOf<String, Long>()
+        originalPayments.filter { it.amount > 0 }.forEach { payment ->
+            originalByMethod[payment.method] = Math.addExact(
+                originalByMethod[payment.method] ?: 0L,
+                payment.amount,
+            )
         }
-        val sourceTotal = source.sumOf { it.amount }.coerceAtLeast(1)
-        val result = mutableListOf<PaymentTotal>()
-        var allocated = 0L
-        source.forEachIndexed { index, payment ->
-            val amount = if (index == source.lastIndex) {
-                refundTotal - allocated
-            } else {
-                refundTotal * payment.amount / sourceTotal
-            }.coerceAtLeast(0)
-            allocated += amount
-            if (amount > 0) result += PaymentTotal(payment.method, amount)
+        if (originalByMethod.isEmpty()) {
+            // v1.35 COR-008:
+            // Production reversal writes run inside SecureOperationsCoordinator's approved
+            // refund context. In that context a missing original payment breakdown must not
+            // silently fall back to CASH/OTHER; a manager explicitly selects the refund method.
+            // Calls outside that approved runtime context retain the legacy pure-function
+            // fallback so existing calculations/tests and read-only tooling remain compatible.
+            val selectedMethod = ManualRefundFallbackRuntimeV135.resolveMethodOrRequest(
+                refundTotal = refundTotal,
+                suggestedMethod = fallbackMethod,
+            ) ?: fallbackMethod
+            return listOf(PaymentTotal(selectedMethod, refundTotal))
+        }
+
+        val refundedByMethod = mutableMapOf<String, Long>()
+        refundedPayments.filter { it.amount > 0 }.forEach { payment ->
+            refundedByMethod[payment.method] = Math.addExact(
+                refundedByMethod[payment.method] ?: 0L,
+                payment.amount,
+            )
+        }
+
+        val capacities = originalByMethod.map { (method, originalAmount) ->
+            method to (originalAmount - (refundedByMethod[method] ?: 0L)).coerceAtLeast(0L)
+        }
+        val capacityTotal = capacities.fold(BigInteger.ZERO) { acc, (_, amount) ->
+            acc.add(BigInteger.valueOf(amount))
+        }
+        require(BigInteger.valueOf(refundTotal) <= capacityTotal) {
+            "返金額が元支払の未返金残高を超えています"
+        }
+
+        val active = capacities.filter { it.second > 0L }
+        check(active.isNotEmpty()) { "返金可能な元支払残高がありません" }
+        val denominator = capacityTotal
+        val allocations = LongArray(active.size)
+        val remainders = Array(active.size) { BigInteger.ZERO }
+        var floorTotal = 0L
+        active.forEachIndexed { index, (_, capacity) ->
+            val numerator = BigInteger.valueOf(refundTotal).multiply(BigInteger.valueOf(capacity))
+            val division = numerator.divideAndRemainder(denominator)
+            val floor = division[0].longValueExact()
+            allocations[index] = floor
+            remainders[index] = division[1]
+            floorTotal = Math.addExact(floorTotal, floor)
+        }
+
+        var remainingUnits = refundTotal - floorTotal
+        val remainderOrder = active.indices.sortedWith(
+            compareByDescending<Int> { remainders[it] }.thenBy { it },
+        )
+        var cursor = 0
+        while (remainingUnits > 0) {
+            val index = remainderOrder[cursor]
+            if (allocations[index] < active[index].second) {
+                allocations[index]++
+                remainingUnits--
+            }
+            cursor = (cursor + 1) % remainderOrder.size
+        }
+
+        val result = active.mapIndexedNotNull { index, (method, capacity) ->
+            val amount = allocations[index]
+            check(amount <= capacity) { "返金内訳が元支払残高を超えました" }
+            if (amount > 0L) PaymentTotal(method, amount) else null
         }
         check(result.sumOf { it.amount } == refundTotal) { "返金内訳の配賦に失敗しました" }
         return result

@@ -125,6 +125,12 @@ private fun AdminSettingsApp(onClose: () -> Unit) {
                     printer = store.loadPrinterConfiguration(),
                     auditCount = store.auditCount(),
                     actorName = actorName,
+                    onInitialReleaseSettings = {
+                        context.startActivity(
+                            Intent(context, InitialReleaseSettingsActivityV135::class.java)
+                                .putExtra(InitialReleaseSettingsActivityV135.EXTRA_ACTOR, actorName),
+                        )
+                    },
                     onOperators = { screen = AdminScreen.OPERATORS },
                     onPrinter = { screen = AdminScreen.PRINTER },
                     onCatalog = { context.startActivity(Intent(context, CatalogHubActivityV030::class.java)) },
@@ -222,6 +228,7 @@ private fun AdminMenuScreen(
     printer: PrinterConfiguration,
     auditCount: Long,
     actorName: String,
+    onInitialReleaseSettings: () -> Unit,
     onOperators: () -> Unit,
     onPrinter: () -> Unit,
     onCatalog: () -> Unit,
@@ -235,10 +242,11 @@ private fun AdminMenuScreen(
     onClose: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
-        AsHeader("SCR-760", "各種設定", "認証：$actorName")
+        AsHeader("SCR-690", "各種設定", "認証：$actorName")
         Row(Modifier.weight(1f).padding(20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             AsPanel(Modifier.width(360.dp).fillMaxHeight()) {
-                Text("設定状態", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AsNavy)
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    Text("設定状態", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AsNavy)
                 Spacer(Modifier.height(18.dp))
                 AsValueRow("有効担当者", "${operatorCount}名")
                 AsValueRow("プリンター", if (printer.usable) "接続設定済み" else "未設定")
@@ -247,12 +255,21 @@ private fun AdminMenuScreen(
                 AsValueRow("用紙幅", "${printer.paperWidthMm}mm")
                 AsValueRow("ドロア", if (printer.drawerEnabled) "DK${printer.drawerPort + 1} 有効" else "無効")
                 AsValueRow("監査ログ", "${auditCount}件")
-                Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                    onClick = onInitialReleaseSettings,
+                    modifier = Modifier.fillMaxWidth().height(58.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AsBlue),
+                ) {
+                    Text("店舗・レジ設定  SCR-691～695", fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(10.dp))
                 Text(
-                    "担当者・権限、責任者PIN、プリンター機種、ドロア、監査ログを端末内SQLiteで管理します。",
+                    "店舗基本、販売操作、営業日・精算、端末・アプリ、初期設定に加え、担当者・プリンター等を管理します。",
                     color = Color.DarkGray,
                     lineHeight = 23.sp,
                 )
+                }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {

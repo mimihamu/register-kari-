@@ -9,6 +9,7 @@ internal const val CUSTOMER_DISPLAY_PATH = "/customer-display/v1"
 enum class CustomerDisplayMode {
     STANDBY,
     SALES,
+    SUBTOTAL,
     ACCOUNTING,
     COMPLETE,
     DISCONNECTED,
@@ -104,6 +105,29 @@ object CustomerDisplaySnapshotFactory {
             subtotalAmount = total,
             totalAmount = total,
             orderItems = orderItems(items, latestProductId),
+            presentation = presentation,
+        )
+    }
+
+    /**
+     * v2.5 UC-07: SCR-100 の小計／会計押下時に送る明示的な小計 snapshot。
+     * SALES / ACCOUNTING の完全な v2.5 状態名移行は v1.37 で行う。
+     */
+    fun subtotal(
+        items: List<CartItem>,
+        storeName: String,
+        presentation: CustomerDisplayPresentation = CustomerDisplayPresentation(),
+    ): CustomerDisplaySnapshot {
+        if (items.isEmpty()) return standby(storeName, presentation)
+        val total = TaxEngine.calculate(items).grossAmount
+        return CustomerDisplaySnapshot(
+            mode = CustomerDisplayMode.SUBTOTAL,
+            storeName = storeName,
+            numberOfProducts = items.sumOf { it.quantity },
+            subtotalAmount = total,
+            totalAmount = total,
+            message = "小計をご確認ください",
+            orderItems = orderItems(items),
             presentation = presentation,
         )
     }

@@ -438,7 +438,8 @@ private fun CustomerDisplaySettingsScreen(
 private fun CustomerDisplayMode.displayLabel(): String = when (this) {
     CustomerDisplayMode.STANDBY -> "待機"
     CustomerDisplayMode.SALES -> "販売中"
-    CustomerDisplayMode.ACCOUNTING -> "小計・会計中"
+    CustomerDisplayMode.SUBTOTAL -> "小計"
+    CustomerDisplayMode.ACCOUNTING -> "会計中"
     CustomerDisplayMode.COMPLETE -> "会計完了"
     CustomerDisplayMode.DISCONNECTED -> "切断"
 }

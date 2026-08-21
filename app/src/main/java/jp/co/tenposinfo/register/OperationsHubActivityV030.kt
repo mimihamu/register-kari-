@@ -78,6 +78,7 @@ class OperationsHubActivityV030 : ComponentActivity() {
                     openReceiptVoucher = { startActivity(Intent(this, ReceiptVoucherActivity::class.java)) },
                     openSalesLookup = { startActivity(Intent(this, BusinessDateSalesLookupActivity::class.java)) },
                     openReceiptReprintLedger = { startActivity(Intent(this, SaleReceiptReprintLedgerActivity::class.java)) },
+                    openManualReturn = { startActivity(Intent(this, ManualReturnActivityV135::class.java)) },
                     openLegacyManagement = { startActivity(Intent(this, OperationsActivity::class.java)) },
                 )
             }
@@ -95,6 +96,7 @@ private fun OperationsHubRouteV030(
     openReceiptVoucher: () -> Unit,
     openSalesLookup: () -> Unit,
     openReceiptReprintLedger: () -> Unit,
+    openManualReturn: () -> Unit,
     openLegacyManagement: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -116,7 +118,9 @@ private fun OperationsHubRouteV030(
             current.allows(RegisterPermission.VIEW_SALES) ||
             current.allows(RegisterPermission.X_INSPECTION) ||
             current.allows(RegisterPermission.Z_SETTLEMENT)
-        ) store.dailySummary() else null
+        ) {
+            store.dailySummary()
+        } else null
         OperationsHubScreenV030(
             operatorName = current.name,
             permissions = current.permissions,
@@ -130,6 +134,7 @@ private fun OperationsHubRouteV030(
             openReceiptVoucher = openReceiptVoucher,
             openSalesLookup = openSalesLookup,
             openReceiptReprintLedger = openReceiptReprintLedger,
+            openManualReturn = openManualReturn,
             openLegacyManagement = openLegacyManagement,
         )
     }
@@ -149,6 +154,7 @@ private fun OperationsHubScreenV030(
     openReceiptVoucher: () -> Unit,
     openSalesLookup: () -> Unit,
     openReceiptReprintLedger: () -> Unit,
+    openManualReturn: () -> Unit,
     openLegacyManagement: () -> Unit,
 ) {
     val metrics = rememberRegisterResponsiveMetrics()
@@ -236,6 +242,14 @@ private fun OperationsHubScreenV030(
                         openReceiptReprintLedger,
                         Modifier.fillMaxWidth().heightIn(min = 112.dp),
                     )
+                    HubTileV030(
+                        "元取引なし返品",
+                        "レシートなし・売上No.不明の返品（責任者承認）",
+                        Color(0xFFFFE9E9),
+                        RegisterPermission.REVERSAL in permissions,
+                        openManualReturn,
+                        Modifier.fillMaxWidth().heightIn(min = 112.dp),
+                    )
                     HubLegacyPanelV030(Modifier.fillMaxWidth(), permissions, openLegacyManagement)
                 }
             } else {
@@ -321,6 +335,14 @@ private fun OperationsHubScreenV030(
                                 Color(0xFFFFF3E0),
                                 RegisterPermission.VIEW_SALES in permissions,
                                 openReceiptReprintLedger,
+                                Modifier.weight(1f).fillMaxHeight(),
+                            )
+                            HubTileV030(
+                                "元取引なし返品",
+                                "レシートなし返品",
+                                Color(0xFFFFE9E9),
+                                RegisterPermission.REVERSAL in permissions,
+                                openManualReturn,
                                 Modifier.weight(1f).fillMaxHeight(),
                             )
                             HubLegacyPanelV030(

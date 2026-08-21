@@ -47,6 +47,7 @@ class V026SettlementPreflightPermissionTest {
         val expanded = RegisterPermissionCompatibilityV026.expand(
             setOf(RegisterPermission.SETTLEMENT),
         )
+        assertTrue(RegisterPermission.BUSINESS_START in expanded)
         assertTrue(RegisterPermission.X_INSPECTION in expanded)
         assertTrue(RegisterPermission.Z_SETTLEMENT in expanded)
     }

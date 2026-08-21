@@ -185,11 +185,15 @@ private fun BusinessDateSalesLookupRoute(
     val context = LocalContext.current
     val appContext = context.applicationContext
     val store = remember { BusinessDateSalesReadStore(appContext) }
+    val reversalTraceStore = remember { SaleReversalTraceReadStoreV135(appContext) }
     var operator by remember { mutableStateOf(OperatorSessionRegistry.current(appContext)) }
     var refreshEpoch by remember { mutableIntStateOf(0) }
 
     DisposableEffect(Unit) {
-        onDispose { store.close() }
+        onDispose {
+            reversalTraceStore.close()
+            store.close()
+        }
     }
     LaunchedEffect(Unit) {
         while (true) {
@@ -207,6 +211,7 @@ private fun BusinessDateSalesLookupRoute(
         OperatorSessionRegistry.touch(appContext)
         BusinessDateSalesLookupScreen(
             store = store,
+            reversalTraceStore = reversalTraceStore,
             requestedContext = requestedContext,
             refreshEpoch = refreshEpoch,
             canReverse = current.allows(RegisterPermission.REVERSAL),
@@ -231,6 +236,7 @@ private fun BusinessDateSalesLookupRoute(
 @Composable
 private fun BusinessDateSalesLookupScreen(
     store: BusinessDateSalesReadStore,
+    reversalTraceStore: SaleReversalTraceReadStoreV135,
     requestedContext: BusinessDateSalesLookupContext?,
     refreshEpoch: Int,
     canReverse: Boolean,
@@ -276,6 +282,15 @@ private fun BusinessDateSalesLookupScreen(
         store.search(appliedCriteria, pageOffset)
     }
     val directSaleId = SalesHistoryLookupPolicy.parseDirectSaleId(directSaleIdText)
+    val pageReversalTraces = remember(page.records, refreshEpoch) {
+        reversalTraceStore.load(page.records.map { it.summary.id })
+    }
+    val selectedSaleId = selected?.summary?.id
+    val selectedReversalTrace = remember(selectedSaleId, pageReversalTraces, refreshEpoch) {
+        selectedSaleId?.let { saleId ->
+            pageReversalTraces[saleId] ?: reversalTraceStore.loadOne(saleId)
+        } ?: SaleReversalTraceV135.ACTIVE
+    }
     val selectedDetail = selected?.let { store.loadDetail(it.summary.id) }
     val resultFrom = if (page.records.isEmpty()) 0 else page.offset + 1
     val resultTo = page.offset + page.records.size
@@ -475,6 +490,7 @@ private fun BusinessDateSalesLookupScreen(
                     LazyColumn(Modifier.fillMaxSize().padding(8.dp)) {
                         items(page.records, key = { it.summary.id }) { record ->
                             val sale = record.summary
+                            val reversalTrace = pageReversalTraces[sale.id] ?: SaleReversalTraceV135.ACTIVE
                             val selectedRow = selected?.summary?.id == sale.id
                             Row(
                                 Modifier
@@ -497,6 +513,16 @@ private fun BusinessDateSalesLookupScreen(
                                 Text(businessLookupDateTime(sale.createdAt), Modifier.width(145.dp), fontSize = 12.sp)
                                 Text(sale.operatorName, Modifier.width(90.dp), maxLines = 1)
                                 Text(sale.paymentLabel, Modifier.weight(1f), maxLines = 1)
+                                if (reversalTrace.hasReversal) {
+                                    Text(
+                                        reversalTrace.state.displayLabel,
+                                        Modifier.width(118.dp),
+                                        color = BusinessLookupDanger,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.End,
+                                        maxLines = 1,
+                                    )
+                                }
                                 Text(businessLookupYen(sale.totalAmount), Modifier.width(115.dp), textAlign = TextAlign.End, fontWeight = FontWeight.Bold)
                             }
                         }
@@ -522,6 +548,25 @@ private fun BusinessDateSalesLookupScreen(
                         Text("営業セッション ${record.businessSessionId?.let { "No.$it" } ?: "未記録"}")
                         Text("売上時刻 ${businessLookupDateTime(sale.createdAt)}", color = Color.Gray)
                         Text("担当 ${sale.operatorName} / ${sale.paymentLabel}", color = Color.Gray)
+                        if (selectedReversalTrace.hasReversal) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                selectedReversalTrace.state.displayLabel,
+                                color = BusinessLookupDanger,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            selectedReversalTrace.references.forEach { reference ->
+                                Text(
+                                    "反対取引 ${reference.type.displayName} No.${reference.reversalId} / " +
+                                        "-${businessLookupYen(reference.grossAmount)} / " +
+                                        "訂正営業日 ${reference.businessDate ?: "未記録"}",
+                                    color = BusinessLookupDanger,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
                         Spacer(Modifier.height(8.dp))
                         BusinessDateLookupAmountRow("合計", sale.totalAmount, true)
                         BusinessDateLookupAmountRow("消費税", sale.taxAmount)
@@ -555,8 +600,19 @@ private fun BusinessDateSalesLookupScreen(
                             Spacer(Modifier.height(6.dp))
                             OutlinedButton(
                                 onClick = { onOpenReversal(sale.id) },
+                                enabled = !selectedReversalTrace.blocksFurtherReversal,
                                 modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp),
-                            ) { Text("この売上を返品・取消", color = BusinessLookupDanger, fontWeight = FontWeight.Bold) }
+                            ) {
+                                Text(
+                                    if (selectedReversalTrace.blocksFurtherReversal) {
+                                        "全量処理済み（再返品・取消不可）"
+                                    } else {
+                                        "この売上を返品・取消"
+                                    },
+                                    color = BusinessLookupDanger,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
                         }
                     }
                 }

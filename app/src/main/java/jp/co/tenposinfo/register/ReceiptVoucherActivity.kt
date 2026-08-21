@@ -1,6 +1,5 @@
 package jp.co.tenposinfo.register
 
-import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -69,9 +68,14 @@ internal data class ReceiptVoucherUiCalculation(
 )
 
 internal object ReceiptVoucherUiPolicy {
-    fun calculate(unitAmountText: String, copiesText: String): ReceiptVoucherUiCalculation? {
+    fun calculate(
+        unitAmountText: String,
+        copiesText: String,
+        maxCopies: Int = ReceiptVoucherBatchSettingsV135.DEFAULT_MAX_BATCH_COPIES,
+    ): ReceiptVoucherUiCalculation? {
+        if (maxCopies !in 1..ReceiptVoucherPolicy.MAX_COPIES) return null
         val unitAmount = unitAmountText.trim().toLongOrNull()?.takeIf { it > 0L } ?: return null
-        val copies = copiesText.trim().toIntOrNull()?.takeIf { it in 1..ReceiptVoucherPolicy.MAX_COPIES } ?: return null
+        val copies = copiesText.trim().toIntOrNull()?.takeIf { it in 1..maxCopies } ?: return null
         val total = runCatching { Math.multiplyExact(unitAmount, copies.toLong()) }.getOrNull() ?: return null
         return ReceiptVoucherUiCalculation(unitAmount, copies, total)
     }
@@ -109,11 +113,13 @@ private fun ReceiptVoucherRoute(
     val context = LocalContext.current
     val database = remember { RegisterDatabase(context.applicationContext) }
     val voucherStore = remember { ReceiptVoucherStore(context.applicationContext) }
+    val batchRecoveryStore = remember { ReceiptVoucherBatchRecoveryStoreV135(context.applicationContext) }
     val operator = remember { OperatorSessionRegistry.current(context.applicationContext) }
     var refreshEpoch by remember { mutableIntStateOf(0) }
 
     DisposableEffect(Unit) {
         onDispose {
+            batchRecoveryStore.close()
             voucherStore.close()
             database.close()
         }
@@ -142,6 +148,7 @@ private fun ReceiptVoucherRoute(
             sales = sales,
             operatorName = operator.name,
             voucherStore = voucherStore,
+            batchRecoveryStore = batchRecoveryStore,
             initialSaleId = saleContext.selectedSaleId,
             lockedSaleId = saleContext.selectedSaleId.takeIf { saleContext.selectionLocked },
             requestedSaleUnavailable = saleContext.requestedSaleUnavailable,
@@ -156,6 +163,7 @@ private fun ReceiptVoucherOperationsScreen(
     sales: List<SaleSummaryRecord>,
     operatorName: String,
     voucherStore: ReceiptVoucherStore,
+    batchRecoveryStore: ReceiptVoucherBatchRecoveryStoreV135,
     initialSaleId: Long?,
     lockedSaleId: Long?,
     requestedSaleUnavailable: Boolean,
@@ -176,10 +184,13 @@ private fun ReceiptVoucherOperationsScreen(
     val selectedSale = sales.firstOrNull { it.id == selectedSaleId }
     val availability = selectedSaleId?.let { id -> runCatching { voucherStore.availability(id) }.getOrNull() }
     val issued = selectedSaleId?.let { id -> runCatching { voucherStore.listForSale(id) }.getOrDefault(emptyList()) }.orEmpty()
-    val calculation = ReceiptVoucherUiPolicy.calculate(unitAmountText, copiesText)
+    val batchProgresses = selectedSaleId?.let { id ->
+        runCatching { batchRecoveryStore.listForSale(id) }.getOrDefault(emptyList())
+    }.orEmpty()
+    val maxBatchCopies = voucherStore.maxBatchCopies()
+    val calculation = ReceiptVoucherUiPolicy.calculate(unitAmountText, copiesText, maxBatchCopies)
     val remaining = availability?.remainingAmount ?: 0L
-    val canIssue = selectedSale != null && ReceiptVoucherUiPolicy.canIssue(calculation, remaining) &&
-        addressee.isNotBlank() && purpose.isNotBlank()
+    val canIssue = selectedSale != null && ReceiptVoucherUiPolicy.canIssue(calculation, remaining) && purpose.isNotBlank()
 
     fun resetConfirmation() {
         issueConfirmation = false
@@ -235,9 +246,7 @@ private fun ReceiptVoucherOperationsScreen(
                                             message = null
                                         },
                                     ),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = if (selected) VoucherPaleBlue else Color.White,
-                                    ),
+                                    colors = CardDefaults.cardColors(containerColor = if (selected) VoucherPaleBlue else Color.White),
                                     border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) VoucherBlue else VoucherBorder),
                                 ) {
                                     Row(
@@ -279,12 +288,13 @@ private fun ReceiptVoucherOperationsScreen(
                         VoucherAmountRow("売上合計", selectedSale?.let { voucherYen(it.totalAmount) } ?: "-")
                         VoucherAmountRow("発行済み", availability?.let { voucherYen(it.allocatedAmount) } ?: "-")
                         VoucherAmountRow("発行可能残額", availability?.let { voucherYen(it.remainingAmount) } ?: "-", emphasized = true)
+                        Text("宛名は空欄可 / 一括上限 ${maxBatchCopies}枚", fontSize = 12.sp, color = Color.DarkGray)
                         Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedTextField(
                                 value = addressee,
                                 onValueChange = { addressee = it; resetConfirmation() },
-                                label = { Text("宛名") },
+                                label = { Text("宛名（空欄可）") },
                                 singleLine = true,
                                 modifier = Modifier.weight(1f),
                             )
@@ -358,8 +368,11 @@ private fun ReceiptVoucherOperationsScreen(
                             ) {
                                 Column(Modifier.fillMaxWidth().padding(12.dp)) {
                                     Text("発行前の最終確認", fontWeight = FontWeight.Bold, color = VoucherNavy)
-                                    Text("売上No.${selectedSale?.id} / $addressee / $purpose")
+                                    Text("売上No.${selectedSale?.id} / ${addressee.ifBlank { "宛名空欄" }} / $purpose")
                                     Text(calculation?.let(ReceiptVoucherUiPolicy::confirmationText).orEmpty(), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                    if ((calculation?.copies ?: 0) > 1) {
+                                        Text("複数枚は補助領収書として発行し、各票に『${ReceiptVoucherRenderer.NOT_QUALIFIED_LABEL}』を印字します。", fontSize = 12.sp)
+                                    }
                                     Spacer(Modifier.height(8.dp))
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         OutlinedButton(onClick = { issueConfirmation = false; message = null }, modifier = Modifier.weight(1f)) {
@@ -382,7 +395,7 @@ private fun ReceiptVoucherOperationsScreen(
                                                         ),
                                                     )
                                                 }.onSuccess { result ->
-                                                    message = "領収書${result.issuanceIds.size}枚を印刷キューへ登録しました。残額 ${voucherYen(result.remainingAmount)}"
+                                                    message = "RG-${result.batchId}：領収書${result.issuanceIds.size}枚を印刷キューへ登録しました。残額 ${voucherYen(result.remainingAmount)}"
                                                     requestId = UUID.randomUUID().toString()
                                                     issueConfirmation = false
                                                     onRefresh()
@@ -395,6 +408,50 @@ private fun ReceiptVoucherOperationsScreen(
                                             modifier = Modifier.weight(1f),
                                             colors = ButtonDefaults.buttonColors(containerColor = VoucherBlue),
                                         ) { Text("発行を確定", fontWeight = FontWeight.Bold) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (batchProgresses.isNotEmpty()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        border = BorderStroke(1.dp, VoucherBorder),
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                            Text("一括印刷の進捗", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = VoucherNavy)
+                            batchProgresses.forEach { progress ->
+                                Card(
+                                    modifier = Modifier.fillMaxWidth().padding(top = 7.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (progress.status == ReceiptVoucherBatchPrintStatus.PARTIAL) VoucherPaleYellow else VoucherPaleBlue,
+                                    ),
+                                ) {
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text("RG-${progress.batchId}  ${progress.status.displayName}", fontWeight = FontWeight.Bold)
+                                            Text("印刷済み ${progress.printedCount}/${progress.copyCount}枚 / 未印刷 ${progress.remainingCount}枚", fontSize = 13.sp)
+                                            progress.firstUnprintedSequence?.let { Text("次の未印刷：$it/${progress.copyCount}", fontSize = 12.sp) }
+                                        }
+                                        if (progress.status == ReceiptVoucherBatchPrintStatus.PARTIAL && progress.resumable) {
+                                            Button(
+                                                onClick = {
+                                                    runCatching { batchRecoveryStore.resumeUnprinted(progress.batchId, operatorName) }
+                                                        .onSuccess { after ->
+                                                            message = "RG-${progress.batchId}：${after.firstUnprintedSequence ?: progress.firstUnprintedSequence}番以降の未印刷分を再開キューへ戻しました"
+                                                            onRefresh()
+                                                        }
+                                                        .onFailure { error -> message = error.message ?: "一括印刷を再開できませんでした" }
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = VoucherBlue),
+                                            ) { Text("未印刷分を再開") }
+                                        }
                                     }
                                 }
                             }
@@ -424,8 +481,8 @@ private fun ReceiptVoucherOperationsScreen(
                                     ) {
                                         Column(Modifier.weight(1f)) {
                                             Text("領収書No.R${record.id}  ${voucherYen(record.amount)}", fontWeight = FontWeight.Bold)
-                                            Text("${record.addressee} / ${record.purpose}", fontSize = 13.sp)
-                                            if (record.sequenceCount > 1) Text("一括 ${record.sequenceNo}/${record.sequenceCount}", fontSize = 12.sp, color = Color.DarkGray)
+                                            Text("${record.addressee.ifBlank { "宛名空欄" }} / ${record.purpose}", fontSize = 13.sp)
+                                            if (record.sequenceCount > 1) Text("RG-${record.batchId}  枝番 ${record.sequenceNo}/${record.sequenceCount}", fontSize = 12.sp, color = Color.DarkGray)
                                         }
                                         if (reprintConfirmationId == record.id) {
                                             OutlinedButton(onClick = { reprintConfirmationId = null }) { Text("中止") }

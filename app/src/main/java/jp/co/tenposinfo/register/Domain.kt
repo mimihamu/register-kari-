@@ -32,6 +32,8 @@ data class Product(
     val buttonColor: String = "BLUE",
     val pageNo: Int = ((displayOrder.coerceAtLeast(1) - 1) / 24) + 1,
     val slotNo: Int = ((displayOrder.coerceAtLeast(1) - 1) % 24) + 1,
+    val kana: String = "",
+    val barcode: String = "",
 ) {
     fun withLegacyTaxCategory(category: TaxCategory): Product = copy(
         taxCategory = category,
@@ -51,6 +53,7 @@ data class CartItem(
     val unitPrice: Long = product.unitPrice,
     val discountAmount: Long = 0,
     val note: String = "",
+    val lineId: String = "",
 ) {
     init {
         require(quantity > 0) { "quantity must be greater than zero" }
@@ -226,9 +229,10 @@ object DiscountEngine {
 
 enum class PaymentMethod(val displayName: String) {
     CASH("現金"),
-    CARD("カード"),
+    CARD("クレジット"),
     GIFT_CERTIFICATE("商品券"),
     ACCOUNT_RECEIVABLE("掛売"),
+    OTHER("その他"),
 }
 
 data class PaymentAllocation(
@@ -262,8 +266,9 @@ object PaymentEngine {
             require(received > 0) { "cash received must be positive" }
             PaymentAllocation(method, received.coerceAtMost(remaining), received)
         } else {
-            val applied = (inputAmount ?: remaining).coerceAtMost(remaining)
+            val applied = inputAmount ?: remaining
             require(applied > 0) { "payment amount must be positive" }
+            require(applied <= remaining) { "non-cash payment must not exceed remaining amount" }
             PaymentAllocation(method, applied, applied)
         }
         return state.copy(allocations = state.allocations + allocation)

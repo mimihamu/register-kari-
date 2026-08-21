@@ -41,6 +41,9 @@ data class DailyOperationsSummary(
     val pendingPrints: Int,
     val heldTickets: Int,
     val settled: Boolean,
+    val openCartItems: Int = 0,
+    val incompletePayments: Int = 0,
+    val backupFailureMessage: String? = null,
 )
 
 data class CashMovementRecord(
@@ -200,14 +203,28 @@ class OperationsStore(context: Context) {
             "SELECT COUNT(*) FROM sales WHERE business_session_id = ?",
             arrayOf(sessionId.toString()),
         ).toInt()
-        val reversalGross = longQuery(
+        val linkedReversalGross = longQuery(
             "SELECT COALESCE(SUM(gross_amount), 0) FROM reversal_transactions WHERE business_session_id = ?",
             arrayOf(sessionId.toString()),
         )
-        val reversalCount = longQuery(
+        val linkedReversalCount = longQuery(
             "SELECT COUNT(*) FROM reversal_transactions WHERE business_session_id = ?",
             arrayOf(sessionId.toString()),
         ).toInt()
+        val manualReturnGross = if (SchemaMigration.tableExists(db, "manual_return_transactions")) {
+            -longQuery(
+                "SELECT COALESCE(SUM(gross_amount), 0) FROM manual_return_transactions WHERE business_session_id = ?",
+                arrayOf(sessionId.toString()),
+            )
+        } else 0L
+        val manualReturnCount = if (SchemaMigration.tableExists(db, "manual_return_transactions")) {
+            longQuery(
+                "SELECT COUNT(*) FROM manual_return_transactions WHERE business_session_id = ?",
+                arrayOf(sessionId.toString()),
+            ).toInt()
+        } else 0
+        val reversalGross = linkedReversalGross + manualReturnGross
+        val reversalCount = linkedReversalCount + manualReturnCount
 
         val paymentMap = linkedMapOf<String, Long>()
         db.rawQuery(
@@ -239,6 +256,24 @@ class OperationsStore(context: Context) {
                 paymentMap[method] = (paymentMap[method] ?: 0L) - cursor.getLong(1)
             }
         }
+        if (SchemaMigration.tableExists(db, "manual_return_payments")) {
+            db.rawQuery(
+                """
+                SELECT p.payment_method, COALESCE(SUM(p.amount), 0)
+                FROM manual_return_payments p
+                INNER JOIN manual_return_transactions r ON r.id = p.manual_return_id
+                WHERE r.business_session_id = ?
+                GROUP BY p.payment_method
+                ORDER BY p.payment_method
+                """.trimIndent(),
+                arrayOf(sessionId.toString()),
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val method = cursor.getString(0)
+                    paymentMap[method] = (paymentMap[method] ?: 0L) + cursor.getLong(1)
+                }
+            }
+        }
 
         val cashIn = movementTotal(CashMovementType.IN, sessionId)
         val cashOut = movementTotal(CashMovementType.OUT, sessionId)
@@ -258,6 +293,20 @@ class OperationsStore(context: Context) {
             )
         ).toInt()
         val heldTickets = longQuery("SELECT COUNT(*) FROM held_tickets").toInt()
+        val openCartItems = longQuery("SELECT COUNT(*) FROM cart_items").toInt()
+        val incompletePayments = if (
+            openCartItems > 0 && SchemaMigration.tableExists(db, "payment_draft_meta")
+        ) {
+            longQuery("SELECT COUNT(*) FROM payment_draft_meta").coerceAtMost(1L).toInt()
+        } else {
+            0
+        }
+        val backupStatus = AutoBackupStatusStore(appContext).load()
+        val backupFailureMessage = when (backupStatus.lastResult) {
+            AutoBackupResultState.FAILED -> backupStatus.lastError ?: "直近バックアップが失敗しました"
+            AutoBackupResultState.SKIPPED_LOW_STORAGE -> backupStatus.lastError ?: "容量不足でバックアップを実行できませんでした"
+            else -> null
+        }
         val settled = longQuery(
             "SELECT COUNT(*) FROM settlement_reports WHERE business_session_id = ? AND report_type = ?",
             arrayOf(sessionId.toString(), SettlementReportType.Z_SETTLEMENT.name),
@@ -279,6 +328,9 @@ class OperationsStore(context: Context) {
             pendingPrints = pendingPrints,
             heldTickets = heldTickets,
             settled = settled,
+            openCartItems = openCartItems,
+            incompletePayments = incompletePayments,
+            backupFailureMessage = backupFailureMessage,
         )
     }
 
@@ -465,8 +517,29 @@ class OperationsStore(context: Context) {
             ).use { cursor ->
                 while (cursor.moveToNext()) originalPayments += PaymentTotal(cursor.getString(0), cursor.getLong(1))
             }
+            val refundedPayments = mutableListOf<PaymentTotal>()
+            rawQuery(
+                """
+                SELECT rp.payment_method, COALESCE(SUM(rp.amount), 0)
+                FROM reversal_payments rp
+                INNER JOIN reversal_transactions r ON r.id = rp.reversal_id
+                WHERE r.original_sale_id = ?
+                GROUP BY rp.payment_method
+                ORDER BY rp.payment_method
+                """.trimIndent(),
+                arrayOf(originalSaleId.toString()),
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    refundedPayments += PaymentTotal(cursor.getString(0), cursor.getLong(1))
+                }
+            }
             val fallbackMethod = if (sale.second.contains("現金")) PaymentMethod.CASH.name else "OTHER"
-            val refundPayments = PartialReturnPolicy.allocateRefundPayments(refundTotal, originalPayments, fallbackMethod)
+            val refundPayments = PartialReturnPolicy.allocateRefundPayments(
+                refundTotal = refundTotal,
+                originalPayments = originalPayments,
+                fallbackMethod = fallbackMethod,
+                refundedPayments = refundedPayments,
+            )
 
             val reversalId = insertOrThrow(
                 "reversal_transactions",
@@ -628,6 +701,7 @@ class OperationsStore(context: Context) {
         actualCash: Long?,
         operatorName: String,
         pendingPrintsAcknowledged: Boolean = false,
+        backupFailureAcknowledged: Boolean = false,
     ): Long {
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
         val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
@@ -654,6 +728,11 @@ class OperationsStore(context: Context) {
                     heldTickets = summary.heldTickets,
                     pendingPrints = summary.pendingPrints,
                     pendingPrintsAcknowledged = pendingPrintsAcknowledged,
+                    openCartItems = summary.openCartItems,
+                    incompletePayments = summary.incompletePayments,
+                    backupFailureMessage = summary.backupFailureMessage,
+                    actualCashEntered = actualCash != null,
+                    backupFailureAcknowledged = backupFailureAcknowledged,
                 )
                 check(preflight.mayProceed) { preflight.message ?: "Z精算前の確認に失敗しました" }
             }
@@ -750,6 +829,15 @@ class OperationsStore(context: Context) {
                     eventType = "Z_SETTLEMENT_PENDING_PRINTS_ACKNOWLEDGED",
                     referenceId = id,
                     detail = "未印刷データ ${summary.pendingPrints}件を確認し、責任者承認でZ精算を継続",
+                    operatorName = operatorName,
+                    createdAt = now,
+                )
+            }
+            if (type == SettlementReportType.Z_SETTLEMENT && summary.backupFailureMessage != null) {
+                insertAudit(
+                    eventType = "Z_SETTLEMENT_BACKUP_FAILURE_ACK",
+                    referenceId = id,
+                    detail = "直近バックアップ失敗を確認してZ精算を継続: ${summary.backupFailureMessage}",
                     operatorName = operatorName,
                     createdAt = now,
                 )

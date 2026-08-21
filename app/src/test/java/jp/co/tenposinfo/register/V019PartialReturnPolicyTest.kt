@@ -3,6 +3,7 @@ package jp.co.tenposinfo.register
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class V019PartialReturnPolicyTest {
@@ -40,6 +41,20 @@ class V019PartialReturnPolicyTest {
     }
 
     @Test
+    fun repeatedPartialDiscountsReturnOriginalDiscountExactly() {
+        val first = line(quantity = 3, discount = 101).toReturnItem(1).discountAmount
+        val second = line(quantity = 3, discount = 101, returned = 1, refundedDiscount = first)
+            .toReturnItem(1).discountAmount
+        val final = line(
+            quantity = 3,
+            discount = 101,
+            returned = 2,
+            refundedDiscount = first + second,
+        ).toReturnItem(1).discountAmount
+        assertEquals(101L, first + second + final)
+    }
+
+    @Test
     fun cancelRejectsSaleThatWasPartiallyReturned() {
         val failure = runCatching {
             PartialReturnPolicy.select(ReversalType.CANCEL, listOf(line(returned = 1, refundedDiscount = 3)), emptyMap())
@@ -57,17 +72,81 @@ class V019PartialReturnPolicyTest {
     }
 
     @Test
-    fun refundPaymentAllocationPreservesTotal() {
+    fun refundPaymentAllocationPreservesExactOriginalTenderTotal() {
         val result = PartialReturnPolicy.allocateRefundPayments(
-            refundTotal = 1_001,
+            refundTotal = 1_000,
             originalPayments = listOf(
                 PaymentTotal(PaymentMethod.CASH.name, 700),
                 PaymentTotal(PaymentMethod.CARD.name, 300),
             ),
         )
-        assertEquals(1_001L, result.sumOf { it.amount })
-        assertEquals(700L, result[0].amount)
-        assertEquals(301L, result[1].amount)
+        assertEquals(1_000L, result.sumOf { it.amount })
+        assertEquals(700L, result.first { it.method == PaymentMethod.CASH.name }.amount)
+        assertEquals(300L, result.first { it.method == PaymentMethod.CARD.name }.amount)
+    }
+
+    @Test
+    fun refundPaymentAllocationRejectsKnownTenderOverRefund() {
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            PartialReturnPolicy.allocateRefundPayments(
+                refundTotal = 1_001,
+                originalPayments = listOf(
+                    PaymentTotal(PaymentMethod.CASH.name, 700),
+                    PaymentTotal(PaymentMethod.CARD.name, 300),
+                ),
+            )
+        }
+        assertEquals("返金額が元支払の未返金残高を超えています", error.message)
+    }
+
+    @Test
+    fun repeatedSplitTenderRefundUsesOnlyRemainingMethodCapacity() {
+        val result = PartialReturnPolicy.allocateRefundPayments(
+            refundTotal = 1,
+            originalPayments = listOf(
+                PaymentTotal(PaymentMethod.CASH.name, 1),
+                PaymentTotal(PaymentMethod.CARD.name, 1),
+            ),
+            refundedPayments = listOf(PaymentTotal(PaymentMethod.CASH.name, 1)),
+        )
+        assertEquals(listOf(PaymentTotal(PaymentMethod.CARD.name, 1)), result)
+    }
+
+    @Test
+    fun duplicateOriginalTenderRowsAreAggregatedBeforeCapacityCheck() {
+        val result = PartialReturnPolicy.allocateRefundPayments(
+            refundTotal = 100,
+            originalPayments = listOf(
+                PaymentTotal(PaymentMethod.CASH.name, 60),
+                PaymentTotal(PaymentMethod.CASH.name, 40),
+            ),
+        )
+        assertEquals(listOf(PaymentTotal(PaymentMethod.CASH.name, 100)), result)
+    }
+
+    @Test
+    fun missingOriginalPaymentBreakdownKeepsFallbackBehavior() {
+        val result = PartialReturnPolicy.allocateRefundPayments(
+            refundTotal = 500,
+            originalPayments = emptyList(),
+            fallbackMethod = "OTHER",
+            refundedPayments = listOf(PaymentTotal("OTHER", 999)),
+        )
+        assertEquals(listOf(PaymentTotal("OTHER", 500)), result)
+    }
+
+    @Test
+    fun allocationDoesNotOverflowLongMultiplication() {
+        val nearMax = Long.MAX_VALUE / 2
+        val result = PartialReturnPolicy.allocateRefundPayments(
+            refundTotal = nearMax,
+            originalPayments = listOf(
+                PaymentTotal(PaymentMethod.CASH.name, nearMax),
+                PaymentTotal(PaymentMethod.CARD.name, nearMax),
+            ),
+        )
+        assertEquals(nearMax, result.sumOf { it.amount })
+        assertTrue(result.all { it.amount >= 0L })
     }
 
     @Test

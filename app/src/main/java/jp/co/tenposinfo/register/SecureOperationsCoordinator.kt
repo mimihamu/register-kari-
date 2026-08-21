@@ -8,6 +8,7 @@ enum class OperationsAction(
     val managerApprovalRequired: Boolean,
 ) {
     DAILY_SALES(RegisterPermission.VIEW_SALES, false),
+    BUSINESS_START(RegisterPermission.BUSINESS_START, false),
     X_INSPECTION(RegisterPermission.X_INSPECTION, false),
     Z_SETTLEMENT(RegisterPermission.Z_SETTLEMENT, false),
     CASH_MOVEMENT(RegisterPermission.CASH_MOVEMENT, false),
@@ -41,9 +42,13 @@ class SecureOperationsCoordinator(
     private val appContext = context.applicationContext
     private val executionGuard = OperationExecutionGuard()
 
+    init {
+        SettlementActualCashPresentationV135.initialize(appContext)
+    }
+
     fun startBusinessDay(businessDate: LocalDate, openingCash: Long): Long =
         executionGuard.runExclusive("BUSINESS_OPEN:$businessDate", "営業開始を処理中です") {
-            val operator = requireOperator(OperationsAction.Z_SETTLEMENT)
+            val operator = requireOperator(OperationsAction.BUSINESS_START)
             store.startBusinessDay(businessDate, openingCash, OperationsActorFormatter.direct(operator))
         }
 
@@ -57,6 +62,7 @@ class SecureOperationsCoordinator(
         actualCash: Long?,
         managerPin: String,
         pendingPrintsAcknowledged: Boolean = false,
+        backupFailureAcknowledged: Boolean = false,
     ): Long {
         SettlementActualCashSafetyV105.validate(type, actualCash)
         val session = store.activeBusinessSession()
@@ -69,17 +75,31 @@ class SecureOperationsCoordinator(
             SettlementReportType.Z_SETTLEMENT -> OperationsAction.Z_SETTLEMENT
         }
         var backupActor = "責任者"
-        val settlementId = executionGuard.runExclusive(executionKey, "点検・精算を処理中です") {
-            val operator = requireOperator(action)
-            val actor = if (OperationsAuthorizationPolicy.requiresManagerApproval(action, type)) {
-                OperationsActorFormatter.approved(operator, requireManagerName(managerPin))
-            } else {
-                OperationsActorFormatter.direct(operator)
+        val actualCashEntered = actualCash != null
+        val settlementId = SettlementActualCashPresentationV135.withInput(appContext, actualCashEntered) {
+            executionGuard.runExclusive(executionKey, "点検・精算を処理中です") {
+                val operator = requireOperator(action)
+                val actor = if (OperationsAuthorizationPolicy.requiresManagerApproval(action, type)) {
+                    OperationsActorFormatter.approved(operator, requireManagerName(managerPin))
+                } else {
+                    OperationsActorFormatter.direct(operator)
+                }
+                backupActor = actor
+                store.recordSettlement(
+                    type = type,
+                    actualCash = actualCash,
+                    operatorName = actor,
+                    pendingPrintsAcknowledged = pendingPrintsAcknowledged,
+                    backupFailureAcknowledged = backupFailureAcknowledged,
+                )
             }
-            backupActor = actor
-            store.recordSettlement(type, actualCash, actor, pendingPrintsAcknowledged)
         }
 
+        // Presentation metadata must never invalidate an already committed X/Z record. The first
+        // print payload was rendered under withInput above; bind is for later PDF/reprint recovery.
+        runCatching {
+            SettlementActualCashPresentationV135.bind(appContext, settlementId, actualCashEntered)
+        }
         runCatching { AutomaticPrintScheduler.enqueueNow(appContext) }
 
         if (AutoBackupTriggerPolicy.shouldEnqueue(type, settlementCommitted = true)) {
@@ -149,14 +169,28 @@ class SecureOperationsCoordinator(
         return executionGuard.runExclusive(executionKey, "返品・取消を処理中です") {
             val operator = requireOperator(OperationsAction.REVERSAL)
             val managerName = requireManagerName(managerPin)
-            store.createReversal(
+            val actor = OperationsActorFormatter.approved(operator, managerName)
+            val refundContext = ApprovedRefundContextV135(
                 originalSaleId = originalSaleId,
-                type = type,
-                requestedQuantities = requestedQuantities,
-                reason = reason,
-                operatorName = OperationsActorFormatter.approved(operator, managerName),
+                reversalType = type,
                 requestId = requestId,
+                actorName = actor,
             )
+            val result = ManualRefundFallbackRuntimeV135.withApprovedContext(
+                context = appContext,
+                approvedContext = refundContext,
+            ) {
+                store.createReversal(
+                    originalSaleId = originalSaleId,
+                    type = type,
+                    requestedQuantities = requestedQuantities,
+                    reason = reason,
+                    operatorName = actor,
+                    requestId = requestId,
+                )
+            }
+            ManualRefundFallbackRuntimeV135.complete(appContext, refundContext, result.refundAmount)
+            result
         }
     }
 

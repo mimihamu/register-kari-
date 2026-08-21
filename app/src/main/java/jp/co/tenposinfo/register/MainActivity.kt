@@ -97,9 +97,18 @@ internal object RegisterLayoutPolicy {
 }
 
 class MainActivity : ComponentActivity() {
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (BarcodeScannerRuntimeV135.handle(event)) return true
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
+        DeviceAppRuntimeV135.applyWindowPolicy(
+            window,
+            InitialReleaseSettingsStoreV135(applicationContext).loadDevice(),
+        )
         setContent {
             MaterialTheme {
                 RegisterApp()
@@ -129,6 +138,7 @@ private fun RegisterApp() {
     val context = LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val database = remember { RegisterDatabase(context.applicationContext) }
+    val initialReleaseSettingsStore = remember { InitialReleaseSettingsStoreV135(context.applicationContext) }
     val authStore = remember { OperatorAuthenticationStore(context.applicationContext) }
     var currentOperator by remember { mutableStateOf(OperatorSessionRegistry.current(context.applicationContext)) }
     var screen by remember { mutableStateOf(if (currentOperator == null) AppScreen.DIAGNOSTIC else AppScreen.SALES) }
@@ -192,6 +202,9 @@ private fun RegisterApp() {
         V11CatalogRuntime.visibleProducts(context.applicationContext, database.loadProducts())
     }
     val cart = remember { mutableStateListOf<CartItem>().apply { addAll(database.loadCart()) } }
+    val corrections = remember {
+        mutableStateListOf<CartCorrectionRecordV135>().apply { addAll(database.loadCartCorrections()) }
+    }
     var selectedIndex by remember { mutableStateOf<Int?>(null) }
     var paymentState by remember { mutableStateOf(PaymentState()) }
     var lastSaleId by remember { mutableStateOf<Long?>(null) }
@@ -220,6 +233,28 @@ private fun RegisterApp() {
         cart[index] = item
         selectedIndex = index
         database.saveCart(cart.toList())
+    }
+
+    fun applyCartCorrection(index: Int, quantity: Int, type: CartCorrectionTypeV135) {
+        if (index !in cart.indices) return
+        runCatching {
+            database.applyCartCorrection(
+                targetIndex = index,
+                cancelQuantity = quantity,
+                correctionType = type,
+                operatorName = operatorName,
+            )
+        }.onSuccess { result ->
+            cart.clear()
+            cart.addAll(result.items)
+            corrections.clear()
+            corrections.addAll(database.loadCartCorrections())
+            selectedIndex = null
+            paymentDraftStore.clear()
+            paymentCommitKey = null
+        }.onFailure { error ->
+            accessMessage = error.message ?: "訂正できませんでした"
+        }
     }
 
     fun openUnifiedPrintQueue() {
@@ -269,6 +304,7 @@ private fun RegisterApp() {
                 operatorName = operatorName,
                 products = products,
                 cart = cart,
+                corrections = corrections,
                 selectedIndex = selectedIndex,
                 printerHealth = printerHealth,
                 onSelect = { selectedIndex = it },
@@ -276,35 +312,65 @@ private fun RegisterApp() {
                     selectedIndex = it
                     screen = AppScreen.LINE_EDIT
                 },
-                onAddProduct = { product ->
-                    val index = cart.indexOfFirst {
+                onAddProduct = { product, quantity ->
+                    require(quantity > 0) { "数量は1以上で指定してください" }
+                    val mergeSameItem = initialReleaseSettingsStore.loadSales().mergeSameItem
+                    val index = if (mergeSameItem) cart.indexOfFirst {
                         it.product.id == product.id &&
                             it.unitPrice == product.unitPrice &&
                             it.discountAmount == 0L &&
                             it.note.isEmpty()
-                    }
+                    } else -1
                     if (index >= 0) {
-                        cart[index] = cart[index].copy(quantity = cart[index].quantity + 1)
+                        val updated = cart[index].copy(quantity = cart[index].quantity + quantity)
+                        cart.removeAt(index)
+                        cart += updated
                     } else {
-                        cart += CartItem(product = product, quantity = 1)
+                        cart += CartItem(
+                            product = product,
+                            quantity = quantity,
+                            lineId = CartLineIdentityV135.newId(),
+                        )
                     }
+                    selectedIndex = null
                     database.saveCart(cart.toList())
                 },
                 onChangeQuantity = { quantity ->
                     val index = selectedIndex
                     if (index != null && index in cart.indices && quantity > 0) {
-                        updateCartItem(index, cart[index].copy(quantity = quantity))
+                        val current = cart[index]
+                        if (quantity < current.quantity) {
+                            applyCartCorrection(
+                                index,
+                                current.quantity - quantity,
+                                CartCorrectionTypeV135.SELECTED_LINE,
+                            )
+                        } else {
+                            updateCartItem(index, current.copy(quantity = quantity))
+                        }
                     }
                 },
                 onRemove = {
-                    val index = selectedIndex ?: cart.lastIndex
+                    val index = cart.lastIndex
                     if (index in cart.indices) {
-                        cart.removeAt(index)
-                        selectedIndex = null
-                        database.saveCart(cart.toList())
+                        applyCartCorrection(
+                            index,
+                            cart[index].quantity,
+                            CartCorrectionTypeV135.LAST_LINE,
+                        )
                     }
                 },
-                onCancelTransaction = { replaceCart(emptyList()) },
+                onCancelSelected = { quantity ->
+                    val index = selectedIndex
+                    if (index != null && index in cart.indices) {
+                        applyCartCorrection(index, quantity, CartCorrectionTypeV135.SELECTED_LINE)
+                    }
+                },
+                onCancelTransaction = {
+                    database.clearCartCorrections()
+                    corrections.clear()
+                    replaceCart(emptyList())
+                },
                 onDiscount = { screen = AppScreen.DISCOUNT },
                 onTickets = {
                     if (currentOperator?.allows(RegisterPermission.HOLD_TICKET) == true) {
@@ -322,6 +388,8 @@ private fun RegisterApp() {
                         val existing = database.listHeldTickets()
                         val name = HeldTicketSafetyPolicy.defaultName(existing.map { it.name })
                         database.holdCart(name, operatorName, cart.toList())
+                        database.clearCartCorrections()
+                        corrections.clear()
                         replaceCart(emptyList())
                         ticketMessage = "$name として保留しました"
                     }
@@ -338,9 +406,8 @@ private fun RegisterApp() {
                     saleCommitInProgress = false
                     saleCommitGuard.resetForNewPayment()
                     CustomerDisplayRuntime.publish(
-                        CustomerDisplaySnapshotFactory.accounting(
+                        CustomerDisplaySnapshotFactory.subtotal(
                             cart.toList(),
-                            paymentState,
                             CustomerDisplaySettingsStore(context.applicationContext).load().storeName,
                         ),
                     )
@@ -389,8 +456,27 @@ private fun RegisterApp() {
                 } else {
                     LineEditScreen(
                         item = item,
-                        onSave = {
-                            updateCartItem(index, it)
+                        onSave = { edited ->
+                            val original = cart.getOrNull(index)
+                            if (original != null && edited.quantity < original.quantity) {
+                                applyCartCorrection(
+                                    index,
+                                    original.quantity - edited.quantity,
+                                    CartCorrectionTypeV135.SELECTED_LINE,
+                                )
+                                val remainingIndex = cart.indexOfFirst { it.lineId == original.lineId }
+                                if (remainingIndex >= 0) {
+                                    updateCartItem(
+                                        remainingIndex,
+                                        edited.copy(
+                                            quantity = edited.quantity,
+                                            lineId = original.lineId,
+                                        ),
+                                    )
+                                }
+                            } else {
+                                updateCartItem(index, edited)
+                            }
                             screen = AppScreen.SALES
                         },
                         onDiscount = { screen = AppScreen.DISCOUNT },
@@ -421,6 +507,8 @@ private fun RegisterApp() {
                             operatorName = operatorName,
                         )
                     }.onSuccess { result ->
+                        database.clearCartCorrections()
+                        corrections.clear()
                         replaceCart(result.loadedItems)
                         ticketMessage = result.message
                         screen = AppScreen.SALES
@@ -453,6 +541,21 @@ private fun RegisterApp() {
                     selectedHeldTicketId = ticket.id
                     ticketMessage = null
                     screen = AppScreen.TICKET_SPLIT
+                },
+                onPrint = { ticket ->
+                    runCatching {
+                        val service = HeldTicketProvisionalPrintServiceV135(context.applicationContext)
+                        try {
+                            service.enqueue(ticket.id, operatorName)
+                        } finally {
+                            service.close()
+                        }
+                    }.onSuccess { result ->
+                        ticketMessage = "${ticket.name}の仮締め票を印刷キューへ登録しました（Job.${result.jobId}）"
+                        runCatching { AutomaticPrintScheduler.enqueueNow(context.applicationContext) }
+                    }.onFailure { error ->
+                        ticketMessage = error.message ?: "仮締め票を登録できませんでした"
+                    }
                 },
                 onBack = { screen = AppScreen.SALES },
             )
@@ -560,6 +663,7 @@ private fun RegisterApp() {
                         DriveOutboxScheduler.enqueueNow(context.applicationContext)
                         lastSaleId = saleId
                         selectedSaleId = saleId
+                        corrections.clear()
                         replaceCart(emptyList())
                         paymentMessage = null
                         screen = AppScreen.COMPLETE
@@ -886,13 +990,15 @@ private fun SalesScreen(
     operatorName: String,
     products: List<Product>,
     cart: List<CartItem>,
+    corrections: List<CartCorrectionRecordV135>,
     selectedIndex: Int?,
     printerHealth: PrinterHealthSnapshot,
     onSelect: (Int) -> Unit,
     onEdit: (Int) -> Unit,
-    onAddProduct: (Product) -> Unit,
+    onAddProduct: (Product, Int) -> Unit,
     onChangeQuantity: (Int) -> Unit,
     onRemove: () -> Unit,
+    onCancelSelected: (Int) -> Unit,
     onCancelTransaction: () -> Unit,
     onDiscount: () -> Unit,
     onTickets: () -> Unit,
@@ -910,7 +1016,41 @@ private fun SalesScreen(
 ) {
     val summary = TaxEngine.calculate(cart)
     var numericInput by remember { mutableStateOf("") }
+    var pendingQuantity by remember { mutableStateOf<Int?>(null) }
+    var showProductSearch by remember { mutableStateOf(false) }
+    var lookupMessage by remember { mutableStateOf<String?>(null) }
     val responsive = rememberRegisterResponsiveMetrics()
+
+    androidx.compose.runtime.DisposableEffect(products, pendingQuantity, onAddProduct) {
+        val listener: (String) -> Unit = { scanned ->
+            val product = ProductLookupPolicyV135.findExact(products, scanned)
+            if (product == null) {
+                lookupMessage = "商品未登録: ${scanned.take(20)}"
+            } else {
+                onAddProduct(product, pendingQuantity ?: 1)
+                pendingQuantity = null
+                numericInput = ""
+                lookupMessage = null
+            }
+        }
+        BarcodeScannerRuntimeV135.setListener(listener)
+        onDispose { BarcodeScannerRuntimeV135.clearListener(listener) }
+    }
+
+    if (showProductSearch) {
+        SalesProductSearchDialogV135(
+            products = products,
+            onDismiss = { showProductSearch = false },
+            onRegister = { product ->
+                onAddProduct(product, pendingQuantity ?: 1)
+                pendingQuantity = null
+                numericInput = ""
+                lookupMessage = null
+                showProductSearch = false
+            },
+        )
+    }
+
     Column(Modifier.fillMaxSize()) {
         Header("SCR-100", "販売画面")
         PrinterHealthBanner(printerHealth, onPrinterStatus)
@@ -962,6 +1102,15 @@ private fun SalesScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
+                                if (selected) {
+                                    Text(
+                                        "選択中",
+                                        color = Navy,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                    )
+                                }
                                 Text(item.product.name, fontWeight = FontWeight.SemiBold)
                                 Text(
                                     "${item.quantity} × ${yen(item.unitPrice)}  ${item.product.taxSymbol}",
@@ -971,6 +1120,33 @@ private fun SalesScreen(
                                 if (item.discountAmount > 0) Text("値引 -${yen(item.discountAmount)}", color = Danger, fontSize = 12.sp)
                             }
                             Text(yen(item.baseAmount), fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    if (corrections.isNotEmpty()) {
+                        item {
+                            Text(
+                                "訂正履歴",
+                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
+                                color = Danger,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        itemsIndexed(corrections) { _, correction ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("取消 ${correction.productName}", color = Danger, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "${correction.cancelledQuantity} × ${yen(correction.unitPrice)} / 元行 ${correction.lineId.takeLast(8)}",
+                                        fontSize = 12.sp,
+                                        color = Color.Gray,
+                                    )
+                                }
+                                Text("-${yen(correction.cancelledAmount)}", color = Danger, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
@@ -1000,7 +1176,7 @@ private fun SalesScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                "置数・機能",
+                                lookupMessage ?: pendingQuantity?.let { "次商品 ${it}点" } ?: "置数・機能",
                                 fontSize = if (responsive.isCompact) 16.sp else 18.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Navy,
@@ -1020,7 +1196,11 @@ private fun SalesScreen(
                             onClear = { numericInput = "" },
                             bottomActionLabel = "数量",
                             onBottomAction = {
-                                numericInput.toIntOrNull()?.let(onChangeQuantity)
+                                ProductQuantityKeyPolicyV135.decide(numericInput, selectedIndex != null)?.let { decision ->
+                                    decision.selectedLineQuantity?.let(onChangeQuantity)
+                                    decision.pendingProductQuantity?.let { pendingQuantity = it }
+                                    lookupMessage = null
+                                }
                                 numericInput = ""
                             },
                             compact = true,
@@ -1034,9 +1214,27 @@ private fun SalesScreen(
                                 horizontalArrangement = Arrangement.spacedBy(keypad.gapDp.dp),
                             ) {
                                 OutlinedButton(
-                                    onClick = onRemove,
+                                    onClick = {
+                                        if (NumericCorrectionPolicyV135.shouldClearInput(numericInput)) {
+                                            numericInput = ""
+                                        } else {
+                                            onRemove()
+                                        }
+                                    },
                                     modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
                                 ) { Text("訂正", fontSize = 13.sp, maxLines = 1) }
+                                OutlinedButton(
+                                    onClick = {
+                                        val selected = selectedIndex?.let { cart.getOrNull(it) }
+                                        if (selected != null) {
+                                            val quantity = numericInput.toIntOrNull() ?: selected.quantity
+                                            onCancelSelected(quantity)
+                                            numericInput = ""
+                                        }
+                                    },
+                                    enabled = selectedIndex != null,
+                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                ) { Text("行取消", fontSize = 13.sp, maxLines = 1) }
                                 OutlinedButton(
                                     onClick = { selectedIndex?.let(onEdit) },
                                     enabled = selectedIndex != null,
@@ -1053,14 +1251,15 @@ private fun SalesScreen(
                                     enabled = cart.isNotEmpty(),
                                     modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
                                 ) { Text("値引・割引", fontSize = 13.sp, maxLines = 1) }
-                                Button(
-                                    onClick = onCancelTransaction,
+                                OutlinedButton(
+                                    onClick = { showProductSearch = true; lookupMessage = null },
                                     modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Color(0xFFFBE9E7),
-                                        contentColor = Danger,
-                                    ),
-                                ) { Text("取引中止", fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
+                                ) { Text("商品検索", fontSize = 13.sp, maxLines = 1) }
+                                TransactionAbortButtonV135(
+                                    items = cart,
+                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                    onAbortCommitted = onCancelTransaction,
+                                )
                             }
                         }
                     }
@@ -1102,7 +1301,12 @@ private fun SalesScreen(
                                     Spacer(Modifier.weight(1f).height(72.dp))
                                 } else {
                                     Button(
-                                        onClick = { onAddProduct(product) },
+                                        onClick = {
+                                            onAddProduct(product, pendingQuantity ?: 1)
+                                            pendingQuantity = null
+                                            numericInput = ""
+                                            lookupMessage = null
+                                        },
                                         modifier = Modifier.weight(1f).height(72.dp),
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = ProductButtonPalette.background(product.buttonColor),
@@ -1407,6 +1611,7 @@ private fun TicketListScreen(
     onDelete: (HeldTicket) -> Unit,
     onMerge: (HeldTicket, HeldTicket) -> Unit,
     onSplit: (HeldTicket) -> Unit,
+    onPrint: (HeldTicket) -> Unit,
     onBack: () -> Unit,
 ) {
     var editingTicketId by remember { mutableStateOf<Long?>(null) }
@@ -1531,7 +1736,7 @@ private fun TicketListScreen(
                           Column(Modifier.weight(1f)) {
                               Text(ticket.name, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Navy, maxLines = 1)
                               Text(
-                                  "${formatDate(ticket.createdAt)} / ${ticket.operatorName} / ${ticket.itemCount}点",
+                                  "${formatDate(ticket.createdAt)} / ${ticket.operatorName}${if (ticket.guestCount > 0) " / ${ticket.guestCount}名" else ""} / ${ticket.itemCount}点",
                                   color = Color.Gray,
                                   fontSize = 11.sp,
                                   maxLines = 1,
@@ -1578,6 +1783,10 @@ private fun TicketListScreen(
                                       maxLines = 1,
                                   )
                               }
+                              OutlinedButton(
+                                  onClick = { onPrint(ticket) },
+                                  modifier = Modifier.weight(0.9f).height(42.dp),
+                              ) { Text("仮締め", fontSize = 12.sp, maxLines = 1) }
                               BlueButton(
                                   if (currentCartCount > 0) "退避して呼出" else "呼出",
                                   { onLoad(ticket) },
@@ -1590,7 +1799,7 @@ private fun TicketListScreen(
                           Column(Modifier.weight(1f)) {
                               Text(ticket.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Navy)
                               Text(
-                                  "${formatDate(ticket.createdAt)} / 担当 ${ticket.operatorName} / ${ticket.itemCount}点",
+                                  "${formatDate(ticket.createdAt)} / 担当 ${ticket.operatorName}${if (ticket.guestCount > 0) " / ${ticket.guestCount}名" else ""} / ${ticket.itemCount}点",
                                   color = Color.Gray,
                               )
                           }
@@ -1621,6 +1830,11 @@ private fun TicketListScreen(
                                   fontWeight = FontWeight.Bold,
                               )
                           }
+                          Spacer(Modifier.width(8.dp))
+                          OutlinedButton(
+                              onClick = { onPrint(ticket) },
+                              modifier = Modifier.width(92.dp),
+                          ) { Text("仮締め") }
                           Spacer(Modifier.width(8.dp))
                           BlueButton(
                               if (currentCartCount > 0) "退避して呼出" else "呼出",
@@ -1976,13 +2190,27 @@ private fun PaymentScreen(
                 Spacer(Modifier.height(10.dp))
                 LazyColumn(Modifier.weight(1f)) {
                     itemsIndexed(items) { _, item ->
-                        AmountRow("${item.product.name} × ${item.quantity} ${item.product.taxSymbol}", yen(item.baseAmount))
+                        AmountRow(
+                            "${item.product.name} × ${item.quantity} ${item.product.taxSymbol}",
+                            yen(item.amountBeforeDiscount),
+                        )
+                        if (item.discountAmount > 0L) {
+                            AmountRow("  値引", "-${yen(item.discountAmount)}")
+                        }
                     }
                 }
+                AmountRow("商品計", yen(items.sumOf { it.baseAmount }))
                 summary.buckets.forEach { bucket ->
-                    val label = if (bucket.taxable) "${bucket.ratePercent}% 消費税" else "非課税"
-                    AmountRow(label, yen(bucket.taxAmount))
+                    if (bucket.taxable) {
+                        AmountRow(
+                            "${bucket.ratePercent}%対象",
+                            "${yen(bucket.grossAmount)} / 税 ${yen(bucket.taxAmount)}",
+                        )
+                    } else {
+                        AmountRow("非課税", yen(bucket.grossAmount))
+                    }
                 }
+                AmountRow("合計", yen(summary.grossAmount), emphasized = true)
                 if (mixed.hasMixedTax) {
                     val instruction = when (mixedPolicy) {
                         MixedTaxPolicy.ALLOW -> "設定により許可されています。税率単位で一度だけ端数処理します。"

@@ -2,6 +2,7 @@ package jp.co.tenposinfo.register
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 class DiscountPaymentEngineTest {
@@ -68,5 +69,44 @@ class DiscountPaymentEngineTest {
 
         assertEquals(700, state.paidAmount)
         assertEquals(300, state.remaining(1000))
+    }
+
+    @Test
+    fun otherPayment_canCompleteRemainingAmount() {
+        var state = PaymentState()
+        state = PaymentEngine.addPayment(state, 1000, PaymentMethod.CASH, 300)
+        state = PaymentEngine.addPayment(state, 1000, PaymentMethod.OTHER, 700)
+
+        assertEquals(1000, state.paidAmount)
+        assertEquals(0, state.remaining(1000))
+        assertEquals("その他", state.allocations.last().method.displayName)
+    }
+
+    @Test
+    fun nonCashPayment_rejectsOverpayInsteadOfClipping() {
+        val methods = listOf(
+            PaymentMethod.CARD,
+            PaymentMethod.GIFT_CERTIFICATE,
+            PaymentMethod.ACCOUNT_RECEIVABLE,
+            PaymentMethod.OTHER,
+        )
+
+        methods.forEach { method ->
+            try {
+                PaymentEngine.addPayment(PaymentState(), 1000, method, 1001)
+                fail("$method must reject overpay")
+            } catch (expected: IllegalArgumentException) {
+                assertTrue(expected.message.orEmpty().contains("must not exceed"))
+            }
+        }
+    }
+
+    @Test
+    fun cashPayment_allowsOverpayAndReturnsChange() {
+        val state = PaymentEngine.addPayment(PaymentState(), 1000, PaymentMethod.CASH, 10_000)
+
+        assertEquals(1000, state.paidAmount)
+        assertEquals(9000, state.changeAmount)
+        assertEquals(10_000, state.allocations.single().receivedAmount)
     }
 }

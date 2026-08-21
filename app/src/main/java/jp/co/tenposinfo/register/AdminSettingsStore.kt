@@ -20,6 +20,7 @@ enum class RegisterPermission(val displayName: String) {
     HOLD_TICKET("保留伝票"),
     VIEW_SALES("売上確認"),
     CASH_MOVEMENT("入出金"),
+    BUSINESS_START("営業開始"),
     X_INSPECTION("X点検"),
     Z_SETTLEMENT("Z精算"),
     SETTLEMENT("点検・精算（旧互換）"),
@@ -166,6 +167,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
 
     init {
         ensureSchema()
+        migrateBusinessStartPermissionV135()
         seedDefaults()
     }
 
@@ -677,6 +679,50 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             found
         }
         if (!exists) db.execSQL("ALTER TABLE printer_settings ADD COLUMN $name $declaration")
+    }
+
+    /**
+     * v1.35 BIZDAY-001: 営業開始権限をZ精算から分離する一度限りの互換移行。
+     * 旧版でZ精算権限を持っていた既存担当者には営業開始権限を一度だけコピーする。
+     * マーカー保存後は再実行しないため、管理者が営業開始権限だけ外しても再付与しない。
+     */
+    private fun migrateBusinessStartPermissionV135() {
+        val migrationKey = "BUSINESS_START_FROM_Z_V135"
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS register_permission_migrations_v135 (
+                migration_key TEXT PRIMARY KEY,
+                applied_at INTEGER NOT NULL
+            )
+            """.trimIndent(),
+        )
+        val applied = db.rawQuery(
+            "SELECT COUNT(*) FROM register_permission_migrations_v135 WHERE migration_key = ?",
+            arrayOf(migrationKey),
+        ).use { cursor -> cursor.moveToFirst() && cursor.getLong(0) > 0L }
+        if (applied) return
+
+        db.runInTransaction {
+            execSQL(
+                """
+                INSERT OR IGNORE INTO operator_permissions(operator_id, permission_key)
+                SELECT operator_id, '${RegisterPermission.BUSINESS_START.name}'
+                FROM operator_permissions
+                WHERE permission_key IN (
+                    '${RegisterPermission.Z_SETTLEMENT.name}',
+                    '${RegisterPermission.SETTLEMENT.name}'
+                )
+                """.trimIndent(),
+            )
+            insertOrThrow(
+                "register_permission_migrations_v135",
+                null,
+                ContentValues().apply {
+                    put("migration_key", migrationKey)
+                    put("applied_at", System.currentTimeMillis())
+                },
+            )
+        }
     }
 
     private fun seedDefaults() {

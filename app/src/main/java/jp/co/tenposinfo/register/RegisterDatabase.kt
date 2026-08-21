@@ -13,6 +13,7 @@ data class HeldTicket(
     val createdAt: Long,
     val itemCount: Int,
     val totalAmount: Long,
+    val guestCount: Int = 0,
 )
 
 class RegisterDatabase(context: Context) : SQLiteOpenHelper(
@@ -40,6 +41,12 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
         db.setForeignKeyConstraintsEnabled(true)
+    }
+
+    override fun onOpen(db: SQLiteDatabase) {
+        super.onOpen(db)
+        CartCorrectionSchemaV135.ensure(db)
+        SaleGuestCountRuntimeV135.ensureSchema(db)
     }
 
     fun loadProducts(): List<Product> {
@@ -92,6 +99,69 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         }
     }
 
+    fun loadCartCorrections(): List<CartCorrectionRecordV135> =
+        CartCorrectionSchemaV135.load(readableDatabase)
+
+    fun clearCartCorrections() {
+        writableDatabase.runInTransaction {
+            CartCorrectionSchemaV135.clear(this)
+        }
+    }
+
+    /**
+     * COR-002/COR-003: active cart rewrite and cancellation history append are committed atomically.
+     * Cancellation history is not part of [CartItem], so tax/payment/sale totals only see active rows.
+     */
+    fun applyCartCorrection(
+        targetIndex: Int,
+        cancelQuantity: Int,
+        correctionType: CartCorrectionTypeV135,
+        operatorName: String,
+    ): CartCorrectionResultV135 {
+        require(operatorName.isNotBlank()) { "担当者が必要です" }
+        return writableDatabase.runInTransactionWithResult {
+            val rawItems = query(
+                "cart_items",
+                CART_COLUMNS,
+                null,
+                null,
+                null,
+                null,
+                "line_no ASC",
+            ).use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) add(cursor.toCartItem())
+                }
+            }
+            val currentItems = LineTaxSnapshotStore.apply(
+                this,
+                LineTaxSnapshotStore.SCOPE_CART,
+                0L,
+                rawItems,
+            )
+            val result = CartCorrectionPolicyV135.apply(
+                items = currentItems,
+                targetIndex = targetIndex,
+                cancelQuantity = cancelQuantity,
+                correctionType = correctionType,
+                operatorName = operatorName,
+                createdAt = System.currentTimeMillis(),
+            )
+
+            delete("cart_items", null, null)
+            result.items.forEachIndexed { index, item ->
+                insertOrThrow(
+                    "cart_items",
+                    null,
+                    item.toContentValues().apply { put("line_no", index + 1) },
+                )
+            }
+            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_CART, 0L, result.items)
+            val historyId = CartCorrectionSchemaV135.insert(this, result.record)
+            result.copy(record = result.record.copy(id = historyId))
+        }
+    }
+
     fun holdCart(name: String, operatorName: String, items: List<CartItem>): Long {
         require(items.isNotEmpty()) { "Cannot hold an empty cart" }
         return writableDatabase.runInTransactionWithResult {
@@ -120,9 +190,11 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         readableDatabase.rawQuery(
             """
             SELECT t.id, t.name, t.operator_name, t.created_at,
-                   COALESCE(SUM(i.quantity), 0) AS item_count
+                   COALESCE(SUM(i.quantity), 0) AS item_count,
+                   COALESCE(MAX(g.guest_count), 0) AS guest_count
             FROM held_tickets t
             LEFT JOIN held_ticket_items i ON i.ticket_id = t.id
+            LEFT JOIN held_ticket_guest_count_v135 g ON g.ticket_id = t.id
             GROUP BY t.id, t.name, t.operator_name, t.created_at
             ORDER BY t.created_at DESC
             """.trimIndent(),
@@ -137,6 +209,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     operatorName = cursor.getString(2),
                     createdAt = cursor.getLong(3),
                     itemCount = cursor.getInt(4),
+                    guestCount = cursor.getInt(5),
                     totalAmount = TaxEngine.calculate(items).grossAmount,
                 )
             }
@@ -206,6 +279,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                         "scope = ? AND owner_id = ?",
                         arrayOf(LineTaxSnapshotStore.SCOPE_CART, "0"),
                     )
+                    CartCorrectionSchemaV135.clear(this)
                     return@runInTransactionWithResult existing.saleId
                 }
             }
@@ -286,6 +360,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 "scope = ? AND owner_id = ?",
                 arrayOf(LineTaxSnapshotStore.SCOPE_CART, "0"),
             )
+            CartCorrectionSchemaV135.clear(this)
             saleId
         }
     }
@@ -659,6 +734,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             unitPrice = getLong(2),
             discountAmount = getLong(6),
             note = getString(7),
+            lineId = getString(8),
         )
     }
 
@@ -671,6 +747,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         put("quantity", quantity)
         put("discount_amount", discountAmount)
         put("note", note)
+        put("line_id", lineId)
     }
 
     private fun createProductsTable(db: SQLiteDatabase) {
@@ -699,7 +776,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 display_order INTEGER NOT NULL,
                 quantity INTEGER NOT NULL,
                 discount_amount INTEGER NOT NULL DEFAULT 0,
-                note TEXT NOT NULL DEFAULT ''
+                note TEXT NOT NULL DEFAULT '',
+                line_id TEXT NOT NULL DEFAULT ''
             )
             """.trimIndent(),
         )
@@ -729,6 +807,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 quantity INTEGER NOT NULL,
                 discount_amount INTEGER NOT NULL DEFAULT 0,
                 note TEXT NOT NULL DEFAULT '',
+                line_id TEXT NOT NULL DEFAULT '',
                 FOREIGN KEY(ticket_id) REFERENCES held_tickets(id) ON DELETE CASCADE
             )
             """.trimIndent(),
@@ -880,6 +959,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             "quantity",
             "discount_amount",
             "note",
+            "line_id",
         )
 
         private val PRINT_JOB_COLUMNS = arrayOf(

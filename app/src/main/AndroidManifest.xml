@@ -34,6 +34,12 @@
             android:initOrder="140" />
 
         <provider
+            android:name=".MixedTaxCartBootstrapProviderV135"
+            android:authorities="${applicationId}.mixed-tax-cart-bootstrap-v135"
+            android:exported="false"
+            android:initOrder="139" />
+
+        <provider
             android:name=".CatalogBootstrapProvider"
             android:authorities="${applicationId}.catalog-bootstrap"
             android:exported="false"
@@ -132,6 +138,11 @@
 
         <activity
             android:name=".AdminSettingsActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".InitialReleaseSettingsActivityV135"
             android:exported="false"
             android:screenOrientation="landscape" />
 
@@ -264,6 +275,16 @@
 
         <activity
             android:name=".BusinessStartActivityV030"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".ManualReturnActivityV135"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".ManualRefundMethodActivityV135"
             android:exported="false"
             android:screenOrientation="landscape" />
 

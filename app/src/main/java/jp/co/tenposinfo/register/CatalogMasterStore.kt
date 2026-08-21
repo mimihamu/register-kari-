@@ -140,7 +140,8 @@ class CatalogMasterStore(context: Context) : AutoCloseable {
             SELECT p.id, p.name, b.base_price, b.base_tax_category,
                    m.department_id, m.group_id, COALESCE(m.enabled, 1),
                    COALESCE(m.button_color, 'BLUE'), COALESCE(m.page_no, 1),
-                   COALESCE(m.slot_no, p.display_order), p.display_order
+                   COALESCE(m.slot_no, p.display_order), p.display_order,
+                   COALESCE(m.kana, ''), COALESCE(m.barcode, '')
             FROM products p
             INNER JOIN catalog_product_base b ON b.product_id = p.id
             LEFT JOIN product_meta m ON m.product_id = p.id
@@ -162,6 +163,8 @@ class CatalogMasterStore(context: Context) : AutoCloseable {
                     pageNo = cursor.getInt(8),
                     slotNo = cursor.getInt(9),
                     displayOrder = cursor.getInt(10),
+                    kana = cursor.getString(11),
+                    barcode = cursor.getString(12),
                 )
             }
         }
@@ -181,15 +184,26 @@ class CatalogMasterStore(context: Context) : AutoCloseable {
         pageNo: Int,
         slotNo: Int,
         actor: String,
+        kana: String = "",
+        barcode: String = "",
     ) {
         val cleanId = CatalogValidation.requireCode(productId, "商品コード")
         val cleanName = CatalogValidation.requireName(name, "商品名")
+        val cleanKana = CatalogValidation.normalizeKana(kana)
+        val cleanBarcode = CatalogValidation.normalizeBarcode(barcode)
         require(basePrice in 0..99_999_999L) { "価格は0～99,999,999円です" }
         ButtonLayoutPolicy.validate(pageNo, slotNo)
         departmentId?.let { require(exists("catalog_departments", it)) { "部門が見つかりません" } }
         groupId?.let { require(exists("catalog_groups", it)) { "グループが見つかりません" } }
         val cleanColor = buttonColor.uppercase().takeIf { it in BUTTON_COLORS } ?: "BLUE"
         require(originalId == null || originalId == cleanId) { "登録後の商品コードは変更できません" }
+        if (cleanBarcode.isNotBlank()) {
+            val owner = db.rawQuery(
+                "SELECT product_id FROM product_meta WHERE barcode = ? AND product_id <> ? LIMIT 1",
+                arrayOf(cleanBarcode, cleanId),
+            ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+            require(owner == null) { "このバーコードは商品 $owner で使用されています" }
+        }
 
         db.transaction {
             val exists = longQuery(this, "SELECT COUNT(*) FROM products WHERE id = ?", arrayOf(cleanId)) > 0
@@ -238,21 +252,22 @@ class CatalogMasterStore(context: Context) : AutoCloseable {
                     arrayOf(occupied),
                 )
             }
-            insertWithOnConflict(
-                "product_meta",
-                null,
-                ContentValues().apply {
-                    put("product_id", cleanId)
-                    if (departmentId == null) putNull("department_id") else put("department_id", departmentId)
-                    if (groupId == null) putNull("group_id") else put("group_id", groupId)
-                    put("enabled", if (enabled) 1 else 0)
-                    put("button_color", cleanColor)
-                    put("page_no", pageNo)
-                    put("slot_no", slotNo)
-                    put("updated_at", System.currentTimeMillis())
-                },
-                SQLiteDatabase.CONFLICT_REPLACE,
-            )
+            val metaValues = ContentValues().apply {
+                if (departmentId == null) putNull("department_id") else put("department_id", departmentId)
+                if (groupId == null) putNull("group_id") else put("group_id", groupId)
+                put("enabled", if (enabled) 1 else 0)
+                put("button_color", cleanColor)
+                put("page_no", pageNo)
+                put("slot_no", slotNo)
+                put("kana", cleanKana)
+                put("barcode", cleanBarcode)
+                put("updated_at", System.currentTimeMillis())
+            }
+            val updatedMeta = update("product_meta", metaValues, "product_id = ?", arrayOf(cleanId))
+            if (updatedMeta == 0) {
+                metaValues.put("product_id", cleanId)
+                insertOrThrow("product_meta", null, metaValues)
+            }
             bumpRevision(this)
             insertAudit(this, if (exists) "PRODUCT_UPDATED" else "PRODUCT_CREATED", 0, "$cleanId / $cleanName / ${basePrice}円 / ${taxCategory.displayName}", actor)
         }
@@ -553,9 +568,17 @@ object CatalogSchema {
                 button_color TEXT NOT NULL DEFAULT 'BLUE',
                 page_no INTEGER NOT NULL DEFAULT 1,
                 slot_no INTEGER NOT NULL DEFAULT 1,
+                kana TEXT NOT NULL DEFAULT '',
+                barcode TEXT NOT NULL DEFAULT '',
                 updated_at INTEGER NOT NULL
             )
             """.trimIndent(),
+        )
+        ensureColumn(db, "product_meta", "kana", "TEXT NOT NULL DEFAULT ''")
+        ensureColumn(db, "product_meta", "barcode", "TEXT NOT NULL DEFAULT ''")
+        db.execSQL(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_product_meta_barcode_unique " +
+                "ON product_meta(barcode) WHERE barcode <> ''",
         )
         db.execSQL(
             """
@@ -675,6 +698,21 @@ object CatalogSchema {
             VALUES('DEFAULT','通常営業',1,0,0,0,1,$now,$now)
             """.trimIndent(),
         )
+    }
+
+    private fun ensureColumn(db: SQLiteDatabase, table: String, column: String, definition: String) {
+        val exists = db.rawQuery("PRAGMA table_info($table)", null).use { cursor ->
+            val nameIndex = cursor.getColumnIndexOrThrow("name")
+            var found = false
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameIndex) == column) {
+                    found = true
+                    break
+                }
+            }
+            found
+        }
+        if (!exists) db.execSQL("ALTER TABLE $table ADD COLUMN $column $definition")
     }
 
     private fun scalar(db: SQLiteDatabase, sql: String): Long =

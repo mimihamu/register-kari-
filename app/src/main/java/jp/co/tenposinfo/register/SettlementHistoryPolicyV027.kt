@@ -63,6 +63,9 @@ object SettlementSnapshotSchemaV027 {
             "CREATE INDEX IF NOT EXISTS idx_settlement_payment_report " +
                 "ON settlement_payment_totals(report_id, sequence_no)",
         )
+        // v1.35 REP-004 extends the legacy normalized header/tender snapshot with immutable
+        // metrics/tax/issuer sidecars and a canonical JSON snapshot.
+        SettlementSnapshotSchemaV135.ensure(db)
     }
 
     fun savePaymentTotals(
@@ -83,6 +86,9 @@ object SettlementSnapshotSchemaV027 {
                 },
             )
         }
+        // This call runs on the same SQLiteDatabase and therefore in the same transaction as the
+        // settlement row, business-session close, audit and print job created by OperationsStore.
+        SettlementSnapshotSchemaV135.save(db, reportId, totals)
     }
 
     fun loadPaymentTotals(db: SQLiteDatabase, reportId: Long): List<PaymentTotal> =
