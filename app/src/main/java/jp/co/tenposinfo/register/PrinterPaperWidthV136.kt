@@ -19,6 +19,8 @@ object PrinterPaperWidthTestV136 {
         append("58/80mm 文書レイアウトテスト\n")
         append("選択用紙 ${paper.widthMm}mm / 論理幅 ${paper.charsPerLine}桁\n")
         append("生成 $generatedAt\n")
+        append(PrinterProfilePrintabilityV136.diagnosticText())
+        append('\n')
         PrinterPaperTestDocumentV136.entries.forEachIndexed { index, document ->
             if (index > 0) append('\n')
             append(buildDocument(document, paper))
