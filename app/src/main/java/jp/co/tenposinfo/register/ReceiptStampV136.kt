@@ -402,7 +402,66 @@ class ReceiptStampSettingsStoreV136(context: Context) {
     }
 }
 
-/** 売上レシートだけにSCR-720画像スタンプを先頭付加する。業務帳票へは付加しない。 */
+/**
+ * EscPosEncoderは複数部を1 payloadへ連結するため、各部のPrinterCommandEncoder.beginDocument()
+ * (`ESC @`, `ESC t`) の直前へ同じ画像スタンプを差し込む。カット設定NONEでも部数を失わない。
+ */
+object ReceiptStampPayloadComposerV136 {
+    private val documentMarker = byteArrayOf(0x1B, 0x40, 0x1B, 0x74)
+
+    fun prependToEachDocument(payload: ByteArray, prefix: ByteArray): ByteArray {
+        if (prefix.isEmpty() || payload.isEmpty()) return payload.copyOf()
+        val starts = mutableListOf<Int>()
+        var index = 0
+        while (index <= payload.size - documentMarker.size) {
+            if (matches(payload, index, documentMarker)) {
+                starts += index
+                index += documentMarker.size
+            } else {
+                index++
+            }
+        }
+        if (starts.isEmpty()) {
+            val output = ByteArrayOutputStream(prefix.size + payload.size)
+            output.write(prefix)
+            output.write(payload)
+            return output.toByteArray()
+        }
+
+        val output = ByteArrayOutputStream(payload.size + prefix.size * starts.size)
+        var cursor = 0
+        starts.forEach { start ->
+            output.write(payload, cursor, start - cursor)
+            output.write(prefix)
+            cursor = start
+        }
+        output.write(payload, cursor, payload.size - cursor)
+        return output.toByteArray()
+    }
+
+    fun countDocuments(payload: ByteArray): Int {
+        var count = 0
+        var index = 0
+        while (index <= payload.size - documentMarker.size) {
+            if (matches(payload, index, documentMarker)) {
+                count++
+                index += documentMarker.size
+            } else {
+                index++
+            }
+        }
+        return count
+    }
+
+    private fun matches(payload: ByteArray, offset: Int, marker: ByteArray): Boolean {
+        for (i in marker.indices) {
+            if (payload[offset + i] != marker[i]) return false
+        }
+        return true
+    }
+}
+
+/** 売上レシートだけにSCR-720画像スタンプを各印刷部の先頭へ付加する。業務帳票へは付加しない。 */
 class ReceiptStampGatewayV136(
     context: Context,
     private val delegate: PrinterGateway,
@@ -413,7 +472,8 @@ class ReceiptStampGatewayV136(
 
     override fun send(payload: ByteArray): Result<Unit> = runCatching {
         val prefix = store.printPrefix(paper)
-        delegate.send(prefix + payload).getOrThrow()
+        val composed = ReceiptStampPayloadComposerV136.prependToEachDocument(payload, prefix)
+        delegate.send(composed).getOrThrow()
     }
 }
 
