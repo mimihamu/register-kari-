@@ -472,14 +472,20 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
                 port = configuration.port,
                 waitMillis = configuration.timeoutMillis.toLong(),
             ) {
-                val gateway = TcpEscPosPrinterGateway(
+                val rawGateway = TcpEscPosPrinterGateway(
                     host = configuration.host,
                     port = configuration.port,
                     timeoutMillis = configuration.timeoutMillis,
                 )
                 when (job.type) {
-                    UnifiedPrintJobType.SALE_RECEIPT ->
-                        printSaleJob(job, configuration, gateway).getOrThrow()
+                    UnifiedPrintJobType.SALE_RECEIPT -> {
+                        val receiptGateway = ReceiptStampGatewayV136(
+                            context = applicationContext,
+                            delegate = rawGateway,
+                            paperWidthMm = job.paperWidthMm,
+                        )
+                        printSaleJob(job, configuration, receiptGateway).getOrThrow()
+                    }
 
                     UnifiedPrintJobType.REVERSAL_RECEIPT,
                     UnifiedPrintJobType.HELD_TICKET_PROVISIONAL,
@@ -492,7 +498,7 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
                         if (!UnifiedPrintJobActionPolicy.mayPrint(current.status)) {
                             throw IllegalStateException(printabilityError(current.status))
                         }
-                        documentStore.processDocumentPrint(job.sourceId, gateway).getOrThrow()
+                        documentStore.processDocumentPrint(job.sourceId, rawGateway).getOrThrow()
                         "${job.type.displayName}を送信しました（Job.${job.sourceId}）"
                     }
                 }
