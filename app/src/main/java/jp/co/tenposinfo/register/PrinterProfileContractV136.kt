@@ -30,7 +30,6 @@ data class PrinterProfileSnapshotV136(
     init {
         require(printerId.isNotBlank())
         require(name.isNotBlank())
-        require(address.isNotBlank())
         require(paperWidthMm == 58 || paperWidthMm == 80)
         require(printableDotWidth > 0)
         require(logicalColumns > 0)
@@ -63,13 +62,15 @@ object PrinterProfileContractV136 {
             printerId = SINGLE_PRINTER_ID,
             name = configuration.name.trim().ifBlank { "レシートプリンター" },
             connectionType = PrinterConnectionTypeV136.TCP_9100,
-            address = "${configuration.host.trim()}:${configuration.port}",
+            address = configuration.host.trim().let { host ->
+                if (host.isBlank()) "" else "$host:${configuration.port}"
+            },
             paperWidthMm = paper.widthMm,
             printableDotWidth = when (paper) {
                 ReceiptPaper.MM58 -> MM58_STANDARD_DOTS
                 ReceiptPaper.MM80 -> MM80_STANDARD_DOTS
             },
-            logicalColumns = paper.columns,
+            logicalColumns = paper.charsPerLine,
             encoding = configuration.profile.charsetName,
             supportsCut = supportsCut,
             cutMode = if (supportsCut) configuration.cutMode else PrinterCutMode.NONE,
@@ -86,13 +87,12 @@ object PrinterProfileContractV136 {
             else -> return false
         }
         val expectedColumns = when (snapshot.paperWidthMm) {
-            58 -> ReceiptPaper.MM58.columns
-            80 -> ReceiptPaper.MM80.columns
+            58 -> ReceiptPaper.MM58.charsPerLine
+            80 -> ReceiptPaper.MM80.charsPerLine
             else -> return false
         }
         return snapshot.printerId.isNotBlank() &&
             snapshot.name.isNotBlank() &&
-            snapshot.address.isNotBlank() &&
             snapshot.printableDotWidth == expectedDots &&
             snapshot.logicalColumns == expectedColumns &&
             snapshot.encoding.isNotBlank() &&
