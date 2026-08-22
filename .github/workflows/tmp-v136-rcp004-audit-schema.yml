@@ -1,0 +1,33 @@
+name: tmp v1.36 RCP-004 audit schema
+on:
+  push:
+    branches: [develop/v1.36]
+    paths: [.github/workflows/tmp-v136-rcp004-audit-schema.yml]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.36
+      - name: Patch audit ensure
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt')
+          text = p.read_text()
+          old = '''        return writableDatabase.runInTransactionWithResult {\n            val previousReprintCount = query(\n'''
+          new = '''        return writableDatabase.runInTransactionWithResult {\n            OperationAuditSchemaV136.ensure(this)\n            val previousReprintCount = query(\n'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one match, got {text.count(old)}')
+          p.write_text(text.replace(old, new, 1))
+          PY
+          rm .github/workflows/tmp-v136-rcp004-audit-schema.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt .github/workflows/tmp-v136-rcp004-audit-schema.yml
+          git commit -m 'fix: guard v1.36 RCP-004 reissue audit schema'
+          git push origin HEAD:develop/v1.36
