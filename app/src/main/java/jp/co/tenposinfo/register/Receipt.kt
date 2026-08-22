@@ -156,13 +156,13 @@ object ReceiptRenderer {
 
         data.items.forEach { item ->
             val symbol = ReceiptTaxSymbolV136.fromProduct(item.product)
-            lines += fit("${item.product.name} [$symbol]", width)
+            lines.addAll(ReceiptLineWrapV136.wrap("${item.product.name} [$symbol]", width))
             val amount = item.baseAmount
             lines += amountLine("${item.quantity} × ${yen(item.unitPrice)}", yen(amount), width)
             if (item.discountAmount > 0) {
                 lines += amountLine("  値引", "-${yen(item.discountAmount)}", width)
             }
-            if (item.note.isNotBlank()) lines += fit("  ※${item.note}", width)
+            if (item.note.isNotBlank()) lines.addAll(ReceiptLineWrapV136.wrap("  ※${item.note}", width))
         }
 
         lines += separator(width, '-')
