@@ -9,9 +9,9 @@ class V136PrinterPaperWidthSelectionTest {
     @Test
     fun formalPaperWidthsMapToReceiptColumns() {
         assertEquals(58, ReceiptPaper.fromWidth(58).widthMm)
-        assertEquals(32, ReceiptPaper.fromWidth(58).columns)
+        assertEquals(32, ReceiptPaper.fromWidth(58).charsPerLine)
         assertEquals(80, ReceiptPaper.fromWidth(80).widthMm)
-        assertEquals(48, ReceiptPaper.fromWidth(80).columns)
+        assertEquals(48, ReceiptPaper.fromWidth(80).charsPerLine)
     }
 
     @Test
@@ -45,9 +45,10 @@ class V136PrinterPaperWidthSelectionTest {
         val database = File("src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt").readText()
         val receipt = File("src/main/java/jp/co/tenposinfo/register/Receipt.kt").readText()
 
-        assertTrue(database.contains("paper_width_mm INTEGER NOT NULL DEFAULT 80"))
-        assertTrue(database.contains("paperWidthMm = printerPaperWidthMm"))
-        assertTrue(receipt.contains("configuration.copy(paperWidthMm = job.paperWidthMm)"))
+        assertTrue(database.contains("insertPrintJob(this, saleId, paperWidthMm, createdAt)"))
+        assertTrue(database.contains("put(\"paper_width_mm\", if (paperWidthMm >= 80) 80 else 58)"))
+        assertTrue(receipt.contains("paperWidthMm = job.paperWidthMm"))
+        assertTrue(receipt.contains("EscPosEncoder.encode(configuredReceipt, configuredSnapshot)"))
     }
 
     @Test
