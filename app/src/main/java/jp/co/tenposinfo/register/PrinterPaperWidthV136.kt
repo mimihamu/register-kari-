@@ -17,7 +17,7 @@ enum class PrinterPaperTestDocumentV136(val displayName: String) {
 object PrinterPaperWidthTestV136 {
     fun buildAll(paper: ReceiptPaper, generatedAt: String): String = buildString {
         append("58/80mm 文書レイアウトテスト\n")
-        append("選択用紙 ${paper.widthMm}mm / 論理幅 ${paper.columns}桁\n")
+        append("選択用紙 ${paper.widthMm}mm / 論理幅 ${paper.charsPerLine}桁\n")
         append("生成 $generatedAt\n")
         PrinterPaperTestDocumentV136.entries.forEachIndexed { index, document ->
             if (index > 0) append('\n')
@@ -27,17 +27,17 @@ object PrinterPaperWidthTestV136 {
 
     fun buildDocument(document: PrinterPaperTestDocumentV136, paper: ReceiptPaper): String = buildString {
         val separator = separator(paper)
-        append("[${document.displayName}] ${paper.widthMm}mm / ${paper.columns}桁\n")
+        append("[${document.displayName}] ${paper.widthMm}mm / ${paper.charsPerLine}桁\n")
         append(separator).append('\n')
         append(sampleLine(document)).append('\n')
         append(ruler(paper)).append('\n')
         append(separator).append('\n')
     }
 
-    fun separator(paper: ReceiptPaper): String = "-".repeat(paper.columns)
+    fun separator(paper: ReceiptPaper): String = "-".repeat(paper.charsPerLine)
 
-    fun ruler(paper: ReceiptPaper): String = buildString(paper.columns) {
-        for (index in 1..paper.columns) append(index % 10)
+    fun ruler(paper: ReceiptPaper): String = buildString(paper.charsPerLine) {
+        for (index in 1..paper.charsPerLine) append(index % 10)
     }
 
     private fun sampleLine(document: PrinterPaperTestDocumentV136): String = when (document) {
