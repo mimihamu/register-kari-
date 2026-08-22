@@ -506,6 +506,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         // 売上確定時刻より必ず後の作成時刻を持たせ、登録操作を監査記録と同一transactionで確定する。
         val now = maxOf(System.currentTimeMillis(), detail.summary.createdAt + 1L)
         return writableDatabase.runInTransactionWithResult {
+            OperationAuditSchemaV136.ensure(this)
             val previousReprintCount = query(
                 "operation_audit",
                 arrayOf("COUNT(*)"),
