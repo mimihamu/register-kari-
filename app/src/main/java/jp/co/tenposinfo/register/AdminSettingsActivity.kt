@@ -253,6 +253,8 @@ private fun AdminMenuScreen(
                 AsValueRow("接続先", if (printer.host.isBlank()) "－" else "${printer.host}:${printer.port}")
                 AsValueRow("機種", printer.profile.displayName)
                 AsValueRow("用紙幅", "${printer.paperWidthMm}mm")
+                AsValueRow("印字幅", "${printer.printableDotWidth}dot")
+                AsValueRow("紙送り", "${printer.feedLines}行")
                 AsValueRow("ドロア", if (printer.drawerEnabled) "DK${printer.drawerPort + 1} 有効" else "無効")
                 AsValueRow("監査ログ", "${auditCount}件")
                     Spacer(Modifier.height(10.dp))
@@ -481,6 +483,8 @@ private fun PrinterSettingsScreen(
     var host by remember { mutableStateOf(initial.host) }
     var port by remember { mutableStateOf(initial.port.toString()) }
     var paperWidth by remember { mutableStateOf(initial.paperWidthMm) }
+    var printableDotWidth by remember { mutableStateOf(initial.printableDotWidth.toString()) }
+    var feedLines by remember { mutableStateOf(initial.feedLines.toString()) }
     var timeout by remember { mutableStateOf(initial.timeoutMillis.toString()) }
     var enabled by remember { mutableStateOf(initial.enabled) }
     var receiptAutoPrint by remember { mutableStateOf(initial.receiptAutoPrintEnabled) }
@@ -501,6 +505,8 @@ private fun PrinterSettingsScreen(
         host = host,
         port = port.toIntOrNull() ?: 0,
         paperWidthMm = paperWidth,
+        printableDotWidth = printableDotWidth.toIntOrNull() ?: 0,
+        feedLines = feedLines.toIntOrNull() ?: 0,
         timeoutMillis = timeout.toIntOrNull() ?: 0,
         enabled = enabled,
         receiptAutoPrintEnabled = receiptAutoPrint,
@@ -512,6 +518,11 @@ private fun PrinterSettingsScreen(
         drawerOnMillis = drawerOnMillis.toIntOrNull() ?: 0,
         drawerOffMillis = drawerOffMillis.toIntOrNull() ?: 0,
     )
+
+    fun selectPaper(widthMm: Int) {
+        paperWidth = widthMm
+        printableDotWidth = PrinterProfileContractV136.standardPrintableDotWidth(widthMm).toString()
+    }
 
     fun executeTest(kind: String, action: suspend (PrinterConfiguration) -> Result<Unit>) {
         val config = currentConfiguration()
@@ -587,10 +598,29 @@ private fun PrinterSettingsScreen(
                     Spacer(Modifier.height(8.dp))
                     DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled = receiptAutoPrint)
                     Spacer(Modifier.height(8.dp))
-                    Text("用紙幅・カット", fontWeight = FontWeight.Bold, color = AsNavy)
+                    Text("用紙幅・印字幅・紙送り・カット", fontWeight = FontWeight.Bold, color = AsNavy)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        AsChoiceButton("58mm", paperWidth == 58, Modifier.weight(1f)) { paperWidth = 58 }
-                        AsChoiceButton("80mm", paperWidth == 80, Modifier.weight(1f)) { paperWidth = 80 }
+                        AsChoiceButton("58mm", paperWidth == 58, Modifier.weight(1f)) { selectPaper(58) }
+                        AsChoiceButton("80mm", paperWidth == 80, Modifier.weight(1f)) { selectPaper(80) }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = printableDotWidth,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("印字可能幅 dot（用紙幅連動）") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = feedLines,
+                            onValueChange = { feedLines = it.filter(Char::isDigit).take(1) },
+                            label = { Text("カット前紙送り行数") },
+                            supportingText = { Text("${PrinterProfileContractV136.MIN_FEED_LINES}～${PrinterProfileContractV136.MAX_FEED_LINES}行") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         PrinterCutMode.entries.forEach { candidate ->
@@ -640,11 +670,20 @@ private fun PrinterSettingsScreen(
                     Button(
                         onClick = {
                             val config = currentConfiguration()
-                            val result = runCatching { store.savePrinterConfiguration(config, actorName) }
+                            val result = runCatching {
+                                store.savePrinterConfiguration(config, actorName)
+                                val reloaded = store.loadPrinterConfiguration()
+                                require(reloaded.printableDotWidth == config.printableDotWidth && reloaded.feedLines == config.feedLines) {
+                                    "プリンタープロファイルの保存後再読込に失敗しました"
+                                }
+                                reloaded
+                            }
                             message = result.fold(
-                                onSuccess = {
+                                onSuccess = { reloaded ->
+                                    printableDotWidth = reloaded.printableDotWidth.toString()
+                                    feedLines = reloaded.feedLines.toString()
                                     PrinterConfigurationRegistry.reload(context.applicationContext)
-                                    "設定を保存しました"
+                                    "設定を保存し、再読込を確認しました"
                                 },
                                 onFailure = { it.message ?: "保存に失敗しました" },
                             )
@@ -677,6 +716,8 @@ private fun PrinterSettingsScreen(
                 AsValueRow("機種", profile.displayName)
                 AsValueRow("接続", "${host.ifBlank { "未設定" }}:${port.ifBlank { "9100" }}")
                 AsValueRow("用紙", "${paperWidth}mm")
+                AsValueRow("印字可能幅", "${printableDotWidth.ifBlank { "－" }}dot")
+                AsValueRow("カット前紙送り", "${feedLines.ifBlank { "－" }}行")
                 AsValueRow("レシート自動発行", if (receiptAutoPrint) "ON" else "OFF（後レシート可）")
                 AsValueRow("カット", cutMode.displayName)
                 AsValueRow("ドロア", if (drawerEnabled) "DK${drawerPort + 1}" else "無効")
