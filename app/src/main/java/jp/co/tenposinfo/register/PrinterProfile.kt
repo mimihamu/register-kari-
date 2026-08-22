@@ -86,7 +86,10 @@ object PrinterCommandEncoder {
         }
         output.write(text.toByteArray(Charset.forName(configuration.profile.charsetName)))
         if (appendCut) {
-            output.write(byteArrayOf(0x0A, 0x0A, 0x0A))
+            require(configuration.feedLines in PrinterProfileContractV136.MIN_FEED_LINES..PrinterProfileContractV136.MAX_FEED_LINES) {
+                "紙送り行数は${PrinterProfileContractV136.MIN_FEED_LINES}～${PrinterProfileContractV136.MAX_FEED_LINES}行で指定してください"
+            }
+            repeat(configuration.feedLines) { output.write(0x0A) }
             output.write(cutCommand(configuration.cutMode))
         }
         return output.toByteArray()
