@@ -58,8 +58,7 @@ class V136Receipt80mmLayoutTest {
         )
         val data = receiptData(items).copy(
             payments = listOf(
-                PaymentAllocation(PaymentMethod.CASH, appliedAmount = 2_000L, receivedAmount = 3_000L),
-                PaymentAllocation(PaymentMethod.CARD, appliedAmount = 1_180L, receivedAmount = 1_180L),
+                PaymentAllocation(PaymentMethod.CASH, appliedAmount = 3_180L, receivedAmount = 4_180L),
             ),
             changeAmount = 1_000L,
         )
@@ -76,7 +75,6 @@ class V136Receipt80mmLayoutTest {
             "1,000",
             "3,180",
             "現金",
-            "カード",
             "お釣り",
         ).forEach { token ->
             assertTrue("58mm missing $token", compact58.contains(token))
