@@ -244,6 +244,7 @@ fun DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled: Boolean) {
     var copies by remember(selected, revision) { mutableIntStateOf(loaded.copies) }
     var header by remember(selected, revision) { mutableStateOf(loaded.header) }
     var footer by remember(selected, revision) { mutableStateOf(loaded.footer) }
+    var previewPaper by remember { mutableStateOf(ReceiptPaper.MM58) }
     var message by remember { mutableStateOf("") }
     val effectiveAutoPrint = if (selected == DocumentPrintKindV136.SALE_RECEIPT) {
         receiptAutoPrintEnabled
@@ -254,6 +255,15 @@ fun DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled: Boolean) {
         runCatching { ReceiptFooterMessagePolicyV136.normalizeForSave(footer) }
     } else {
         Result.success(footer)
+    }
+    val draftSetting = DocumentPrintSettingV136(
+        autoPrintEnabled = effectiveAutoPrint,
+        copies = copies,
+        header = header,
+        footer = footer,
+    )
+    val previewResult = runCatching {
+        DocumentPrintPreviewV136.render(selected, draftSetting, previewPaper)
     }
 
     Column(Modifier.fillMaxWidth()) {
@@ -336,21 +346,43 @@ fun DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled: Boolean) {
             receiptFooterValidation.exceptionOrNull()?.message?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
-            receiptFooterValidation.getOrNull()?.let { validFooter ->
-                Text("58mmプレビュー", fontWeight = FontWeight.Bold)
-                Text(
-                    ReceiptFooterMessagePolicyV136.preview(validFooter, ReceiptPaper.MM58).ifBlank { "（印字なし）" },
-                    fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Text("80mmプレビュー", fontWeight = FontWeight.Bold)
-                Text(
-                    ReceiptFooterMessagePolicyV136.preview(validFooter, ReceiptPaper.MM80).ifBlank { "（印字なし）" },
-                    fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
         }
+
+        Spacer(Modifier.height(8.dp))
+        Text("印刷プレビュー（SCR-640・保存前）", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text("編集中のヘッダ・フッタを保存せず確認できます。", style = MaterialTheme.typography.bodySmall)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = { previewPaper = ReceiptPaper.MM58 },
+                modifier = Modifier.weight(1f),
+            ) { Text(if (previewPaper == ReceiptPaper.MM58) "● 58mm" else "58mm") }
+            OutlinedButton(
+                onClick = { previewPaper = ReceiptPaper.MM80 },
+                modifier = Modifier.weight(1f),
+            ) { Text(if (previewPaper == ReceiptPaper.MM80) "● 80mm" else "80mm") }
+        }
+        Text(
+            "${previewPaper.widthMm}mm / ${previewPaper.charsPerLine}論理桁 / ${DocumentPrintPreviewV136.previewDotWidth(previewPaper)}dot標準",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Bold,
+        )
+        previewResult.fold(
+            onSuccess = { preview ->
+                Text(
+                    preview.ifBlank { "（印字内容なし）" },
+                    fontFamily = FontFamily.Monospace,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            },
+            onFailure = { error ->
+                Text(
+                    error.message ?: "プレビューを生成できませんでした",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            },
+        )
+
         Spacer(Modifier.height(6.dp))
         Button(
             onClick = {
