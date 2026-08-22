@@ -22,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
@@ -44,23 +45,143 @@ data class DocumentPrintSettingV136(
     val footer: String = "",
 )
 
+/**
+ * 正式仕様 v2.5 §8.2 / §16.2 のレシート末尾文を一つの制約へ集約する。
+ *
+ * §8.2 は footerMessage の各行を 0～64 文字、§16.2 は印刷設定として最大10行とする。
+ * Issue #137 #26 の旧「最大12行」は採用しない。中央寄せは従来チェックリストとの互換として
+ * レンダリング規則に残すが、保存上限は正式仕様を優先する。
+ */
+object ReceiptFooterMessagePolicyV136 {
+    const val MAX_LOGICAL_LINES = 10
+    const val MAX_CODE_POINTS_PER_LINE = 64
+    const val DEFAULT_MESSAGE = "ありがとうございました"
+
+    fun cleanInput(value: String): String = buildString {
+        value.replace("\r\n", "\n").replace('\r', '\n').forEach { char ->
+            when {
+                char == '\n' -> append(char)
+                char == '\t' -> append(' ')
+                !char.isISOControl() -> append(char)
+            }
+        }
+    }
+
+    fun lineCount(value: String): Int {
+        val clean = cleanInput(value)
+        return if (clean.isEmpty()) 0 else clean.split('\n').size
+    }
+
+    fun normalizeForSave(value: String): String {
+        val clean = cleanInput(value)
+        if (clean.isBlank()) return ""
+        val lines = clean.split('\n')
+        require(lines.size <= MAX_LOGICAL_LINES) {
+            "レシート店舗固定文は最大${MAX_LOGICAL_LINES}行です"
+        }
+        val normalized = lines.mapIndexed { index, line ->
+            val trimmed = line.trim()
+            require(codePointCount(trimmed) <= MAX_CODE_POINTS_PER_LINE) {
+                "レシート店舗固定文の${index + 1}行目は${MAX_CODE_POINTS_PER_LINE}文字以内です"
+            }
+            trimmed
+        }
+        return normalized.joinToString("\n").trimEnd()
+    }
+
+    /**
+     * v1.36導入前のRCP-016設定は全文200文字までで、行数制約がなかった。
+     * 既存値を読み込めなくしないため、旧値だけは内容を保ったまま64文字単位へ再配置する。
+     */
+    fun migrateLegacy(value: String): String = runCatching {
+        normalizeForSave(value)
+    }.getOrElse {
+        val collapsed = cleanInput(value)
+            .lineSequence()
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .joinToString(" ")
+        if (collapsed.isBlank()) return@getOrElse ""
+        val chunks = chunkByCodePoints(collapsed, MAX_CODE_POINTS_PER_LINE)
+        require(chunks.size <= MAX_LOGICAL_LINES) {
+            "旧レシート店舗固定文を${MAX_LOGICAL_LINES}行以内へ移行できません"
+        }
+        chunks.joinToString("\n")
+    }
+
+    fun renderLines(value: String, paper: ReceiptPaper): List<String> {
+        val normalized = migrateLegacy(value)
+        if (normalized.isBlank()) return emptyList()
+        return normalized.split('\n').flatMap { logicalLine ->
+            val wrapped = if (logicalLine.isBlank()) {
+                listOf("")
+            } else {
+                ReceiptLineWrapV136.wrap(logicalLine, paper.charsPerLine)
+            }
+            wrapped.map { center(it, paper.charsPerLine) }
+        }
+    }
+
+    fun preview(value: String, paper: ReceiptPaper): String =
+        renderLines(value, paper).joinToString("\n")
+
+    private fun center(value: String, width: Int): String {
+        val logicalWidth = ReceiptLineWrapV136.displayWidth(value)
+        val leftPadding = ((width - logicalWidth) / 2).coerceAtLeast(0)
+        return " ".repeat(leftPadding) + value
+    }
+
+    private fun codePointCount(value: String): Int = value.codePointCount(0, value.length)
+
+    private fun chunkByCodePoints(value: String, maxCodePoints: Int): List<String> {
+        if (value.isEmpty()) return emptyList()
+        val result = mutableListOf<String>()
+        var start = 0
+        while (start < value.length) {
+            val remaining = value.codePointCount(start, value.length)
+            val count = minOf(maxCodePoints, remaining)
+            val end = value.offsetByCodePoints(start, count)
+            result += value.substring(start, end)
+            start = end
+        }
+        return result
+    }
+}
+
 class DocumentPrintSettingsStoreV136(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences(
         "document_print_settings_v136",
         Context.MODE_PRIVATE,
     )
 
-    fun load(kind: DocumentPrintKindV136): DocumentPrintSettingV136 = DocumentPrintSettingV136(
-        autoPrintEnabled = preferences.getBoolean("${kind.storageKey}.auto", kind.defaultAutoPrint),
-        copies = DocumentPrintSettingsPolicyV136.normalizeCopies(
-            kind,
-            preferences.getInt("${kind.storageKey}.copies", 1),
-        ),
-        header = preferences.getString("${kind.storageKey}.header", "").orEmpty(),
-        footer = preferences.getString("${kind.storageKey}.footer", "").orEmpty(),
-    )
+    fun load(kind: DocumentPrintKindV136): DocumentPrintSettingV136 {
+        val defaultFooter = if (kind == DocumentPrintKindV136.SALE_RECEIPT) {
+            ReceiptFooterMessagePolicyV136.DEFAULT_MESSAGE
+        } else {
+            ""
+        }
+        val storedFooter = preferences.getString("${kind.storageKey}.footer", defaultFooter).orEmpty()
+        return DocumentPrintSettingV136(
+            autoPrintEnabled = preferences.getBoolean("${kind.storageKey}.auto", kind.defaultAutoPrint),
+            copies = DocumentPrintSettingsPolicyV136.normalizeCopies(
+                kind,
+                preferences.getInt("${kind.storageKey}.copies", 1),
+            ),
+            header = preferences.getString("${kind.storageKey}.header", "").orEmpty(),
+            footer = if (kind == DocumentPrintKindV136.SALE_RECEIPT) {
+                ReceiptFooterMessagePolicyV136.migrateLegacy(storedFooter)
+            } else {
+                storedFooter
+            },
+        )
+    }
 
     fun save(kind: DocumentPrintKindV136, setting: DocumentPrintSettingV136) {
+        val normalizedFooter = if (kind == DocumentPrintKindV136.SALE_RECEIPT) {
+            ReceiptFooterMessagePolicyV136.normalizeForSave(setting.footer)
+        } else {
+            setting.footer.trim().take(200)
+        }
         preferences.edit()
             .putBoolean("${kind.storageKey}.auto", setting.autoPrintEnabled)
             .putInt(
@@ -68,7 +189,7 @@ class DocumentPrintSettingsStoreV136(context: Context) {
                 DocumentPrintSettingsPolicyV136.normalizeCopies(kind, setting.copies),
             )
             .putString("${kind.storageKey}.header", setting.header.trim().take(200))
-            .putString("${kind.storageKey}.footer", setting.footer.trim().take(200))
+            .putString("${kind.storageKey}.footer", normalizedFooter)
             .apply()
     }
 }
@@ -108,7 +229,7 @@ object DocumentPrintSettingsPolicyV136 {
     ): ReceiptData = receipt.copy(
         documentCopies = normalizeCopies(setting.copies),
         documentHeader = setting.header.trim(),
-        documentFooter = setting.footer.trim(),
+        documentFooter = ReceiptFooterMessagePolicyV136.migrateLegacy(setting.footer),
     )
 }
 
@@ -128,6 +249,11 @@ fun DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled: Boolean) {
         receiptAutoPrintEnabled
     } else {
         autoPrint
+    }
+    val receiptFooterValidation = if (selected == DocumentPrintKindV136.SALE_RECEIPT) {
+        runCatching { ReceiptFooterMessagePolicyV136.normalizeForSave(footer) }
+    } else {
+        Result.success(footer)
     }
 
     Column(Modifier.fillMaxWidth()) {
@@ -184,24 +310,66 @@ fun DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled: Boolean) {
         )
         OutlinedTextField(
             value = footer,
-            onValueChange = { footer = it.take(200) },
-            label = { Text("フッタ") },
+            onValueChange = {
+                footer = if (selected == DocumentPrintKindV136.SALE_RECEIPT) {
+                    ReceiptFooterMessagePolicyV136.cleanInput(it)
+                } else {
+                    it.take(200)
+                }
+            },
+            label = {
+                Text(
+                    if (selected == DocumentPrintKindV136.SALE_RECEIPT) {
+                        "店舗固定文（最大10行・1行64文字）"
+                    } else {
+                        "フッタ"
+                    },
+                )
+            },
             modifier = Modifier.fillMaxWidth(),
         )
+        if (selected == DocumentPrintKindV136.SALE_RECEIPT) {
+            Text(
+                "${ReceiptFooterMessagePolicyV136.lineCount(footer)}/${ReceiptFooterMessagePolicyV136.MAX_LOGICAL_LINES}行・中央寄せ",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            receiptFooterValidation.exceptionOrNull()?.message?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+            receiptFooterValidation.getOrNull()?.let { validFooter ->
+                Text("58mmプレビュー", fontWeight = FontWeight.Bold)
+                Text(
+                    ReceiptFooterMessagePolicyV136.preview(validFooter, ReceiptPaper.MM58).ifBlank { "（印字なし）" },
+                    fontFamily = FontFamily.Monospace,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text("80mmプレビュー", fontWeight = FontWeight.Bold)
+                Text(
+                    ReceiptFooterMessagePolicyV136.preview(validFooter, ReceiptPaper.MM80).ifBlank { "（印字なし）" },
+                    fontFamily = FontFamily.Monospace,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
         Spacer(Modifier.height(6.dp))
         Button(
             onClick = {
-                store.save(
-                    selected,
-                    DocumentPrintSettingV136(
-                        autoPrintEnabled = effectiveAutoPrint,
-                        copies = copies,
-                        header = header,
-                        footer = footer,
-                    ),
-                )
-                revision++
-                message = "${selected.displayName}の文書別設定を保存しました"
+                runCatching {
+                    store.save(
+                        selected,
+                        DocumentPrintSettingV136(
+                            autoPrintEnabled = effectiveAutoPrint,
+                            copies = copies,
+                            header = header,
+                            footer = footer,
+                        ),
+                    )
+                }.onSuccess {
+                    revision++
+                    message = "${selected.displayName}の文書別設定を保存しました"
+                }.onFailure { error ->
+                    message = error.message ?: "文書別設定を保存できませんでした"
+                }
             },
             modifier = Modifier.fillMaxWidth(),
         ) { Text("文書別設定を保存") }
