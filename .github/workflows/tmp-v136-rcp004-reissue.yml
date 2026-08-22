@@ -1,0 +1,53 @@
+name: tmp v1.36 RCP-004 reissue patch
+on:
+  push:
+    branches: [develop/v1.36]
+    paths: [.github/workflows/tmp-v136-rcp004-reissue.yml]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.36
+      - name: Patch RCP-004
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if text.count(old) != 1:
+                  raise SystemExit(f"expected exactly one match in {path}, got {text.count(old)}")
+              p.write_text(text.replace(old, new, 1))
+
+          receipt = 'app/src/main/java/jp/co/tenposinfo/register/Receipt.kt'
+          old = '''        lines += center("ありがとうございました", width)\n        data.documentFooter.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.forEach { lines += fit(it, width) }\n        return lines.joinToString("\\n")\n'''
+          new = '''        lines += center("ありがとうございました", width)\n        data.documentFooter.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.forEach { lines += fit(it, width) }\n        if (data.reprint) lines += center("【再発行】", width)\n        return lines.joinToString("\\n")\n'''
+          replace_once(receipt, old, new)
+
+          db = 'app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt'
+          old = '''    fun enqueueReprint(saleId: Long): Long {\n        val detail = loadSaleDetail(saleId) ?: throw IllegalArgumentException("Sale not found")\n        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(applicationContext)\n        // RCP-002/RCP-004: 後レシートは自動発行OFFでも可能。初回自動ジョブと区別するため\n        // 売上確定時刻より必ず後の作成時刻を持たせる。\n        val now = maxOf(System.currentTimeMillis(), detail.summary.createdAt + 1L)\n        return writableDatabase.insertOrThrow(\n            "print_jobs",\n            null,\n            ContentValues().apply {\n                put("sale_id", saleId)\n                put("paper_width_mm", if (paperWidthMm >= 80) 80 else 58)\n                put("status", PrintJobStatus.PENDING.name)\n                put("attempt_count", 0)\n                putNull("last_error")\n                put("created_at", now)\n                put("updated_at", now)\n            },\n        )\n    }\n'''
+          new = '''    fun enqueueReprint(saleId: Long, actor: String = "SYSTEM"): Long {\n        val detail = loadSaleDetail(saleId) ?: throw IllegalArgumentException("Sale not found")\n        val normalizedActor = actor.trim().ifBlank { "SYSTEM" }.take(100)\n        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(applicationContext)\n        // RCP-004: 後レシートは自動発行OFFでも可能。初回自動ジョブと区別するため\n        // 売上確定時刻より必ず後の作成時刻を持たせ、登録操作を監査記録と同一transactionで確定する。\n        val now = maxOf(System.currentTimeMillis(), detail.summary.createdAt + 1L)\n        return writableDatabase.runInTransactionWithResult {\n            val previousReprintCount = query(\n                "operation_audit",\n                arrayOf("COUNT(*)"),\n                "event_type = ? AND reference_id = ?",\n                arrayOf("SALE_RECEIPT_REPRINT_ENQUEUED", saleId.toString()),\n                null,\n                null,\n                null,\n            ).use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else 0 }\n            val normalizedWidth = if (paperWidthMm >= 80) 80 else 58\n            val jobId = insertOrThrow(\n                "print_jobs",\n                null,\n                ContentValues().apply {\n                    put("sale_id", saleId)\n                    put("paper_width_mm", normalizedWidth)\n                    put("status", PrintJobStatus.PENDING.name)\n                    put("attempt_count", 0)\n                    putNull("last_error")\n                    put("created_at", now)\n                    put("updated_at", now)\n                },\n            )\n            insertOrThrow(\n                "operation_audit",\n                null,\n                ContentValues().apply {\n                    put("event_type", "SALE_RECEIPT_REPRINT_ENQUEUED")\n                    put("reference_id", saleId)\n                    put(\n                        "detail",\n                        "再発行回数=${previousReprintCount + 1}; print_job_id=$jobId; paper_width_mm=$normalizedWidth",\n                    )\n                    put("operator_name", normalizedActor)\n                    put("created_at", now)\n                },\n            )\n            jobId\n        }\n    }\n'''
+          replace_once(db, old, new)
+
+          main = 'app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt'
+          replace_once(
+              main,
+              '                            database.enqueueReprint(detail.summary.id)\n',
+              '                            database.enqueueReprint(detail.summary.id, operatorName)\n',
+          )
+          PY
+          rm .github/workflows/tmp-v136-rcp004-reissue.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/jp/co/tenposinfo/register/Receipt.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt \
+                  .github/workflows/tmp-v136-rcp004-reissue.yml
+          git commit -m 'fix: complete v1.36 RCP-004 receipt reissue marking'
+          git push origin HEAD:develop/v1.36
