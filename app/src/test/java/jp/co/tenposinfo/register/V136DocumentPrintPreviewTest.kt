@@ -78,7 +78,7 @@ class V136DocumentPrintPreviewTest {
 
     @Test
     fun settingsUiExposesSaveBefore58And80Switch() {
-        val source = File("src/main/java/jp/co/tenposinfo/register/DocumentPrintSettingsV136.kt").readText()
+        val source = File("app/src/main/java/jp/co/tenposinfo/register/DocumentPrintSettingsV136.kt").readText()
         assertTrue(source.contains("印刷プレビュー（SCR-640・保存前）"))
         assertTrue(source.contains("編集中のヘッダ・フッタを保存せず確認できます"))
         assertTrue(source.contains("previewPaper = ReceiptPaper.MM58"))
