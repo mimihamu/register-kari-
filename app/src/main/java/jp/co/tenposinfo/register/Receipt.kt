@@ -143,11 +143,11 @@ object ReceiptRenderer {
     fun render(data: ReceiptData, paper: ReceiptPaper): String {
         val width = paper.charsPerLine
         val lines = mutableListOf<String>()
+        if (data.reprint) lines += center("【再発行】", width)
         data.documentHeader.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.forEach { lines += fit(it, width) }
         lines += center(data.storeName, width)
         if (data.storeAddress.isNotBlank()) lines += center(data.storeAddress, width)
         if (data.storePhone.isNotBlank()) lines += center("TEL ${data.storePhone}", width)
-        if (data.reprint) lines += center("【再発行】", width)
         lines += center("領収書／レシート", width)
         lines += separator(width, '=')
         lines += "No.${ReceiptNumberV136.format(data.saleId)}  ${formatDate(data.createdAt)}"
