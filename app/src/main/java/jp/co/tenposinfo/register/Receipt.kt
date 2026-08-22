@@ -201,6 +201,7 @@ object ReceiptRenderer {
         lines += "内/外は内税・外税区分です"
         lines += center("ありがとうございました", width)
         data.documentFooter.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.forEach { lines += fit(it, width) }
+        if (data.reprint) lines += center("【再発行】", width)
         return lines.joinToString("\n")
     }
 

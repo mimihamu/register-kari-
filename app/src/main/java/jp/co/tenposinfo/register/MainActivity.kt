@@ -769,7 +769,7 @@ private fun RegisterApp() {
                         detail = detail,
                         paper = PrinterPaperSettingPolicy.currentPaper(context.applicationContext),
                         onEnqueue = {
-                            database.enqueueReprint(detail.summary.id)
+                            database.enqueueReprint(detail.summary.id, operatorName)
                             AutomaticPrintScheduler.enqueueNow(context.applicationContext)
                             queueMessage = "再印字をキューへ登録しました"
                         },

@@ -498,25 +498,53 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         )
     }
 
-    fun enqueueReprint(saleId: Long): Long {
+    fun enqueueReprint(saleId: Long, actor: String = "SYSTEM"): Long {
         val detail = loadSaleDetail(saleId) ?: throw IllegalArgumentException("Sale not found")
+        val normalizedActor = actor.trim().ifBlank { "SYSTEM" }.take(100)
         val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(applicationContext)
-        // RCP-002/RCP-004: 後レシートは自動発行OFFでも可能。初回自動ジョブと区別するため
-        // 売上確定時刻より必ず後の作成時刻を持たせる。
+        // RCP-004: 後レシートは自動発行OFFでも可能。初回自動ジョブと区別するため
+        // 売上確定時刻より必ず後の作成時刻を持たせ、登録操作を監査記録と同一transactionで確定する。
         val now = maxOf(System.currentTimeMillis(), detail.summary.createdAt + 1L)
-        return writableDatabase.insertOrThrow(
-            "print_jobs",
-            null,
-            ContentValues().apply {
-                put("sale_id", saleId)
-                put("paper_width_mm", if (paperWidthMm >= 80) 80 else 58)
-                put("status", PrintJobStatus.PENDING.name)
-                put("attempt_count", 0)
-                putNull("last_error")
-                put("created_at", now)
-                put("updated_at", now)
-            },
-        )
+        return writableDatabase.runInTransactionWithResult {
+            val previousReprintCount = query(
+                "operation_audit",
+                arrayOf("COUNT(*)"),
+                "event_type = ? AND reference_id = ?",
+                arrayOf("SALE_RECEIPT_REPRINT_ENQUEUED", saleId.toString()),
+                null,
+                null,
+                null,
+            ).use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else 0 }
+            val normalizedWidth = if (paperWidthMm >= 80) 80 else 58
+            val jobId = insertOrThrow(
+                "print_jobs",
+                null,
+                ContentValues().apply {
+                    put("sale_id", saleId)
+                    put("paper_width_mm", normalizedWidth)
+                    put("status", PrintJobStatus.PENDING.name)
+                    put("attempt_count", 0)
+                    putNull("last_error")
+                    put("created_at", now)
+                    put("updated_at", now)
+                },
+            )
+            insertOrThrow(
+                "operation_audit",
+                null,
+                ContentValues().apply {
+                    put("event_type", "SALE_RECEIPT_REPRINT_ENQUEUED")
+                    put("reference_id", saleId)
+                    put(
+                        "detail",
+                        "再発行回数=${previousReprintCount + 1}; print_job_id=$jobId; paper_width_mm=$normalizedWidth",
+                    )
+                    put("operator_name", normalizedActor)
+                    put("created_at", now)
+                },
+            )
+            jobId
+        }
     }
 
     fun listPrintJobs(limit: Int = 100): List<PrintJobRecord> {
