@@ -69,7 +69,7 @@ data class ReceiptData(
     val invoiceAggregationBasis: InvoiceAggregationBasisV136 = InvoiceAggregationBasisV136.TAX_INCLUDED,
     val documentCopies: Int = 1,
     val documentHeader: String = "",
-    val documentFooter: String = "",
+    val documentFooter: String = ReceiptFooterMessagePolicyV136.DEFAULT_MESSAGE,
 )
 
 enum class ReceiptPaper(val widthMm: Int, val charsPerLine: Int) {
@@ -199,8 +199,7 @@ object ReceiptRenderer {
         }
         lines += "※は軽減税率対象商品です"
         lines += "内/外は内税・外税区分です"
-        lines += center("ありがとうございました", width)
-        data.documentFooter.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.forEach { lines += fit(it, width) }
+        lines.addAll(ReceiptFooterMessagePolicyV136.renderLines(data.documentFooter, paper))
         if (data.reprint) lines += center("【再発行】", width)
         return lines.joinToString("\n")
     }
@@ -387,7 +386,7 @@ class MemoryPrinterGateway : PrinterGateway {
 class PrintQueueProcessor(
     private val database: RegisterDatabase,
     private val gateway: PrinterGateway,
-    private val saleReceiptSetting: DocumentPrintSettingV136 = DocumentPrintSettingV136(),
+    private val saleReceiptSetting: DocumentPrintSettingV136 = DocumentPrintSettingV136(footer = ReceiptFooterMessagePolicyV136.DEFAULT_MESSAGE),
 ) {
     fun processNext(): Boolean {
         val job = database.claimNextPrintableJob() ?: return false
