@@ -48,13 +48,26 @@ object PrinterProfileContractV136 {
     const val MM58_STANDARD_DOTS = 384
     const val MM80_STANDARD_DOTS = 576
 
+    fun standardPrintableDotWidth(paperWidthMm: Int): Int = when (paperWidthMm) {
+        58 -> MM58_STANDARD_DOTS
+        80 -> MM80_STANDARD_DOTS
+        else -> throw IllegalArgumentException("用紙幅は58mmまたは80mmです")
+    }
+
     /**
-     * Formal v2.5 specifies 384dot/576dot as the standard widths and allows
-     * model-specific widths. The current persisted schema has no independent
-     * dot-width override yet, so this projection uses the formal standard value.
-     * A future schema migration may replace this with a stored per-printer value
-     * without changing consumers of this snapshot.
+     * 初版では仕様根拠のある標準幅だけを永続化する。
+     * 機種固有値を追加する場合は、採用機器仕様を確認した上で別途対応する。
      */
+    fun validatePersistedConfiguration(configuration: PrinterConfiguration) {
+        val expectedDots = standardPrintableDotWidth(configuration.paperWidthMm)
+        require(configuration.printableDotWidth == expectedDots) {
+            "${configuration.paperWidthMm}mmの印字可能幅は初版標準${expectedDots}dotです"
+        }
+        require(configuration.feedLines in MIN_FEED_LINES..MAX_FEED_LINES) {
+            "紙送り行数は${MIN_FEED_LINES}～${MAX_FEED_LINES}行で入力してください"
+        }
+    }
+
     fun snapshot(configuration: PrinterConfiguration): PrinterProfileSnapshotV136 {
         val paper = ReceiptPaper.fromWidth(configuration.paperWidthMm)
         val supportsCut = configuration.cutMode != PrinterCutMode.NONE
@@ -66,15 +79,12 @@ object PrinterProfileContractV136 {
                 if (host.isBlank()) "" else "$host:${configuration.port}"
             },
             paperWidthMm = paper.widthMm,
-            printableDotWidth = when (paper) {
-                ReceiptPaper.MM58 -> MM58_STANDARD_DOTS
-                ReceiptPaper.MM80 -> MM80_STANDARD_DOTS
-            },
+            printableDotWidth = configuration.printableDotWidth,
             logicalColumns = paper.charsPerLine,
             encoding = configuration.profile.charsetName,
             supportsCut = supportsCut,
             cutMode = if (supportsCut) configuration.cutMode else PrinterCutMode.NONE,
-            feedLines = DEFAULT_FEED_LINES,
+            feedLines = configuration.feedLines,
             drawerPort = configuration.drawerPort.takeIf { configuration.drawerEnabled },
             statusCapability = configuration.profile.statusProtocol,
         )
