@@ -150,7 +150,7 @@ object ReceiptRenderer {
         if (data.reprint) lines += center("【再発行】", width)
         lines += center("領収書／レシート", width)
         lines += separator(width, '=')
-        lines += "No.${data.saleId}  ${formatDate(data.createdAt)}"
+        lines += "No.${ReceiptNumberV136.format(data.saleId)}  ${formatDate(data.createdAt)}"
         lines += "担当 ${data.operatorName}"
         lines += separator(width, '-')
 
