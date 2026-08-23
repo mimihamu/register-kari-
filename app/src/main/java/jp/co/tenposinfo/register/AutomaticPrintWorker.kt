@@ -196,10 +196,15 @@ class AutomaticPrintWorker(
                                     delegate = rawGateway,
                                     paperWidthMm = width,
                                 )
-                                PrintQueueProcessor(database, receiptGateway, saleReceiptSetting).processNext()
+                                PrintQueueProcessor(
+                                    database,
+                                    receiptGateway,
+                                    saleReceiptSetting,
+                                    configuration,
+                                ).processNext()
                             }
                             AutomaticPrintCandidateSource.DOCUMENT ->
-                                operations.processDocumentPrint(candidate.sourceId, rawGateway).isSuccess
+                                operations.processDocumentPrint(candidate.sourceId, rawGateway, configuration).isSuccess
                         }
                         candidate to success
                     }
