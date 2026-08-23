@@ -37,6 +37,7 @@ class PrintJobUncertainSafetyStoreV136(context: Context) : AutoCloseable {
       table,
       ContentValues().apply {
           put("status", PrintJobStatus.COMPLETED.name)
+          put("delivery_result", PrintDeliveryResultV136.PRINTED.name)
           put("last_error", "印刷済みの可能性を担当者確認で完了扱い：${reason.trim()}".take(500))
           put("uncertain_resolution", "COMPLETED_AS_PRINTED")
           put("uncertain_resolved_at", now)
@@ -170,6 +171,7 @@ class PrintJobUncertainSafetyStoreV136(context: Context) : AutoCloseable {
     private fun ensureSchema() {
         OperationAuditSchemaV136.ensure(db)
         listOf("print_jobs", "document_print_jobs").forEach { table ->
+  ensureColumn(table, "delivery_result", "TEXT")
   ensureColumn(table, "source_job_id", "INTEGER")
   ensureColumn(table, "reprint_reason", "TEXT")
   ensureColumn(table, "reprint_operator_id", "TEXT")
