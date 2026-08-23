@@ -42,25 +42,25 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Run v1.36 cumulative unit tests with diagnostics
-        id: v136_tests
+      - name: Run cumulative unit tests with diagnostics
+        id: cumulative_tests
         shell: bash
         run: |
           set -o pipefail
-          ./gradlew --no-daemon app:testDebugUnitTest adminapp:testDebugUnitTest customerdisplay:testDebugUnitTest --tests '*V136*Test' --stacktrace --info 2>&1 | tee v136-test.log
+          gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest :management-app:testDebugUnitTest --stacktrace --info 2>&1 | tee cumulative-test.log
 
-      - name: Upload v1.36 test diagnostics
+      - name: Upload cumulative test diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: v136-test-diagnostics
+          name: cumulative-test-diagnostics
           if-no-files-found: warn
           retention-days: 7
           path: |
-            v136-test.log
+            cumulative-test.log
             app/build/test-results/testDebugUnitTest/**/*.xml
-            adminapp/build/test-results/testDebugUnitTest/**/*.xml
-            customerdisplay/build/test-results/testDebugUnitTest/**/*.xml
+            customer-display/build/test-results/testDebugUnitTest/**/*.xml
+            management-app/build/test-results/testDebugUnitTest/**/*.xml
             app/build/reports/tests/testDebugUnitTest/**
-            adminapp/build/reports/tests/testDebugUnitTest/**
-            customerdisplay/build/reports/tests/testDebugUnitTest/**
+            customer-display/build/reports/tests/testDebugUnitTest/**
+            management-app/build/reports/tests/testDebugUnitTest/**
