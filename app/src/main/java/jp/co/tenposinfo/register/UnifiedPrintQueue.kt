@@ -92,7 +92,7 @@ data class UnifiedPrintQueueSummary(
     val printing: Int,
     val discarded: Int,
 ) {
-    val actionRequired: Int get() = failed + retry
+    val actionRequired: Int get() = failed + retry + printing
     val active: Int get() = pending + retry + failed + printing
 
     companion object {
@@ -102,7 +102,7 @@ data class UnifiedPrintQueueSummary(
             retry = jobs.count { it.status == PrintJobStatus.RETRY },
             failed = jobs.count { it.status == PrintJobStatus.FAILED },
             completed = jobs.count { it.status == PrintJobStatus.COMPLETED },
-            printing = jobs.count { it.status == PrintJobStatus.PRINTING },
+            printing = jobs.count { PrintJobUncertainPolicyV136.isUncertain(it.status) },
             discarded = jobs.count { it.status == PrintJobStatus.DISCARDED },
         )
     }
@@ -166,11 +166,14 @@ object UnifiedPrintQueueFilterPolicy {
                 PrintJobStatus.PENDING,
                 PrintJobStatus.RETRY,
                 PrintJobStatus.FAILED,
+                PrintJobStatus.SENDING,
                 PrintJobStatus.PRINTING,
             )
             UnifiedPrintStatusFilter.ACTION_REQUIRED -> job.status in setOf(
                 PrintJobStatus.RETRY,
                 PrintJobStatus.FAILED,
+                PrintJobStatus.SENDING,
+                PrintJobStatus.PRINTING,
             )
             UnifiedPrintStatusFilter.ALL -> true
             UnifiedPrintStatusFilter.COMPLETED -> job.status == PrintJobStatus.COMPLETED
@@ -259,12 +262,14 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
     private val applicationContext = context.applicationContext
     private val salesDatabase = RegisterDatabase(applicationContext)
     private val documentStore = AdvancedOperationsStore(applicationContext)
+    private val uncertainSafetyStore = PrintJobUncertainSafetyStoreV136(applicationContext)
     private val settingsStore = AdminSettingsStore(applicationContext)
     private val monitoringStore = PrinterMonitoringStore(applicationContext)
     private val documentPrintSettingsStore = DocumentPrintSettingsStoreV136(applicationContext)
 
     override fun close() {
         monitoringStore.close()
+        uncertainSafetyStore.close()
         settingsStore.close()
         documentStore.close()
         salesDatabase.close()
@@ -355,7 +360,8 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
             when (job.status) {
                 PrintJobStatus.COMPLETED -> "完了済みジョブは再送できません。再印字を登録してください"
                 PrintJobStatus.DISCARDED -> "破棄済みジョブは再送できません"
-                PrintJobStatus.PRINTING -> "印刷中のジョブは操作できません"
+                PrintJobStatus.SENDING,
+                PrintJobStatus.PRINTING -> "印刷済みの可能性があるため直接再送できません"
                 else -> "このジョブは再送できません"
             }
         }
@@ -374,6 +380,27 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
             actor = actor,
         )
         "再試行待ちへ戻しました（Job.${job.sourceId}）"
+    }
+
+    fun resolveUncertainAsCompleted(
+        job: UnifiedPrintJob,
+        reason: String,
+        actor: String,
+    ): Result<String> = runCatching {
+        require(PrintJobUncertainPolicyV136.isUncertain(job.status)) { "印刷結果不明のジョブではありません" }
+        uncertainSafetyStore.resolveAsPrinted(job, reason, actor)
+        "完了扱いにしました（Job.${job.sourceId} / 印刷済みの可能性を担当者確認）"
+    }
+
+    fun reprintUncertain(
+        job: UnifiedPrintJob,
+        reason: String,
+        actor: String,
+    ): Result<String> = runCatching {
+        require(PrintJobUncertainPolicyV136.isUncertain(job.status)) { "印刷結果不明のジョブではありません" }
+        val newJobId = uncertainSafetyStore.createReprint(job, reason, actor)
+        AutomaticPrintScheduler.enqueueNow(applicationContext)
+        "再印刷を新規登録しました（元Job.${job.sourceId} → 新Job.$newJobId）"
     }
 
     fun discard(
@@ -610,7 +637,8 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
     private fun printabilityError(status: PrintJobStatus): String = when (status) {
         PrintJobStatus.COMPLETED -> "完了済みジョブは送信できません。再印字を登録してください"
         PrintJobStatus.DISCARDED -> "破棄済みジョブは送信できません"
-        PrintJobStatus.PRINTING -> "印刷中のジョブは操作できません"
+        PrintJobStatus.SENDING,
+                PrintJobStatus.PRINTING -> "印刷済みの可能性があるため直接再送できません"
         else -> "このジョブは送信できません"
     }
 
@@ -620,8 +648,9 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
 
     private fun actionPriority(status: PrintJobStatus): Int = when (status) {
         PrintJobStatus.FAILED -> 6
+        PrintJobStatus.SENDING -> 7
         PrintJobStatus.RETRY -> 5
-        PrintJobStatus.PRINTING -> 4
+        PrintJobStatus.PRINTING -> 7
         PrintJobStatus.PENDING -> 3
         PrintJobStatus.COMPLETED -> 2
         PrintJobStatus.DISCARDED -> 1

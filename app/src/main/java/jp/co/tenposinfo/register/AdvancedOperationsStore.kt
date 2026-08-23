@@ -754,7 +754,7 @@ class AdvancedOperationsStore(context: Context) {
             ?: throw IllegalArgumentException("業務帳票の印刷ジョブが見つかりません")
         require(current.status != PrintJobStatus.COMPLETED) { "完了済みジョブは再送できません。再印字を登録してください" }
         require(current.status != PrintJobStatus.DISCARDED) { "破棄済みジョブは再送できません" }
-        require(current.status != PrintJobStatus.PRINTING) { "印刷中のジョブは操作できません" }
+        require(current.status != PrintJobStatus.SENDING && current.status != PrintJobStatus.PRINTING) { "送信中または印刷結果不明のジョブは再送できません" }
         require(PrintQueueAtomicityV115.mayRetry(current.status)) { "このジョブは再送できません" }
         val updated = db.update(
             "document_print_jobs",
@@ -779,7 +779,7 @@ class AdvancedOperationsStore(context: Context) {
             ?: throw IllegalArgumentException("業務帳票の印刷ジョブが見つかりません")
         require(current.status != PrintJobStatus.COMPLETED) { "完了済みジョブは破棄できません" }
         require(current.status != PrintJobStatus.DISCARDED) { "このジョブは既に破棄済みです" }
-        require(current.status != PrintJobStatus.PRINTING) { "印刷中のジョブは破棄できません" }
+        require(current.status != PrintJobStatus.SENDING && current.status != PrintJobStatus.PRINTING) { "送信中または印刷結果不明のジョブは破棄できません" }
         require(reason.trim().length >= 4) { "破棄理由を4文字以上で入力してください" }
         require(actor.isNotBlank()) { "監査担当者が必要です" }
         db.beginTransaction()
@@ -791,11 +791,12 @@ class AdvancedOperationsStore(context: Context) {
                     put("last_error", "破棄理由：${reason.trim()}".take(500))
                     put("updated_at", System.currentTimeMillis())
                 },
-                "id = ? AND status NOT IN (?, ?, ?)",
+                "id = ? AND status NOT IN (?, ?, ?, ?)",
                 arrayOf(
                     jobId.toString(),
                     PrintJobStatus.COMPLETED.name,
                     PrintJobStatus.DISCARDED.name,
+                    PrintJobStatus.SENDING.name,
                     PrintJobStatus.PRINTING.name,
                 ),
             )
@@ -827,7 +828,7 @@ class AdvancedOperationsStore(context: Context) {
         val claimed = db.update(
             "document_print_jobs",
             ContentValues().apply {
-                put("status", PrintJobStatus.PRINTING.name)
+                put("status", PrintJobStatus.SENDING.name)
                 put("attempt_count", attempt)
                 putNull("last_error")
                 put("updated_at", System.currentTimeMillis())
@@ -849,7 +850,7 @@ class AdvancedOperationsStore(context: Context) {
                         put("updated_at", System.currentTimeMillis())
                     },
                     "id = ? AND status = ? AND attempt_count = ?",
-                    arrayOf(jobId.toString(), PrintJobStatus.PRINTING.name, attempt.toString()),
+                    arrayOf(jobId.toString(), PrintJobStatus.SENDING.name, attempt.toString()),
                 )
                 if (updated == 1) Result.success(Unit) else Result.failure(
                     IllegalStateException("送信後に印刷ジョブの所有状態が変更されました。自動再送せず確認してください"),
@@ -863,13 +864,13 @@ class AdvancedOperationsStore(context: Context) {
                     ContentValues().apply {
                         put(
                             "status",
-                            if (manualConfirmation || attempt >= 5) PrintJobStatus.FAILED.name else PrintJobStatus.RETRY.name,
+                            if (manualConfirmation) PrintJobStatus.SENDING.name else if (attempt >= 5) PrintJobStatus.FAILED.name else PrintJobStatus.RETRY.name,
                         )
                         put("last_error", (error.message ?: error.javaClass.simpleName).take(500))
                         put("updated_at", System.currentTimeMillis())
                     },
                     "id = ? AND status = ? AND attempt_count = ?",
-                    arrayOf(jobId.toString(), PrintJobStatus.PRINTING.name, attempt.toString()),
+                    arrayOf(jobId.toString(), PrintJobStatus.SENDING.name, attempt.toString()),
                 )
                 Result.failure(error)
             },

@@ -180,6 +180,32 @@ private fun UnifiedPrintQueueApp(onClose: () -> Unit) {
         }
     }
 
+    fun executeResolveUncertain(job: UnifiedPrintJob) {
+        if (working) return
+        working = true
+        message = "印刷結果不明ジョブを完了扱いにしています…"
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { controller.resolveUncertainAsCompleted(job, discardReason, actor) }
+            message = result.fold(onSuccess = { it }, onFailure = { it.message ?: "完了扱いに失敗しました" })
+            if (result.isSuccess) resetApprovalInputs()
+            working = false
+            refresh(clearSelection = result.isSuccess && criteria.status != UnifiedPrintStatusFilter.ALL)
+        }
+    }
+
+    fun executeReprintUncertain(job: UnifiedPrintJob) {
+        if (working) return
+        working = true
+        message = "元ジョブを保持したまま再印刷ジョブを新規登録しています…"
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { controller.reprintUncertain(job, discardReason, actor) }
+            message = result.fold(onSuccess = { it }, onFailure = { it.message ?: "再印刷登録に失敗しました" })
+            if (result.isSuccess) resetApprovalInputs()
+            working = false
+            refresh()
+        }
+    }
+
     Surface(Modifier.fillMaxSize(), color = UqBackground) {
         Column(Modifier.fillMaxSize()) {
             QueueHeader(
@@ -247,6 +273,8 @@ private fun UnifiedPrintQueueApp(onClose: () -> Unit) {
                             onSafePrint = { executePrint(it, safe = true) },
                             onForcePrint = { executePrint(it, safe = false) },
                             onDiscard = ::executeDiscard,
+                            onResolveUncertain = ::executeResolveUncertain,
+                            onReprintUncertain = ::executeReprintUncertain,
                         )
                     }
                 } else {
@@ -303,6 +331,8 @@ private fun UnifiedPrintQueueApp(onClose: () -> Unit) {
                             onSafePrint = { executePrint(it, safe = true) },
                             onForcePrint = { executePrint(it, safe = false) },
                             onDiscard = ::executeDiscard,
+                            onResolveUncertain = ::executeResolveUncertain,
+                            onReprintUncertain = ::executeReprintUncertain,
                         )
                     }
                 }
@@ -356,7 +386,7 @@ private fun PrinterSummaryPanel(
         QueueValue("待機", "${summary.pending}件")
         QueueValue("再試行", "${summary.retry}件")
         QueueValue("失敗", "${summary.failed}件")
-        QueueValue("印刷中", "${summary.printing}件")
+        QueueValue("送信中/結果不明", "${summary.printing}件")
         QueueValue("完了", "${summary.completed}件")
         QueueValue("破棄済み", "${summary.discarded}件")
         Spacer(Modifier.height(12.dp))
@@ -488,6 +518,8 @@ private fun JobDetailPanel(
     onSafePrint: (UnifiedPrintJob) -> Unit,
     onForcePrint: (UnifiedPrintJob) -> Unit,
     onDiscard: (UnifiedPrintJob) -> Unit,
+    onResolveUncertain: (UnifiedPrintJob) -> Unit,
+    onReprintUncertain: (UnifiedPrintJob) -> Unit,
 ) {
     QueuePanel(modifier) {
         Text("ジョブ詳細", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = UqNavy)
@@ -538,6 +570,43 @@ private fun JobDetailPanel(
             )
         }
         Spacer(Modifier.height(8.dp))
+
+        if (PrintJobUncertainPolicyV136.isUncertain(selected.status)) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = UqRed.copy(alpha = 0.08f)),
+                border = BorderStroke(2.dp, UqRed),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                    Text("印刷済みの可能性", color = UqRed, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text("自動再送しません。実際の紙を確認し、完了扱いまたは再印刷を選択してください。")
+                    if (!selected.lastError.isNullOrBlank()) Text("送信情報：${selected.lastError}", fontSize = 12.sp)
+                }
+            }
+            Spacer(Modifier.height(7.dp))
+            OutlinedTextField(
+                value = discardReason,
+                onValueChange = onDiscardReasonChanged,
+                label = { Text("判断理由（4文字以上・監査ログへ保存）") },
+                minLines = 2,
+                maxLines = 3,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                OutlinedButton(
+                    onClick = { onResolveUncertain(selected) },
+                    enabled = !working && discardReason.trim().length >= 4,
+                    modifier = Modifier.weight(1f).height(50.dp),
+                ) { Text("完了扱い", fontWeight = FontWeight.Bold) }
+                Button(
+                    onClick = { onReprintUncertain(selected) },
+                    enabled = !working && discardReason.trim().length >= 4,
+                    modifier = Modifier.weight(1f).height(50.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = UqBlue),
+                ) { Text("再印刷", fontWeight = FontWeight.Bold) }
+            }
+            Spacer(Modifier.height(7.dp))
+        }
 
         if (UnifiedPrintJobActionPolicy.mayRetry(selected.status)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -591,7 +660,7 @@ private fun JobDetailPanel(
                 modifier = Modifier.fillMaxWidth().height(50.dp),
                 border = BorderStroke(2.dp, UqRed),
             ) { Text("責任者承認でジョブを破棄", color = UqRed, fontWeight = FontWeight.Bold) }
-        } else {
+        } else if (!PrintJobUncertainPolicyV136.isUncertain(selected.status)) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F3F5)),
@@ -600,7 +669,8 @@ private fun JobDetailPanel(
                     when (selected.status) {
                         PrintJobStatus.COMPLETED -> "完了済みです。再度必要な場合は元の売上・履歴から再印字を登録してください。"
                         PrintJobStatus.DISCARDED -> "責任者承認で破棄済みです。未印刷件数やZ精算ブロックには含まれません。"
-                        PrintJobStatus.PRINTING -> "印刷処理中です。完了または失敗状態へ変わるまで操作できません。"
+                        PrintJobStatus.SENDING,
+                        PrintJobStatus.PRINTING -> "印刷済みの可能性があります。完了扱いまたは再印刷を選択してください。"
                         else -> "この状態のジョブは操作できません。"
                     },
                     modifier = Modifier.padding(12.dp),
@@ -626,7 +696,7 @@ private fun QueueFooter(heightDp: Int, message: String?, working: Boolean, onClo
             Text(message, color = queueMessageColor(message), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
         } else {
             Text(
-                "FAILEDは自動再送しません。強制印刷と破棄は責任者PIN・監査ログを必須とします。",
+                "SENDING（印刷済みの可能性）は自動再送しません。完了扱いまたは理由付き再印刷を選択します。",
                 color = UqRed,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f),
@@ -692,6 +762,7 @@ private fun queueJobColor(status: PrintJobStatus): Color = when (status) {
     PrintJobStatus.COMPLETED -> UqGreen
     PrintJobStatus.PENDING,
     PrintJobStatus.RETRY,
+    PrintJobStatus.SENDING,
     PrintJobStatus.PRINTING,
     -> UqOrange
     PrintJobStatus.FAILED -> UqRed
@@ -700,7 +771,8 @@ private fun queueJobColor(status: PrintJobStatus): Color = when (status) {
 
 private fun queueJobStatusLabel(status: PrintJobStatus): String = when (status) {
     PrintJobStatus.PENDING -> "待機"
-    PrintJobStatus.PRINTING -> "印刷中"
+    PrintJobStatus.SENDING -> "印刷済みの可能性"
+    PrintJobStatus.PRINTING -> "印刷済みの可能性（旧状態）"
     PrintJobStatus.COMPLETED -> "完了"
     PrintJobStatus.RETRY -> "再試行"
     PrintJobStatus.FAILED -> "要確認"

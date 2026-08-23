@@ -607,8 +607,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             val current = loadPrintJob(this, jobId)
                 ?: error("印刷ジョブが見つかりません")
             if (current.status == PrintJobStatus.COMPLETED) return@runInTransactionWithResult Unit
-            check(current.status == PrintJobStatus.PRINTING) {
-                "印刷中ではないジョブを完了へ変更できません"
+            check(current.status == PrintJobStatus.SENDING || current.status == PrintJobStatus.PRINTING) {
+                "送信中ではないジョブを完了へ変更できません"
             }
             val updated = update(
                 "print_jobs",
@@ -618,7 +618,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     put("updated_at", System.currentTimeMillis())
                 },
                 "id = ? AND status = ? AND attempt_count = ?",
-                arrayOf(jobId.toString(), PrintJobStatus.PRINTING.name, current.attemptCount.toString()),
+                arrayOf(jobId.toString(), current.status.name, current.attemptCount.toString()),
             )
             check(updated == 1) { "印刷ジョブの状態が変更されたため完了を確定できませんでした" }
             execSQL("UPDATE sales SET print_count = print_count + 1 WHERE id = ?", arrayOf(current.saleId))
@@ -629,12 +629,12 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
     fun markPrintFailed(jobId: Long, error: String, permanent: Boolean = false) {
         writableDatabase.runInTransactionWithResult {
             val current = loadPrintJob(this, jobId) ?: return@runInTransactionWithResult Unit
-            if (current.status != PrintJobStatus.PRINTING) return@runInTransactionWithResult Unit
+            if (current.status != PrintJobStatus.SENDING && current.status != PrintJobStatus.PRINTING) return@runInTransactionWithResult Unit
             val manualConfirmation = error.contains("送信結果が不明") || error.contains("自動再試行しません")
-            val status = if (permanent || manualConfirmation || current.attemptCount >= 4) {
-                PrintJobStatus.FAILED
-            } else {
-                PrintJobStatus.RETRY
+            val status = when {
+                manualConfirmation -> PrintJobStatus.SENDING
+                permanent || current.attemptCount >= 4 -> PrintJobStatus.FAILED
+                else -> PrintJobStatus.RETRY
             }
             update(
                 "print_jobs",
@@ -644,7 +644,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     put("updated_at", System.currentTimeMillis())
                 },
                 "id = ? AND status = ? AND attempt_count = ?",
-                arrayOf(jobId.toString(), PrintJobStatus.PRINTING.name, current.attemptCount.toString()),
+                arrayOf(jobId.toString(), current.status.name, current.attemptCount.toString()),
             )
             Unit
         }
@@ -656,7 +656,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 ?: throw IllegalArgumentException("印刷ジョブが見つかりません")
             require(current.status != PrintJobStatus.COMPLETED) { "完了済みジョブは再送できません。再印字を登録してください" }
             require(current.status != PrintJobStatus.DISCARDED) { "破棄済みジョブは再送できません" }
-            require(current.status != PrintJobStatus.PRINTING) { "印刷中のジョブは操作できません" }
+            require(current.status != PrintJobStatus.SENDING && current.status != PrintJobStatus.PRINTING) { "送信中または印刷結果不明のジョブは再送できません" }
             require(PrintQueueAtomicityV115.mayRetry(current.status)) { "このジョブは再送できません" }
             val updated = update(
                 "print_jobs",
@@ -683,7 +683,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             ?: throw IllegalArgumentException("売上印刷ジョブが見つかりません")
         require(current.status != PrintJobStatus.COMPLETED) { "完了済みジョブは破棄できません" }
         require(current.status != PrintJobStatus.DISCARDED) { "このジョブは既に破棄済みです" }
-        require(current.status != PrintJobStatus.PRINTING) { "印刷中のジョブは破棄できません" }
+        require(current.status != PrintJobStatus.SENDING && current.status != PrintJobStatus.PRINTING) { "送信中または印刷結果不明のジョブは破棄できません" }
         require(reason.trim().length >= 4) { "破棄理由を4文字以上で入力してください" }
         require(actor.isNotBlank()) { "監査担当者が必要です" }
         writableDatabase.runInTransaction {
@@ -694,11 +694,12 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     put("last_error", "破棄理由：${reason.trim()}".take(500))
                     put("updated_at", System.currentTimeMillis())
                 },
-                "id = ? AND status NOT IN (?, ?, ?)",
+                "id = ? AND status NOT IN (?, ?, ?, ?)",
                 arrayOf(
                     jobId.toString(),
                     PrintJobStatus.COMPLETED.name,
                     PrintJobStatus.DISCARDED.name,
+                    PrintJobStatus.SENDING.name,
                     PrintJobStatus.PRINTING.name,
                 ),
             )
@@ -735,7 +736,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         val updated = db.update(
             "print_jobs",
             ContentValues().apply {
-                put("status", PrintJobStatus.PRINTING.name)
+                put("status", PrintJobStatus.SENDING.name)
                 put("attempt_count", attempt)
                 putNull("last_error")
                 put("updated_at", now)
@@ -745,7 +746,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         )
         return if (updated == 1) {
             candidate.copy(
-                status = PrintJobStatus.PRINTING,
+                status = PrintJobStatus.SENDING,
                 attemptCount = attempt,
                 lastError = null,
                 updatedAt = now,

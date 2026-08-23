@@ -35,7 +35,8 @@ data class SaleDetailRecord(
 
 enum class PrintJobStatus {
     PENDING,
-    PRINTING,
+    PRINTING, // legacy: v1.35 and earlier in-flight row
+    SENDING,  // formal v2.5 §16.9: persisted before transport send
     COMPLETED,
     RETRY,
     FAILED,
