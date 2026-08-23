@@ -511,7 +511,14 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
                             delegate = rawGateway,
                             paperWidthMm = job.paperWidthMm,
                         )
-                        printSaleJob(job, configuration, receiptGateway).getOrThrow()
+                        val deliveryGateway = DeliveryConfirmingPrinterGatewayV136(
+                            context = applicationContext,
+                            configuration = configuration.copy(paperWidthMm = job.paperWidthMm),
+                            kind = PrintDeliveryJobKindV136.SALE_RECEIPT,
+                            jobId = job.sourceId,
+                            delegate = receiptGateway,
+                        )
+                        printSaleJob(job, configuration, deliveryGateway).getOrThrow()
                     }
 
                     UnifiedPrintJobType.REVERSAL_RECEIPT,
@@ -525,7 +532,14 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
                         if (!UnifiedPrintJobActionPolicy.mayPrint(current.status)) {
                             throw IllegalStateException(printabilityError(current.status))
                         }
-                        documentStore.processDocumentPrint(job.sourceId, rawGateway).getOrThrow()
+                        val deliveryGateway = DeliveryConfirmingPrinterGatewayV136(
+                            context = applicationContext,
+                            configuration = configuration,
+                            kind = PrintDeliveryJobKindV136.DOCUMENT,
+                            jobId = job.sourceId,
+                            delegate = rawGateway,
+                        )
+                        documentStore.processDocumentPrint(job.sourceId, deliveryGateway).getOrThrow()
                         "${job.type.displayName}を送信しました（Job.${job.sourceId}）"
                     }
                 }
