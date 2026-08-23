@@ -1,9 +1,7 @@
 name: V1.36 Source Export (temporary)
 
 on:
-  push:
-    branches:
-      - develop/v1.36
+  pull_request:
 
 permissions:
   contents: read
@@ -14,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: develop/v1.36
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
       - name: Export source snapshot
         uses: actions/upload-artifact@v4
