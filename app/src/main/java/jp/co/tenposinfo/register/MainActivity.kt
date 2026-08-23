@@ -2987,7 +2987,8 @@ private fun statusColor(status: PrintJobStatus): Color = when (status) {
     PrintJobStatus.COMPLETED -> Color(0xFF2E7D32)
     PrintJobStatus.FAILED -> Danger
     PrintJobStatus.RETRY -> Color(0xFFEF6C00)
-    PrintJobStatus.PRINTING -> Blue
+    PrintJobStatus.SENDING -> Color(0xFFEF6C00)
+    PrintJobStatus.PRINTING -> Color(0xFFEF6C00)
     PrintJobStatus.PENDING -> Navy
     PrintJobStatus.DISCARDED -> Color.Gray
 }

@@ -127,7 +127,7 @@ class PrintJobUncertainSafetyStoreV136(context: Context) : AutoCloseable {
       source.first,
       ContentValues().apply {
           put("status", PrintJobStatus.DISCARDED.name)
-          put("last_error", "印刷結果不明。再印刷Job.$newJobIdへ引継ぎ：${reason.trim()}".take(500))
+          put("last_error", "印刷結果不明。再印刷Job.${newJobId}へ引継ぎ：${reason.trim()}".take(500))
           put("uncertain_resolution", "REPRINT_CREATED")
           put("uncertain_resolved_at", now)
           put("uncertain_resolved_by", operatorId.trim().take(100))
