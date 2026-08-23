@@ -152,7 +152,9 @@ class V135ManualReturnPolicyTest {
         assertTrue(manualReturn.contains("put(\"payload_text\", preview)"))
         assertTrue(advanced.contains("gateway.send(TextEscPosEncoder.encode(job.payloadText))"))
         assertTrue(unified.contains("OperationDocumentType.REVERSAL_RECEIPT -> UnifiedPrintJobType.REVERSAL_RECEIPT"))
-        // v1.36 introduces a receipt-only stamp wrapper; non-sale document jobs still use the raw TCP gateway.
-        assertTrue(worker.contains("operations.processDocumentPrint(candidate.sourceId, rawGateway).isSuccess"))
+        // v1.36 §16.9 keeps the stored payload path, but wraps the raw TCP gateway so delivery result is confirmed/persisted before completion.
+        assertTrue(worker.contains("kind = PrintDeliveryJobKindV136.DOCUMENT"))
+        assertTrue(worker.contains("delegate = rawGateway"))
+        assertTrue(worker.contains("operations.processDocumentPrint(candidate.sourceId, deliveryGateway).isSuccess"))
     }
 }
