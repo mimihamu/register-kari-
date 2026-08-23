@@ -52,6 +52,7 @@ data class PrintJobRecord(
     val lastError: String?,
     val createdAt: Long,
     val updatedAt: Long,
+    val deliveryResult: PrintDeliveryResultV136? = null,
 )
 
 data class ReceiptData(
@@ -314,6 +315,9 @@ object PrinterRetrySafety {
         var current: Throwable? = error
         while (current != null) {
             if (current is PrinterTransportException) return classify(current.phase)
+            if (current is PrinterDeliveryConfirmationExceptionV136) {
+                return PrinterFailureDisposition.MANUAL_CONFIRMATION_REQUIRED
+            }
             current = current.cause
         }
         return PrinterFailureDisposition.SAFE_TO_RETRY
@@ -388,6 +392,7 @@ class PrintQueueProcessor(
     private val database: RegisterDatabase,
     private val gateway: PrinterGateway,
     private val saleReceiptSetting: DocumentPrintSettingV136 = DocumentPrintSettingV136(footer = ReceiptFooterMessagePolicyV136.DEFAULT_MESSAGE),
+    private val printerConfiguration: PrinterConfiguration? = null,
 ) {
     fun processNext(): Boolean {
         val job = database.claimNextPrintableJob() ?: return false
@@ -404,14 +409,13 @@ class PrintQueueProcessor(
                 completedPrintCount = detail.summary.printCount,
             ),
         )
-        val configuredSnapshot = (PrinterConfigurationRegistry.current() ?: PrinterConfiguration()).copy(
+        val configuredSnapshot = (printerConfiguration ?: PrinterConfigurationRegistry.current() ?: PrinterConfiguration()).copy(
             paperWidthMm = job.paperWidthMm,
         )
         val configuredReceipt = DocumentPrintSettingsPolicyV136.applyToReceipt(receipt, saleReceiptSetting)
-        val result = gateway.send(EscPosEncoder.encode(configuredReceipt, configuredSnapshot))
-        result.onSuccess {
-            database.markPrintCompleted(job.id)
-        }.onFailure { error ->
+        val sendResult = gateway.send(EscPosEncoder.encode(configuredReceipt, configuredSnapshot))
+        if (sendResult.isFailure) {
+            val error = sendResult.exceptionOrNull() ?: IllegalStateException("印刷送信に失敗しました")
             val manualConfirmation = PrinterRetrySafety.classify(error) ==
                 PrinterFailureDisposition.MANUAL_CONFIRMATION_REQUIRED
             database.markPrintFailed(
@@ -419,7 +423,20 @@ class PrintQueueProcessor(
                 error.message ?: error.javaClass.simpleName,
                 permanent = manualConfirmation,
             )
+            return false
         }
-        return result.isSuccess
+        val confirmation = printerConfiguration?.let {
+            PrintDeliveryConfirmationPolicyV136.confirm(configuredSnapshot)
+        } ?: Result.success(PrintDeliveryResultV136.ACCEPTED)
+        confirmation.onSuccess { deliveryResult ->
+            database.markPrintCompleted(job.id, deliveryResult)
+        }.onFailure { error ->
+            database.markPrintFailed(
+                job.id,
+                error.message ?: error.javaClass.simpleName,
+                permanent = true,
+            )
+        }
+        return confirmation.isSuccess
     }
 }
