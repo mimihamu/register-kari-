@@ -411,7 +411,14 @@ class PrintQueueProcessor(
             paperWidthMm = job.paperWidthMm,
         )
         val configuredReceipt = DocumentPrintSettingsPolicyV136.applyToReceipt(receipt, saleReceiptSetting)
-        val result = gateway.send(EscPosEncoder.encode(configuredReceipt, configuredSnapshot))
+        val renderedPayload = EscPosEncoder.encode(configuredReceipt, configuredSnapshot)
+        PrintDocumentSnapshotSchemaV136.recordRenderedHash(
+            db = database.writableDatabase,
+            table = "print_jobs",
+            jobId = job.id,
+            payload = renderedPayload,
+        )
+        val result = gateway.send(renderedPayload)
         result.onSuccess {
             database.markPrintCompleted(job.id)
         }.onFailure { error ->

@@ -839,7 +839,14 @@ class AdvancedOperationsStore(context: Context) {
         if (claimed != 1) {
             return Result.failure(IllegalStateException("印刷ジョブの状態が変更されたため送信を開始できませんでした"))
         }
-        val result = gateway.send(TextEscPosEncoder.encode(job.payloadText))
+        val renderedPayload = TextEscPosEncoder.encode(job.payloadText)
+        PrintDocumentSnapshotSchemaV136.recordRenderedHash(
+            db = db,
+            table = "document_print_jobs",
+            jobId = jobId,
+            payload = renderedPayload,
+        )
+        val result = gateway.send(renderedPayload)
         return result.fold(
             onSuccess = {
                 val updated = db.update(
@@ -1129,6 +1136,7 @@ class AdvancedOperationsStore(context: Context) {
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_settlement_date ON settlement_reports(business_date, report_type)")
         BusinessSessionSchema.ensure(db)
         TaxSnapshotSchema.ensureReversalColumns(db)
+        PrintDocumentSnapshotSchemaV136.ensureDocument(db)
     }
 
     companion object {

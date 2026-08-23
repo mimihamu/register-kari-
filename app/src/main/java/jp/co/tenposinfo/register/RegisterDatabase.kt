@@ -48,6 +48,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         CartCorrectionSchemaV135.ensure(db)
         SaleGuestCountRuntimeV135.ensureSchema(db)
         SaleTaxSnapshotStoreV136.ensureSchema(db)
+        PrintDocumentSnapshotSchemaV136.ensureSale(db)
     }
 
     fun loadProducts(): List<Product> {
@@ -334,11 +335,13 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     },
                 )
             }
-            if (ReceiptAutoPrintPolicyV136.shouldCreateAutomaticReceiptJob(
+            val automaticPrintJobId = if (ReceiptAutoPrintPolicyV136.shouldCreateAutomaticReceiptJob(
                     printerConfiguration.receiptAutoPrintEnabled,
                 )
             ) {
                 insertPrintJob(this, saleId, paperWidthMm, createdAt)
+            } else {
+                null
             }
             LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_SALE, saleId, items)
             SaleTaxSnapshotStoreV136.save(
@@ -359,6 +362,19 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 folderName = DriveSyncSettingsStore.load(applicationContext).folderName,
             )
             SaleTaxSnapshotStoreV136.enrichSaleJournal(this, saleId)
+            PrintDocumentSnapshotV136.persistSaleSnapshot(
+                db = this,
+                printJobId = automaticPrintJobId,
+                saleId = saleId,
+                businessDate = businessLink.businessDate,
+                issuedAt = createdAt,
+                operatorName = operatorName,
+                items = items,
+                taxSummary = summary,
+                payments = paymentState.allocations,
+                changeAmount = paymentState.changeAmount,
+                settings = taxSettings,
+            )
             if (normalizedCommitKey != null) {
                 SaleCommitIdempotencySchema.record(
                     db = this,
@@ -942,7 +958,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_print_jobs_status ON print_jobs(status, created_at)")
     }
 
-    private fun insertPrintJob(db: SQLiteDatabase, saleId: Long, paperWidthMm: Int, now: Long) {
+    private fun insertPrintJob(db: SQLiteDatabase, saleId: Long, paperWidthMm: Int, now: Long): Long =
         db.insertOrThrow(
             "print_jobs",
             null,
@@ -956,7 +972,6 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 put("updated_at", now)
             },
         )
-    }
 
     private fun migrateCartToLineNumber(db: SQLiteDatabase) {
         db.execSQL("ALTER TABLE cart_items RENAME TO cart_items_v3")
