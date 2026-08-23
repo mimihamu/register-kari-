@@ -1,9 +1,7 @@
 name: V1.36 Print Job Diagnostic (temporary)
 
 on:
-  push:
-    branches:
-      - develop/v1.36
+  pull_request:
   workflow_dispatch:
 
 permissions:
