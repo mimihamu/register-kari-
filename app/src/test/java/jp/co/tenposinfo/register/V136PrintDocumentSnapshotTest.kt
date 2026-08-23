@@ -98,9 +98,9 @@ class V136PrintDocumentSnapshotTest {
         assertTrue(schema.contains("AFTER UPDATE OF last_error ON"))
         assertTrue(advanced.contains("PrintDocumentSnapshotSchemaV136.ensureDocument(db)"))
         assertTrue(advanced.contains("table = \"document_print_jobs\""))
-        assertTrue(advanced.indexOf("recordRenderedHash(") < advanced.indexOf("gateway.send(renderedPayload)"))
+        assertHashRecordedBeforeSend(advanced, "document_print_jobs")
         assertTrue(receipt.contains("table = \"print_jobs\""))
-        assertTrue(receipt.indexOf("recordRenderedHash(") < receipt.indexOf("gateway.send(renderedPayload)"))
+        assertHashRecordedBeforeSend(receipt, "print_jobs")
     }
 
     @Test
@@ -116,5 +116,18 @@ class V136PrintDocumentSnapshotTest {
         assertFalse(production.contains("delete(\"sales_journal\""))
         assertFalse(production.contains("delete(\"print_document_journal_v136\""))
         assertFalse(production.contains("delete(\"print_error_journal_v136\""))
+    }
+
+    private fun assertHashRecordedBeforeSend(source: String, table: String) {
+        val tableIndex = source.indexOf("table = \"$table\"")
+        assertTrue("$table rendered-hash target is missing", tableIndex >= 0)
+
+        val hashIndex = source.lastIndexOf("recordRenderedHash(", tableIndex)
+            .takeIf { it >= 0 }
+            ?: source.indexOf("recordRenderedHash(", tableIndex)
+        assertTrue("$table recordRenderedHash call is missing", hashIndex >= 0)
+
+        val sendIndex = source.indexOf("gateway.send(", hashIndex)
+        assertTrue("$table gateway.send call is missing after recordRenderedHash", sendIndex > hashIndex)
     }
 }
