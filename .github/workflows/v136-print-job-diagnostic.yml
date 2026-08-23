@@ -9,11 +9,14 @@ permissions:
 
 jobs:
   diagnostic:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -21,16 +24,19 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle 9.5
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '9.5'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK 36
+      - name: Install Android API 36
         shell: bash
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle 9.5.0
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
 
       - name: Run cumulative tests with diagnostics
         id: gradle_test
@@ -47,7 +53,7 @@ jobs:
           status=${PIPESTATUS[0]}
           echo "$status" > diagnostic/gradle-exit-code.txt
           find app customer-display management-app \
-            -type f \( -name 'TEST-*.xml' -o -name '*.xml' \) \
+            -type f -name 'TEST-*.xml' \
             -path '*/build/test-results/*' -print0 2>/dev/null \
             | while IFS= read -r -d '' file; do
                 target="diagnostic/junit/${file}"
