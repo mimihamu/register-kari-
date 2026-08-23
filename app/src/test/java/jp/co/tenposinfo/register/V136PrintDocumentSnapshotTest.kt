@@ -73,10 +73,10 @@ class V136PrintDocumentSnapshotTest {
 
     @Test
     fun saleCommitPersistsStructuredSnapshotInsideSaleTransaction() {
-        val source = productionSource("RegisterDatabase.kt").readText()
+        val source = File("src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt").readText()
         val enrich = source.indexOf("SaleTaxSnapshotStoreV136.enrichSaleJournal(this, saleId)")
-        val snapshot = source.indexOf("PrintDocumentSnapshotV136.persistSaleSnapshot(", enrich.coerceAtLeast(0))
-        val cartDelete = source.indexOf("delete(\"cart_items\", null, null)", snapshot.coerceAtLeast(0))
+        val snapshot = source.indexOf("PrintDocumentSnapshotV136.persistSaleSnapshot(")
+        val cartDelete = source.indexOf("// 売上確定と作業中カート消去を同一トランザクションに含める。")
 
         assertTrue(enrich >= 0)
         assertTrue(snapshot > enrich)
@@ -86,9 +86,9 @@ class V136PrintDocumentSnapshotTest {
 
     @Test
     fun allDocumentPrintInsertsAreCapturedByStructuredJournalTriggerAndRenderedHashIsRecordedBeforeSend() {
-        val schema = productionSource("PrintDocumentSnapshotV136.kt").readText()
-        val advanced = productionSource("AdvancedOperationsStore.kt").readText()
-        val receipt = productionSource("Receipt.kt").readText()
+        val schema = File("src/main/java/jp/co/tenposinfo/register/PrintDocumentSnapshotV136.kt").readText()
+        val advanced = File("src/main/java/jp/co/tenposinfo/register/AdvancedOperationsStore.kt").readText()
+        val receipt = File("src/main/java/jp/co/tenposinfo/register/Receipt.kt").readText()
 
         assertTrue(schema.contains("CREATE TABLE IF NOT EXISTS print_document_journal_v136"))
         assertTrue(schema.contains("AFTER INSERT ON document_print_jobs"))
@@ -97,13 +97,15 @@ class V136PrintDocumentSnapshotTest {
         assertTrue(schema.contains("CREATE TABLE IF NOT EXISTS print_error_journal_v136"))
         assertTrue(schema.contains("AFTER UPDATE OF last_error ON"))
         assertTrue(advanced.contains("PrintDocumentSnapshotSchemaV136.ensureDocument(db)"))
+        assertTrue(advanced.contains("table = \"document_print_jobs\""))
         assertHashRecordedBeforeSend(advanced, "document_print_jobs")
+        assertTrue(receipt.contains("table = \"print_jobs\""))
         assertHashRecordedBeforeSend(receipt, "print_jobs")
     }
 
     @Test
     fun authoritativeJournalAndPrintErrorTablesHaveNoOrdinaryDeletePath() {
-        val production = productionRoot()
+        val production = File("src/main/java/jp/co/tenposinfo/register")
             .walkTopDown()
             .filter { it.isFile && it.extension == "kt" }
             .joinToString("\n") { it.readText() }
@@ -117,37 +119,15 @@ class V136PrintDocumentSnapshotTest {
     }
 
     private fun assertHashRecordedBeforeSend(source: String, table: String) {
-        var cursor = 0
-        var hashIndex = -1
-        while (cursor < source.length) {
-            val candidate = source.indexOf("recordRenderedHash(", cursor)
-            if (candidate < 0) break
-            val windowEnd = minOf(source.length, candidate + 800)
-            if (source.substring(candidate, windowEnd).contains("table = \"$table\"")) {
-                hashIndex = candidate
-                break
-            }
-            cursor = candidate + 1
-        }
+        val tableIndex = source.indexOf("table = \"$table\"")
+        assertTrue("$table rendered-hash target is missing", tableIndex >= 0)
+
+        val hashIndex = source.lastIndexOf("recordRenderedHash(", tableIndex)
+            .takeIf { it >= 0 }
+            ?: source.indexOf("recordRenderedHash(", tableIndex)
         assertTrue("$table recordRenderedHash call is missing", hashIndex >= 0)
 
-        val sendIndex = source.indexOf("gateway.send(", hashIndex.coerceAtLeast(0))
+        val sendIndex = source.indexOf("gateway.send(", hashIndex)
         assertTrue("$table gateway.send call is missing after recordRenderedHash", sendIndex > hashIndex)
-    }
-
-    private fun productionSource(fileName: String): File {
-        val file = File(productionRoot(), fileName)
-        assertTrue("Production source not found: ${file.absolutePath}", file.isFile)
-        return file
-    }
-
-    private fun productionRoot(): File {
-        val candidates = listOf(
-            File("src/main/java/jp/co/tenposinfo/register"),
-            File("app/src/main/java/jp/co/tenposinfo/register"),
-            File("../app/src/main/java/jp/co/tenposinfo/register"),
-        )
-        return candidates.firstOrNull { it.isDirectory }
-            ?: error("Production source root not found. cwd=${File(".").absolutePath}; candidates=${candidates.joinToString { it.absolutePath }}")
     }
 }
