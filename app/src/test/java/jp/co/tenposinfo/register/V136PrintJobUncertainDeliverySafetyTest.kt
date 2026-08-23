@@ -36,7 +36,7 @@ class V136PrintJobUncertainDeliverySafetyTest {
         assertTrue(source.contains("put(\"reprint_reason\", reason.trim().take(500))"))
         assertTrue(source.contains("put(\"reprint_operator_id\", operatorId.trim().take(100))"))
         assertTrue(source.contains("PRINT_JOB_UNCERTAIN_REPRINT_CREATED"))
-        assertTrue(source.contains("new_job_id=$newJobId"))
+        assertTrue(source.contains("new_job_id=\$newJobId"))
     }
 
     @Test
