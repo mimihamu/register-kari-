@@ -196,15 +196,25 @@ class AutomaticPrintWorker(
                                     delegate = rawGateway,
                                     paperWidthMm = width,
                                 )
-                                PrintQueueProcessor(
-                                    database,
-                                    receiptGateway,
-                                    saleReceiptSetting,
-                                    configuration,
-                                ).processNext()
+                                val deliveryGateway = DeliveryConfirmingPrinterGatewayV136(
+                                    context = applicationContext,
+                                    configuration = configuration.copy(paperWidthMm = width),
+                                    kind = PrintDeliveryJobKindV136.SALE_RECEIPT,
+                                    jobId = candidate.sourceId,
+                                    delegate = receiptGateway,
+                                )
+                                PrintQueueProcessor(database, deliveryGateway, saleReceiptSetting).processNext()
                             }
-                            AutomaticPrintCandidateSource.DOCUMENT ->
-                                operations.processDocumentPrint(candidate.sourceId, rawGateway, configuration).isSuccess
+                            AutomaticPrintCandidateSource.DOCUMENT -> {
+                                val deliveryGateway = DeliveryConfirmingPrinterGatewayV136(
+                                    context = applicationContext,
+                                    configuration = configuration,
+                                    kind = PrintDeliveryJobKindV136.DOCUMENT,
+                                    jobId = candidate.sourceId,
+                                    delegate = rawGateway,
+                                )
+                                operations.processDocumentPrint(candidate.sourceId, deliveryGateway).isSuccess
+                            }
                         }
                         candidate to success
                     }
