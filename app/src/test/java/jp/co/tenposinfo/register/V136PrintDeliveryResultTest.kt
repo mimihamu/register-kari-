@@ -85,24 +85,29 @@ class V136PrintDeliveryResultTest {
     }
 
     @Test
-    fun persistenceIsAdditiveAndLegacyCompletedRowsAreNotBackfilled() {
-        val saleDb = File("src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt").readText()
-        val docs = File("src/main/java/jp/co/tenposinfo/register/AdvancedOperationsStore.kt").readText()
-        val schema = File("src/main/java/jp/co/tenposinfo/register/PrintDeliveryResultV136.kt").readText()
-        assertTrue(saleDb.contains("delivery_result"))
-        assertTrue(docs.contains("delivery_result"))
-        assertTrue(schema.contains("ALTER TABLE \$table ADD COLUMN delivery_result TEXT"))
-        assertFalse(schema.contains("UPDATE print_jobs SET delivery_result"))
-        assertFalse(schema.contains("UPDATE document_print_jobs SET delivery_result"))
+    fun resultSchemaIsAdditiveAndLegacyCompletedRowsAreNotBackfilled() {
+        val source = File("src/main/java/jp/co/tenposinfo/register/PrintDeliveryResultV136.kt").readText()
+        assertTrue(source.contains("ALTER TABLE \$table ADD COLUMN delivery_result TEXT"))
+        assertTrue(source.contains("status IN (?, ?)"))
+        assertFalse(source.contains("UPDATE print_jobs SET delivery_result"))
+        assertFalse(source.contains("UPDATE document_print_jobs SET delivery_result"))
     }
 
     @Test
-    fun automaticAndManualPathsPassLiveConfigurationForPostSendConfirmation() {
+    fun automaticAndManualPathsWrapExactJobBeforeNormalCompletionTransition() {
         val worker = File("src/main/java/jp/co/tenposinfo/register/AutomaticPrintWorker.kt").readText()
         val manual = File("src/main/java/jp/co/tenposinfo/register/UnifiedPrintQueue.kt").readText()
-        assertTrue(worker.contains("operations.processDocumentPrint(candidate.sourceId, rawGateway, configuration)"))
-        assertTrue(worker.contains("saleReceiptSetting,\n                                    configuration,"))
-        assertTrue(manual.contains("documentStore.processDocumentPrint(job.sourceId, rawGateway, configuration)"))
-        assertTrue(manual.contains("PrintDeliveryConfirmationPolicyV136.confirm(configuration)"))
+        assertTrue(worker.contains("kind = PrintDeliveryJobKindV136.SALE_RECEIPT"))
+        assertTrue(worker.contains("kind = PrintDeliveryJobKindV136.DOCUMENT"))
+        assertTrue(worker.contains("jobId = candidate.sourceId"))
+        assertTrue(manual.contains("kind = PrintDeliveryJobKindV136.SALE_RECEIPT"))
+        assertTrue(manual.contains("kind = PrintDeliveryJobKindV136.DOCUMENT"))
+        assertTrue(manual.contains("jobId = job.sourceId"))
+    }
+
+    @Test
+    fun explicitUncertainCompletionRecordsPrintedResult() {
+        val source = File("src/main/java/jp/co/tenposinfo/register/PrintJobUncertainSafetyV136.kt").readText()
+        assertTrue(source.contains("put(\"delivery_result\", PrintDeliveryResultV136.PRINTED.name)"))
     }
 }
