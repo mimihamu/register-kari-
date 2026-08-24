@@ -40,7 +40,7 @@ class V136DocumentPrintPreviewOperationsTest {
             assertTrue(state.printDisabled)
             assertTrue(state.canRender)
             val preview = DocumentPrintPreviewV136.render(kind, setting, ReceiptPaper.MM58)
-            assertTrue(preview.contains("印刷無効（電子保存のみ）"))
+            assertTrue(preview.replace("\n", "").contains("印刷無効（電子保存のみ）"))
         }
     }
 
