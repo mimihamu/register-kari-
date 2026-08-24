@@ -1,6 +1,62 @@
 package jp.co.tenposinfo.register
 
 /**
+ * UI-only preview state for master checklist #32 (PRN-PREVIEW-002).
+ *
+ * The formal v2.5 specification does not define PRN-PREVIEW-002 as an independent
+ * requirement ID. This state is therefore intentionally derived from the formal
+ * SCR-640 preview requirement and ReceiptLayoutConfig.copies / existing document
+ * print settings instead of inventing a second print contract.
+ */
+data class DocumentPrintPreviewStateV136(
+    val effectiveCopies: Int,
+    val printDisabled: Boolean,
+    val autoPrintEnabled: Boolean,
+    val validationError: String?,
+) {
+    val canRender: Boolean get() = validationError == null
+}
+
+object DocumentPrintPreviewPolicyV136 {
+    fun evaluate(
+        kind: DocumentPrintKindV136,
+        setting: DocumentPrintSettingV136,
+    ): DocumentPrintPreviewStateV136 {
+        val effectiveCopies = DocumentPrintSettingsPolicyV136.normalizeCopies(kind, setting.copies)
+        val validationError = if (kind == DocumentPrintKindV136.SALE_RECEIPT) {
+            runCatching { ReceiptFooterMessagePolicyV136.normalizeForSave(setting.footer) }
+                .exceptionOrNull()
+                ?.message
+        } else {
+            null
+        }
+        return DocumentPrintPreviewStateV136(
+            effectiveCopies = effectiveCopies,
+            printDisabled = effectiveCopies == 0,
+            autoPrintEnabled = setting.autoPrintEnabled,
+            validationError = validationError,
+        )
+    }
+
+    fun statusLines(
+        state: DocumentPrintPreviewStateV136,
+        paper: ReceiptPaper,
+    ): List<String> {
+        val lines = mutableListOf<String>()
+        val copyStatus = if (state.printDisabled) {
+            "プレビュー: 印刷無効（電子保存のみ）"
+        } else {
+            "プレビュー: 印刷部数 ${state.effectiveCopies}部"
+        }
+        lines += ReceiptLineWrapV136.wrap(copyStatus, paper.charsPerLine)
+        if (!state.autoPrintEnabled) {
+            lines += ReceiptLineWrapV136.wrap("自動印刷OFF（手動印刷可）", paper.charsPerLine)
+        }
+        return lines
+    }
+}
+
+/**
  * Formal v2.5 SCR-640 / §16.2 print preview.
  *
  * Sale-receipt preview deliberately uses the production ReceiptRenderer so that
@@ -15,27 +71,35 @@ object DocumentPrintPreviewV136 {
         kind: DocumentPrintKindV136,
         setting: DocumentPrintSettingV136,
         paper: ReceiptPaper,
-    ): String = when (kind) {
-        DocumentPrintKindV136.SALE_RECEIPT -> renderSaleReceipt(setting, paper)
-        DocumentPrintKindV136.RECEIPT_VOUCHER -> renderOperationDocument(
-            kind,
-            PrinterPaperTestDocumentV136.RECEIPT_VOUCHER,
-            setting,
-            paper,
-        )
-        DocumentPrintKindV136.PROVISIONAL_RECEIPT -> renderOperationDocument(
-            kind,
-            PrinterPaperTestDocumentV136.PROVISIONAL_RECEIPT,
-            setting,
-            paper,
-        )
-        DocumentPrintKindV136.SETTLEMENT -> renderOperationDocument(
-            kind,
-            PrinterPaperTestDocumentV136.SETTLEMENT,
-            setting,
-            paper,
-        )
-        DocumentPrintKindV136.INSPECTION -> renderInspection(setting, paper)
+    ): String {
+        val state = DocumentPrintPreviewPolicyV136.evaluate(kind, setting)
+        require(state.canRender) {
+            "${state.validationError ?: "印刷設定が不正です"}。設定項目を修正してください"
+        }
+        val document = when (kind) {
+            DocumentPrintKindV136.SALE_RECEIPT -> renderSaleReceipt(setting, paper)
+            DocumentPrintKindV136.RECEIPT_VOUCHER -> renderOperationDocument(
+                kind,
+                PrinterPaperTestDocumentV136.RECEIPT_VOUCHER,
+                setting,
+                paper,
+            )
+            DocumentPrintKindV136.PROVISIONAL_RECEIPT -> renderOperationDocument(
+                kind,
+                PrinterPaperTestDocumentV136.PROVISIONAL_RECEIPT,
+                setting,
+                paper,
+            )
+            DocumentPrintKindV136.SETTLEMENT -> renderOperationDocument(
+                kind,
+                PrinterPaperTestDocumentV136.SETTLEMENT,
+                setting,
+                paper,
+            )
+            DocumentPrintKindV136.INSPECTION -> renderInspection(setting, paper)
+        }
+        return (DocumentPrintPreviewPolicyV136.statusLines(state, paper) + document.lines())
+            .joinToString("\n")
     }
 
     fun previewDotWidth(paper: ReceiptPaper): Int =
