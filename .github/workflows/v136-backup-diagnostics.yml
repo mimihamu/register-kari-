@@ -1,0 +1,32 @@
+name: v1.36 backup diagnostics
+
+on:
+  push:
+    branches:
+      - develop/v1.36
+    paths:
+      - .github/workflows/v136-backup-diagnostics.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.36
+          fetch-depth: 0
+      - name: Inspect backup import restore implementation
+        shell: bash
+        run: |
+          set -u
+          echo '=== backup/restore/import filenames ==='
+          find app/src management-app/src -type f 2>/dev/null | sort | grep -Ei 'backup|restore|import|export|database|sqlite|migration|integrity|storage' | head -4000 || true
+          echo '=== backup symbols ==='
+          grep -RniE --exclude-dir=build --exclude-dir=.gradle 'backup|restore|integrity_check|quick_check|checksum|sha-?256|SQLiteDatabase|copyDatabase|databasePath|ACTION_OPEN_DOCUMENT|ACTION_OPEN_DOCUMENT_TREE|DocumentFile|Storage Access Framework|import.*sqlite|sqlite.*import' app/src/main app/src/test 2>/dev/null | head -10000 || true
+          echo '=== backup settings/ui ==='
+          grep -RniE --exclude-dir=build --exclude-dir=.gradle 'バックアップ|復元|インポート|エクスポート|backup\.retention|backup\.autoSchedule|backup\.destination|portableKeyWrap|restore\.precheck|restore\.scope' app/src/main app/src/test 2>/dev/null | head -8000 || true
+          echo '=== exact candidate files ==='
+          for f in $(find app/src/main -type f | grep -Ei 'backup|restore|import|export|database|maintenance' | head -30); do echo "--- $f ---"; sed -n '1,900p' "$f"; done
