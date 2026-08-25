@@ -21,14 +21,9 @@ jobs:
       - name: Inspect drawer policy and call sites
         shell: bash
         run: |
-          set -euo pipefail
-          f=$(find app/src -name PaymentSettlementSupport.kt -print -quit)
-          p=$(find app/src -name PrinterSupport.kt -print -quit)
-          echo "PAYMENT_FILE=$f"
-          echo "PRINTER_FILE=$p"
-          echo '=== PaymentSettlementSupport drawer section ==='
-          sed -n '90,650p' "$f"
-          echo '=== all drawer policy call sites ==='
-          grep -RniE 'CashDrawerStandaloneOpenGuardV134|CashDrawerStandaloneAction|isStandaloneOpenAllowed|openForPayment|drawerOpenStandaloneEnabled|recordDrawer|DRAWER_OPEN' app/src/main app/src/test || true
-          echo '=== printer drawer section ==='
-          grep -nE 'drawer|cashDrawer|pulse|0x70|ESC.?p' "$p" | head -250 || true
+          echo '=== exact filenames ==='
+          find . -type f \( -name 'PaymentSettlementSupport.kt' -o -name 'PrinterSupport.kt' \) -print || true
+          echo '=== class references whole repo ==='
+          grep -RniE --exclude-dir=.git 'CashDrawerStandaloneOpenGuardV134|CashDrawerStandaloneAction|isStandaloneOpenAllowed|drawerOpenStandaloneEnabled|openForPayment|drawerSensorMode|drawerOpenReasonRequired|DRAWER_OPEN' . | head -3000 || true
+          echo '=== likely files ==='
+          grep -RliE --exclude-dir=.git 'CashDrawerStandaloneOpenGuardV134|CashDrawerStandaloneAction|drawerOpenStandaloneEnabled' . | head -200 || true
