@@ -18,15 +18,20 @@ jobs:
         with:
           ref: develop/v1.36
           fetch-depth: 0
-      - name: Inspect report range and aggregation paths
+      - name: Inspect exact period report source
         shell: bash
         run: |
           set -u
-          echo '=== report/period filenames ==='
-          find app management-app customer-display -type f 2>/dev/null | sort | grep -Ei 'report|sales|settlement|period|journal|daily|monthly|summary|aggregate' | head -3000 || true
-          echo '=== period range symbols ==='
-          grep -RniE --exclude-dir=build --exclude-dir=.gradle 'period_search_ranges|period_mode|fromDate|toDate|startDate|endDate|dateFrom|dateTo|PeriodRange|DateRange|期間指定|開始日|終了日|期間集計|月間日別' app management-app | head -6000 || true
-          echo '=== report query/aggregation ==='
-          grep -RniE --exclude-dir=build --exclude-dir=.gradle 'SELECT .*sale|SUM\(|GROUP BY|aggregate|report|daily|monthly|settlement|business_date|businessDate|created_at|completed_at' app/src/main management-app/src/main | head -8000 || true
-          echo '=== report tests ==='
-          grep -RniE --exclude-dir=build --exclude-dir=.gradle 'report|period|from|to|daily|monthly|settlement|集計|期間' app/src/test management-app/src/test 2>/dev/null | head -6000 || true
+          echo '=== DailyReportStore head ==='
+          sed -n '1,380p' app/src/main/java/jp/co/tenposinfo/register/DailyReportStore.kt || true
+          echo '=== DailyReportStore rest ==='
+          sed -n '381,900p' app/src/main/java/jp/co/tenposinfo/register/DailyReportStore.kt || true
+          echo '=== DailyReportActivity head ==='
+          sed -n '1,420p' app/src/main/java/jp/co/tenposinfo/register/DailyReportActivity.kt || true
+          echo '=== DailyReportActivity rest ==='
+          sed -n '421,1000p' app/src/main/java/jp/co/tenposinfo/register/DailyReportActivity.kt || true
+          echo '=== report models / menu symbols ==='
+          grep -RniE --exclude-dir=build --exclude-dir=.gradle 'data class DailyReportSummary|data class Department|data class Payment|data class Tax|enum class ReportMenuType|PERIOD_TOTAL|ReportPeriodRangeV124' app/src/main/java/jp/co/tenposinfo/register | head -2500 || true
+          echo '=== relevant report tests ==='
+          for f in app/src/test/java/jp/co/tenposinfo/register/V128DailyReportMenuSummaryTest.kt app/src/test/java/jp/co/tenposinfo/register/V129DailyReportDayStartFilterTest.kt; do
+            echo "--- $f ---"; sed -n '1,500p' "$f" || true; done
