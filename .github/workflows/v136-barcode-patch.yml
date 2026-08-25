@@ -64,4 +64,6 @@ jobs:
             app/src/main/java/jp/co/tenposinfo/register/CatalogSettingsActivity.kt
           git diff --cached --check
           git commit -m 'feat(v1.36): complete HID barcode registration flow'
+          git fetch origin develop/v1.36
+          git rebase origin/develop/v1.36
           git push origin HEAD:develop/v1.36
