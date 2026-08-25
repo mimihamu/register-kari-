@@ -55,6 +55,11 @@ data class PrinterConfiguration(
     val cutMode: PrinterCutMode = PrinterCutMode.PARTIAL,
     val drawerEnabled: Boolean = false,
     val drawerOpenOnCashSale: Boolean = true,
+    val drawerOpenOnCashRefund: Boolean = true,
+    val drawerOpenOnCashMovement: Boolean = true,
+    val drawerOpenOnExchange: Boolean = true,
+    val drawerStandaloneEnabled: Boolean = false,
+    val drawerOpenReasonRequired: Boolean = true,
     val drawerPort: Int = 0,
     val drawerOnMillis: Int = 100,
     val drawerOffMillis: Int = 500,
@@ -165,7 +170,8 @@ object PrinterPaperSettingPolicy {
 }
 
 class AdminSettingsStore(context: Context) : AutoCloseable {
-    private val baseDatabase = RegisterDatabase(context.applicationContext)
+    private val appContext = context.applicationContext
+    private val baseDatabase = RegisterDatabase(appContext)
     private val db: SQLiteDatabase = baseDatabase.writableDatabase
 
     init {
@@ -366,6 +372,8 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             "printer_name", "host", "port", "paper_width_mm", "printable_dot_width", "feed_lines",
             "timeout_millis", "enabled", "profile_key", "cut_mode", "drawer_enabled", "drawer_open_on_cash",
             "drawer_port", "drawer_on_millis", "drawer_off_millis", "receipt_auto_print",
+            "drawer_open_on_cash_refund", "drawer_open_on_cash_movement", "drawer_open_on_exchange",
+            "drawer_standalone_enabled", "drawer_open_reason_required",
         ),
         "id = 1",
         null,
@@ -390,6 +398,11 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             drawerOnMillis = cursor.getInt(13),
             drawerOffMillis = cursor.getInt(14),
             receiptAutoPrintEnabled = cursor.getInt(15) != 0,
+            drawerOpenOnCashRefund = cursor.getInt(16) != 0,
+            drawerOpenOnCashMovement = cursor.getInt(17) != 0,
+            drawerOpenOnExchange = cursor.getInt(18) != 0,
+            drawerStandaloneEnabled = cursor.getInt(19) != 0,
+            drawerOpenReasonRequired = cursor.getInt(20) != 0,
         )
     }
 
@@ -400,7 +413,9 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
         PrinterProfileContractV136.validatePersistedConfiguration(configuration)
         require(configuration.timeoutMillis in 1_000..30_000) { "タイムアウトは1000～30000msで入力してください" }
         require(configuration.drawerPort == 0 || configuration.drawerPort == 1) { "ドロアポートはDK1またはDK2です" }
-        require(configuration.drawerOnMillis in 20..500) { "ドロアON時間は20～500msです" }
+        require(configuration.drawerOnMillis in CashDrawerSafetyPolicyV136.MIN_OPEN_PULSE_MS..CashDrawerSafetyPolicyV136.MAX_OPEN_PULSE_MS) {
+            "ドロアON時間は${CashDrawerSafetyPolicyV136.MIN_OPEN_PULSE_MS}～${CashDrawerSafetyPolicyV136.MAX_OPEN_PULSE_MS}msです"
+        }
         require(configuration.drawerOffMillis in 20..500) { "ドロアOFF時間は20～500msです" }
         if (configuration.enabled) require(configuration.host.isNotBlank()) { "有効にする場合はIPアドレスまたはホスト名が必要です" }
         if (configuration.drawerEnabled) require(configuration.profile.supportsDrawer) { "選択中のプロファイルはドロア制御に対応していません" }
@@ -422,6 +437,11 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
                     put("cut_mode", configuration.cutMode.name)
                     put("drawer_enabled", if (configuration.drawerEnabled) 1 else 0)
                     put("drawer_open_on_cash", if (configuration.drawerOpenOnCashSale) 1 else 0)
+                    put("drawer_open_on_cash_refund", if (configuration.drawerOpenOnCashRefund) 1 else 0)
+                    put("drawer_open_on_cash_movement", if (configuration.drawerOpenOnCashMovement) 1 else 0)
+                    put("drawer_open_on_exchange", if (configuration.drawerOpenOnExchange) 1 else 0)
+                    put("drawer_standalone_enabled", if (configuration.drawerStandaloneEnabled) 1 else 0)
+                    put("drawer_open_reason_required", if (configuration.drawerOpenReasonRequired) 1 else 0)
                     put("drawer_port", configuration.drawerPort)
                     put("drawer_on_millis", configuration.drawerOnMillis)
                     put("drawer_off_millis", configuration.drawerOffMillis)
@@ -464,9 +484,9 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
         return printerGateway(configuration).send(payload)
     }
 
-    fun testDrawer(configuration: PrinterConfiguration): Result<Unit> {
+    fun testDrawer(configuration: PrinterConfiguration, actor: String): Result<Unit> {
         require(configuration.host.isNotBlank()) { "IPアドレスまたはホスト名を入力してください" }
-        return printerGateway(configuration).send(PrinterCommandEncoder.drawerOnly(configuration))
+        return CashDrawerRuntimeV136.dispatchDiagnostic(appContext, configuration, actor).map { Unit }
     }
 
     fun recordPrinterTest(configuration: PrinterConfiguration, success: Boolean, message: String, actor: String) {
@@ -654,6 +674,11 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
                 drawer_port INTEGER NOT NULL DEFAULT 0,
                 drawer_on_millis INTEGER NOT NULL DEFAULT 100,
                 drawer_off_millis INTEGER NOT NULL DEFAULT 500,
+                drawer_open_on_cash_refund INTEGER NOT NULL DEFAULT 1,
+                drawer_open_on_cash_movement INTEGER NOT NULL DEFAULT 1,
+                drawer_open_on_exchange INTEGER NOT NULL DEFAULT 1,
+                drawer_standalone_enabled INTEGER NOT NULL DEFAULT 0,
+                drawer_open_reason_required INTEGER NOT NULL DEFAULT 1,
                 updated_at INTEGER NOT NULL
             )
             """.trimIndent(),
@@ -666,6 +691,11 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
         ensurePrinterColumn("drawer_port", "INTEGER NOT NULL DEFAULT 0")
         ensurePrinterColumn("drawer_on_millis", "INTEGER NOT NULL DEFAULT 100")
         ensurePrinterColumn("drawer_off_millis", "INTEGER NOT NULL DEFAULT 500")
+        ensurePrinterColumn("drawer_open_on_cash_refund", "INTEGER NOT NULL DEFAULT 1")
+        ensurePrinterColumn("drawer_open_on_cash_movement", "INTEGER NOT NULL DEFAULT 1")
+        ensurePrinterColumn("drawer_open_on_exchange", "INTEGER NOT NULL DEFAULT 1")
+        ensurePrinterColumn("drawer_standalone_enabled", "INTEGER NOT NULL DEFAULT 0")
+        ensurePrinterColumn("drawer_open_reason_required", "INTEGER NOT NULL DEFAULT 1")
         ensurePrinterColumn("printable_dot_width", "INTEGER NOT NULL DEFAULT 0")
         ensurePrinterColumn("feed_lines", "INTEGER NOT NULL DEFAULT 5")
         db.execSQL(

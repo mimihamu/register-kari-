@@ -325,6 +325,17 @@ internal class ManualReturnCoordinatorV135(context: Context) : AutoCloseable {
             managerName = managerName,
             requestId = UUID.randomUUID().toString(),
         )
+        if (request.refundMethod == ManualRefundMethodV135.CASH) {
+            CashDrawerRuntimeV136.dispatchAsync(
+                context = appContext,
+                openContext = CashDrawerOpenContextV136.CASH_REFUND,
+                referenceId = result.manualReturnId,
+                eventKey = "MANUAL_RETURN:${result.manualReturnId}",
+                reason = request.reason.trim().ifBlank { "元取引なし現金返品" },
+                actor = operator.name,
+                hasCashPayment = true,
+            )
+        }
         runCatching { AutomaticPrintScheduler.enqueueNow(appContext) }
         return result
     }

@@ -248,16 +248,13 @@ object EscPosEncoder {
         data: ReceiptData,
         configuration: PrinterConfiguration = PrinterConfigurationRegistry.current() ?: PrinterConfiguration(),
     ): ByteArray {
-        val openDrawer = configuration.drawerEnabled &&
-            configuration.drawerOpenOnCashSale &&
-            !data.reprint &&
-            data.payments.any { it.method == PaymentMethod.CASH }
+        // CSH-004: physical drawer opening is a committed business event, never a print side effect.
         val copies = DocumentPrintSettingsPolicyV136.normalizeCopies(data.documentCopies)
         return (0 until copies).fold(ByteArray(0)) { payload, copyIndex ->
             payload + PrinterCommandEncoder.encodeText(
                 text = ReceiptRenderer.render(data, PrinterPaperSettingPolicy.paper(configuration)),
                 configuration = configuration,
-                openDrawer = openDrawer && copyIndex == 0,
+                openDrawer = false,
                 appendCut = true,
             )
         }

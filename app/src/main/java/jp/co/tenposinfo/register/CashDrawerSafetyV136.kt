@@ -174,15 +174,17 @@ object CashDrawerRuntimeV136 {
     ) {
         val appContext = context.applicationContext
         executor.execute {
-            dispatch(
-                context = appContext,
-                openContext = openContext,
-                referenceId = referenceId,
-                eventKey = eventKey,
-                reason = reason,
-                actor = actor,
-                hasCashPayment = hasCashPayment,
-            )
+            runCatching {
+                dispatch(
+                    context = appContext,
+                    openContext = openContext,
+                    referenceId = referenceId,
+                    eventKey = eventKey,
+                    reason = reason,
+                    actor = actor,
+                    hasCashPayment = hasCashPayment,
+                ).getOrThrow()
+            }
         }
     }
 

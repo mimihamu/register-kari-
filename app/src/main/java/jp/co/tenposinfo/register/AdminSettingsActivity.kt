@@ -492,6 +492,9 @@ private fun PrinterSettingsScreen(
     var cutMode by remember { mutableStateOf(initial.cutMode) }
     var drawerEnabled by remember { mutableStateOf(initial.drawerEnabled) }
     var drawerOpenOnCash by remember { mutableStateOf(initial.drawerOpenOnCashSale) }
+    var drawerOpenOnCashRefund by remember { mutableStateOf(initial.drawerOpenOnCashRefund) }
+    var drawerOpenOnCashMovement by remember { mutableStateOf(initial.drawerOpenOnCashMovement) }
+    var drawerOpenOnExchange by remember { mutableStateOf(initial.drawerOpenOnExchange) }
     var drawerPort by remember { mutableStateOf(initial.drawerPort) }
     var drawerOnMillis by remember { mutableStateOf(initial.drawerOnMillis.toString()) }
     var drawerOffMillis by remember { mutableStateOf(initial.drawerOffMillis.toString()) }
@@ -514,6 +517,11 @@ private fun PrinterSettingsScreen(
         cutMode = cutMode,
         drawerEnabled = drawerEnabled,
         drawerOpenOnCashSale = drawerOpenOnCash,
+        drawerOpenOnCashRefund = drawerOpenOnCashRefund,
+        drawerOpenOnCashMovement = drawerOpenOnCashMovement,
+        drawerOpenOnExchange = drawerOpenOnExchange,
+        drawerStandaloneEnabled = false,
+        drawerOpenReasonRequired = true,
         drawerPort = drawerPort,
         drawerOnMillis = drawerOnMillis.toIntOrNull() ?: 0,
         drawerOffMillis = drawerOffMillis.toIntOrNull() ?: 0,
@@ -632,14 +640,22 @@ private fun PrinterSettingsScreen(
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = drawerEnabled, onCheckedChange = { drawerEnabled = it })
                         Text("プリンター接続ドロアを使用")
-                        Spacer(Modifier.width(18.dp))
-                        Checkbox(
-                            checked = drawerOpenOnCash,
-                            onCheckedChange = { drawerOpenOnCash = it },
-                            enabled = drawerEnabled,
-                        )
-                        Text("現金会計時に自動オープン")
                     }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = drawerOpenOnCash, onCheckedChange = { drawerOpenOnCash = it }, enabled = drawerEnabled)
+                        Text("現金会計")
+                        Spacer(Modifier.width(12.dp))
+                        Checkbox(checked = drawerOpenOnCashRefund, onCheckedChange = { drawerOpenOnCashRefund = it }, enabled = drawerEnabled)
+                        Text("現金返金")
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = drawerOpenOnCashMovement, onCheckedChange = { drawerOpenOnCashMovement = it }, enabled = drawerEnabled)
+                        Text("入金・出金")
+                        Spacer(Modifier.width(12.dp))
+                        Checkbox(checked = drawerOpenOnExchange, onCheckedChange = { drawerOpenOnExchange = it }, enabled = drawerEnabled)
+                        Text("両替")
+                    }
+                    Text("単独開放は無効。開放は業務確定後に理由・担当者付きで監査記録します。", color = Color.Gray, fontSize = 12.sp)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         AsChoiceButton("DK1", drawerPort == 0, Modifier.weight(1f)) { drawerPort = 0 }
                         AsChoiceButton("DK2", drawerPort == 1, Modifier.weight(1f)) { drawerPort = 1 }
@@ -698,7 +714,7 @@ private fun PrinterSettingsScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = AsGreen),
                     ) { Text("テスト印刷", fontWeight = FontWeight.Bold) }
                     Button(
-                        onClick = { executeTest("ドロアテスト") { store.testDrawer(it) } },
+                        onClick = { executeTest("ドロアテスト") { store.testDrawer(it, actorName) } },
                         enabled = !testing && drawerEnabled,
                         modifier = Modifier.weight(1f).height(54.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = AsGreen),
@@ -721,7 +737,15 @@ private fun PrinterSettingsScreen(
                 AsValueRow("レシート自動発行", if (receiptAutoPrint) "ON" else "OFF（後レシート可）")
                 AsValueRow("カット", cutMode.displayName)
                 AsValueRow("ドロア", if (drawerEnabled) "DK${drawerPort + 1}" else "無効")
-                AsValueRow("自動オープン", if (drawerEnabled && drawerOpenOnCash) "現金会計時" else "なし")
+                AsValueRow(
+                    "自動オープン",
+                    if (!drawerEnabled) "なし" else listOfNotNull(
+                        "現金会計".takeIf { drawerOpenOnCash },
+                        "現金返金".takeIf { drawerOpenOnCashRefund },
+                        "入出金".takeIf { drawerOpenOnCashMovement },
+                        "両替".takeIf { drawerOpenOnExchange },
+                    ).joinToString("・").ifBlank { "なし" },
+                )
                 Spacer(Modifier.height(12.dp))
                 AsFlowStep("1", "会計・精算・返品をSQLiteへ確定")
                 AsFlowStep("2", "印刷キューへ登録")
@@ -730,7 +754,7 @@ private fun PrinterSettingsScreen(
                 AsFlowStep("5", "送信結果不明時は自動再印刷を停止")
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "レシート自動発行ONでは初回レシートにドロアキックを付加します。OFFでは会計確定後にドロアだけを独立送信します。後レシート／再発行、返品票、X点検票、Z精算票では自動でドロアを開きません。",
+                    "ドロア開放は印刷から分離し、現金会計・現金返金・入出金・両替の業務確定後だけ実行します。同じ業務イベントは再送・再印字されても再開放しません。単独開放は無効です。",
                     color = Color.DarkGray,
                     lineHeight = 22.sp,
                 )

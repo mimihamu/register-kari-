@@ -8,6 +8,7 @@ import java.time.LocalDate
 enum class CashMovementType(val displayName: String, val sign: Long) {
     IN("入金", 1),
     OUT("出金", -1),
+    EXCHANGE("両替", 0),
 }
 
 enum class ReversalType(val displayName: String) {
@@ -396,6 +397,11 @@ class OperationsStore(context: Context) {
             return result
         }
     }
+
+    fun reversalHasCashRefund(reversalId: Long): Boolean = longQuery(
+        "SELECT COUNT(*) FROM reversal_payments WHERE reversal_id = ? AND payment_method = ?",
+        arrayOf(reversalId.toString(), PaymentMethod.CASH.name),
+    ) > 0
 
     fun loadReturnableLines(saleId: Long): List<ReturnableSaleLine> =
         loadReturnableLines(db, saleId)

@@ -56,7 +56,8 @@ class V136DocumentPrintSettingsTest {
     fun saleCopiesStayInsideOneLogicalQueueJob() {
         val source = File("src/main/java/jp/co/tenposinfo/register/Receipt.kt").readText()
         assertTrue(source.contains("documentCopies: Int = 1"))
-        assertTrue(source.contains("openDrawer = openDrawer && copyIndex == 0"))
+        assertTrue(source.contains("openDrawer = false"))
+        assertFalse(source.contains("openDrawer = openDrawer && copyIndex == 0"))
         assertTrue(source.contains("applyToReceipt(receipt, saleReceiptSetting)"))
     }
 
