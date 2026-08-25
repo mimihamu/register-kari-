@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   patch:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,10 +23,14 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Set up Gradle 9.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
       - name: Apply RCP-BATCH-SET-001 implementation
         run: python3 tools/v136_rcp_batch_apply.py
       - name: Targeted unit test
-        run: ./gradlew :app:testDebugUnitTest --tests 'jp.co.tenposinfo.register.V136ReceiptVoucherBatchFixedAmountTest' --stacktrace
+        run: gradle --no-daemon :app:testDebugUnitTest --tests 'jp.co.tenposinfo.register.V136ReceiptVoucherBatchFixedAmountTest' --stacktrace
       - name: Commit implementation
         shell: bash
         run: |
