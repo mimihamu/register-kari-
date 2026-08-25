@@ -1,0 +1,32 @@
+name: v1.36 period report diagnostics
+
+on:
+  push:
+    branches:
+      - develop/v1.36
+    paths:
+      - .github/workflows/v136-period-diagnostics.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.36
+          fetch-depth: 0
+      - name: Inspect report range and aggregation paths
+        shell: bash
+        run: |
+          set -u
+          echo '=== report/period filenames ==='
+          find app management-app customer-display -type f 2>/dev/null | sort | grep -Ei 'report|sales|settlement|period|journal|daily|monthly|summary|aggregate' | head -3000 || true
+          echo '=== period range symbols ==='
+          grep -RniE --exclude-dir=build --exclude-dir=.gradle 'period_search_ranges|period_mode|fromDate|toDate|startDate|endDate|dateFrom|dateTo|PeriodRange|DateRange|期間指定|開始日|終了日|期間集計|月間日別' app management-app | head -6000 || true
+          echo '=== report query/aggregation ==='
+          grep -RniE --exclude-dir=build --exclude-dir=.gradle 'SELECT .*sale|SUM\(|GROUP BY|aggregate|report|daily|monthly|settlement|business_date|businessDate|created_at|completed_at' app/src/main management-app/src/main | head -8000 || true
+          echo '=== report tests ==='
+          grep -RniE --exclude-dir=build --exclude-dir=.gradle 'report|period|from|to|daily|monthly|settlement|集計|期間' app/src/test management-app/src/test 2>/dev/null | head -6000 || true
