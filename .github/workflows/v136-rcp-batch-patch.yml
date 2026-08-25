@@ -36,6 +36,23 @@ jobs:
           gradle-version: '9.5.0'
       - name: Apply RCP-BATCH-SET-001 implementation
         run: python3 tools/v136_rcp_batch_apply.py
+      - name: Normalize generated Kotlin string literals
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/test/java/jp/co/tenposinfo/register/V136ReceiptVoucherBatchFixedAmountTest.kt')
+          text = p.read_text()
+          replacements = {
+              'assertTrue(foundation.contains("put("status", "DRAFT")"))': r'assertTrue(foundation.contains("put(\"status\", \"DRAFT\")"))',
+              'assertTrue(foundation.contains("put("status", "COMMITTED")"))': r'assertTrue(foundation.contains("put(\"status\", \"COMMITTED\")"))',
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f'missing generated literal: {old}')
+              text = text.replace(old, new, 1)
+          p.write_text(text)
+          PY
       - name: Targeted unit test
         run: gradle --no-daemon :app:testDebugUnitTest --tests 'jp.co.tenposinfo.register.V136ReceiptVoucherBatchFixedAmountTest' --stacktrace
       - name: Commit implementation
