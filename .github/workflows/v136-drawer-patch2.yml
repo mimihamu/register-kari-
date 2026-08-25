@@ -1,0 +1,66 @@
+name: v1.36 drawer integration runner
+
+on:
+  push:
+    branches:
+      - develop/v1.36
+    paths:
+      - .github/workflows/v136-drawer-patch2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.36
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply CSH-004 integration
+        run: python3 .github/scripts/v136_drawer_patch.py
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 36
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle 9.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+
+      - name: Run focused tests and Kotlin compile
+        shell: bash
+        run: |
+          gradle :app:testDebugUnitTest \
+            --tests 'jp.co.tenposinfo.register.V136CashDrawerSafetyTest' \
+            --tests 'jp.co.tenposinfo.register.V136ReceiptAutoPrintTest' \
+            --tests 'jp.co.tenposinfo.register.V136DocumentPrintSettingsTest' \
+            --tests 'jp.co.tenposinfo.register.V012PrinterProfileTest' \
+            --no-daemon --stacktrace
+          gradle :app:compileDebugKotlin --no-daemon --stacktrace
+
+      - name: Commit product integration
+        shell: bash
+        run: |
+          git config user.name 'mimihamu'
+          git config user.email '74812001+mimihamu@users.noreply.github.com'
+          git add app/src/main app/src/test
+          git diff --cached --check
+          git commit -m 'feat(v1.36): enforce cash drawer context and once-only opening'
+          git push origin HEAD:develop/v1.36
