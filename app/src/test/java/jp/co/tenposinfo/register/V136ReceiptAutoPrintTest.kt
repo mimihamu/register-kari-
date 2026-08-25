@@ -16,42 +16,30 @@ class V136ReceiptAutoPrintTest {
     }
 
     @Test
-    fun drawerIsPreservedOnlyAsSeparateCheckoutActionWhenAutoReceiptIsOff() {
+    fun committedCashSaleDrawerDecisionNoLongerDependsOnReceiptAutoPrint() {
         assertTrue(
-  ReceiptAutoPrintPolicyV136.shouldOpenDrawerSeparately(
-      receiptAutoPrintEnabled = false,
-      printerUsable = true,
-      drawerEnabled = true,
-      drawerOpenOnCashSale = true,
-      hasCashPayment = true,
-  ),
+            ReceiptAutoPrintPolicyV136.shouldOpenDrawerAfterCommittedCashSale(
+                printerUsable = true,
+                drawerEnabled = true,
+                drawerOpenOnCashSale = true,
+                hasCashPayment = true,
+            ),
         )
         assertFalse(
-  ReceiptAutoPrintPolicyV136.shouldOpenDrawerSeparately(
-      receiptAutoPrintEnabled = true,
-      printerUsable = true,
-      drawerEnabled = true,
-      drawerOpenOnCashSale = true,
-      hasCashPayment = true,
-  ),
+            ReceiptAutoPrintPolicyV136.shouldOpenDrawerAfterCommittedCashSale(
+                printerUsable = false,
+                drawerEnabled = true,
+                drawerOpenOnCashSale = true,
+                hasCashPayment = true,
+            ),
         )
         assertFalse(
-  ReceiptAutoPrintPolicyV136.shouldOpenDrawerSeparately(
-      receiptAutoPrintEnabled = false,
-      printerUsable = false,
-      drawerEnabled = true,
-      drawerOpenOnCashSale = true,
-      hasCashPayment = true,
-  ),
-        )
-        assertFalse(
-  ReceiptAutoPrintPolicyV136.shouldOpenDrawerSeparately(
-      receiptAutoPrintEnabled = false,
-      printerUsable = true,
-      drawerEnabled = true,
-      drawerOpenOnCashSale = true,
-      hasCashPayment = false,
-  ),
+            ReceiptAutoPrintPolicyV136.shouldOpenDrawerAfterCommittedCashSale(
+                printerUsable = true,
+                drawerEnabled = true,
+                drawerOpenOnCashSale = true,
+                hasCashPayment = false,
+            ),
         )
     }
 
@@ -70,15 +58,18 @@ class V136ReceiptAutoPrintTest {
         val queue = source("UnifiedPrintQueue.kt")
         val activity = source("AdminSettingsActivity.kt")
         val main = source("MainActivity.kt")
+        val drawer = source("CashDrawerSafetyV136.kt")
 
         assertTrue(settings.contains("receipt_auto_print INTEGER NOT NULL DEFAULT 1"))
         assertTrue(settings.contains("receiptAutoPrintEnabled: Boolean = true"))
         assertTrue(database.contains("ReceiptAutoPrintPolicyV136.shouldCreateAutomaticReceiptJob"))
         assertTrue(database.contains("detail.summary.createdAt + 1L"))
         assertTrue(receipt.contains("ReceiptReprintPolicyV136.isReprint"))
+        assertTrue(receipt.contains("openDrawer = false"))
         assertTrue(queue.contains("ReceiptReprintPolicyV136.isReprint"))
         assertTrue(activity.contains("会計確定時にレシートを自動発行"))
-        assertTrue(activity.contains("OFFでも売上一覧・会計完了から後レシート／再印字できます"))
+        assertTrue(activity.contains("単独開放は無効"))
         assertTrue(main.contains("ReceiptAutoPrintRuntimeV136.dispatchDrawerIfNeeded"))
+        assertTrue(drawer.contains("event_key TEXT NOT NULL UNIQUE"))
     }
 }
