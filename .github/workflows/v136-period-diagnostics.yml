@@ -18,20 +18,21 @@ jobs:
         with:
           ref: develop/v1.36
           fetch-depth: 0
-      - name: Inspect exact period report source
+      - name: Locate and inspect actual report sources
         shell: bash
         run: |
           set -u
-          echo '=== DailyReportStore head ==='
-          sed -n '1,380p' app/src/main/java/jp/co/tenposinfo/register/DailyReportStore.kt || true
-          echo '=== DailyReportStore rest ==='
-          sed -n '381,900p' app/src/main/java/jp/co/tenposinfo/register/DailyReportStore.kt || true
-          echo '=== DailyReportActivity head ==='
-          sed -n '1,420p' app/src/main/java/jp/co/tenposinfo/register/DailyReportActivity.kt || true
-          echo '=== DailyReportActivity rest ==='
-          sed -n '421,1000p' app/src/main/java/jp/co/tenposinfo/register/DailyReportActivity.kt || true
-          echo '=== report models / menu symbols ==='
-          grep -RniE --exclude-dir=build --exclude-dir=.gradle 'data class DailyReportSummary|data class Department|data class Payment|data class Tax|enum class ReportMenuType|PERIOD_TOTAL|ReportPeriodRangeV124' app/src/main/java/jp/co/tenposinfo/register | head -2500 || true
-          echo '=== relevant report tests ==='
-          for f in app/src/test/java/jp/co/tenposinfo/register/V128DailyReportMenuSummaryTest.kt app/src/test/java/jp/co/tenposinfo/register/V129DailyReportDayStartFilterTest.kt; do
-            echo "--- $f ---"; sed -n '1,500p' "$f" || true; done
+          echo '=== matching files ==='
+          find app management-app customer-display -type f 2>/dev/null | sort | grep -Ei 'daily.*report|report.*daily|report|period|monthly|sales.*summary' | head -2500 || true
+          echo '=== period symbols with filenames ==='
+          grep -RniE --exclude-dir=build --exclude-dir=.gradle 'ReportPeriodRangeV124|PERIOD_TOTAL|期間売上集計|loadMonthlySummary|loadSummary\(|dayStartMinutes' app management-app customer-display 2>/dev/null | head -5000 || true
+          echo '=== file context around PERIOD_TOTAL ==='
+          f=$(grep -Rl --exclude-dir=build --exclude-dir=.gradle 'PERIOD_TOTAL' app/src 2>/dev/null | head -1 || true)
+          echo "PERIOD_FILE=$f"
+          if [ -n "$f" ]; then sed -n '1,1000p' "$f"; fi
+          echo '=== file context around loadSummary ==='
+          s=$(grep -Rl --exclude-dir=build --exclude-dir=.gradle 'fun loadSummary' app/src 2>/dev/null | head -1 || true)
+          echo "STORE_FILE=$s"
+          if [ -n "$s" ]; then sed -n '1,1000p' "$s"; fi
+          echo '=== tests mentioning ReportPeriodRange ==='
+          grep -Rl --exclude-dir=build --exclude-dir=.gradle 'ReportPeriodRangeV124\|PERIOD_TOTAL\|期間売上集計' app/src/test 2>/dev/null | while read -r t; do echo "--- $t ---"; sed -n '1,600p' "$t"; done || true
