@@ -18,12 +18,13 @@ jobs:
         with:
           ref: develop/v1.36
           fetch-depth: 0
-      - name: Inspect drawer policy and call sites
+      - name: Inspect drawer call sites
         shell: bash
         run: |
-          echo '=== exact filenames ==='
-          find . -type f \( -name 'PaymentSettlementSupport.kt' -o -name 'PrinterSupport.kt' \) -print || true
-          echo '=== class references whole repo ==='
-          grep -RniE --exclude-dir=.git 'CashDrawerStandaloneOpenGuardV134|CashDrawerStandaloneAction|isStandaloneOpenAllowed|drawerOpenStandaloneEnabled|openForPayment|drawerSensorMode|drawerOpenReasonRequired|DRAWER_OPEN' . | head -3000 || true
-          echo '=== likely files ==='
-          grep -RliE --exclude-dir=.git 'CashDrawerStandaloneOpenGuardV134|CashDrawerStandaloneAction|drawerOpenStandaloneEnabled' . | head -200 || true
+          set -u
+          echo '=== drawer / printer call sites ==='
+          grep -RniE --exclude-dir=.git 'drawerOnly\(|openDrawer[[:space:]]*=|drawerOpenOnCashSale|drawerEnabled|PrinterCommandEncoder\.encodeText|PrinterPulsePolicy\.command|recordCashMovement\(|CashMovementType\.|manual_return|reversal_payments' app/src/main app/src/test | head -5000 || true
+          echo '=== payment completion candidates ==='
+          grep -RniE --exclude-dir=.git 'commitSale|completePayment|payment.*complete|会計完了|PaymentMethod\.CASH|sale_payments|receiptAutoPrint|enqueue.*receipt|PrintJob' app/src/main/java/jp/co/tenposinfo/register | head -5000 || true
+          echo '=== operations UI cash movement ==='
+          grep -RniE --exclude-dir=.git 'recordCashMovement|CashMovementType|入金|出金|両替' app/src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt | head -2500 || true
