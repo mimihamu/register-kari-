@@ -22,7 +22,10 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Apply CSH-004 integration
-        run: python3 .github/scripts/v136_drawer_patch.py
+        shell: bash
+        run: |
+          sed -i 's/receiptAutoPrintEnabled = cursor.getInt(15),/receiptAutoPrintEnabled = cursor.getInt(15) != 0,/' .github/scripts/v136_drawer_patch.py
+          python3 .github/scripts/v136_drawer_patch.py
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
