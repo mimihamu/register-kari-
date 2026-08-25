@@ -51,10 +51,18 @@ class V136BarcodeInputSafetyTest {
             product("P%05d".format(i), "49%011d".format(i))
         }
         val index = BarcodeProductIndexV136(products)
-        repeat(1_000) { assertTrue(index.findExact("P09999") != null) }
-        val elapsed = measureNanoTime {
-            repeat(10_000) { assertTrue(index.findExact("4900000009999") != null) }
+        var found: Product? = null
+        for (i in 0 until 1_000) {
+            found = index.findExact("P09999")
         }
+        assertTrue(found != null)
+
+        val elapsed = measureNanoTime {
+            for (i in 0 until 10_000) {
+                found = index.findExact("4900000009999")
+            }
+        }
+        assertTrue(found != null)
         assertTrue("10k indexed lookups exceeded 100ms: ${elapsed / 1_000_000.0}ms", elapsed < 100_000_000L)
     }
 
