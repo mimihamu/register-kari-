@@ -7,18 +7,14 @@ object ReceiptAutoPrintPolicyV136 {
     fun shouldCreateAutomaticReceiptJob(receiptAutoPrintEnabled: Boolean): Boolean =
         receiptAutoPrintEnabled
 
-    fun shouldOpenDrawerSeparately(
-        receiptAutoPrintEnabled: Boolean,
+    /** CSH-004: drawer opening is driven by the committed cash sale, never by print mode. */
+    fun shouldOpenDrawerAfterCommittedCashSale(
         printerUsable: Boolean,
         drawerEnabled: Boolean,
         drawerOpenOnCashSale: Boolean,
         hasCashPayment: Boolean,
     ): Boolean =
-        !receiptAutoPrintEnabled &&
-            printerUsable &&
-            drawerEnabled &&
-            drawerOpenOnCashSale &&
-            hasCashPayment
+        printerUsable && drawerEnabled && drawerOpenOnCashSale && hasCashPayment
 }
 
 /**
@@ -40,44 +36,13 @@ object ReceiptAutoPrintRuntimeV136 {
         paymentState: PaymentState,
         saleId: Long,
         actor: String,
-    ): Result<Boolean> {
-        val appContext = context.applicationContext
-        val configuration = PrinterPaperSettingPolicy.currentConfiguration(appContext)
-        val shouldOpen = ReceiptAutoPrintPolicyV136.shouldOpenDrawerSeparately(
-            receiptAutoPrintEnabled = configuration.receiptAutoPrintEnabled,
-            printerUsable = configuration.usable,
-            drawerEnabled = configuration.drawerEnabled,
-            drawerOpenOnCashSale = configuration.drawerOpenOnCashSale,
-            hasCashPayment = paymentState.allocations.any { it.method == PaymentMethod.CASH },
-        )
-        if (!shouldOpen) return Result.success(false)
-
-        val sendResult = TcpEscPosPrinterGateway(
-            host = configuration.host,
-            port = configuration.port,
-            timeoutMillis = configuration.timeoutMillis,
-        ).send(PrinterCommandEncoder.drawerOnly(configuration))
-
-        runCatching {
-            AdminSettingsStore(appContext).use { store ->
-                store.recordOperationalAudit(
-                    eventType = if (sendResult.isSuccess) {
-                        "SALE_DRAWER_AUTO_OPEN_SUCCEEDED"
-                    } else {
-                        "SALE_DRAWER_AUTO_OPEN_FAILED"
-                    },
-                    referenceId = saleId,
-                    detail = buildString {
-                        append("receiptAutoPrint=OFF / ")
-                        append(configuration.host).append(':').append(configuration.port)
-                        sendResult.exceptionOrNull()?.let { error ->
-                            append(" / ").append(error.message ?: error.javaClass.simpleName)
-                        }
-                    },
-                    actor = actor.ifBlank { "SYSTEM" },
-                )
-            }
-        }
-        return sendResult.map { true }
-    }
+    ): Result<Boolean> = CashDrawerRuntimeV136.dispatch(
+        context = context.applicationContext,
+        openContext = CashDrawerOpenContextV136.CASH_SALE,
+        referenceId = saleId,
+        eventKey = "SALE:$saleId",
+        reason = "現金会計",
+        actor = actor.ifBlank { "SYSTEM" },
+        hasCashPayment = paymentState.allocations.any { it.method == PaymentMethod.CASH },
+    )
 }
