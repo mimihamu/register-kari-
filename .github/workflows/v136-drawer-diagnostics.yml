@@ -18,34 +18,17 @@ jobs:
         with:
           ref: develop/v1.36
           fetch-depth: 0
-      - name: Locate cash drawer sources
+      - name: Inspect drawer policy and call sites
         shell: bash
         run: |
-          echo '=== filenames ==='
-          find app management-app customer-display -type f 2>/dev/null | grep -Ei 'cash|drawer|payment|tender|refund|settle|audit|printer|receipt|register' | sort || true
-          echo '=== references ==='
-          grep -RniE 'drawer|ドロア|drawerPort|drawerSensorMode|drawerOpen|入出金|両替|現金返金|cash.?refund|cash.?in|cash.?out|ESC.?p|0x70|pulse|operation_audit' \
-            app/src management-app/src customer-display/src 2>/dev/null | head -2500 || true
-      - name: Show likely source snippets
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          roots=[Path('app/src/main'),Path('app/src/test')]
-          pat=re.compile(r'drawer|ドロア|入出金|両替|現金返金|cash.?refund|cash.?in|cash.?out|operation_audit',re.I)
-          for root in roots:
-              if not root.exists(): continue
-              for p in root.rglob('*'):
-                  if not p.is_file() or p.suffix not in {'.kt','.java','.xml'}: continue
-                  try: lines=p.read_text(errors='replace').splitlines()
-                  except Exception: continue
-                  hits=[i for i,x in enumerate(lines) if pat.search(x)]
-                  if not hits: continue
-                  print(f'\n=== {p} ===')
-                  shown=set()
-                  for i in hits[:20]:
-                      for j in range(max(0,i-5),min(len(lines),i+7)):
-                          if j in shown: continue
-                          shown.add(j); print(f'{j+1:5}: {lines[j]}')
-          PY
+          set -euo pipefail
+          f=$(find app/src -name PaymentSettlementSupport.kt -print -quit)
+          p=$(find app/src -name PrinterSupport.kt -print -quit)
+          echo "PAYMENT_FILE=$f"
+          echo "PRINTER_FILE=$p"
+          echo '=== PaymentSettlementSupport drawer section ==='
+          sed -n '90,650p' "$f"
+          echo '=== all drawer policy call sites ==='
+          grep -RniE 'CashDrawerStandaloneOpenGuardV134|CashDrawerStandaloneAction|isStandaloneOpenAllowed|openForPayment|drawerOpenStandaloneEnabled|recordDrawer|DRAWER_OPEN' app/src/main app/src/test || true
+          echo '=== printer drawer section ==='
+          grep -nE 'drawer|cashDrawer|pulse|0x70|ESC.?p' "$p" | head -250 || true
