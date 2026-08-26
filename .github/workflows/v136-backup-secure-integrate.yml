@@ -42,7 +42,9 @@ jobs:
           gradle-version: "9.5.0"
 
       - name: Apply APP-DATA-001 secure backup integration
-        run: python3 .github/scripts/v136_backup_secure_patch.py
+        run: |
+          python3 .github/scripts/v136_backup_secure_patch.py
+          python3 .github/scripts/v136_backup_secure_compat_patch.py
 
       - name: Run focused secure backup tests
         run: gradle :app:testDebugUnitTest --tests jp.co.tenposinfo.register.V136SecureBackupContractTest --no-daemon --stacktrace
