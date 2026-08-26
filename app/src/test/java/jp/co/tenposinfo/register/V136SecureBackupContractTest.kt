@@ -53,6 +53,15 @@ class V136SecureBackupContractTest {
     }
 
     @Test
+    fun automaticExternalCopyPreservesOnlyEncryptedV2Envelope() {
+        val source = File(root, "DataProtection.kt").readText()
+        assertTrue(source.contains("fun copyVerifiedBackup(fileName: String, output: OutputStream): BackupExportResult"))
+        assertTrue(source.contains("BackupEnvelopeV136.isSecureEnvelope(archive)"))
+        assertTrue(source.contains("暗号化されていないバックアップは外部自動保存できません"))
+        assertTrue(source.contains("BackupTransferPolicy.copyWithLimit(input, output, MAX_BACKUP_ARCHIVE_BYTES)"))
+    }
+
+    @Test
     fun externalSafFlowRequiresPassphraseAndDoesNotPersistIt() {
         val source = File(root, "DataProtectionActivity.kt").readText()
         assertTrue(source.contains("外部バックアップ用パスフレーズ"))
@@ -63,5 +72,8 @@ class V136SecureBackupContractTest {
         assertTrue(source.contains("端末内には保存しません"))
         assertTrue(source.contains("ActivityResultContracts.CreateDocument"))
         assertTrue(source.contains("ActivityResultContracts.OpenDocument"))
+        assertTrue(source.contains("takePersistableUriPermission"))
+        assertTrue(source.contains("Intent.FLAG_GRANT_READ_URI_PERMISSION"))
+        assertTrue(source.contains("Intent.FLAG_GRANT_WRITE_URI_PERMISSION"))
     }
 }
