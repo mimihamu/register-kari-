@@ -5,6 +5,7 @@ import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import java.time.DayOfWeek
 import java.time.Instant
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
@@ -12,6 +13,7 @@ import java.util.concurrent.TimeUnit
 private const val AUTO_BACKUP_SETTINGS_PREFS = "auto_backup_settings_v2"
 
 const val DEFAULT_PERIODIC_BACKUP_HOUR = 3
+const val DEFAULT_PERIODIC_BACKUP_WEEKDAY = 1 // ISO-8601 Monday=1 ... Sunday=7
 const val MIN_Z_BACKUP_BUSINESS_DAYS = 1
 const val MAX_Z_BACKUP_BUSINESS_DAYS = 90
 const val MIN_MONTHLY_BACKUP_MONTHS = 1
@@ -22,7 +24,7 @@ enum class PeriodicBackupCadence(
     val intervalDays: Int,
 ) {
     DAILY("毎日", 1),
-    WEEKLY("7日ごと", 7),
+    WEEKLY("指定曜日", 7),
 }
 
 data class AutoBackupSettings(
@@ -32,6 +34,8 @@ data class AutoBackupSettings(
     val zRetentionBusinessDays: Int = DEFAULT_Z_BACKUP_BUSINESS_DAYS,
     val monthlyRetentionMonths: Int = DEFAULT_MONTHLY_BACKUP_MONTHS,
     val failureNotificationsEnabled: Boolean = true,
+    val preferredWeekday: Int = DEFAULT_PERIODIC_BACKUP_WEEKDAY,
+    val settlementAutoBackupEnabled: Boolean = true,
 )
 
 data class AutoBackupScheduleApplyResult(
@@ -43,6 +47,7 @@ data class AutoBackupScheduleApplyResult(
 object AutoBackupSettingsPolicy {
     fun sanitized(settings: AutoBackupSettings): AutoBackupSettings = settings.copy(
         preferredHour = settings.preferredHour.coerceIn(0, 23),
+        preferredWeekday = settings.preferredWeekday.coerceIn(1, 7),
         zRetentionBusinessDays = settings.zRetentionBusinessDays.coerceIn(
             MIN_Z_BACKUP_BUSINESS_DAYS,
             MAX_Z_BACKUP_BUSINESS_DAYS,
@@ -55,6 +60,7 @@ object AutoBackupSettingsPolicy {
 
     fun validated(settings: AutoBackupSettings): AutoBackupSettings {
         require(settings.preferredHour in 0..23) { "実行時刻は0～23時で指定してください" }
+        require(settings.preferredWeekday in 1..7) { "指定曜日が不正です" }
         require(settings.zRetentionBusinessDays in MIN_Z_BACKUP_BUSINESS_DAYS..MAX_Z_BACKUP_BUSINESS_DAYS) {
             "Z精算バックアップ保持営業日は${MIN_Z_BACKUP_BUSINESS_DAYS}～${MAX_Z_BACKUP_BUSINESS_DAYS}日で指定してください"
         }
@@ -68,18 +74,41 @@ object AutoBackupSettingsPolicy {
         nowMillis: Long,
         preferredHour: Int,
         zoneId: ZoneId,
+        cadence: PeriodicBackupCadence = PeriodicBackupCadence.DAILY,
+        preferredWeekday: Int = DEFAULT_PERIODIC_BACKUP_WEEKDAY,
     ): Long {
         require(preferredHour in 0..23)
+        require(preferredWeekday in 1..7)
         val now = Instant.ofEpochMilli(nowMillis).atZone(zoneId)
         var candidate = now.toLocalDate().atTime(preferredHour, 0).atZone(zoneId)
-        if (!candidate.isAfter(now)) candidate = candidate.plusDays(1)
+        if (cadence == PeriodicBackupCadence.WEEKLY) {
+            val target = DayOfWeek.of(preferredWeekday)
+            var daysAhead = (target.value - candidate.dayOfWeek.value + 7) % 7
+            if (daysAhead > 0) candidate = candidate.plusDays(daysAhead.toLong())
+            if (!candidate.isAfter(now)) candidate = candidate.plusDays(7)
+        } else if (!candidate.isAfter(now)) {
+            candidate = candidate.plusDays(1)
+        }
         return candidate.toInstant().toEpochMilli()
     }
 
     fun nextRunDescription(settings: AutoBackupSettings, nextScheduledAt: Long?): String = when {
         !settings.periodicEnabled -> "定期バックアップは無効"
         nextScheduledAt == null -> "定期バックアップの再登録が必要"
-        else -> "${settings.cadence.displayName}・${settings.preferredHour}時台（端末状況により遅れて実行）"
+        settings.cadence == PeriodicBackupCadence.WEEKLY ->
+            "指定曜日(${weekdayDisplayName(settings.preferredWeekday)})・${settings.preferredHour}時台（端末状況により遅れて実行）"
+        else -> "毎日・${settings.preferredHour}時台（端末状況により遅れて実行）"
+    }
+
+    fun weekdayDisplayName(isoWeekday: Int): String = when (isoWeekday) {
+        1 -> "月"
+        2 -> "火"
+        3 -> "水"
+        4 -> "木"
+        5 -> "金"
+        6 -> "土"
+        7 -> "日"
+        else -> error("指定曜日が不正です")
     }
 }
 
@@ -99,6 +128,8 @@ class AutoBackupSettingsStore(context: Context) {
             zRetentionBusinessDays = preferences.getInt("z_retention_business_days", DEFAULT_Z_BACKUP_BUSINESS_DAYS),
             monthlyRetentionMonths = preferences.getInt("monthly_retention_months", DEFAULT_MONTHLY_BACKUP_MONTHS),
             failureNotificationsEnabled = preferences.getBoolean("failure_notifications_enabled", true),
+            preferredWeekday = preferences.getInt("preferred_weekday", DEFAULT_PERIODIC_BACKUP_WEEKDAY),
+            settlementAutoBackupEnabled = preferences.getBoolean("settlement_auto_backup_enabled", true),
         ),
     )
 
@@ -111,6 +142,8 @@ class AutoBackupSettingsStore(context: Context) {
             .putInt("z_retention_business_days", validated.zRetentionBusinessDays)
             .putInt("monthly_retention_months", validated.monthlyRetentionMonths)
             .putBoolean("failure_notifications_enabled", validated.failureNotificationsEnabled)
+            .putInt("preferred_weekday", validated.preferredWeekday)
+            .putBoolean("settlement_auto_backup_enabled", validated.settlementAutoBackupEnabled)
             .apply()
         return validated
     }
@@ -139,6 +172,8 @@ object AutoBackupPeriodicScheduler {
             nowMillis = nowMillis,
             preferredHour = settings.preferredHour,
             zoneId = zoneId,
+            cadence = settings.cadence,
+            preferredWeekday = settings.preferredWeekday,
         )
         val request = PeriodicWorkRequestBuilder<AutoBackupWorker>(
             settings.cadence.intervalDays.toLong(),
@@ -173,14 +208,12 @@ object AutoBackupPeriodicScheduler {
     ): Long? {
         val settings = AutoBackupSettingsStore(context.applicationContext).load()
         if (!settings.periodicEnabled) return null
-        return Instant.ofEpochMilli(nowMillis)
-            .atZone(zoneId)
-            .plusDays(settings.cadence.intervalDays.toLong())
-            .withHour(settings.preferredHour)
-            .withMinute(0)
-            .withSecond(0)
-            .withNano(0)
-            .toInstant()
-            .toEpochMilli()
+        return AutoBackupSettingsPolicy.nextRunMillis(
+            nowMillis = nowMillis,
+            preferredHour = settings.preferredHour,
+            zoneId = zoneId,
+            cadence = settings.cadence,
+            preferredWeekday = settings.preferredWeekday,
+        )
     }
 }
