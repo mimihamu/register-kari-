@@ -363,8 +363,19 @@ object AutoBackupScheduler {
         settlementId: Long,
         actorName: String,
     ) {
+        val appContext = context.applicationContext
+        if (!AutoBackupSettingsStore(appContext).load().settlementAutoBackupEnabled) {
+            AutoBackupAudit.record(
+                appContext,
+                "DATA_BACKUP_Z_SKIPPED_DISABLED",
+                "settlementId=$settlementId / businessSessionId=$businessSessionId",
+                actorName,
+                settlementId,
+            )
+            return
+        }
         enqueue(
-            context = context,
+            context = appContext,
             uniqueName = AutoBackupTriggerPolicy.uniqueZWorkName(settlementId),
             reason = BackupCreationReason.Z_SETTLEMENT,
             businessDate = businessDate,
