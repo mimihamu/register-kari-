@@ -97,6 +97,8 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
     var pending by remember { mutableStateOf(manager.pendingRestoreStatus()) }
     var rollbackInventory by remember { mutableStateOf(RestoreRollbackInventoryV086(0, null)) }
     var pin by remember { mutableStateOf("") }
+    var backupPassphrase by remember { mutableStateOf("") }
+    var backupPassphraseConfirm by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("診断を実行してください") }
     var busy by remember { mutableStateOf(false) }
 
@@ -122,31 +124,49 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
         val fileName = pendingExport
         pendingExport = null
         if (uri != null && fileName != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+            val chars = backupPassphrase.toCharArray()
+            backupPassphrase = ""
+            backupPassphraseConfirm = ""
             runTask {
                 val actor = OperatorSessionRegistry.current(appContext)?.name ?: "責任者"
                 val result = withContext(Dispatchers.IO) {
                     context.contentResolver.openOutputStream(uri, "w")?.use { output ->
-                        manager.exportBackup(fileName, output, actor)
+                        manager.exportBackup(fileName, output, actor, chars)
                     } ?: error("保存先を開けません")
                 }
                 withContext(Dispatchers.IO) { metadataStore.registerExport(result) }
-                "外部保存完了: ${result.fileName} / ${result.bytesWritten} bytes"
+                "外部保存完了: portable暗号化済み / ${result.fileName} / ${result.bytesWritten} bytes"
             }
         }
     }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            }
+            val chars = backupPassphrase.toCharArray()
+            backupPassphrase = ""
+            backupPassphraseConfirm = ""
             runTask {
                 val actor = OperatorSessionRegistry.current(appContext)?.name ?: "責任者"
                 val imported = withContext(Dispatchers.IO) {
                     val record = context.contentResolver.openInputStream(uri)?.use { input ->
-                        manager.importBackup(input, actor)
+                        manager.importBackup(input, actor, chars)
                     } ?: error("取込ファイルを開けません")
                     metadataStore.registerManualBackup(manager.verifyBackup(record.fileName))
                     record
                 }
                 selected = imported.fileName
-                "外部バックアップ取込完了: ${imported.fileName}"
+                "外部バックアップ取込完了: パスフレーズ復号検証済み / ${imported.fileName}"
             }
         }
     }
@@ -419,6 +439,32 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                             enabled = !busy,
                         ) { Text("ロールバック再検証") }
                         Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            backupPassphrase,
+                            { backupPassphrase = it },
+                            label = { Text("外部バックアップ用パスフレーズ") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            backupPassphraseConfirm,
+                            { backupPassphraseConfirm = it },
+                            label = { Text("パスフレーズ確認（外部保存時）") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            when {
+                                backupPassphrase.isEmpty() -> "外部保存・別端末取込にはパスフレーズが必要です。端末内には保存しません。"
+                                backupPassphraseConfirm.isNotEmpty() && backupPassphrase != backupPassphraseConfirm -> "確認用パスフレーズが一致しません"
+                                else -> "AES-256-GCM / PBKDF2-HMAC-SHA256 210,000回でportable鍵を保護します"
+                            },
+                            color = if (backupPassphraseConfirm.isNotEmpty() && backupPassphrase != backupPassphraseConfirm) DpDanger else Color.Gray,
+                            fontSize = 12.sp,
+                        )
+                        Spacer(Modifier.height(6.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(
                                 onClick = {
@@ -426,15 +472,15 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                                     pendingExport = file
                                     exportLauncher.launch(file)
                                 },
-                                enabled = !busy && selected != null,
+                                enabled = !busy && selected != null && backupPassphrase.isNotEmpty() && backupPassphrase == backupPassphraseConfirm,
                                 colors = ButtonDefaults.buttonColors(containerColor = DpBlue),
-                            ) { Text("外部へ保存") }
+                            ) { Text("外部へ暗号化保存") }
                             OutlinedButton(
                                 onClick = { importLauncher.launch(arrayOf("application/octet-stream", "application/zip", "application/x-zip-compressed")) },
-                                enabled = !busy && !pending.staged,
+                                enabled = !busy && !pending.staged && backupPassphrase.isNotEmpty(),
                             ) { Text("外部から取込") }
                             Text(
-                                "Google Drive・USB・端末フォルダを選択できます",
+                                "Google Drive・USB・端末フォルダをSAFで選択できます",
                                 color = Color.Gray,
                                 fontSize = 12.sp,
                                 modifier = Modifier.align(Alignment.CenterVertically),
