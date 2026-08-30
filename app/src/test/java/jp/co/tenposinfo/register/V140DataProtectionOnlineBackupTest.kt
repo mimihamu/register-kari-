@@ -66,7 +66,7 @@ class V140DataProtectionOnlineBackupTest {
     @Test
     fun modernPathRemainsConsistentSnapshotAndLegacyCrashFenceIsPreserved() {
         val source = File(root, "app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt").readText()
-        assertTrue(source.contains("database.execSQL(\"VACUUM INTO '$escaped'\")"))
+        assertTrue(source.contains("database.execSQL(\"VACUUM INTO '\$escaped'\")"))
         assertTrue(source.contains("BackupSnapshotFallbackPolicyV104.MAX_ATTEMPTS"))
         assertTrue(source.contains("database.endTransaction()"))
         assertTrue(source.contains("WALを安全に固定できないためbackupを中止しました"))
