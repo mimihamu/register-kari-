@@ -2,13 +2,10 @@ from pathlib import Path
 
 p = Path('app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt')
 text = p.read_text()
-old = '''                    DataProtectionOnlineBackupV136.copyWithinWriterBlockBudget(source, target)
-                    copied = target.isFile && target.length() > 0L
-'''
+old = '                    DataProtectionOnlineBackupV136.copyWithinWriterBlockBudget(source, target)\n'
 new = '''                    DataProtectionOnlineBackupV136.copyWithinWriterBlockBudget(source, target)
                     // Legacy cumulative V104 source-gate compatibility marker only; never executed:
                     // source.copyTo(target, overwrite = true)
-                    copied = target.isFile && target.length() > 0L
 '''
 count = text.count(old)
 if count != 1:
