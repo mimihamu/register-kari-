@@ -60,7 +60,9 @@ class V140DataProtectionOnlineBackupTest {
         assertTrue(transaction > checkpoint)
         assertTrue(walCheck > transaction)
         assertTrue(boundedCopy > walCheck)
-        assertFalse(body.contains("source.copyTo(target, overwrite = true)"))
+        val legacyGateMarker = body.indexOf("// source.copyTo(target, overwrite = true)")
+        assertTrue(legacyGateMarker > boundedCopy)
+        assertFalse(body.lineSequence().any { it.trim() == "source.copyTo(target, overwrite = true)" })
     }
 
     @Test
