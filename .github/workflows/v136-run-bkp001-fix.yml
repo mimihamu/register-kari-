@@ -1,0 +1,42 @@
+name: v1.36 run BKP-001 patch
+
+on:
+  push:
+    branches:
+      - develop/v1.36
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.36
+          fetch-depth: 0
+      - name: Apply patch
+        run: python3 .github/v136_apply_bkp001_fix.py
+      - name: Verify staged changes
+        run: |
+          git diff --check
+          grep -Fq 'DEFAULT_BACKUP_RETENTION_GENERATIONS = 30' app/src/main/java/jp/co/tenposinfo/register/AutoBackupSettings.kt
+          grep -Fq 'Z精算後バックアップは常時有効' app/src/main/java/jp/co/tenposinfo/register/AutoBackupSettingsActivity.kt
+          grep -Fq 'capacityReliefDatabaseBytes' app/src/main/java/jp/co/tenposinfo/register/AutoBackup.kt
+      - name: Commit clean product patch
+        run: |
+          set -euo pipefail
+          rm -f .github/v136_apply_bkp001_fix.py
+          rm -f .github/workflows/v136-apply-bkp001-fix.yml
+          rm -f .github/workflows/v136-run-bkp001-fix.yml
+          rm -f .github/workflows/v136-unit-test-diagnostic.yml
+          git fetch origin develop/v1.36
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/develop/v1.36)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(v1.36): align automatic backup with BKP-001'
+          git push origin HEAD:develop/v1.36
