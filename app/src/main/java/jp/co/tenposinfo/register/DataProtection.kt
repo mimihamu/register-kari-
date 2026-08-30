@@ -498,7 +498,7 @@ class DataProtectionManager(context: Context) {
                 database.beginTransaction()
                 try {
                     if (!BackupSnapshotFallbackPolicyV104.walQuiescent(wal)) continue
-                    source.copyTo(target, overwrite = true)
+                    DataProtectionOnlineBackupV136.copyWithinWriterBlockBudget(source, target)
                     require(target.isFile && target.length() > 0L) { "DB fallback snapshotを作成できません" }
                     database.setTransactionSuccessful()
                     copied = true
