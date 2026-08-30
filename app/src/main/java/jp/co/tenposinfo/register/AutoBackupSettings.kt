@@ -14,6 +14,9 @@ private const val AUTO_BACKUP_SETTINGS_PREFS = "auto_backup_settings_v2"
 
 const val DEFAULT_PERIODIC_BACKUP_HOUR = 3
 const val DEFAULT_PERIODIC_BACKUP_WEEKDAY = 1 // ISO-8601 Monday=1 ... Sunday=7
+const val DEFAULT_BACKUP_RETENTION_GENERATIONS = 30
+const val MIN_BACKUP_RETENTION_GENERATIONS = 7
+const val MAX_BACKUP_RETENTION_GENERATIONS = 365
 const val MIN_Z_BACKUP_BUSINESS_DAYS = 1
 const val MAX_Z_BACKUP_BUSINESS_DAYS = 90
 const val MIN_MONTHLY_BACKUP_MONTHS = 1
@@ -31,6 +34,7 @@ data class AutoBackupSettings(
     val periodicEnabled: Boolean = true,
     val cadence: PeriodicBackupCadence = PeriodicBackupCadence.DAILY,
     val preferredHour: Int = DEFAULT_PERIODIC_BACKUP_HOUR,
+    val retentionGenerations: Int = DEFAULT_BACKUP_RETENTION_GENERATIONS,
     val zRetentionBusinessDays: Int = DEFAULT_Z_BACKUP_BUSINESS_DAYS,
     val monthlyRetentionMonths: Int = DEFAULT_MONTHLY_BACKUP_MONTHS,
     val failureNotificationsEnabled: Boolean = true,
@@ -46,8 +50,17 @@ data class AutoBackupScheduleApplyResult(
 
 object AutoBackupSettingsPolicy {
     fun sanitized(settings: AutoBackupSettings): AutoBackupSettings = settings.copy(
+        // BKP-001 MUST: daily and post-settlement automatic backups cannot be disabled.
+        periodicEnabled = true,
+        cadence = PeriodicBackupCadence.DAILY,
+        settlementAutoBackupEnabled = true,
         preferredHour = settings.preferredHour.coerceIn(0, 23),
         preferredWeekday = settings.preferredWeekday.coerceIn(1, 7),
+        retentionGenerations = settings.retentionGenerations.coerceIn(
+            MIN_BACKUP_RETENTION_GENERATIONS,
+            MAX_BACKUP_RETENTION_GENERATIONS,
+        ),
+        // Legacy values remain readable only for migration/source compatibility.
         zRetentionBusinessDays = settings.zRetentionBusinessDays.coerceIn(
             MIN_Z_BACKUP_BUSINESS_DAYS,
             MAX_Z_BACKUP_BUSINESS_DAYS,
@@ -61,13 +74,16 @@ object AutoBackupSettingsPolicy {
     fun validated(settings: AutoBackupSettings): AutoBackupSettings {
         require(settings.preferredHour in 0..23) { "実行時刻は0～23時で指定してください" }
         require(settings.preferredWeekday in 1..7) { "指定曜日が不正です" }
+        require(settings.retentionGenerations in MIN_BACKUP_RETENTION_GENERATIONS..MAX_BACKUP_RETENTION_GENERATIONS) {
+            "バックアップ保持世代は${MIN_BACKUP_RETENTION_GENERATIONS}～${MAX_BACKUP_RETENTION_GENERATIONS}世代で指定してください"
+        }
         require(settings.zRetentionBusinessDays in MIN_Z_BACKUP_BUSINESS_DAYS..MAX_Z_BACKUP_BUSINESS_DAYS) {
             "Z精算バックアップ保持営業日は${MIN_Z_BACKUP_BUSINESS_DAYS}～${MAX_Z_BACKUP_BUSINESS_DAYS}日で指定してください"
         }
         require(settings.monthlyRetentionMonths in MIN_MONTHLY_BACKUP_MONTHS..MAX_MONTHLY_BACKUP_MONTHS) {
             "定期バックアップ保持月数は${MIN_MONTHLY_BACKUP_MONTHS}～${MAX_MONTHLY_BACKUP_MONTHS}か月で指定してください"
         }
-        return settings
+        return sanitized(settings)
     }
 
     fun nextRunMillis(
@@ -125,6 +141,7 @@ class AutoBackupSettingsStore(context: Context) {
                 ?.let { runCatching { PeriodicBackupCadence.valueOf(it) }.getOrNull() }
                 ?: PeriodicBackupCadence.DAILY,
             preferredHour = preferences.getInt("preferred_hour", DEFAULT_PERIODIC_BACKUP_HOUR),
+            retentionGenerations = preferences.getInt("backup.retention", DEFAULT_BACKUP_RETENTION_GENERATIONS),
             zRetentionBusinessDays = preferences.getInt("z_retention_business_days", DEFAULT_Z_BACKUP_BUSINESS_DAYS),
             monthlyRetentionMonths = preferences.getInt("monthly_retention_months", DEFAULT_MONTHLY_BACKUP_MONTHS),
             failureNotificationsEnabled = preferences.getBoolean("failure_notifications_enabled", true),
@@ -139,6 +156,7 @@ class AutoBackupSettingsStore(context: Context) {
             .putBoolean("periodic_enabled", validated.periodicEnabled)
             .putString("periodic_cadence", validated.cadence.name)
             .putInt("preferred_hour", validated.preferredHour)
+            .putInt("backup.retention", validated.retentionGenerations)
             .putInt("z_retention_business_days", validated.zRetentionBusinessDays)
             .putInt("monthly_retention_months", validated.monthlyRetentionMonths)
             .putBoolean("failure_notifications_enabled", validated.failureNotificationsEnabled)
@@ -162,12 +180,6 @@ object AutoBackupPeriodicScheduler {
         val appContext = context.applicationContext
         val settings = AutoBackupSettingsStore(appContext).load()
         val workManager = WorkManager.getInstance(appContext)
-        if (!settings.periodicEnabled) {
-            workManager.cancelUniqueWork(UNIQUE_WORK_NAME)
-            AutoBackupStatusStore(appContext).scheduled(null)
-            return AutoBackupScheduleApplyResult(false, null, settings.cadence)
-        }
-
         val nextRun = AutoBackupSettingsPolicy.nextRunMillis(
             nowMillis = nowMillis,
             preferredHour = settings.preferredHour,
@@ -176,7 +188,7 @@ object AutoBackupPeriodicScheduler {
             preferredWeekday = settings.preferredWeekday,
         )
         val request = PeriodicWorkRequestBuilder<AutoBackupWorker>(
-            settings.cadence.intervalDays.toLong(),
+            PeriodicBackupCadence.DAILY.intervalDays.toLong(),
             TimeUnit.DAYS,
         )
             .setInitialDelay((nextRun - nowMillis).coerceAtLeast(0L), TimeUnit.MILLISECONDS)
@@ -207,7 +219,6 @@ object AutoBackupPeriodicScheduler {
         zoneId: ZoneId = ZoneId.systemDefault(),
     ): Long? {
         val settings = AutoBackupSettingsStore(context.applicationContext).load()
-        if (!settings.periodicEnabled) return null
         return AutoBackupSettingsPolicy.nextRunMillis(
             nowMillis = nowMillis,
             preferredHour = settings.preferredHour,

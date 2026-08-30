@@ -86,6 +86,7 @@ private fun AutoBackupSettingsScreen(onClose: () -> Unit) {
     var settlementAutoBackupEnabled by remember { mutableStateOf(initial.settlementAutoBackupEnabled) }
     var zRetentionText by remember { mutableStateOf(initial.zRetentionBusinessDays.toString()) }
     var monthlyRetentionText by remember { mutableStateOf(initial.monthlyRetentionMonths.toString()) }
+    var retentionGenerationsText by remember { mutableStateOf(initial.retentionGenerations.toString()) }
     var failureNotificationsEnabled by remember { mutableStateOf(initial.failureNotificationsEnabled) }
     var message by remember { mutableStateOf<String?>(null) }
     var permissionRevision by remember { mutableIntStateOf(0) }
@@ -102,17 +103,19 @@ private fun AutoBackupSettingsScreen(onClose: () -> Unit) {
         val hour = preferredHourText.toIntOrNull()
         val zDays = zRetentionText.toIntOrNull()
         val months = monthlyRetentionText.toIntOrNull()
+        val retentionGenerations = retentionGenerationsText.toIntOrNull()
         return runCatching {
             AutoBackupSettingsPolicy.validated(
                 AutoBackupSettings(
-                    periodicEnabled = periodicEnabled,
-                    cadence = cadence,
+                    periodicEnabled = true,
+                    cadence = PeriodicBackupCadence.DAILY,
                     preferredHour = hour ?: error("実行時刻を入力してください"),
+                    retentionGenerations = retentionGenerations ?: error("保持世代を入力してください"),
                     zRetentionBusinessDays = zDays ?: error("Z精算保持営業日を入力してください"),
                     monthlyRetentionMonths = months ?: error("定期保持月数を入力してください"),
                     failureNotificationsEnabled = failureNotificationsEnabled,
                     preferredWeekday = preferredWeekday,
-                    settlementAutoBackupEnabled = settlementAutoBackupEnabled,
+                    settlementAutoBackupEnabled = true,
                 ),
             )
         }.onFailure { if (reportError) message = it.message }.getOrNull()
@@ -152,7 +155,7 @@ private fun AutoBackupSettingsScreen(onClose: () -> Unit) {
                 Spacer(Modifier.width(24.dp))
                 Text("定期バックアップ・通知設定", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.weight(1f))
-                Text("定期スケジュール・Z精算後を個別設定", color = Color.White)
+                Text("毎日＋Z精算後は常時有効", color = Color.White)
             }
 
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
@@ -165,79 +168,27 @@ private fun AutoBackupSettingsScreen(onClose: () -> Unit) {
                     Card(colors = CardDefaults.cardColors(containerColor = Color.White), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text("定期バックアップ", color = AbsNavy, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Switch(checked = periodicEnabled, onCheckedChange = { periodicEnabled = it; message = null })
-                                Text(if (periodicEnabled) "定期バックアップ：ON" else "定期バックアップ：OFF", fontWeight = FontWeight.Bold)
-                            }
+                            Text("1日1回の暗号化バックアップは常時有効", color = AbsGreen, fontWeight = FontWeight.Bold)
+                            Text("Z精算後バックアップは常時有効", color = AbsGreen, fontWeight = FontWeight.Bold)
                             Text(
                                 "端末の空き容量とバッテリー残量が安全な時にWorkManagerが実行します。指定時刻は目安で、端末停止中は次回起動後に遅れて実行されます。",
                                 color = Color.DarkGray,
                             )
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                PeriodicBackupCadence.entries.forEach { option ->
-                                    val selected = cadence == option
-                                    if (selected) {
-                                        Button(
-                                            onClick = { cadence = option },
-                                            modifier = Modifier.weight(1f).height(50.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = AbsBlue),
-                                        ) { Text(option.displayName, fontWeight = FontWeight.Bold) }
-                                    } else {
-                                        OutlinedButton(
-                                            onClick = { cadence = option },
-                                            modifier = Modifier.weight(1f).height(50.dp),
-                                        ) { Text(option.displayName) }
-                                    }
-                                }
-                            }
-                            if (cadence == PeriodicBackupCadence.WEEKLY) {
-                                Text("指定曜日", color = AbsNavy, fontWeight = FontWeight.Bold)
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    (1..7).forEach { day ->
-                                        val label = AutoBackupSettingsPolicy.weekdayDisplayName(day)
-                                        if (preferredWeekday == day) {
-                                            Button(
-                                                onClick = { preferredWeekday = day; message = null },
-                                                modifier = Modifier.weight(1f).height(46.dp),
-                                                colors = ButtonDefaults.buttonColors(containerColor = AbsBlue),
-                                            ) { Text(label, fontWeight = FontWeight.Bold) }
-                                        } else {
-                                            OutlinedButton(
-                                                onClick = { preferredWeekday = day; message = null },
-                                                modifier = Modifier.weight(1f).height(46.dp),
-                                            ) { Text(label) }
-                                        }
-                                    }
-                                }
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Switch(
-                                    checked = settlementAutoBackupEnabled,
-                                    onCheckedChange = { settlementAutoBackupEnabled = it; message = null },
-                                )
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        if (settlementAutoBackupEnabled) "Z精算後バックアップ：ON" else "Z精算後バックアップ：OFF",
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                    Text(
-                                        "ONではZ精算確定後、同一精算につき1回だけ自動バックアップします。",
-                                        color = Color.DarkGray,
-                                    )
-                                }
-                            }
+                            Text(
+                                "BKP-001に従い、毎日の定期バックアップとZ精算確定後バックアップは停止できません。指定曜日設定は互換情報として保持しますが、毎日バックアップを置き換えません。",
+                                color = Color.DarkGray,
+                            )
                             OutlinedTextField(
                                 value = preferredHourText,
                                 onValueChange = { preferredHourText = it.filter(Char::isDigit).take(2); message = null },
                                 label = { Text("実行時刻（0～23時）") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                enabled = periodicEnabled,
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
                             )
                             Text(
-                                if (preview == null) "次回予定：定期バックアップOFF" else "次回予定（目安）：${formatBackupSchedule(preview)}",
-                                color = if (preview == null) Color.DarkGray else AbsGreen,
+                                "次回予定（目安）：${formatBackupSchedule(preview ?: System.currentTimeMillis())}",
+                                color = AbsGreen,
                                 fontWeight = FontWeight.Bold,
                             )
                         }
@@ -246,44 +197,15 @@ private fun AutoBackupSettingsScreen(onClose: () -> Unit) {
                     Card(colors = CardDefaults.cardColors(containerColor = Color.White), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text("保存世代", color = AbsNavy, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                            Text("手動作成・外部取込・今すぐ実行は自動削除しません。最新の正常バックアップと復元予約中ファイルも必ず保護します。")
-                            if (compact) {
-                                OutlinedTextField(
-                                    value = zRetentionText,
-                                    onValueChange = { zRetentionText = it.filter(Char::isDigit).take(2); message = null },
-                                    label = { Text("Z精算バックアップ保持営業日（1～90）") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = monthlyRetentionText,
-                                    onValueChange = { monthlyRetentionText = it.filter(Char::isDigit).take(2); message = null },
-                                    label = { Text("定期バックアップ保持月数（1～36）") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            } else {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                                    OutlinedTextField(
-                                        value = zRetentionText,
-                                        onValueChange = { zRetentionText = it.filter(Char::isDigit).take(2); message = null },
-                                        label = { Text("Z精算バックアップ保持営業日（1～90）") },
-                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    OutlinedTextField(
-                                        value = monthlyRetentionText,
-                                        onValueChange = { monthlyRetentionText = it.filter(Char::isDigit).take(2); message = null },
-                                        label = { Text("定期バックアップ保持月数（1～36）") },
-                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
-                            }
+                            Text("自動バックアップは7～365世代で保持し、初期値は30世代です。容量閾値を超えた場合は古い成功世代から削除します。手動作成・復元予約中は保護します。")
+                            OutlinedTextField(
+                                value = retentionGenerationsText,
+                                onValueChange = { retentionGenerationsText = it.filter(Char::isDigit).take(3); message = null },
+                                label = { Text("バックアップ保持世代（7～365）") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
                         }
                     }
 
@@ -364,17 +286,15 @@ private fun AutoBackupSettingsScreen(onClose: () -> Unit) {
                         AutoBackupAudit.record(
                             appContext,
                             "DATA_BACKUP_SETTINGS_UPDATED",
-                            "periodic=${saved.periodicEnabled} / cadence=${saved.cadence.name} / hour=${saved.preferredHour} / weekday=${saved.preferredWeekday} / settlementAutoBackup=${saved.settlementAutoBackupEnabled} / zDays=${saved.zRetentionBusinessDays} / months=${saved.monthlyRetentionMonths} / notify=${saved.failureNotificationsEnabled}",
+                            "periodic=${saved.periodicEnabled} / cadence=${saved.cadence.name} / hour=${saved.preferredHour} / weekday=${saved.preferredWeekday} / settlementAutoBackup=${saved.settlementAutoBackupEnabled} / retention=${saved.retentionGenerations} / zDays=${saved.zRetentionBusinessDays} / months=${saved.monthlyRetentionMonths} / notify=${saved.failureNotificationsEnabled}",
                             actor,
                         )
                         if (!saved.failureNotificationsEnabled) {
                             AutoBackupFailureNotificationCoordinator.clear(appContext)
                         }
-                        message = if (schedule.nextScheduledAt == null) {
-                            "保存しました。定期バックアップはOFFです。"
-                        } else {
-                            "保存しました。次回予定 ${formatBackupSchedule(schedule.nextScheduledAt)}"
-                        }
+                        message = schedule.nextScheduledAt?.let {
+                            "保存しました。次回予定 ${formatBackupSchedule(it)}"
+                        } ?: "保存しました。毎日バックアップを再登録しました。"
                     },
                     modifier = Modifier.width(260.dp).height(54.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = AbsBlue),
