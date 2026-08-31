@@ -1,0 +1,262 @@
+name: v1.36 BKP-003 final integration
+
+on:
+  push:
+    branches:
+      - develop/v1.36
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.36
+          fetch-depth: 0
+
+      - name: Apply existing BKP-003 integration patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=0
+          python3 .github/v136_bkp003_integrate.py > /tmp/bkp003-integrate.log 2>&1 || status=$?
+          cat /tmp/bkp003-integrate.log
+          if [ "$status" -ne 0 ]; then
+            grep -Fq 'bootstrap fail cleanup anchor mismatch' /tmp/bkp003-integrate.log
+          fi
+          grep -Fq 'BackupContentBundleV136.writeTo(appContext, zip, manifest.createdAt)' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
+          grep -Fq 'private fun hasPersistedWritePermission(context: Context, uri: Uri)' app/src/main/java/jp/co/tenposinfo/register/BackupContentV136.kt
+
+      - name: Integrate startup restore and continuation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt')
+          text = p.read_text()
+
+          def replace_one(old, new, label):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              text = text.replace(old, new, 1)
+
+          if 'val pendingContent = File(restoreDir, "pending-content-v136")' not in text:
+              replace_one(
+                  '''        val planFile = File(restoreDir, "restore-plan.properties")
+                  val pending = File(restoreDir, "pending-register.db")
+                  val database = context.getDatabasePath(REGISTER_DATABASE_NAME_V086)
+          ''',
+                  '''        val planFile = File(restoreDir, "restore-plan.properties")
+                  val pending = File(restoreDir, "pending-register.db")
+                  val pendingContent = File(restoreDir, "pending-content-v136")
+                  val database = context.getDatabasePath(REGISTER_DATABASE_NAME_V086)
+          ''',
+                  'pending content path',
+              )
+
+          if 'BackupContentBundleV136.removePending(pendingContent)\n            PendingRestoreWriteFenceV116.remove(database)' not in text:
+              replace_one(
+                  '''        if (!planFile.isFile || !pending.isFile) {
+                      PendingRestoreWriteFenceV116.remove(database)
+                      return
+                  }
+          ''',
+                  '''        if (!planFile.isFile || !pending.isFile) {
+                      BackupContentBundleV136.removePending(pendingContent)
+                      PendingRestoreWriteFenceV116.remove(database)
+                      return
+                  }
+          ''',
+                  'orphan pending content cleanup',
+              )
+
+          if 'val contentMode = plan["content_bundle"] ?: "LEGACY_DB_ONLY"' not in text:
+              replace_one(
+                  '''        if (actualHash != expectedHash) {
+                      return failWithoutReplacement(planFile, pending, resultFile, database, "復元予約DBのSHA-256が一致しません")
+                  }
+
+                  database.parentFile?.mkdirs()
+          ''',
+                  '''        if (actualHash != expectedHash) {
+                      return failWithoutReplacement(planFile, pending, resultFile, database, "復元予約DBのSHA-256が一致しません")
+                  }
+                  val contentMode = plan["content_bundle"] ?: "LEGACY_DB_ONLY"
+                  if (contentMode == BackupContentBundleV136.FORMAT && !BackupContentBundleV136.hasStagedContent(pendingContent)) {
+                      return failWithoutReplacement(planFile, pending, resultFile, database, "BKP-003復元contentがありません")
+                  }
+                  if (contentMode != BackupContentBundleV136.FORMAT) {
+                      BackupContentBundleV136.removePending(pendingContent)
+                  }
+
+                  database.parentFile?.mkdirs()
+          ''',
+                  'content requirement',
+              )
+
+          if 'var contentRollback: BackupContentBundleV136.Rollback? = null' not in text:
+              replace_one(
+                  '''        try {
+                      RestoreRollbackSafetyV086.deleteWalSidecars(database)
+          ''',
+                  '''        var contentRollback: BackupContentBundleV136.Rollback? = null
+                  try {
+                      RestoreRollbackSafetyV086.deleteWalSidecars(database)
+          ''',
+                  'content rollback declaration',
+              )
+
+          if 'BackupContentBundleV136.applyStagedWithRollback' not in text:
+              replace_one(
+                  '''            // migration後のschemaへ監査を書き込み、その書込み後にも正本DBを最終検証する。
+                      insertRestoreAudit(database, plan)
+                      DatabaseRecoveryIntegrityV116.verifyFinal(context)
+
+                      // ここまで成功して初めて復元成功を確定する。
+                      planFile.delete()
+                      resultFile.writeText(
+                          "復元成功: ${plan["backup_file"].orEmpty()} / ${Date()} / " +
+                              "ロールバック=${rollback?.file?.name ?: "なし"}" +
+                              (rollback?.let { " / rollback-sha256=${it.sha256}" } ?: ""),
+                          Charsets.UTF_8,
+                      )
+          ''',
+                  '''            // migration後のschemaへ監査を書き込み、その書込み後にも正本DBを最終検証する。
+                      insertRestoreAudit(database, plan)
+                      DatabaseRecoveryIntegrityV116.verifyFinal(context)
+
+                      // BKP-003: DBが正本として成立した後に設定・画像を適用する。現在値はrollback保持する。
+                      contentRollback = BackupContentBundleV136.applyStagedWithRollback(context, pendingContent, restoreDir)
+
+                      // sync_outbox本体はDBに含まれる。staging JSONは派生キャッシュなので、復元時は
+                      // PROCESSING/STAGEDを再生成可能な状態へ戻して再送を継続する。
+                      JournalOutboxStore(context).use { outbox ->
+                          outbox.recoverStaleProcessing(Long.MAX_VALUE)
+                          outbox.requeueStaged()
+                      }
+                      DatabaseRecoveryIntegrityV116.verifyFinal(context)
+
+                      // 成功記録の書込みまでrollback snapshotを保持する。
+                      resultFile.writeText(
+                          "復元成功: ${plan["backup_file"].orEmpty()} / ${Date()} / " +
+                              "ロールバック=${rollback?.file?.name ?: "なし"}" +
+                              (rollback?.let { " / rollback-sha256=${it.sha256}" } ?: "") +
+                              " / BKP-003=${contentMode}",
+                          Charsets.UTF_8,
+                      )
+                      planFile.delete()
+                      BackupContentBundleV136.removePending(pendingContent)
+                      contentRollback?.discard()
+                      contentRollback = null
+          ''',
+                  'content apply and continuation',
+              )
+
+          if 'val contentRollbackResult = runCatching' not in text:
+              replace_one(
+                  '''        } catch (error: Throwable) {
+                      val rollbackResult = if (rollback != null) {
+          ''',
+                  '''        } catch (error: Throwable) {
+                      val contentRollbackResult = runCatching {
+                          contentRollback?.restore()
+                          if (contentRollback != null) " / 設定・画像ロールバック完了" else ""
+                      }.getOrElse { rollbackError -> " / 設定・画像ロールバック失敗: ${rollbackError.message}" }
+                      val rollbackResult = if (rollback != null) {
+          ''',
+                  'content rollback catch',
+              )
+
+          if '"復元失敗: ${error.message} / $rollbackResult$contentRollbackResult"' not in text:
+              replace_one(
+                  '''            planFile.delete()
+                      pending.delete()
+                      resultFile.writeText(
+                          "復元失敗: ${error.message} / $rollbackResult",
+          ''',
+                  '''            planFile.delete()
+                      pending.delete()
+                      BackupContentBundleV136.removePending(pendingContent)
+                      resultFile.writeText(
+                          "復元失敗: ${error.message} / $rollbackResult$contentRollbackResult",
+          ''',
+                  'content rollback failure result',
+              )
+
+          marker = '    private fun failWithoutReplacement(\n'
+          start = text.index(marker)
+          end = text.index('\n    }\n}', start)
+          body = text[start:end]
+          if 'pending-content-v136' not in body:
+              needle = '        pending.delete()\n'
+              if body.count(needle) != 1:
+                  raise SystemExit('failWithoutReplacement pending delete anchor mismatch')
+              body = body.replace(
+                  needle,
+                  needle + '        BackupContentBundleV136.removePending(File(plan.parentFile, "pending-content-v136"))\n',
+                  1,
+              )
+              text = text[:start] + body + text[end:]
+
+          p.write_text(text)
+
+          tp = Path('app/src/test/java/jp/co/tenposinfo/register/V141BackupContentBundleTest.kt')
+          test = tp.read_text()
+          if 'recoverStaleProcessing(Long.MAX_VALUE)' not in test:
+              needle = '        assertTrue(source.contains("BKP-003復元contentがありません"))\n'
+              replacement = needle + '        assertTrue(source.contains("recoverStaleProcessing(Long.MAX_VALUE)"))\n        assertTrue(source.contains("requeueStaged()"))\n'
+              if test.count(needle) != 1:
+                  raise SystemExit('V141 continuation assertion anchor mismatch')
+              tp.write_text(test.replace(needle, replacement, 1))
+
+          dp = Path('docs/V1.36_BKP_003_BACKUP_CONTENT.md')
+          doc = dp.read_text()
+          needle = '`sync_outbox` の送信payloadはDBから `OutboxPayloadAssembler` で再生成可能なため、`filesDir/drive-sync-staging` は一時キャッシュとしてバックアップ対象外とする。\n'
+          addition = needle + '復元起動時は `PROCESSING` を即時再試行可能な `RETRY`、`STAGED` を `PENDING` へ戻し、復元済みDBからpayloadを再生成できる状態にしてから最終整合性検証を行う。\n'
+          if 'PROCESSING` を即時再試行可能な `RETRY' not in doc:
+              if doc.count(needle) != 1:
+                  raise SystemExit('BKP-003 docs continuation anchor mismatch')
+              dp.write_text(doc.replace(needle, addition, 1))
+          PY
+
+      - name: Verify integrated BKP-003 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'BackupContentBundleV136.writeTo(appContext, zip, manifest.createdAt)' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
+          grep -Fq 'BackupContentBundleV136.extractAndVerify(innerArchive' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
+          grep -Fq '"content_bundle" to if (hasContent) BackupContentBundleV136.FORMAT else "LEGACY_DB_ONLY"' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
+          grep -Fq 'BackupContentBundleV136.applyStagedWithRollback' app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt
+          grep -Fq 'recoverStaleProcessing(Long.MAX_VALUE)' app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt
+          grep -Fq 'requeueStaged()' app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt
+          grep -Fq 'contentRollback?.restore()' app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt
+          grep -Fq 'BKP-003復元contentがありません' app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt
+          grep -Fq 'private fun hasPersistedWritePermission(context: Context, uri: Uri)' app/src/main/java/jp/co/tenposinfo/register/BackupContentV136.kt
+          grep -Fq 'recoverStaleProcessing(Long.MAX_VALUE)' app/src/test/java/jp/co/tenposinfo/register/V141BackupContentBundleTest.kt
+          git diff --check
+
+      - name: Commit product integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/v136_bkp003_integrate.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/jp/co/tenposinfo/register/BackupContentV136.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt \
+                  app/src/test/java/jp/co/tenposinfo/register/V141BackupContentBundleTest.kt \
+                  docs/V1.36_BKP_003_BACKUP_CONTENT.md \
+                  .github/v136_bkp003_integrate.py
+          git diff --cached --check
+          git commit -m 'feat(v1.36): integrate BKP-003 restore continuation'
+          git push origin HEAD:develop/v1.36
