@@ -20,7 +20,16 @@ jobs:
           ref: develop/v1.36
           fetch-depth: 0
       - name: Apply BKP-003 integration
-        run: python3 .github/v136_bkp003_integrate.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('.github/v136_bkp003_integrate.py').read_text()
+          prefix = source.split('# Startup restore:', 1)[0]
+          exec(compile(prefix, '.github/v136_bkp003_integrate.py:product-prefix', 'exec'))
+          PY
+          python3 .github/v136_bkp003_bootstrap_patch.py
       - name: Source sanity
         shell: bash
         run: |
@@ -30,6 +39,7 @@ jobs:
           grep -Fq 'BackupContentBundleV136.applyStagedWithRollback' app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt
           grep -Fq 'contentRollback?.restore()' app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt
           grep -Fq 'hasPersistedWritePermission(context, uri)' app/src/main/java/jp/co/tenposinfo/register/BackupContentV136.kt
+          grep -Fq 'content_bundle" to if (hasContent) BackupContentBundleV136.FORMAT else "LEGACY_DB_ONLY"' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -51,13 +61,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -f .github/v136_bkp003_integrate.py
+          rm -f .github/v136_bkp003_integrate.py .github/v136_bkp003_bootstrap_patch.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add app/src/main/java/jp/co/tenposinfo/register/BackupContentV136.kt \
                   app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt \
                   app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt \
-                  .github/v136_bkp003_integrate.py
+                  .github/v136_bkp003_integrate.py .github/v136_bkp003_bootstrap_patch.py
           git diff --cached --check
           git commit -m 'feat(v1.36): integrate BKP-003 complete restore content'
           git push origin HEAD:develop/v1.36
