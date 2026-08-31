@@ -24,12 +24,12 @@ jobs:
           echo '=== HEAD ==='
           git rev-parse HEAD
           echo '=== SharedPreferences / filesystem persistence ==='
-          rg -n --glob '*.kt' 'getSharedPreferences|SharedPreferences|PreferenceManager|filesDir|noBackupFilesDir|openFile(Output|Input)|getExternalFilesDir' app/src/main/java || true
+          grep -RInE --include='*.kt' 'getSharedPreferences|SharedPreferences|PreferenceManager|filesDir|noBackupFilesDir|openFile(Output|Input)|getExternalFilesDir' app/src/main/java || true
           echo '=== backup-content domain terms ==='
-          rg -n -i --glob '*.kt' 'image|logo|template|receipt.*layout|print.*template|sync.?index|outbox|unsent|store.?id|store.?host|store.?url|terminal.?id|connection|reservation|scheduled|pending.*master|drive.*index' app/src/main/java | head -n 1200 || true
+          grep -RInEi --include='*.kt' 'image|logo|template|receipt.*layout|print.*template|sync.?index|outbox|unsent|store.?id|store.?host|store.?url|terminal.?id|connection|reservation|scheduled|pending.*master|drive.*index' app/src/main/java | head -n 1200 || true
           echo '=== DB table definitions / migrations relevant to BKP-003 ==='
-          rg -n -i --glob '*.kt' 'CREATE TABLE|ALTER TABLE' app/src/main/java | rg -i 'setting|printer|template|image|logo|sync|outbox|store|terminal|reservation|schedule|pending|master|product|menu|operation_audit' | head -n 800 || true
-          echo '=== application-private non-backup/runtime file roots ==='
-          find app/src/main -maxdepth 4 -type f | sort | head -n 600
+          grep -RInEi --include='*.kt' 'CREATE TABLE|ALTER TABLE' app/src/main/java | grep -Ei 'setting|printer|template|image|logo|sync|outbox|store|terminal|reservation|schedule|pending|master|product|menu|operation_audit' | head -n 800 || true
+          echo '=== application source/resources ==='
+          find app/src/main -maxdepth 8 -type f | sort | head -n 1200
           echo '=== DataProtection archive/extract calls ==='
-          rg -n 'writeArchive|extractDatabase|ZipEntry|MANIFEST_ENTRY|DATABASE_ENTRY|stageRestore|pending-register' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
+          grep -nE 'writeArchive|extractDatabase|ZipEntry|MANIFEST_ENTRY|DATABASE_ENTRY|stageRestore|pending-register' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt || true
