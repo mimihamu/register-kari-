@@ -391,6 +391,8 @@ class DataProtectionManager(context: Context) {
             require(legacyManifest.databaseSha256 == outerManifest.databaseSha256 &&
                 legacyManifest.databaseUserVersion == outerManifest.databaseUserVersion &&
                 legacyManifest.tableCounts == outerManifest.tableCounts) { "暗号化manifestとDB bundleの内容が一致しません" }
+            // BKP-003 content is inside the encrypted payload. Legacy DB-only bundles remain readable.
+            BackupContentBundleV136.extractAndVerify(innerArchive, File(extractionDir, "verified-content-v136"))
             val database = extractDatabase(innerArchive, extractionDir)
             require(database.length() in 1..MAX_BACKUP_DATABASE_BYTES) { "バックアップDBのサイズが不正です" }
             require(sha256(database) == outerManifest.databaseSha256) { "バックアップDBのSHA-256が一致しません" }
@@ -422,6 +424,14 @@ class DataProtectionManager(context: Context) {
             val innerArchive = File(extractionDir, "restore-inner.tgbak")
             BackupEnvelopeV136.decryptLocalTo(appContext, archive, innerArchive)
             val extracted = extractDatabase(innerArchive, extractionDir)
+            val extractedContent = File(extractionDir, "restore-content-v136")
+            val hasContent = BackupContentBundleV136.extractAndVerify(innerArchive, extractedContent)
+            val pendingContent = File(restoreDir, "pending-content-v136")
+            if (hasContent) {
+                BackupContentBundleV136.copyVerifiedSnapshot(extractedContent, pendingContent)
+            } else {
+                BackupContentBundleV136.removePending(pendingContent)
+            }
             val pendingTmp = File(restoreDir, "pending-register.db.tmp")
             val pending = File(restoreDir, "pending-register.db")
             extracted.copyTo(pendingTmp, overwrite = true)
@@ -430,6 +440,7 @@ class DataProtectionManager(context: Context) {
             writeRestorePlan(mapOf(
                 "backup_file" to verification.fileName,
                 "database_sha256" to verification.manifest.databaseSha256,
+                "content_bundle" to if (hasContent) BackupContentBundleV136.FORMAT else "LEGACY_DB_ONLY",
                 "actor_name" to actorName,
                 "staged_at" to stagedAt.toString(),
             ))
@@ -443,6 +454,7 @@ class DataProtectionManager(context: Context) {
     fun cancelPendingRestore(managerPin: String): String {
         val actorName = AdminSettingsStore(appContext).use { it.managerNameForPin(managerPin) } ?: error("責任者PINが違います")
         File(restoreDir, "pending-register.db").delete()
+        BackupContentBundleV136.removePending(File(restoreDir, "pending-content-v136"))
         File(restoreDir, "restore-plan.properties").delete()
         recordAudit("DATA_RESTORE_CANCELLED", "復元予約を取消", actorName)
         return actorName
@@ -589,7 +601,12 @@ class DataProtectionManager(context: Context) {
 
     private fun extractDatabase(archive: File, targetDir: File): File = ZipFile(archive).use { zip ->
         val names = zip.entries().asSequence().map { it.name }.toSet()
-        require(names == setOf(MANIFEST_ENTRY, DATABASE_ENTRY)) { "バックアップ内のファイル構成が不正です" }
+        val nonContentNames = names.filterNot { it.startsWith("content/") }.toSet()
+        require(nonContentNames == setOf(MANIFEST_ENTRY, DATABASE_ENTRY)) { "バックアップ内のファイル構成が不正です" }
+        val contentNames = names.filter { it.startsWith("content/") }
+        require(contentNames.isEmpty() || BackupContentBundleV136.CONTENT_MANIFEST_ENTRY in contentNames) {
+            "バックアップcontent manifestがありません"
+        }
         val entry = zip.getEntry(DATABASE_ENTRY) ?: error("バックアップDBがありません")
         require(!entry.isDirectory && entry.size in 1..MAX_BACKUP_DATABASE_BYTES) { "バックアップDBのサイズが不正です" }
         File(targetDir, DATABASE_NAME).also { output -> zip.getInputStream(entry).use { input -> output.outputStream().use { input.copyTo(it) } } }
@@ -604,6 +621,7 @@ class DataProtectionManager(context: Context) {
             zip.putNextEntry(ZipEntry(DATABASE_ENTRY).apply { time = manifest.createdAt })
             BufferedInputStream(FileInputStream(database)).use { it.copyTo(zip) }
             zip.closeEntry()
+            BackupContentBundleV136.writeTo(appContext, zip, manifest.createdAt)
         }
     }
 

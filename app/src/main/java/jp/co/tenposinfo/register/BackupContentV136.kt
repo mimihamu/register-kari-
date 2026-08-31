@@ -280,7 +280,7 @@ internal object BackupContentBundleV136 {
             val store = OutboxDeliverySettingsStore(context)
             val settings = store.load()
             val uri = settings.treeUri?.let(Uri::parse)
-            if (settings.enabled && (uri == null || !OutboxDeliveryDestinationAccess.hasPersistedWritePermission(context, uri))) {
+            if (settings.enabled && (uri == null || !hasPersistedWritePermission(context, uri))) {
                 store.save(settings.copy(enabled = false))
             }
         }
@@ -288,11 +288,16 @@ internal object BackupContentBundleV136 {
             val store = ExternalBackupSettingsStore(context)
             val settings = store.load()
             val uri = settings.treeUri?.let(Uri::parse)
-            if (settings.enabled && (uri == null || !ExternalBackupDestinationAccess.hasPersistedWritePermission(context, uri))) {
+            if (settings.enabled && (uri == null || !hasPersistedWritePermission(context, uri))) {
                 store.save(settings.copy(enabled = false))
             }
         }
     }
+
+    private fun hasPersistedWritePermission(context: Context, uri: Uri): Boolean =
+        context.contentResolver.persistedUriPermissions.any { permission ->
+            permission.uri == uri && permission.isWritePermission
+        }
 
     private fun preferenceEntry(name: String): String {
         require(name.matches(Regex("[a-z0-9_]+"))) { "設定バックアップ名が不正です" }

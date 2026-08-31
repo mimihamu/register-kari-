@@ -77,6 +77,8 @@ class V141BackupContentBundleTest {
         assertTrue(deletePlan > applyContent)
         assertTrue(source.contains("contentRollback?.restore()"))
         assertTrue(source.contains("BKP-003復元contentがありません"))
+        assertTrue(source.contains("recoverStaleProcessing(Long.MAX_VALUE)"))
+        assertTrue(source.contains("requeueStaged()"))
     }
 
     @Test

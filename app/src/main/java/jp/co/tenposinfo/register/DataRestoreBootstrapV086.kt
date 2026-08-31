@@ -189,10 +189,12 @@ internal object PendingRestoreApplierV086 {
         val restoreDir = File(context.filesDir, "data_restore")
         val planFile = File(restoreDir, "restore-plan.properties")
         val pending = File(restoreDir, "pending-register.db")
+        val pendingContent = File(restoreDir, "pending-content-v136")
         val database = context.getDatabasePath(REGISTER_DATABASE_NAME_V086)
 
         // 予約計画と候補DBの組がない起動は、取消・予約途中異常で残ったフェンスだけを回収する。
         if (!planFile.isFile || !pending.isFile) {
+            BackupContentBundleV136.removePending(pendingContent)
             PendingRestoreWriteFenceV116.remove(database)
             return
         }
@@ -210,6 +212,13 @@ internal object PendingRestoreApplierV086 {
         }
         if (actualHash != expectedHash) {
             return failWithoutReplacement(planFile, pending, resultFile, database, "復元予約DBのSHA-256が一致しません")
+        }
+        val contentMode = plan["content_bundle"] ?: "LEGACY_DB_ONLY"
+        if (contentMode == BackupContentBundleV136.FORMAT && !BackupContentBundleV136.hasStagedContent(pendingContent)) {
+            return failWithoutReplacement(planFile, pending, resultFile, database, "BKP-003復元contentがありません")
+        }
+        if (contentMode != BackupContentBundleV136.FORMAT) {
+            BackupContentBundleV136.removePending(pendingContent)
         }
 
         database.parentFile?.mkdirs()
@@ -231,6 +240,7 @@ internal object PendingRestoreApplierV086 {
             null
         }
 
+        var contentRollback: BackupContentBundleV136.Rollback? = null
         try {
             RestoreRollbackSafetyV086.deleteWalSidecars(database)
             DataProtectionManager.atomicReplace(pending, database)
@@ -248,15 +258,34 @@ internal object PendingRestoreApplierV086 {
             insertRestoreAudit(database, plan)
             DatabaseRecoveryIntegrityV116.verifyFinal(context)
 
-            // ここまで成功して初めて復元成功を確定する。
-            planFile.delete()
+            // BKP-003: DBが正本として成立した後に設定・画像を適用する。現在値はrollback保持する。
+            contentRollback = BackupContentBundleV136.applyStagedWithRollback(context, pendingContent, restoreDir)
+
+            // sync_outbox本体はDBに含まれる。staging JSONは派生キャッシュなので、復元時は
+            // PROCESSING/STAGEDを再生成可能な状態へ戻して再送を継続する。
+            JournalOutboxStore(context).use { outbox ->
+                outbox.recoverStaleProcessing(Long.MAX_VALUE)
+                outbox.requeueStaged()
+            }
+            DatabaseRecoveryIntegrityV116.verifyFinal(context)
+
+            // 成功記録の書込みまでrollback snapshotを保持する。
             resultFile.writeText(
                 "復元成功: ${plan["backup_file"].orEmpty()} / ${Date()} / " +
                     "ロールバック=${rollback?.file?.name ?: "なし"}" +
-                    (rollback?.let { " / rollback-sha256=${it.sha256}" } ?: ""),
+                    (rollback?.let { " / rollback-sha256=${it.sha256}" } ?: "") +
+                    " / BKP-003=${contentMode}",
                 Charsets.UTF_8,
             )
+            planFile.delete()
+            BackupContentBundleV136.removePending(pendingContent)
+            contentRollback?.discard()
+            contentRollback = null
         } catch (error: Throwable) {
+            val contentRollbackResult = runCatching {
+                contentRollback?.restore()
+                if (contentRollback != null) " / 設定・画像ロールバック完了" else ""
+            }.getOrElse { rollbackError -> " / 設定・画像ロールバック失敗: ${rollbackError.message}" }
             val rollbackResult = if (rollback != null) {
                 runCatching {
                     val restored = RestoreRollbackSafetyV086.restoreVerifiedSnapshot(rollback, database)
@@ -274,8 +303,9 @@ internal object PendingRestoreApplierV086 {
             }
             planFile.delete()
             pending.delete()
+            BackupContentBundleV136.removePending(pendingContent)
             resultFile.writeText(
-                "復元失敗: ${error.message} / $rollbackResult",
+                "復元失敗: ${error.message} / $rollbackResult$contentRollbackResult",
                 Charsets.UTF_8,
             )
         }
@@ -343,6 +373,7 @@ internal object PendingRestoreApplierV086 {
     ) {
         plan.delete()
         pending.delete()
+        BackupContentBundleV136.removePending(File(plan.parentFile, "pending-content-v136"))
         val fenceCleanup = runCatching { PendingRestoreWriteFenceV116.remove(database) }
             .exceptionOrNull()
             ?.let { " / フェンス解除失敗: ${it.message}" }
