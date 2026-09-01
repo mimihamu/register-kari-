@@ -67,14 +67,6 @@ replace_once(
 ''',
 )
 
-replace_once(
-    "app/src/test/java/jp/co/tenposinfo/register/V143Bkp005TerminalMigrationTest.kt",
-    '''        val bootstrap = source("DataRestoreBootstrapV086.kt")
-''',
-    '''        val bootstrap = source("DataRestoreBootstrapV086.kt")
-''',
-)
-
 # Add explicit audit-contract assertions after the existing sqlite_sequence assertion.
 replace_once(
     "app/src/test/java/jp/co/tenposinfo/register/V143Bkp005TerminalMigrationTest.kt",
@@ -82,9 +74,9 @@ replace_once(
         assertTrue(activity.contains("同一端末復旧"))
 ''',
     '''        assertTrue(helper.contains("sqlite_sequence"))
-        assertTrue(helper.contains("oldTerminalId=$sourceTerminalId"))
-        assertTrue(helper.contains("newTerminalId=$targetTerminalId"))
-        assertTrue(helper.contains("確認最大番号=$remoteAckMaxSaleId"))
+        assertTrue(helper.contains("oldTerminalId=\\$sourceTerminalId"))
+        assertTrue(helper.contains("newTerminalId=\\$targetTerminalId"))
+        assertTrue(helper.contains("確認最大番号=\\$remoteAckMaxSaleId"))
         assertTrue(bootstrap.contains("source_terminal_id"))
         assertTrue(bootstrap.contains("target_store_id"))
         assertTrue(bootstrap.contains("remote_ack_max_sale_id"))
