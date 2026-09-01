@@ -26,6 +26,8 @@ jobs:
             echo '=== HEAD ==='; git rev-parse HEAD
             echo '=== identity / generation ==='
             grep -RInE --include='*.kt' --include='*.md' 'terminalId|terminal_id|terminalGeneration|terminal_generation|generation|SalesJournalIdentityStore|sync_runtime_settings' app/src/main app/src/test docs | head -n 6000 || true
+            echo '=== store name / profile ==='
+            grep -RInE --include='*.kt' --include='*.xml' --include='*.md' 'storeName|store_name|shopName|shop_name|店舗名|店舗名称|店名|receipt.*name|companyName|company_name' app/src/main app/src/test docs | head -n 6000 || true
             echo '=== sales / transaction / receipt numbering ==='
             grep -RInE --include='*.kt' --include='*.md' 'saleNumber|sale_number|transactionNumber|transaction_number|receiptNumber|receipt_number|receiptNo|transactionNo|会計番号|取引番号|伝票番号|採番|sequence|next[A-Za-z]*Number|number[A-Za-z]*Next' app/src/main app/src/test docs | head -n 6000 || true
             echo '=== sales schema / inserts ==='
@@ -33,7 +35,7 @@ jobs:
             echo '=== restore identity paths ==='
             grep -RInE --include='*.kt' 'stageRestore|applyPendingRestore|pending-register|restore-plan|preflightRestore|RestoreReservation|復元|予備端末|同一端末' app/src/main app/src/test | head -n 6000 || true
             echo '=== candidate filenames ==='
-            find app/src/main/java app/src/test/java -type f -name '*.kt' | sort | grep -Ei 'sale|journal|identity|restore|backup|number|sequence|session' || true
+            find app/src/main/java app/src/test/java -type f -name '*.kt' | sort | grep -Ei 'sale|journal|identity|restore|backup|number|sequence|session|store|receipt|profile' || true
           } > "$out"
           wc -l "$out"
       - name: Upload audit
