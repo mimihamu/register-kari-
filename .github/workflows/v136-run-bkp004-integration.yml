@@ -1,0 +1,68 @@
+name: v1.36 BKP-004 restore preflight integration
+
+on:
+  push:
+    branches:
+      - develop/v1.36
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.36
+          fetch-depth: 0
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install Android API 36
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Set up Gradle 9.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+      - name: Apply BKP-004 integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/v136_bkp004_integrate.py
+          git diff --check
+          grep -Fq 'fun preflightRestore(fileName: String): RestorePreflightReportV136' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
+          grep -Fq 'require(preflight.mayRestore)' app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt
+          grep -Fq 'manager.preflightRestore(file)' app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+          grep -Fq 'drive.account_key' app/src/main/java/jp/co/tenposinfo/register/BackupContentV136.kt
+          grep -Fq 'drive.folder_name_b64' app/src/main/java/jp/co/tenposinfo/register/BackupContentV136.kt
+      - name: Focused BKP-004 unit test
+        run: gradle --no-daemon :app:testDebugUnitTest --tests jp.co.tenposinfo.register.V142RestorePreflightTest
+      - name: Compile app Kotlin
+        run: gradle --no-daemon :app:compileDebugKotlin
+      - name: Commit product integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/v136_bkp004_integrate.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/jp/co/tenposinfo/register/BackupContentV136.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/RestorePreflightV136.kt \
+                  app/src/test/java/jp/co/tenposinfo/register/V142RestorePreflightTest.kt \
+                  docs/V1.36_BKP_004_RESTORE_PREFLIGHT.md \
+                  .github/v136_bkp004_integrate.py
+          git diff --cached --check
+          git commit -m 'feat(v1.36): enforce BKP-004 restore preflight'
+          git push origin HEAD:develop/v1.36
