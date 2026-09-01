@@ -6,6 +6,7 @@ on:
       - develop/v1.36
     paths:
       - .github/workflows/v136-bkp005-implement.yml
+      - .github/v136-bkp005-audit-fields.py
   workflow_dispatch:
 
 permissions:
