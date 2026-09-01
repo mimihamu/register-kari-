@@ -23,11 +23,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Apply BKP-005 product patch
+      - name: Apply BKP-005 audit detail patch
         run: |
           set -euo pipefail
-          python3 .github/v136-bkp005-patch.py
-          python3 .github/v136-bkp005-followup.py
+          python3 .github/v136-bkp005-audit-fields.py
           git diff --check
       - name: V143 focused unit test
         run: |
@@ -37,23 +36,15 @@ jobs:
         run: |
           set -euo pipefail
           gradle --no-daemon :app:compileDebugKotlin
-      - name: Commit verified BKP-005 product patch
+      - name: Commit verified BKP-005 audit patch
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add \
-            app/src/main/java/jp/co/tenposinfo/register/SalesJournalJsonContract.kt \
-            app/src/main/java/jp/co/tenposinfo/register/RestorePreflightV136.kt \
-            app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt \
-            app/src/main/java/jp/co/tenposinfo/register/DatabaseRecoveryIntegrityV116.kt \
+            app/src/main/java/jp/co/tenposinfo/register/RestoreTerminalMigrationV136.kt \
             app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt \
-            app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt \
-            app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt \
-            app/src/main/java/jp/co/tenposinfo/register/RestoreTerminalMigrationV136.kt
-          if git diff --cached --quiet; then
-            echo 'No BKP-005 patch changes to commit'
-            exit 0
-          fi
-          git commit -m 'feat(v1.36): complete BKP-005 restore integration'
+            app/src/test/java/jp/co/tenposinfo/register/V143Bkp005TerminalMigrationTest.kt
+          git diff --cached --quiet && { echo 'No BKP-005 audit changes'; exit 0; }
+          git commit -m 'feat(v1.36): complete BKP-005 restore audit details'
           git push origin HEAD:develop/v1.36
