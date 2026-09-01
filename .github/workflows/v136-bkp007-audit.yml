@@ -19,17 +19,25 @@ jobs:
         with:
           ref: develop/v1.36
           fetch-depth: 0
-      - name: Locate menu revision apply and master mutation
+      - name: Export BKP-007 audit sources
         shell: bash
         run: |
           set -euo pipefail
-          echo '=== menu revision definitions ==='
-          grep -R -n -E 'class DynamicCatalogStore|menu_revisions|menu_revision_products|MenuRevision|Revision' app/src/main/java/jp/co/tenposinfo/register | head -n 1500 || true
-          echo '=== apply/activate/rollback paths ==='
-          grep -R -n -B10 -A100 -E 'applyRevision|apply.*revision|revision.*apply|activate.*revision|APPLIED|ROLLBACK|rollback|beginTransaction\(|setTransactionSuccessful\(' app/src/main/java/jp/co/tenposinfo/register | head -n 2200 || true
-          echo '=== current master table mutations ==='
-          grep -R -n -B10 -A80 -E 'DELETE FROM products|INSERT INTO products|UPDATE products|menu_buttons|product_master|tax_master|departments|groups' app/src/main/java/jp/co/tenposinfo/register | head -n 2200 || true
-          echo '=== snapshots/history/audit ==='
-          grep -R -n -B10 -A80 -E 'snapshot|history|operation_audit|MENU_REVISION|menu.*audit|revision.*audit' app/src/main/java/jp/co/tenposinfo/register | head -n 2200 || true
-          echo '=== relevant file names ==='
-          grep -R -l -E 'menu_revisions|DynamicCatalogStore|MENU_REVISION' app/src/main/java/jp/co/tenposinfo/register | sort || true
+          mkdir -p audit-output/files
+          find app -type f -name 'MenuRevisionApplierV132.kt' -print | tee audit-output/applier-path.txt
+          find app -type f \( -name '*MenuRevision*.kt' -o -name '*V137*.kt' -o -name '*V136FreshMenuRevision*.kt' \) -print | sort | tee audit-output/relevant-paths.txt
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            safe="$(echo "$f" | tr '/' '_')"
+            cp "$f" "audit-output/files/$safe"
+          done < audit-output/relevant-paths.txt
+          grep -R -n -B8 -A20 -E 'menu_category_master|menu_group_master|menu_item_master' app/src/main/java/jp/co/tenposinfo/register > audit-output/master-schema-and-usage.txt || true
+          grep -R -n -B8 -A30 -E 'operation_audit|OperationAudit|auditEvent|audit' app/src/main/java/jp/co/tenposinfo/register > audit-output/audit-usage.txt || true
+          grep -R -n -B8 -A30 -E 'withWriterLock|beginTransaction\(|setTransactionSuccessful\(|endTransaction\(' app/src/main/java/jp/co/tenposinfo/register > audit-output/transaction-usage.txt || true
+          git rev-parse HEAD > audit-output/checked-head.txt
+      - name: Upload BKP-007 audit artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bkp007-audit-sources
+          path: audit-output
+          if-no-files-found: error
