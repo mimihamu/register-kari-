@@ -27,6 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 .github/v136-bkp005-patch.py
+          python3 .github/v136-bkp005-followup.py
           git diff --check
       - name: V143 focused unit test
         run: |
@@ -48,7 +49,8 @@ jobs:
             app/src/main/java/jp/co/tenposinfo/register/DatabaseRecoveryIntegrityV116.kt \
             app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt \
             app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt \
-            app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt
+            app/src/main/java/jp/co/tenposinfo/register/DataProtectionActivity.kt \
+            app/src/main/java/jp/co/tenposinfo/register/RestoreTerminalMigrationV136.kt
           if git diff --cached --quiet; then
             echo 'No BKP-005 patch changes to commit'
             exit 0
