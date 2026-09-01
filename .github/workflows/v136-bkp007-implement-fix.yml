@@ -58,6 +58,7 @@ jobs:
           src = src.replace('                    update("menu_revisions", ContentValues().apply { put("status", "FAILED") }', '                    db.update("menu_revisions", ContentValues().apply { put("status", "FAILED") }', 1)
           src = src.replace('                    audit(\n                        this,\n                        "MENU_REVISION_APPLY_ROLLED_BACK"', '                    audit(\n                        db,\n                        "MENU_REVISION_APPLY_ROLLED_BACK"', 1)
           src = src.replace('                    setTransactionSuccessful()\n                } finally', '                    db.setTransactionSuccessful()\n                } finally', 1)
+          src = src.replace('assertTrue(runtime.contains("snapshot.restore(db)"))', 'assertTrue(runtime.contains("captured?.restore(db)"))', 1)
           Path('/tmp/v136-bkp007-fixed.py').write_text(src, encoding='utf-8')
           PY
       - name: Apply BKP-007 patch
