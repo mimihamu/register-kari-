@@ -226,6 +226,7 @@ data class RestoreStageResult(
     val backup: BackupVerification,
     val actorName: String,
     val stagedAt: Long,
+    val migrationPlan: RestoreTerminalMigrationPlanV136? = null,
 )
 
 data class PendingRestoreStatus(
@@ -373,7 +374,10 @@ class DataProtectionManager(context: Context) {
         return verifyArchive(archive, archive.name)
     }
 
-    fun preflightRestore(fileName: String): RestorePreflightReportV136 {
+    fun preflightRestore(fileName: String): RestorePreflightReportV136 =
+        preflightRestore(fileName, RestoreTerminalModeV136.SAME_TERMINAL)
+
+    fun preflightRestore(fileName: String, mode: RestoreTerminalModeV136): RestorePreflightReportV136 {
         val safeName = BackupFilePolicy.requireSafe(fileName)
         val archive = File(backupDir, safeName)
         val verification = verifyBackup(safeName)
@@ -418,6 +422,7 @@ class DataProtectionManager(context: Context) {
                     availableFreeBytes = availableFree,
                     backupDrive = contentManifest?.driveDestination,
                     currentDrive = BackupContentBundleV136.currentDriveDestination(appContext),
+                    allowSpareTerminalMigration = mode == RestoreTerminalModeV136.SPARE_TERMINAL,
                 ),
             )
             return RestorePreflightReportV136(
@@ -469,13 +474,24 @@ class DataProtectionManager(context: Context) {
         }
     }
 
-    fun stageRestore(fileName: String, managerPin: String): RestoreStageResult {
+    fun stageRestore(fileName: String, managerPin: String): RestoreStageResult =
+        stageRestore(fileName, managerPin, RestoreTerminalMigrationRequestV136.sameTerminal())
+
+    fun stageRestore(
+        fileName: String,
+        managerPin: String,
+        migrationRequest: RestoreTerminalMigrationRequestV136,
+    ): RestoreStageResult {
         val actorName = AdminSettingsStore(appContext).use { it.managerNameForPin(managerPin) } ?: error("責任者PINが違います")
         val currentReport = diagnose()
         val reasons = DataRestorePolicy.reasons(currentReport.restoreBlockers)
         require(currentReport.healthy) { "現在DBに整合性エラーがあるため復元予約できません" }
         require(reasons.isEmpty()) { reasons.joinToString("\n") }
-        val preflight = preflightRestore(fileName)
+        val preflight = if (migrationRequest.mode == RestoreTerminalModeV136.SAME_TERMINAL) {
+            preflightRestore(fileName)
+        } else {
+            preflightRestore(fileName, migrationRequest.mode)
+        }
         require(preflight.mayRestore) { preflight.blockingReasons.joinToString("\n") }
         val verification = preflight.verification
         val extractionDir = File(appContext.cacheDir, "restore-${UUID.randomUUID()}").apply { mkdirs() }
@@ -488,6 +504,26 @@ class DataProtectionManager(context: Context) {
             val extracted = extractDatabase(innerArchive, extractionDir)
             val extractedContent = File(extractionDir, "restore-content-v136")
             val hasContent = BackupContentBundleV136.extractAndVerify(innerArchive, extractedContent)
+            val currentIdentityAndMax = RegisterDatabase(appContext).use { helper ->
+                val db = helper.writableDatabase
+                SalesJournalIdentityStore.resolve(db) to SaleSequenceSafetyV136.maxKnownSaleId(db)
+            }
+            val backupIdentity = readJournalIdentity(extracted)
+            val backupMaxSaleId = SQLiteDatabase.openDatabase(
+                extracted.absolutePath,
+                null,
+                SQLiteDatabase.OPEN_READONLY,
+            ).let { db ->
+                try { SaleSequenceSafetyV136.maxKnownSaleId(db) } finally { db.close() }
+            }
+            val migrationPlan = RestoreTerminalMigrationPolicyV136.plan(
+                request = migrationRequest,
+                backupStoreName = RestoreTerminalMigrationPolicyV136.backupStoreName(extractedContent),
+                backupIdentity = backupIdentity,
+                currentIdentity = currentIdentityAndMax.first,
+                currentKnownMaxSaleId = currentIdentityAndMax.second,
+                backupKnownMaxSaleId = backupMaxSaleId,
+            )
             val pendingContent = File(restoreDir, "pending-content-v136")
             if (hasContent) {
                 BackupContentBundleV136.copyVerifiedSnapshot(extractedContent, pendingContent)
@@ -505,9 +541,17 @@ class DataProtectionManager(context: Context) {
                 "content_bundle" to if (hasContent) BackupContentBundleV136.FORMAT else "LEGACY_DB_ONLY",
                 "actor_name" to actorName,
                 "staged_at" to stagedAt.toString(),
+                "restore_mode" to migrationPlan.mode.name,
+                "target_store_id" to migrationPlan.storeId,
+                "source_terminal_id" to migrationPlan.sourceTerminalId,
+                "target_terminal_id" to migrationPlan.targetTerminalId,
+                "source_generation" to migrationPlan.sourceGeneration.toString(),
+                "target_generation" to migrationPlan.targetGeneration.toString(),
+                "sale_sequence_floor" to migrationPlan.saleSequenceFloor.toString(),
+                "remote_ack_max_sale_id" to migrationPlan.remoteAckMaxSaleId.toString(),
             ))
-            recordAudit("DATA_RESTORE_STAGED", "${verification.fileName} / 次回起動時に復元", actorName)
-            return RestoreStageResult(verification, actorName, stagedAt)
+            recordAudit("DATA_RESTORE_STAGED", "${verification.fileName} / ${migrationPlan.displaySummary()} / 次回起動時に復元", actorName)
+            return RestoreStageResult(verification, actorName, stagedAt, migrationPlan)
         } finally {
             extractionDir.deleteRecursively()
         }
@@ -546,6 +590,7 @@ class DataProtectionManager(context: Context) {
             SalesJournalIdentity(
                 storeId = read("sales_journal_store_id")?.takeIf(String::isNotBlank) ?: "<missing-storeId>",
                 terminalId = read("sales_journal_terminal_id")?.takeIf(String::isNotBlank) ?: "<missing-terminalId>",
+                generation = read("sales_journal_terminal_generation")?.toLongOrNull()?.coerceAtLeast(1L) ?: 1L,
             )
         } finally {
             database.close()

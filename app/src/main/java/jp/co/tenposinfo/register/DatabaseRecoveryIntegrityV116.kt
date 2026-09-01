@@ -186,11 +186,29 @@ internal object RestoreReservationCoordinatorV116 {
         manager: DataProtectionManager,
         fileName: String,
         managerPin: String,
+    ): RestoreStageResult = stage(
+        context,
+        manager,
+        fileName,
+        managerPin,
+        RestoreTerminalMigrationRequestV136.sameTerminal(),
+    )
+
+    fun stage(
+        context: Context,
+        manager: DataProtectionManager,
+        fileName: String,
+        managerPin: String,
+        migrationRequest: RestoreTerminalMigrationRequestV136,
     ): RestoreStageResult {
         val appContext = context.applicationContext
         PendingRestoreWriteFenceV116.install(appContext)
         return try {
-            manager.stageRestore(fileName, managerPin)
+            if (migrationRequest.mode == RestoreTerminalModeV136.SAME_TERMINAL) {
+                manager.stageRestore(fileName, managerPin)
+            } else {
+                manager.stageRestore(fileName, managerPin, migrationRequest)
+            }
         } catch (error: Throwable) {
             runCatching { PendingRestoreWriteFenceV116.remove(appContext) }
                 .exceptionOrNull()

@@ -289,6 +289,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             }
             val businessLink = BusinessSessionSchema.currentOpen(this)
                 ?: throw IllegalStateException("営業開始後に会計してください")
+            // BKP-005: stale restore/予備端末移行後も既知最大番号以下へ巻き戻さない。
+            SaleSequenceSafetyV136.enforceBeforeSale(this)
             val saleId = insertOrThrow(
                 "sales",
                 null,

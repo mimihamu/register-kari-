@@ -81,6 +81,18 @@ object RestoreTerminalMigrationPolicyV136 {
             }
 
             RestoreTerminalModeV136.SPARE_TERMINAL -> {
+                require(currentIdentity.storeId == "STORE-UNCONFIGURED") {
+                    "予備端末移行は店舗未設定の新品端末でのみ実行できます"
+                }
+                require(currentKnownMaxSaleId == 0L) {
+                    "予備端末に既存の売上または採番履歴があるため移行できません"
+                }
+                require(currentIdentity.generation == 1L) {
+                    "予備端末に既存の端末世代情報があるため移行できません"
+                }
+                require(backupIdentity.storeId.isNotBlank() && backupIdentity.storeId != "STORE-UNCONFIGURED") {
+                    "バックアップ元のstoreIdを安全に確認できません"
+                }
                 val trustedStoreName = backupStoreName
                     ?.let(::normalizeStoreName)
                     ?.takeIf(String::isNotBlank)

@@ -254,6 +254,9 @@ internal object PendingRestoreApplierV086 {
             // v1.16: legacy migration / 後付けschema ensure / user_version / index検査までrollback境界内で完了させる。
             DatabaseRecoveryIntegrityV116.migrateAndVerify(context)
 
+            // BKP-005: identity/generationと採番floorをrollback境界内で確定する。
+            RestoreTerminalMigrationV136.apply(database, plan)
+
             // migration後のschemaへ監査を書き込み、その書込み後にも正本DBを最終検証する。
             insertRestoreAudit(database, plan)
             DatabaseRecoveryIntegrityV116.verifyFinal(context)
@@ -274,7 +277,11 @@ internal object PendingRestoreApplierV086 {
                 "復元成功: ${plan["backup_file"].orEmpty()} / ${Date()} / " +
                     "ロールバック=${rollback?.file?.name ?: "なし"}" +
                     (rollback?.let { " / rollback-sha256=${it.sha256}" } ?: "") +
-                    " / BKP-003=${contentMode}",
+                    " / BKP-003=${contentMode}" +
+                    " / BKP-005=${plan["restore_mode"].orEmpty()}" +
+                    " / terminalId=${plan["target_terminal_id"].orEmpty()}" +
+                    " / generation=${plan["target_generation"].orEmpty()}" +
+                    " / sale-floor=${plan["sale_sequence_floor"].orEmpty()}",
                 Charsets.UTF_8,
             )
             planFile.delete()
@@ -354,7 +361,7 @@ internal object PendingRestoreApplierV086 {
                 ContentValues().apply {
                     put("event_type", "DATA_RESTORE_APPLIED")
                     put("reference_id", 0)
-                    put("detail", "${plan["backup_file"].orEmpty()} / 起動時復元 / v1.16 WAL・migration-safe rollback")
+                    put("detail", "${plan["backup_file"].orEmpty()} / 起動時復元 / v1.16 WAL・migration-safe rollback / BKP-005=${plan["restore_mode"].orEmpty()} / terminalId=${plan["target_terminal_id"].orEmpty()} / generation=${plan["target_generation"].orEmpty()} / sale-floor=${plan["sale_sequence_floor"].orEmpty()}")
                     put("operator_name", plan["actor_name"].orEmpty().ifBlank { "責任者" })
                     put("created_at", System.currentTimeMillis())
                 },

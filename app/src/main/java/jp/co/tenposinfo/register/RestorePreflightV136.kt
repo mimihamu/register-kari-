@@ -30,6 +30,7 @@ data class RestorePreflightInputsV136(
     val availableFreeBytes: Long,
     val backupDrive: RestoreDriveDestinationV136?,
     val currentDrive: RestoreDriveDestinationV136,
+    val allowSpareTerminalMigration: Boolean = false,
 )
 
 data class RestorePreflightCheckV136(
@@ -84,6 +85,11 @@ object RestorePreflightPolicyV136 {
                 "BKP_SCHEMA",
                 "バックアップschema",
                 "未対応の暗号化形式 ${input.envelopeFormat}",
+            )
+            content == null && input.allowSpareTerminalMigration -> block(
+                "BKP_SCHEMA",
+                "バックアップschema",
+                "予備端末移行には店舗設定を含むBKP-003バックアップが必要です",
             )
             content == null -> migrate(
                 "BKP_SCHEMA",
@@ -144,27 +150,33 @@ object RestorePreflightPolicyV136 {
         else -> pass("DB_SCHEMA", "DB schema", input.currentDatabaseSchema.toString())
     }
 
-    private fun storeIdentity(input: RestorePreflightInputsV136): RestorePreflightCheckV136 =
-        if (input.backupStoreId == input.currentStoreId) {
-            pass("STORE_ID", "storeId", input.currentStoreId)
-        } else {
-            block(
-                "STORE_ID",
-                "storeId",
-                "店舗が一致しません: backup=${input.backupStoreId}, current=${input.currentStoreId}",
-            )
-        }
+    private fun storeIdentity(input: RestorePreflightInputsV136): RestorePreflightCheckV136 = when {
+        input.backupStoreId == input.currentStoreId -> pass("STORE_ID", "storeId", input.currentStoreId)
+        input.allowSpareTerminalMigration && input.currentStoreId == "STORE-UNCONFIGURED" -> migrate(
+            "STORE_ID",
+            "storeId",
+            "未設定の予備端末をbackup=${input.backupStoreId}へ移行します。店舗名再入力と責任者確認が必要です",
+        )
+        else -> block(
+            "STORE_ID",
+            "storeId",
+            "店舗が一致しません: backup=${input.backupStoreId}, current=${input.currentStoreId}",
+        )
+    }
 
-    private fun terminalIdentity(input: RestorePreflightInputsV136): RestorePreflightCheckV136 =
-        if (input.backupTerminalId == input.currentTerminalId) {
-            pass("TERMINAL_ID", "terminalId", input.currentTerminalId)
-        } else {
-            block(
-                "TERMINAL_ID",
-                "terminalId",
-                "端末が一致しません: backup=${input.backupTerminalId}, current=${input.currentTerminalId}。予備端末移行はBKP-005の端末ID切替を選択してください",
-            )
-        }
+    private fun terminalIdentity(input: RestorePreflightInputsV136): RestorePreflightCheckV136 = when {
+        input.allowSpareTerminalMigration -> migrate(
+            "TERMINAL_ID",
+            "terminalId",
+            "BKP-005予備端末移行として新terminalId/generationを発行します。backup=${input.backupTerminalId}, current=${input.currentTerminalId}",
+        )
+        input.backupTerminalId == input.currentTerminalId -> pass("TERMINAL_ID", "terminalId", input.currentTerminalId)
+        else -> block(
+            "TERMINAL_ID",
+            "terminalId",
+            "端末が一致しません: backup=${input.backupTerminalId}, current=${input.currentTerminalId}。予備端末移行はBKP-005の端末ID切替を選択してください",
+        )
+    }
 
     private fun hash(input: RestorePreflightInputsV136): RestorePreflightCheckV136 =
         if (input.hashVerified) pass("HASH", "hash", "SHA-256一致・暗号化payload検証済み")

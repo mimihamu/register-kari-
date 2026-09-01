@@ -97,6 +97,10 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
     var pending by remember { mutableStateOf(manager.pendingRestoreStatus()) }
     var rollbackInventory by remember { mutableStateOf(RestoreRollbackInventoryV086(0, null)) }
     var pin by remember { mutableStateOf("") }
+    var restoreMode by remember { mutableStateOf<RestoreTerminalModeV136?>(null) }
+    var spareStoreName by remember { mutableStateOf("") }
+    var spareRemoteMaxSaleId by remember { mutableStateOf("") }
+    var oldTerminalStopped by remember { mutableStateOf(false) }
     var backupPassphrase by remember { mutableStateOf("") }
     var backupPassphraseConfirm by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("診断を実行してください") }
@@ -497,29 +501,84 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Spacer(Modifier.height(8.dp))
+                        Text("復元方式（必須）", fontWeight = FontWeight.Bold, color = DpNavy)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { restoreMode = RestoreTerminalModeV136.SAME_TERMINAL },
+                                enabled = !busy && !pending.staged,
+                            ) { Text(if (restoreMode == RestoreTerminalModeV136.SAME_TERMINAL) "✓ 同一端末復旧" else "同一端末復旧") }
+                            OutlinedButton(
+                                onClick = { restoreMode = RestoreTerminalModeV136.SPARE_TERMINAL },
+                                enabled = !busy && !pending.staged,
+                            ) { Text(if (restoreMode == RestoreTerminalModeV136.SPARE_TERMINAL) "✓ 予備端末移行" else "予備端末移行") }
+                        }
+                        if (restoreMode == RestoreTerminalModeV136.SPARE_TERMINAL) {
+                            Text(
+                                "旧端末を停止し、バックアップ内店舗名とDrive/既存イベントの最大売上番号を確認してください。新terminalId/generationを発行します。",
+                                color = DpDanger,
+                                fontSize = 12.sp,
+                            )
+                            OutlinedTextField(
+                                spareStoreName,
+                                { spareStoreName = it.take(80) },
+                                label = { Text("店舗名を再入力") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            OutlinedTextField(
+                                spareRemoteMaxSaleId,
+                                { spareRemoteMaxSaleId = it.filter(Char::isDigit).take(18) },
+                                label = { Text("Drive ACK/既存イベント 最大売上番号（該当なしは0）") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            OutlinedButton(
+                                onClick = { oldTerminalStopped = !oldTerminalStopped },
+                                enabled = !busy && !pending.staged,
+                            ) { Text(if (oldTerminalStopped) "✓ 旧端末停止を確認済み" else "旧端末停止を確認する") }
+                        }
+                        Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(
                                 onClick = {
                                     val file = selected ?: return@OutlinedButton
+                                    val mode = restoreMode ?: return@OutlinedButton
                                     runTask {
-                                        val preflight = withContext(Dispatchers.IO) { manager.preflightRestore(file) }
+                                        val preflight = withContext(Dispatchers.IO) {
+                                            if (mode == RestoreTerminalModeV136.SAME_TERMINAL) manager.preflightRestore(file)
+                                            else manager.preflightRestore(file, mode)
+                                        }
                                         preflight.displayText()
                                     }
                                 },
-                                enabled = !busy && selected != null,
+                                enabled = !busy && selected != null && restoreMode != null,
                             ) { Text("検証") }
                             Button(
                                 onClick = {
                                     val file = selected ?: return@Button
+                                    val mode = restoreMode ?: return@Button
+                                    val request = RestoreTerminalMigrationRequestV136(
+                                        mode = mode,
+                                        confirmedStoreName = spareStoreName,
+                                        oldTerminalStopped = oldTerminalStopped,
+                                        remoteAckMaxSaleId = if (mode == RestoreTerminalModeV136.SPARE_TERMINAL) spareRemoteMaxSaleId.toLongOrNull() else null,
+                                    )
                                     runTask {
                                         val staged = withContext(Dispatchers.IO) {
-                                            RestoreReservationCoordinatorV116.stage(appContext, manager, file, pin)
+                                            if (mode == RestoreTerminalModeV136.SAME_TERMINAL) {
+                                                RestoreReservationCoordinatorV116.stage(appContext, manager, file, pin)
+                                            } else {
+                                                RestoreReservationCoordinatorV116.stage(appContext, manager, file, pin, request)
+                                            }
                                         }
                                         pin = ""
-                                        "復元予約: ${staged.backup.fileName}。アプリを完全終了して再起動してください。"
+                                        "復元予約: ${staged.backup.fileName} / ${staged.migrationPlan?.displaySummary().orEmpty()}。アプリを完全終了して再起動してください。"
                                     }
                                 },
-                                enabled = !busy && selected != null && pin.length >= 4 && report?.restoreReady == true && !pending.staged,
+                                enabled = !busy && selected != null && pin.length >= 4 && report?.restoreReady == true && !pending.staged &&
+                                    restoreMode != null && (restoreMode != RestoreTerminalModeV136.SPARE_TERMINAL ||
+                                    (spareStoreName.isNotBlank() && spareRemoteMaxSaleId.toLongOrNull() != null && oldTerminalStopped)),
                                 colors = ButtonDefaults.buttonColors(containerColor = DpDanger),
                             ) { Text("次回起動時に復元") }
                             OutlinedButton(
