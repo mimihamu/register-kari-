@@ -51,6 +51,7 @@ internal object BackupContentBundleV136 {
         val receiptStampPresent: Boolean,
         val receiptStampSha256: String?,
         val receiptStampBytes: Long,
+        val driveDestination: RestoreDriveDestinationV136? = null,
     )
 
     internal data class Rollback(
@@ -84,6 +85,7 @@ internal object BackupContentBundleV136 {
             receiptStampPresent = stampFile.isFile,
             receiptStampSha256 = stampFile.takeIf(File::isFile)?.let(::sha256),
             receiptStampBytes = stampFile.takeIf(File::isFile)?.length() ?: 0L,
+            driveDestination = currentDriveDestination(appContext),
         )
         writeBytes(zip, CONTENT_MANIFEST_ENTRY, encodeManifest(manifest), createdAt)
         PREFERENCE_NAMES.forEach { name ->
@@ -167,6 +169,8 @@ internal object BackupContentBundleV136 {
 
     fun hasStagedContent(root: File): Boolean = File(root, "content/manifest.properties").isFile
 
+    fun readVerifiedManifest(root: File): Manifest = validateSnapshotDirectory(root)
+
     /**
      * Apply staged operational state after the database has passed migration/final verification.
      * Current operational state is snapshotted first. Any apply error self-rolls back; callers can
@@ -211,6 +215,7 @@ internal object BackupContentBundleV136 {
             receiptStampPresent = stampFile.isFile,
             receiptStampSha256 = stampFile.takeIf(File::isFile)?.let(::sha256),
             receiptStampBytes = stampFile.takeIf(File::isFile)?.length() ?: 0L,
+            driveDestination = currentDriveDestination(context),
         )
         File(contentRoot, "manifest.properties").writeBytes(encodeManifest(manifest))
         encoded.forEach { (name, bytes) ->
@@ -299,6 +304,25 @@ internal object BackupContentBundleV136 {
             permission.uri == uri && permission.isWritePermission
         }
 
+    fun currentDriveDestination(context: Context): RestoreDriveDestinationV136 {
+        val appContext = context.applicationContext
+        val account = GoogleDriveAccountStore(appContext).load()
+        val email = account.email?.trim()?.lowercase(Locale.ROOT)?.takeIf(String::isNotEmpty)
+        val accountKey = account.permissionId?.trim()?.takeIf(String::isNotEmpty)
+            ?: email?.let { "email-sha256:${sha256(it.toByteArray(Charsets.UTF_8))}" }
+        return RestoreDriveDestinationV136(
+            descriptorCaptured = true,
+            connected = email != null,
+            accountKey = accountKey,
+            folderName = DriveSyncSettingsStore.load(appContext).folderName,
+        )
+    }
+
+    private fun encodeText(value: String): String = Base64.getUrlEncoder().withoutPadding()
+        .encodeToString(value.toByteArray(Charsets.UTF_8))
+
+    private fun decodeText(value: String): String = Base64.getUrlDecoder().decode(value).toString(Charsets.UTF_8)
+
     private fun preferenceEntry(name: String): String {
         require(name.matches(Regex("[a-z0-9_]+"))) { "設定バックアップ名が不正です" }
         return "content/settings/$name.pref"
@@ -313,6 +337,11 @@ internal object BackupContentBundleV136 {
         appendLine("receipt_stamp.present=${manifest.receiptStampPresent}")
         appendLine("receipt_stamp.bytes=${manifest.receiptStampBytes}")
         manifest.receiptStampSha256?.let { appendLine("receipt_stamp.sha256=$it") }
+        manifest.driveDestination?.let { drive ->
+            appendLine("drive.connected=${drive.connected}")
+            appendLine("drive.folder_name_b64=${encodeText(drive.folderName)}")
+            drive.accountKey?.let { appendLine("drive.account_key=$it") }
+        }
     }.toByteArray(Charsets.UTF_8)
 
     private fun decodeManifest(bytes: ByteArray): Manifest {
@@ -341,15 +370,35 @@ internal object BackupContentBundleV136 {
         } else {
             require(stampBytes == 0L && stampHash == null) { "画像スタンプmanifestが不正です" }
         }
+        val drive = if ("drive.connected" in properties) {
+            val connected = properties.getValue("drive.connected").toBooleanStrict()
+            val folderName = decodeText(properties.getValue("drive.folder_name_b64"))
+            require(folderName.isNotBlank() && folderName.length <= 100) { "Drive同期フォルダ名が不正です" }
+            val accountKey = properties["drive.account_key"]?.trim()?.takeIf(String::isNotEmpty)
+            require(!connected || accountKey != null) { "Drive接続先識別子がありません" }
+            RestoreDriveDestinationV136(
+                descriptorCaptured = true,
+                connected = connected,
+                accountKey = accountKey,
+                folderName = folderName,
+            )
+        } else {
+            null
+        }
         val expectedKeys = buildSet {
             add("format")
             PREFERENCE_NAMES.forEach { name -> add("pref.$name.sha256"); add("pref.$name.bytes") }
             add("receipt_stamp.present")
             add("receipt_stamp.bytes")
             if (present) add("receipt_stamp.sha256")
+            if (drive != null) {
+                add("drive.connected")
+                add("drive.folder_name_b64")
+                if (drive.accountKey != null) add("drive.account_key")
+            }
         }
         require(properties.keys == expectedKeys) { "content manifestに未知の項目があります" }
-        return Manifest(hashes, sizes, present, stampHash, stampBytes)
+        return Manifest(hashes, sizes, present, stampHash, stampBytes, drive)
     }
 
     private fun requireSha256(value: String) {

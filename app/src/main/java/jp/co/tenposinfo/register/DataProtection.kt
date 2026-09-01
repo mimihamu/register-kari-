@@ -373,6 +373,66 @@ class DataProtectionManager(context: Context) {
         return verifyArchive(archive, archive.name)
     }
 
+    fun preflightRestore(fileName: String): RestorePreflightReportV136 {
+        val safeName = BackupFilePolicy.requireSafe(fileName)
+        val archive = File(backupDir, safeName)
+        val verification = verifyBackup(safeName)
+        val currentDb = appContext.getDatabasePath(DATABASE_NAME)
+        val requiredFree = archive.length() * 3L + (if (currentDb.isFile) currentDb.length() else 0L) + 16L * 1024L * 1024L
+        val availableFree = appContext.cacheDir.usableSpace
+        val extractionDir = File(appContext.cacheDir, "preflight-${UUID.randomUUID()}").apply { mkdirs() }
+        try {
+            val innerArchive = File(extractionDir, "preflight-inner.tgbak")
+            val decrypted = BackupEnvelopeV136.decryptLocalTo(appContext, archive, innerArchive)
+            require(decrypted.databaseSha256 == verification.manifest.databaseSha256) {
+                "復元前検証で暗号化manifestのDB識別子が一致しません"
+            }
+            val backupDatabase = extractDatabase(innerArchive, extractionDir)
+            val contentRoot = File(extractionDir, "preflight-content-v136")
+            val hasContent = BackupContentBundleV136.extractAndVerify(innerArchive, contentRoot)
+            val contentManifest = if (hasContent) BackupContentBundleV136.readVerifiedManifest(contentRoot) else null
+            val backupIdentity = readJournalIdentity(backupDatabase)
+            val currentState = RegisterDatabase(appContext).use { helper ->
+                val db = helper.writableDatabase
+                val identity = SalesJournalIdentityStore.resolve(db)
+                val schema = db.rawQuery("PRAGMA user_version", null).use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getInt(0) else 0
+                }
+                identity to schema
+            }
+            val hashVerified = sha256(backupDatabase) == verification.manifest.databaseSha256
+            val decision = RestorePreflightPolicyV136.evaluate(
+                RestorePreflightInputsV136(
+                    envelopeFormat = verification.manifest.format,
+                    contentFormat = if (hasContent) BackupContentBundleV136.FORMAT else null,
+                    backupAppVersion = verification.manifest.appVersion,
+                    currentAppVersion = BuildConfig.VERSION_NAME,
+                    backupDatabaseSchema = verification.manifest.databaseUserVersion,
+                    currentDatabaseSchema = currentState.second,
+                    backupStoreId = backupIdentity.storeId,
+                    currentStoreId = currentState.first.storeId,
+                    backupTerminalId = backupIdentity.terminalId,
+                    currentTerminalId = currentState.first.terminalId,
+                    hashVerified = hashVerified,
+                    requiredFreeBytes = requiredFree,
+                    availableFreeBytes = availableFree,
+                    backupDrive = contentManifest?.driveDestination,
+                    currentDrive = BackupContentBundleV136.currentDriveDestination(appContext),
+                ),
+            )
+            return RestorePreflightReportV136(
+                verification = verification,
+                decision = decision,
+                backupStoreId = backupIdentity.storeId,
+                backupTerminalId = backupIdentity.terminalId,
+                currentStoreId = currentState.first.storeId,
+                currentTerminalId = currentState.first.terminalId,
+            )
+        } finally {
+            extractionDir.deleteRecursively()
+        }
+    }
+
     private fun verifyArchive(archive: File, displayName: String): BackupVerification {
         require(archive.isFile && archive.length() in 1..MAX_BACKUP_ARCHIVE_BYTES) { "バックアップアーカイブのサイズが不正です" }
         require(BackupEnvelopeV136.isSecureEnvelope(archive)) {
@@ -415,7 +475,9 @@ class DataProtectionManager(context: Context) {
         val reasons = DataRestorePolicy.reasons(currentReport.restoreBlockers)
         require(currentReport.healthy) { "現在DBに整合性エラーがあるため復元予約できません" }
         require(reasons.isEmpty()) { reasons.joinToString("\n") }
-        val verification = verifyBackup(fileName)
+        val preflight = preflightRestore(fileName)
+        require(preflight.mayRestore) { preflight.blockingReasons.joinToString("\n") }
+        val verification = preflight.verification
         val extractionDir = File(appContext.cacheDir, "restore-${UUID.randomUUID()}").apply { mkdirs() }
         val stagedAt = System.currentTimeMillis()
         try {
@@ -467,6 +529,27 @@ class DataProtectionManager(context: Context) {
         if (!planFile.isFile || !pending.isFile) return PendingRestoreStatus(false, lastResult = result)
         val plan = readSimpleProperties(planFile.readText(Charsets.UTF_8))
         return PendingRestoreStatus(true, plan["backup_file"], plan["actor_name"], plan["staged_at"]?.toLongOrNull(), result)
+    }
+
+    private fun readJournalIdentity(databaseFile: File): SalesJournalIdentity {
+        val database = SQLiteDatabase.openDatabase(databaseFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
+        return try {
+            val hasSettings = database.rawQuery(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sync_runtime_settings' LIMIT 1",
+                null,
+            ).use { cursor -> cursor.moveToFirst() }
+            if (!hasSettings) return SalesJournalIdentity("<missing-storeId>", "<missing-terminalId>")
+            fun read(key: String): String? = database.rawQuery(
+                "SELECT setting_value FROM sync_runtime_settings WHERE setting_key = ?",
+                arrayOf(key),
+            ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+            SalesJournalIdentity(
+                storeId = read("sales_journal_store_id")?.takeIf(String::isNotBlank) ?: "<missing-storeId>",
+                terminalId = read("sales_journal_terminal_id")?.takeIf(String::isNotBlank) ?: "<missing-terminalId>",
+            )
+        } finally {
+            database.close()
+        }
     }
 
     private fun ensureSchemas() {

@@ -502,8 +502,8 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                                 onClick = {
                                     val file = selected ?: return@OutlinedButton
                                     runTask {
-                                        val verified = withContext(Dispatchers.IO) { manager.verifyBackup(file) }
-                                        "検証成功: ${verified.fileName} / SHA-256 ${verified.manifest.databaseSha256.take(12)}…"
+                                        val preflight = withContext(Dispatchers.IO) { manager.preflightRestore(file) }
+                                        preflight.displayText()
                                     }
                                 },
                                 enabled = !busy && selected != null,
