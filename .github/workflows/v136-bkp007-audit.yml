@@ -24,16 +24,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p audit-output/files
-          find app -type f -name 'MenuRevisionApplierV132.kt' -print | tee audit-output/applier-path.txt
-          find app -type f \( -name '*MenuRevision*.kt' -o -name '*V137*.kt' -o -name '*V136FreshMenuRevision*.kt' \) -print | sort | tee audit-output/relevant-paths.txt
+          grep -R -l -E 'MenuRevisionApplierV132|menu_category_master|menu_group_master|menu_item_master|MENU_REVISION_(APPLIED|APPLY|FAILED|ROLLBACK)' app/src/main app/src/test 2>/dev/null | sort -u | tee audit-output/matched-paths.txt || true
           while IFS= read -r f; do
             [ -n "$f" ] || continue
             safe="$(echo "$f" | tr '/' '_')"
             cp "$f" "audit-output/files/$safe"
-          done < audit-output/relevant-paths.txt
-          grep -R -n -B8 -A20 -E 'menu_category_master|menu_group_master|menu_item_master' app/src/main/java/jp/co/tenposinfo/register > audit-output/master-schema-and-usage.txt || true
-          grep -R -n -B8 -A30 -E 'operation_audit|OperationAudit|auditEvent|audit' app/src/main/java/jp/co/tenposinfo/register > audit-output/audit-usage.txt || true
-          grep -R -n -B8 -A30 -E 'withWriterLock|beginTransaction\(|setTransactionSuccessful\(|endTransaction\(' app/src/main/java/jp/co/tenposinfo/register > audit-output/transaction-usage.txt || true
+          done < audit-output/matched-paths.txt
+          grep -R -n -B12 -A120 -E 'MenuRevisionApplierV132|MENU_REVISION_(APPLIED|APPLY|FAILED|ROLLBACK)' app/src/main app/src/test > audit-output/applier-and-tests.txt || true
+          grep -R -n -B12 -A50 -E 'CREATE TABLE.*(menu_category_master|menu_group_master|menu_item_master)|menu_category_master|menu_group_master|menu_item_master' app/src/main app/src/test > audit-output/master-schema-and-usage.txt || true
+          grep -R -n -B12 -A50 -E 'operation_audit|OperationAudit|audit\(' app/src/main/java/jp/co/tenposinfo/register > audit-output/audit-usage.txt || true
           git rev-parse HEAD > audit-output/checked-head.txt
       - name: Upload BKP-007 audit artifact
         uses: actions/upload-artifact@v4
