@@ -1,19 +1,22 @@
 package jp.co.tenposinfo.register
 
 import java.io.File
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertNotEquals
-import kotlin.test.assertTrue
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Test
 
 class V143Bkp005TerminalMigrationTest {
     private val backup = SalesJournalIdentity("STORE-A", "TERMINAL-OLD", generation = 4)
-    private val spare = SalesJournalIdentity("STORE-A", "TERMINAL-SPARE-BOOT", generation = 1)
+    private val spare = SalesJournalIdentity("STORE-UNCONFIGURED", "TERMINAL-SPARE-BOOT", generation = 1)
+    private val root = File(System.getProperty("user.dir")).let { current ->
+        if (File(current, "app").isDirectory) File(current, "app") else current
+    }
 
     @Test
     fun spareTerminalRequiresTrustedStoreReentryOldTerminalStopAndRemoteMaximum() {
-        assertFailsWith<IllegalArgumentException> {
+        assertThrows(IllegalArgumentException::class.java) {
             RestoreTerminalMigrationPolicyV136.plan(
                 RestoreTerminalMigrationRequestV136(
                     mode = RestoreTerminalModeV136.SPARE_TERMINAL,
@@ -24,11 +27,11 @@ class V143Bkp005TerminalMigrationTest {
                 backupStoreName = "店舗A",
                 backupIdentity = backup,
                 currentIdentity = spare,
-                currentKnownMaxSaleId = 100,
+                currentKnownMaxSaleId = 0,
                 backupKnownMaxSaleId = 90,
             )
         }
-        assertFailsWith<IllegalArgumentException> {
+        assertThrows(IllegalArgumentException::class.java) {
             RestoreTerminalMigrationPolicyV136.plan(
                 RestoreTerminalMigrationRequestV136(
                     mode = RestoreTerminalModeV136.SPARE_TERMINAL,
@@ -39,11 +42,11 @@ class V143Bkp005TerminalMigrationTest {
                 backupStoreName = "店舗A",
                 backupIdentity = backup,
                 currentIdentity = spare,
-                currentKnownMaxSaleId = 100,
+                currentKnownMaxSaleId = 0,
                 backupKnownMaxSaleId = 90,
             )
         }
-        assertFailsWith<IllegalArgumentException> {
+        assertThrows(IllegalArgumentException::class.java) {
             RestoreTerminalMigrationPolicyV136.plan(
                 RestoreTerminalMigrationRequestV136(
                     mode = RestoreTerminalModeV136.SPARE_TERMINAL,
@@ -54,11 +57,11 @@ class V143Bkp005TerminalMigrationTest {
                 backupStoreName = "店舗A",
                 backupIdentity = backup,
                 currentIdentity = spare,
-                currentKnownMaxSaleId = 100,
+                currentKnownMaxSaleId = 0,
                 backupKnownMaxSaleId = 90,
             )
         }
-        assertFailsWith<IllegalStateException> {
+        assertThrows(IllegalStateException::class.java) {
             RestoreTerminalMigrationPolicyV136.plan(
                 RestoreTerminalMigrationRequestV136(
                     mode = RestoreTerminalModeV136.SPARE_TERMINAL,
@@ -69,8 +72,48 @@ class V143Bkp005TerminalMigrationTest {
                 backupStoreName = null,
                 backupIdentity = backup,
                 currentIdentity = spare,
-                currentKnownMaxSaleId = 100,
+                currentKnownMaxSaleId = 0,
                 backupKnownMaxSaleId = 90,
+            )
+        }
+    }
+
+    @Test
+    fun spareTerminalRejectsConfiguredOrPreviouslyUsedCurrentTerminal() {
+        val request = RestoreTerminalMigrationRequestV136(
+            mode = RestoreTerminalModeV136.SPARE_TERMINAL,
+            confirmedStoreName = "店舗A",
+            oldTerminalStopped = true,
+            remoteAckMaxSaleId = 130,
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            RestoreTerminalMigrationPolicyV136.plan(
+                request,
+                backupStoreName = "店舗A",
+                backupIdentity = backup,
+                currentIdentity = spare.copy(storeId = "STORE-A"),
+                currentKnownMaxSaleId = 0,
+                backupKnownMaxSaleId = 110,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            RestoreTerminalMigrationPolicyV136.plan(
+                request,
+                backupStoreName = "店舗A",
+                backupIdentity = backup,
+                currentIdentity = spare,
+                currentKnownMaxSaleId = 1,
+                backupKnownMaxSaleId = 110,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            RestoreTerminalMigrationPolicyV136.plan(
+                request,
+                backupStoreName = "店舗A",
+                backupIdentity = backup,
+                currentIdentity = spare.copy(generation = 2),
+                currentKnownMaxSaleId = 0,
+                backupKnownMaxSaleId = 110,
             )
         }
     }
@@ -86,14 +129,14 @@ class V143Bkp005TerminalMigrationTest {
             ),
             backupStoreName = "店舗A",
             backupIdentity = backup,
-            currentIdentity = spare.copy(generation = 7),
-            currentKnownMaxSaleId = 125,
+            currentIdentity = spare,
+            currentKnownMaxSaleId = 0,
             backupKnownMaxSaleId = 110,
             newTerminalId = { "TERMINAL-NEW" },
         )
         assertEquals("TERMINAL-NEW", plan.targetTerminalId)
         assertNotEquals(backup.terminalId, plan.targetTerminalId)
-        assertEquals(8L, plan.targetGeneration)
+        assertEquals(5L, plan.targetGeneration)
         assertEquals(130L, plan.saleSequenceFloor)
         assertEquals(130L, plan.remoteAckMaxSaleId)
     }
@@ -116,7 +159,6 @@ class V143Bkp005TerminalMigrationTest {
 
     @Test
     fun sourceWiresModePlanBootstrapAndSaleSequenceGuard() {
-        val root = File(System.getProperty("user.dir"))
         fun source(name: String) = File(root, "src/main/java/jp/co/tenposinfo/register/$name").readText()
         val protection = source("DataProtection.kt")
         val bootstrap = source("DataRestoreBootstrapV086.kt")
@@ -135,6 +177,7 @@ class V143Bkp005TerminalMigrationTest {
         assertTrue(identity.contains("sales_journal_terminal_generation"))
         assertTrue(identity.contains("terminalGeneration"))
         assertTrue(preflight.contains("allowSpareTerminalMigration"))
+        assertTrue(helper.contains("currentIdentity.storeId == \"STORE-UNCONFIGURED\""))
         assertTrue(helper.contains("o.status='SENT'"))
         assertTrue(helper.contains("sqlite_sequence"))
         assertTrue(activity.contains("同一端末復旧"))
