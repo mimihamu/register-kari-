@@ -31,12 +31,11 @@ jobs:
       - name: V143 focused unit test
         run: |
           set -euo pipefail
-          chmod +x ./gradlew
-          ./gradlew --no-daemon :app:testDebugUnitTest --tests jp.co.tenposinfo.register.V143Bkp005TerminalMigrationTest
+          gradle --no-daemon :app:testDebugUnitTest --tests jp.co.tenposinfo.register.V143Bkp005TerminalMigrationTest
       - name: Kotlin compile
         run: |
           set -euo pipefail
-          ./gradlew --no-daemon :app:compileDebugKotlin
+          gradle --no-daemon :app:compileDebugKotlin
       - name: Commit verified BKP-005 product patch
         run: |
           set -euo pipefail
