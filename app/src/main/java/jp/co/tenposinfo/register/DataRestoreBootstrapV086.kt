@@ -279,9 +279,13 @@ internal object PendingRestoreApplierV086 {
                     (rollback?.let { " / rollback-sha256=${it.sha256}" } ?: "") +
                     " / BKP-003=${contentMode}" +
                     " / BKP-005=${plan["restore_mode"].orEmpty()}" +
-                    " / terminalId=${plan["target_terminal_id"].orEmpty()}" +
+                    " / storeId=${plan["target_store_id"].orEmpty()}" +
+                    " / oldTerminalId=${plan["source_terminal_id"].orEmpty()}" +
+                    " / newTerminalId=${plan["target_terminal_id"].orEmpty()}" +
+                    " / source-generation=${plan["source_generation"].orEmpty()}" +
                     " / generation=${plan["target_generation"].orEmpty()}" +
-                    " / sale-floor=${plan["sale_sequence_floor"].orEmpty()}",
+                    " / sale-floor=${plan["sale_sequence_floor"].orEmpty()}" +
+                    " / confirmed-max=${plan["remote_ack_max_sale_id"].orEmpty()}",
                 Charsets.UTF_8,
             )
             planFile.delete()
@@ -361,7 +365,17 @@ internal object PendingRestoreApplierV086 {
                 ContentValues().apply {
                     put("event_type", "DATA_RESTORE_APPLIED")
                     put("reference_id", 0)
-                    put("detail", "${plan["backup_file"].orEmpty()} / 起動時復元 / v1.16 WAL・migration-safe rollback / BKP-005=${plan["restore_mode"].orEmpty()} / terminalId=${plan["target_terminal_id"].orEmpty()} / generation=${plan["target_generation"].orEmpty()} / sale-floor=${plan["sale_sequence_floor"].orEmpty()}")
+                    put(
+                        "detail",
+                        "${plan["backup_file"].orEmpty()} / 起動時復元 / v1.16 WAL・migration-safe rollback / " +
+                            "BKP-005=${plan["restore_mode"].orEmpty()} / storeId=${plan["target_store_id"].orEmpty()} / " +
+                            "oldTerminalId=${plan["source_terminal_id"].orEmpty()} / " +
+                            "newTerminalId=${plan["target_terminal_id"].orEmpty()} / " +
+                            "source-generation=${plan["source_generation"].orEmpty()} / " +
+                            "generation=${plan["target_generation"].orEmpty()} / " +
+                            "sale-floor=${plan["sale_sequence_floor"].orEmpty()} / " +
+                            "confirmed-max=${plan["remote_ack_max_sale_id"].orEmpty()}",
+                    )
                     put("operator_name", plan["actor_name"].orEmpty().ifBlank { "責任者" })
                     put("created_at", System.currentTimeMillis())
                 },

@@ -40,9 +40,13 @@ data class RestoreTerminalMigrationPlanV136(
 ) {
     fun displaySummary(): String = when (mode) {
         RestoreTerminalModeV136.SAME_TERMINAL ->
-            "同一端末復旧 / terminalId=$targetTerminalId / generation=$targetGeneration / 採番下限=$saleSequenceFloor"
+            "同一端末復旧 / storeId=$storeId / oldTerminalId=$sourceTerminalId / newTerminalId=$targetTerminalId / " +
+                "sourceGeneration=$sourceGeneration / generation=$targetGeneration / 採番下限=$saleSequenceFloor / " +
+                "確認最大番号=$remoteAckMaxSaleId"
         RestoreTerminalModeV136.SPARE_TERMINAL ->
-            "予備端末移行 / 新terminalId=$targetTerminalId / generation=$targetGeneration / 採番下限=$saleSequenceFloor"
+            "予備端末移行 / storeId=$storeId / oldTerminalId=$sourceTerminalId / newTerminalId=$targetTerminalId / " +
+                "sourceGeneration=$sourceGeneration / generation=$targetGeneration / 採番下限=$saleSequenceFloor / " +
+                "確認最大番号=$remoteAckMaxSaleId"
     }
 }
 
