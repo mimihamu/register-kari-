@@ -254,11 +254,15 @@ internal object PendingRestoreApplierV086 {
             // v1.16: legacy migration / 後付けschema ensure / user_version / index検査までrollback境界内で完了させる。
             DatabaseRecoveryIntegrityV116.migrateAndVerify(context)
 
+            // BKP-006/BKP-018: terminalId切替より先に不足outboxを復元DB自身から再構築する。
+            // この順序により旧イベントのsource identityを固定し、Driveから売上を逆輸入しない。
+            val syncRebuild = RestoreSyncRebuildV136.rebuild(database)
+
             // BKP-005: identity/generationと採番floorをrollback境界内で確定する。
             RestoreTerminalMigrationV136.apply(database, plan)
 
             // migration後のschemaへ監査を書き込み、その書込み後にも正本DBを最終検証する。
-            insertRestoreAudit(database, plan)
+            insertRestoreAudit(database, plan, syncRebuild)
             DatabaseRecoveryIntegrityV116.verifyFinal(context)
 
             // BKP-003: DBが正本として成立した後に設定・画像を適用する。現在値はrollback保持する。
@@ -285,13 +289,22 @@ internal object PendingRestoreApplierV086 {
                     " / source-generation=${plan["source_generation"].orEmpty()}" +
                     " / generation=${plan["target_generation"].orEmpty()}" +
                     " / sale-floor=${plan["sale_sequence_floor"].orEmpty()}" +
-                    " / confirmed-max=${plan["remote_ack_max_sale_id"].orEmpty()}",
+                    " / confirmed-max=${plan["remote_ack_max_sale_id"].orEmpty()}" +
+                    " / BKP-006=rebuild:${syncRebuild.rebuiltCount}" +
+                    ",missing:${syncRebuild.remainingMissingCount}" +
+                    ",sent-preserved:${syncRebuild.preservedSentCount}" +
+                    ",ack-preserved:${syncRebuild.preservedAckCount}" +
+                    ",documentId-preserved:${syncRebuild.preservedDocumentIdCount}",
                 Charsets.UTF_8,
             )
             planFile.delete()
             BackupContentBundleV136.removePending(pendingContent)
             contentRollback?.discard()
             contentRollback = null
+            // BKP-006: restore is committed. Reconcile the rebuilt local outbox against
+            // Drive immediately when network/account conditions allow. This path uploads/
+            // deduplicates only; it never imports Drive sales into REGISTER.
+            runCatching { GoogleDriveDirectUploadScheduler.enqueueNow(context) }
         } catch (error: Throwable) {
             val contentRollbackResult = runCatching {
                 contentRollback?.restore()
@@ -350,7 +363,11 @@ internal object PendingRestoreApplierV086 {
         }
     }
 
-    private fun insertRestoreAudit(file: File, plan: Map<String, String>) {
+    private fun insertRestoreAudit(
+        file: File,
+        plan: Map<String, String>,
+        syncRebuild: RestoreSyncRebuildResultV136,
+    ) {
         val database = SQLiteDatabase.openDatabase(file.absolutePath, null, SQLiteDatabase.OPEN_READWRITE)
         try {
             database.execSQL(
@@ -374,7 +391,12 @@ internal object PendingRestoreApplierV086 {
                             "source-generation=${plan["source_generation"].orEmpty()} / " +
                             "generation=${plan["target_generation"].orEmpty()} / " +
                             "sale-floor=${plan["sale_sequence_floor"].orEmpty()} / " +
-                            "confirmed-max=${plan["remote_ack_max_sale_id"].orEmpty()}",
+                            "confirmed-max=${plan["remote_ack_max_sale_id"].orEmpty()} / " +
+                            "BKP-006=rebuild:${syncRebuild.rebuiltCount}," +
+                            "missing:${syncRebuild.remainingMissingCount}," +
+                            "sent-preserved:${syncRebuild.preservedSentCount}," +
+                            "ack-preserved:${syncRebuild.preservedAckCount}," +
+                            "documentId-preserved:${syncRebuild.preservedDocumentIdCount}",
                     )
                     put("operator_name", plan["actor_name"].orEmpty().ifBlank { "責任者" })
                     put("created_at", System.currentTimeMillis())

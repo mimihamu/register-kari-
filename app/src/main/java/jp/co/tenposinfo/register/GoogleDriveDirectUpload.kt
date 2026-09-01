@@ -815,6 +815,9 @@ class GoogleDriveDirectUploadWorker(context: Context, parameters: WorkerParamete
         }
         diagnosticLog.append("UPLOAD_WORKER", "STARTED", "Drive API直接送信開始")
         return runCatching {
+            // BKP-006/BKP-018: direct reconciliation must be able to start from a restored
+            // PENDING outbox without waiting for the independent staging worker.
+            JournalOutboxStore(applicationContext).use { it.stagePending(100) }
             val token = GoogleDriveAccessTokenProvider.acquire(applicationContext)
             GoogleDriveDirectUploadCoordinator(applicationContext).process(token, 100)
         }.fold(

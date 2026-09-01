@@ -159,6 +159,48 @@ object JournalOutboxSchema {
         SchemaMigration.ensureColumn(db, "sync_outbox", "processing_started_at", "INTEGER")
         SchemaMigration.ensureColumn(db, "sync_outbox", "lease_until", "INTEGER")
         SchemaMigration.ensureColumn(db, "sync_outbox", "worker_token", "TEXT")
+        // BKP-006/BKP-018: outbox is immutable with respect to terminal migration.
+        // Snapshot the identity that owned the event so a restored spare terminal can
+        // regenerate the exact old duplicate key instead of re-labelling it as a new terminal event.
+        SchemaMigration.ensureColumn(db, "sync_outbox", "source_store_id", "TEXT")
+        SchemaMigration.ensureColumn(db, "sync_outbox", "source_terminal_id", "TEXT")
+        SchemaMigration.ensureColumn(db, "sync_outbox", "source_generation", "INTEGER")
+        db.execSQL(
+            """
+            CREATE TRIGGER IF NOT EXISTS trg_v136_sync_outbox_identity_snapshot
+            AFTER INSERT ON sync_outbox
+            WHEN NEW.source_store_id IS NULL OR NEW.source_terminal_id IS NULL OR NEW.source_generation IS NULL
+            BEGIN
+                UPDATE sync_outbox
+                SET source_store_id = COALESCE(
+                        NEW.source_store_id,
+                        (SELECT setting_value FROM sync_runtime_settings WHERE setting_key='sales_journal_store_id'),
+                        'STORE-UNCONFIGURED'
+                    ),
+                    source_terminal_id = COALESCE(
+                        NEW.source_terminal_id,
+                        (SELECT setting_value FROM sync_runtime_settings WHERE setting_key='sales_journal_terminal_id')
+                    ),
+                    source_generation = COALESCE(
+                        NEW.source_generation,
+                        CAST((SELECT setting_value FROM sync_runtime_settings WHERE setting_key='sales_journal_terminal_generation') AS INTEGER),
+                        1
+                    )
+                WHERE id = NEW.id;
+            END
+            """.trimIndent(),
+        )
+        val identitySnapshot = SalesJournalIdentityStore.resolve(db)
+        db.execSQL(
+            """
+            UPDATE sync_outbox
+            SET source_store_id = COALESCE(source_store_id, ?),
+                source_terminal_id = COALESCE(source_terminal_id, ?),
+                source_generation = COALESCE(source_generation, ?)
+            WHERE source_store_id IS NULL OR source_terminal_id IS NULL OR source_generation IS NULL
+            """.trimIndent(),
+            arrayOf<Any>(identitySnapshot.storeId, identitySnapshot.terminalId, identitySnapshot.generation),
+        )
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_sync_outbox_status ON sync_outbox(status, next_attempt_at, created_at)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_sales_journal_business_date ON sales_journal(business_date, event_type, created_at)")
     }
@@ -623,7 +665,7 @@ object OutboxPayloadAssembler {
         return SalesJournalJsonContract.wrap(
             record = record,
             legacyPayload = legacyPayload,
-            identity = SalesJournalIdentityStore.resolve(db),
+            identity = OutboxIdentitySnapshotV136.resolve(db, record.eventId),
         )
     }
 
