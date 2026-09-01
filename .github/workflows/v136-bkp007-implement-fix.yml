@@ -23,6 +23,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
       - name: Prepare corrected BKP-007 patch runner
         shell: bash
         run: |
@@ -60,9 +63,9 @@ jobs:
       - name: Apply BKP-007 patch
         run: python3 /tmp/v136-bkp007-fixed.py
       - name: Run V145 focused unit test
-        run: ./gradlew :app:testDebugUnitTest --tests jp.co.tenposinfo.register.V145Bkp007PreApplySnapshotTest --no-daemon --stacktrace
+        run: gradle --no-daemon :app:testDebugUnitTest --tests jp.co.tenposinfo.register.V145Bkp007PreApplySnapshotTest --stacktrace
       - name: Compile Kotlin
-        run: ./gradlew :app:compileDebugKotlin --no-daemon --stacktrace
+        run: gradle --no-daemon :app:compileDebugKotlin --stacktrace
       - name: Commit BKP-007 product files
         shell: bash
         run: |
