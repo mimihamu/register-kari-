@@ -1,0 +1,35 @@
+name: v1.36 BKP-006 sync rebuild audit
+
+on:
+  push:
+    branches:
+      - develop/v1.36
+    paths:
+      - .github/workflows/v136-bkp006-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.36
+          fetch-depth: 0
+      - name: Locate journal and outbox implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== definitions ==='
+          grep -R -n -E 'object JournalOutboxSchema|class JournalOutboxStore|enum class SyncOutboxStatus' app/src/main/java || true
+          echo '=== sync_outbox DDL ==='
+          grep -R -n -B8 -A40 -E 'CREATE TABLE IF NOT EXISTS sync_outbox|CREATE TABLE sync_outbox' app/src/main/java || true
+          echo '=== sales_journal DDL ==='
+          grep -R -n -B8 -A40 -E 'CREATE TABLE IF NOT EXISTS sales_journal|CREATE TABLE sales_journal' app/src/main/java || true
+          echo '=== recordSale and enqueue paths ==='
+          grep -R -n -B8 -A80 -E 'fun recordSale\(|fun enqueue\(|sync_outbox' app/src/main/java/jp/co/tenposinfo/register | head -n 1200 || true
+          echo '=== Drive ACK/documentId ==='
+          grep -R -n -B5 -A30 -E 'file_id|documentId|duplicateKey|contentSha256' app/src/main/java/jp/co/tenposinfo/register | head -n 1000 || true
