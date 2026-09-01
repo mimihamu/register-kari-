@@ -1,0 +1,35 @@
+name: v1.36 BKP-007 menu snapshot audit
+
+on:
+  push:
+    branches:
+      - develop/v1.36
+    paths:
+      - .github/workflows/v136-bkp007-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.36
+          fetch-depth: 0
+      - name: Locate menu revision apply and master mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== menu revision definitions ==='
+          grep -R -n -E 'class DynamicCatalogStore|menu_revisions|menu_revision_products|MenuRevision|Revision' app/src/main/java/jp/co/tenposinfo/register | head -n 1500 || true
+          echo '=== apply/activate/rollback paths ==='
+          grep -R -n -B10 -A100 -E 'applyRevision|apply.*revision|revision.*apply|activate.*revision|APPLIED|ROLLBACK|rollback|beginTransaction\(|setTransactionSuccessful\(' app/src/main/java/jp/co/tenposinfo/register | head -n 2200 || true
+          echo '=== current master table mutations ==='
+          grep -R -n -B10 -A80 -E 'DELETE FROM products|INSERT INTO products|UPDATE products|menu_buttons|product_master|tax_master|departments|groups' app/src/main/java/jp/co/tenposinfo/register | head -n 2200 || true
+          echo '=== snapshots/history/audit ==='
+          grep -R -n -B10 -A80 -E 'snapshot|history|operation_audit|MENU_REVISION|menu.*audit|revision.*audit' app/src/main/java/jp/co/tenposinfo/register | head -n 2200 || true
+          echo '=== relevant file names ==='
+          grep -R -l -E 'menu_revisions|DynamicCatalogStore|MENU_REVISION' app/src/main/java/jp/co/tenposinfo/register | sort || true
