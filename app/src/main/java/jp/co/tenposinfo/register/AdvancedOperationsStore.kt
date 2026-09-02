@@ -209,6 +209,7 @@ class AdvancedOperationsStore(context: Context) {
                 },
             )
             insertAudit("BUSINESS_OPEN", id, "営業日 $dateText / セッションNo.$id / 開始釣銭 ${openingCash}円", operatorName, now)
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.BUSINESS_OPEN.name, id.toString())
             id
         }
     }
@@ -332,6 +333,7 @@ class AdvancedOperationsStore(context: Context) {
                 },
             )
             insertAudit("CASH_${type.name}", id, "${type.displayName} ${amount}円 / ${reason.trim()}", operatorName, now)
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.CASH_MOVEMENT.name, id.toString())
             id
         }
     }
@@ -454,9 +456,11 @@ class AdvancedOperationsStore(context: Context) {
                 )
                 check(updated == 1) { "営業セッション状態が更新されました。画面を更新してください" }
             }
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.SETTLEMENT.name, id.toString())
             insertAudit(type.name, id, "営業日 ${summary.businessDate} / セッションNo.${session.id} / 純売上 ${summary.netSales}円 / 現金差異 ${variance}円", operatorName, now)
             if (type == SettlementReportType.Z_SETTLEMENT) {
                 insertAudit("BUSINESS_CLOSE", session.id, "Z精算No.${id}により営業終了 / 現金実査 ${actual}円 / 過不足 ${variance}円", operatorName, now)
+                OutboxDocumentV150.materializeLatest(this, JournalEventType.BUSINESS_STATE.name, session.id.toString())
             }
             id
         }
@@ -678,6 +682,7 @@ class AdvancedOperationsStore(context: Context) {
             previewText = OperationDocumentRenderer.renderReversal(document, ReceiptPaper.fromWidth(paperWidthMm))
             printJobId = insertDocumentJob(OperationDocumentType.REVERSAL_RECEIPT, id, paperWidthMm, previewText, now)
             insertAudit(type.name, id, "元売上 No.$originalSaleId / 返金 ${refundTotal}円 / ${reason.trim()}", operatorName, now)
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.REVERSAL.name, id.toString())
             id
         }
         return ReversalSaveResult(reversalId, refundTotal, printJobId, previewText)

@@ -261,6 +261,7 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
             val assignments = assignmentMap(db)
             val taxRules = listTaxRules().associateBy { it.key }
             return db.transaction {
+                val revisionCreatedAt = System.currentTimeMillis()
                 val revisionId = insertOrThrow(
                     "menu_revisions",
                     null,
@@ -269,7 +270,7 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
                         put("effective_date", cleanDate)
                         put("status", "SCHEDULED")
                         put("created_by", actor)
-                        put("created_at", System.currentTimeMillis())
+                        put("created_at", revisionCreatedAt)
                     },
                 )
                 metadata.values.sortedBy { it.displayOrder }.forEach { meta ->
@@ -307,6 +308,7 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
                     )
                 }
                 audit(this, "MENU_REVISION_SCHEDULED", revisionId.toString(), "$cleanName / $cleanDate / ${metadata.size}商品", actor)
+                OutboxDocumentV150.materializeLatest(this, JournalEventType.MENU_REVISION.name, revisionId.toString())
                 revisionId
             }
         }
@@ -366,6 +368,14 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
             db.transaction {
                 update("menu_revisions", ContentValues().apply { put("status", "FAILED") }, "id = ?", arrayOf(revision.id.toString()))
                 audit(this, "MENU_REVISION_APPLY_FAILED", revision.id.toString(), "validation / $message", actor)
+                JournalOutboxSchema.recordMenuApplyResult(
+                    db = this,
+                    revisionId = revision.id,
+                    status = "FAILED_VALIDATION",
+                    itemCount = items.size,
+                    reason = message,
+                    actor = actor,
+                )
             }
             return MenuRevisionApplyOutcomeV145(revision.id, false, false, items.size, message)
         }
@@ -454,6 +464,14 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
                 "snapshotRows=${capturedSnapshot.rows.size} / masterRevision=${capturedSnapshot.catalogRevision} / applied=${items.size}",
                 actor,
             )
+            JournalOutboxSchema.recordMenuApplyResult(
+                db = db,
+                revisionId = revision.id,
+                status = "APPLIED",
+                itemCount = items.size,
+                reason = "適用完了",
+                actor = actor,
+            )
             db.setTransactionSuccessful()
         } catch (t: Throwable) {
             failure = t
@@ -475,6 +493,14 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
                         revision.id.toString(),
                         "snapshotRows=${captured?.rows?.size ?: 0} / ${original.message ?: original.javaClass.simpleName}",
                         actor,
+                    )
+                    JournalOutboxSchema.recordMenuApplyResult(
+                        db = db,
+                        revisionId = revision.id,
+                        status = "ROLLED_BACK",
+                        itemCount = items.size,
+                        reason = original.message ?: original.javaClass.simpleName,
+                        actor = actor,
                     )
                     db.setTransactionSuccessful()
                 } finally {

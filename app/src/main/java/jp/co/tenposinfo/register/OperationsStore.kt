@@ -166,6 +166,7 @@ class OperationsStore(context: Context) {
                 operatorName = operatorName,
                 createdAt = now,
             )
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.BUSINESS_OPEN.name, id.toString())
             id
         }
     }
@@ -368,6 +369,7 @@ class OperationsStore(context: Context) {
                 operatorName = operatorName,
                 createdAt = now,
             )
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.CASH_MOVEMENT.name, id.toString())
             id
         }
     }
@@ -624,6 +626,7 @@ class OperationsStore(context: Context) {
                 operatorName = operatorName,
                 createdAt = now,
             )
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.REVERSAL.name, reversalId.toString())
             bindOperationKey(operationKey, reversalId)
             savedResult = PartialReversalResult(reversalId, refundTotal, printJobId, preview)
         }
@@ -856,6 +859,10 @@ class OperationsStore(context: Context) {
                     operatorName = operatorName,
                     createdAt = now,
                 )
+            }
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.SETTLEMENT.name, id.toString())
+            if (type == SettlementReportType.Z_SETTLEMENT) {
+                OutboxDocumentV150.materializeLatest(this, JournalEventType.BUSINESS_STATE.name, session.id.toString())
             }
             if (operationKey != null) bindOperationKey(operationKey, id)
             id

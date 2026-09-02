@@ -57,6 +57,7 @@ enum class JournalEventType {
     BUSINESS_OPEN,
     BUSINESS_STATE,
     MENU_REVISION,
+    MENU_APPLY_RESULT,
 }
 
 enum class SyncOutboxStatus {
@@ -203,6 +204,7 @@ object JournalOutboxSchema {
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_sync_outbox_status ON sync_outbox(status, next_attempt_at, created_at)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_sales_journal_business_date ON sales_journal(business_date, event_type, created_at)")
+        OutboxDocumentV150.ensureSchema(db)
     }
 
     /** 売上確定トランザクション内から呼び、売上と同期対象を同時に確定する。 */
@@ -228,6 +230,43 @@ object JournalOutboxSchema {
             createdAt = createdAt,
             folderName = folderName,
         )
+    }
+
+    fun recordMenuApplyResult(
+        db: SQLiteDatabase,
+        revisionId: Long,
+        status: String,
+        itemCount: Int,
+        reason: String,
+        actor: String,
+        createdAt: Long = System.currentTimeMillis(),
+    ): String {
+        ensureCore(db)
+        val cleanStatus = status.trim().ifBlank { "UNKNOWN" }.take(80)
+        val eventId = "menu-apply-result-$revisionId-$createdAt-$cleanStatus"
+        val payload = org.json.JSONObject()
+            .put("revisionId", revisionId)
+            .put("status", cleanStatus)
+            .put("itemCount", itemCount)
+            .put("reason", reason.take(1000))
+            .put("actor", actor.take(100))
+            .toString()
+        val folder = db.rawQuery(
+            "SELECT setting_value FROM sync_runtime_settings WHERE setting_key='folder_name' LIMIT 1",
+            null,
+        ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else "つぐレジ" }
+        insertJournalAndOutbox(
+            db = db,
+            eventId = eventId,
+            businessDate = BusinessDateResolver.current(db).toString(),
+            eventType = JournalEventType.MENU_APPLY_RESULT.name,
+            aggregateId = revisionId.toString(),
+            payloadJson = payload,
+            createdAt = createdAt,
+            folderName = folder,
+        )
+        OutboxDocumentV150.materialize(db, eventId)
+        return eventId
     }
 
     fun updateFolderName(db: SQLiteDatabase, folderName: String) {
@@ -504,6 +543,9 @@ class JournalOutboxStore(context: Context) : AutoCloseable {
         val folder = stagingRoot()
         folder.mkdirs()
         val now = System.currentTimeMillis()
+        // Pre-v1.50 rows are converted once as an explicit migration. New rows must already have
+        // immutable bytes from their business-finalization transaction.
+        OutboxDocumentV150.backfillLegacyMissing(db)
         recoverStaleProcessing(now)
         val token = UUID.randomUUID().toString()
         val candidates = db.run {
@@ -546,10 +588,10 @@ class JournalOutboxStore(context: Context) : AutoCloseable {
         var completed = 0
         candidates.forEach { record ->
             runCatching {
-                val payload = OutboxPayloadAssembler.build(db, record)
+                val payloadBytes = OutboxDocumentV150.loadVerifiedBytes(db, record.eventId)
                 val target = File(folder, record.objectKey)
                 target.parentFile?.mkdirs()
-                target.writeText(payload, Charsets.UTF_8)
+                target.writeBytes(payloadBytes)
                 markStaged(record.id, token)
                 completed++
             }.onFailure { error ->

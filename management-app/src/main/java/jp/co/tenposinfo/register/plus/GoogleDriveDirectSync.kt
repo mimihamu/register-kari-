@@ -22,6 +22,7 @@ import com.google.android.gms.tasks.Tasks
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -242,10 +243,74 @@ class GoogleDriveSyncRestClient(private val accessToken: String) {
         url = "$DRIVE_FILES_URL/${encodePath(fileId)}?alt=media&supportsAllDrives=false",
     )
 
+    fun findOne(query: String): GoogleDriveSyncRemoteFile? {
+        val fields = "files(id,name,modifiedTime,version,size,appProperties)"
+        val url = buildString {
+            append(DRIVE_FILES_URL)
+            append("?spaces=drive&supportsAllDrives=false&pageSize=10")
+            append("&fields=").append(encode(fields))
+            append("&q=").append(encode(query))
+        }
+        val files = JSONObject(execute("GET", url)).optJSONArray("files") ?: JSONArray()
+        if (files.length() == 0) return null
+        val item = files.getJSONObject(0)
+        val properties = linkedMapOf<String, String>()
+        item.optJSONObject("appProperties")?.let { source ->
+            source.keys().forEach { key -> properties[key] = source.optString(key) }
+        }
+        return GoogleDriveSyncRemoteFile(
+            id = item.getString("id"),
+            name = item.optString("name"),
+            modifiedTime = item.optString("modifiedTime"),
+            version = item.optString("version").takeIf(String::isNotBlank),
+            size = item.optString("size").toLongOrNull(),
+            appProperties = properties,
+        )
+    }
+
+    fun createJson(
+        name: String,
+        bytes: ByteArray,
+        appProperties: Map<String, String>,
+    ): GoogleDriveSyncRemoteFile {
+        val metadata = JSONObject()
+            .put("name", name)
+            .put("mimeType", "application/json")
+            .put("parents", JSONArray().put("root"))
+            .put("appProperties", JSONObject().also { target -> appProperties.forEach { (k, v) -> target.put(k, v) } })
+        val boundary = "tsuguregi-plus-${System.nanoTime()}"
+        val out = ByteArrayOutputStream()
+        out.write("--$boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n".toByteArray())
+        out.write(metadata.toString().toByteArray(Charsets.UTF_8))
+        out.write("\r\n--$boundary\r\nContent-Type: application/json\r\n\r\n".toByteArray())
+        out.write(bytes)
+        out.write("\r\n--$boundary--\r\n".toByteArray())
+        val root = JSONObject(
+            executeBytes(
+                method = "POST",
+                url = "$DRIVE_UPLOAD_URL?uploadType=multipart&supportsAllDrives=false&fields=id,name,modifiedTime,version,size,appProperties",
+                requestBody = out.toByteArray(),
+                contentType = "multipart/related; boundary=$boundary",
+            ).toString(Charsets.UTF_8),
+        )
+        val properties = linkedMapOf<String, String>()
+        root.optJSONObject("appProperties")?.let { source -> source.keys().forEach { key -> properties[key] = source.optString(key) } }
+        return GoogleDriveSyncRemoteFile(
+            id = root.getString("id"), name = root.optString("name"), modifiedTime = root.optString("modifiedTime"),
+            version = root.optString("version").takeIf(String::isNotBlank), size = root.optString("size").toLongOrNull(),
+            appProperties = properties,
+        )
+    }
+
     private fun execute(method: String, url: String): String =
         executeBytes(method, url).toString(Charsets.UTF_8)
 
-    private fun executeBytes(method: String, url: String): ByteArray {
+    private fun executeBytes(
+        method: String,
+        url: String,
+        requestBody: ByteArray? = null,
+        contentType: String? = null,
+    ): ByteArray {
         val connection = URL(url).openConnection() as HttpURLConnection
         return try {
             connection.requestMethod = method
@@ -253,6 +318,12 @@ class GoogleDriveSyncRestClient(private val accessToken: String) {
             connection.readTimeout = 45_000
             connection.setRequestProperty("Authorization", "Bearer $accessToken")
             connection.setRequestProperty("Accept", "application/json")
+            if (requestBody != null) {
+                connection.doOutput = true
+                connection.setRequestProperty("Content-Type", contentType ?: "application/json")
+                connection.setFixedLengthStreamingMode(requestBody.size)
+                connection.outputStream.use { it.write(requestBody) }
+            }
             val code = connection.responseCode
             val bytes = (if (code in 200..299) connection.inputStream else connection.errorStream)
                 ?.use { it.readBytes() }
@@ -271,6 +342,7 @@ class GoogleDriveSyncRestClient(private val accessToken: String) {
 
     companion object {
         const val DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files"
+        const val DRIVE_UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files"
         const val APP = "tsuguregi"
         const val ROLE = "sales-journal"
         const val PAGE_SIZE = 1_000
@@ -512,6 +584,8 @@ class GoogleDriveDirectSyncRepository(
                 GoogleDrivePageCommitCheckpointStoreV134.ensureSchema(initialDb)
                 GoogleDrivePageCommitCheckpointStoreV134.clear(initialDb)
                 val client = GoogleDriveSyncRestClient(accessToken)
+                // Retry any ACK committed by a previous run before reading more journal files.
+                PlusAckOutboxV150.deliverPending(initialDb, client)
                 val visitedPageTokens = mutableSetOf<String>()
                 var pageToken: String? = null
                 var listed = 0
@@ -627,6 +701,8 @@ class GoogleDriveDirectSyncRepository(
                     } finally {
                         pageDb.endTransaction()
                     }
+                    // SYN-002: upload the exact ACK BLOB committed above; never regenerate from imported_journal.
+                    PlusAckOutboxV150.deliverPending(pageDb, client)
 
                     val pageResult = checkNotNull(committedPageResult)
                     downloaded = pageResult.downloadedCount

@@ -139,6 +139,7 @@ object RestoreSyncRebuildV136 {
 
         val remaining = missingCount(db)
         require(remaining == 0) { "BKP-006同期再構築後もoutbox不足が残っています: $remaining" }
+        OutboxDocumentV150.backfillLegacyMissing(db, limit = 5_000)
         val sentAfter = scalarInt(db, "SELECT COUNT(*) FROM sync_outbox WHERE status='SENT'")
         val ackAfter = driveSuccessCount(db, requireDocumentId = false)
         val documentIdAfter = driveSuccessCount(db, requireDocumentId = true)

@@ -364,6 +364,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 folderName = DriveSyncSettingsStore.load(applicationContext).folderName,
             )
             SaleTaxSnapshotStoreV136.enrichSaleJournal(this, saleId)
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.SALE.name, saleId.toString())
             PrintDocumentSnapshotV136.persistSaleSnapshot(
                 db = this,
                 printJobId = automaticPrintJobId,
