@@ -17,17 +17,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: develop/v1.36
-      - name: Pinpoint finalization paths
+      - name: Audit Plus ACK outbound path
         shell: bash
         run: |
           set -uo pipefail
-          echo '=== files containing DynamicCatalog/menu revisions ==='
-          grep -RIlE 'class DynamicCatalogStore|object DynamicCatalogStore|fun .*Revision|menu_revisions' app/src/main/java/jp/co/tenposinfo/register | sort
-          echo '=== exact menu revision mutations ==='
-          grep -RInC 30 -E 'insertOrThrow\("menu_revisions"|insert\("menu_revisions"|applyRevision|activateRevision|rollbackRevision|MenuRevisionApply' app/src/main/java/jp/co/tenposinfo/register | head -n 1600 || true
-          echo '=== all business session status writes ==='
-          grep -RInC 16 -E 'update\(.*business_sessions|"business_sessions"|put\("status"' app/src/main/java/jp/co/tenposinfo/register | grep -E 'OperationsStore|BusinessSession|status|business_sessions|closed_at' | head -n 1000 || true
-          echo '=== exact recordSale/enrich order ==='
-          grep -nC 30 -E 'JournalOutboxSchema.recordSale|enrichSaleJournal|setTransactionSuccessful' app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt | head -n 900 || true
-          echo '=== transaction helper implementation ==='
-          grep -RInC 12 -E 'fun <.*transaction|inline fun .*transaction|SQLiteDatabase.transaction' app/src/main/java/jp/co/tenposinfo/register | head -n 500 || true
+          echo '=== ACK model / import result consumers ==='
+          grep -RInC 20 -E 'SalesJournalImportAck|ImportAck|acknowledgements|acknowledg|IMPORT_ACK|ACK_' management-app/src/main | head -n 1800 || true
+          echo '=== Drive upload / create paths in Plus ==='
+          grep -RInC 20 -E 'files\.create|createFile|multipart|upload|appProperties|Drive.*client|GoogleDrive.*Upload|GoogleDrive.*Sync' management-app/src/main | head -n 2200 || true
+          echo '=== importBatch call sites ==='
+          grep -RInC 30 -E 'importBatch\(' management-app/src/main | head -n 1400 || true
+          echo '=== outbox / pending / worker in Plus ==='
+          grep -RInC 20 -E 'outbox|WorkManager|Worker|pending|retry|next_attempt|PENDING|RETRY' management-app/src/main | head -n 1800 || true
+          echo '=== package tree candidate files ==='
+          find management-app/src/main/java -type f | sort | grep -Ei 'drive|sync|import|ack|worker|outbox|upload' || true
