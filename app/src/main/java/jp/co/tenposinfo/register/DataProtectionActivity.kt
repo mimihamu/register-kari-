@@ -81,6 +81,7 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
     val appContext = context.applicationContext
     val manager = remember { DataProtectionManager(appContext) }
     val autoStatusStore = remember { AutoBackupStatusStore(appContext) }
+    val driveSyncStatusStore = remember { GoogleDriveDirectUploadStatusStore(appContext) }
     val autoSettingsStore = remember { AutoBackupSettingsStore(appContext) }
     val metadataStore = remember { AutoBackupMetadataStore(appContext) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -92,6 +93,7 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
     var backups by remember { mutableStateOf<List<BackupRecord>>(emptyList()) }
     var metadataByFile by remember { mutableStateOf<Map<String, AutoBackupMetadata>>(emptyMap()) }
     var autoStatus by remember { mutableStateOf(autoStatusStore.load()) }
+    var driveSyncStatus by remember { mutableStateOf(driveSyncStatusStore.load()) }
     var autoSettings by remember { mutableStateOf(autoSettingsStore.load()) }
     var selected by remember { mutableStateOf<String?>(null) }
     var pending by remember { mutableStateOf(manager.pendingRestoreStatus()) }
@@ -114,6 +116,7 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
             backups = withContext(Dispatchers.IO) { manager.listBackups() }
             metadataByFile = withContext(Dispatchers.IO) { metadataStore.readAll() }
             autoStatus = autoStatusStore.load()
+            driveSyncStatus = driveSyncStatusStore.load()
             autoSettings = autoSettingsStore.load()
             pending = manager.pendingRestoreStatus()
             rollbackInventory = withContext(Dispatchers.IO) { RestoreRollbackSafetyV086.inventory(appContext) }
@@ -180,6 +183,7 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
         metadataByFile = withContext(Dispatchers.IO) { metadataStore.readAll() }
         rollbackInventory = withContext(Dispatchers.IO) { RestoreRollbackSafetyV086.inventory(appContext) }
         autoStatus = autoStatusStore.load()
+        driveSyncStatus = driveSyncStatusStore.load()
         autoSettings = autoSettingsStore.load()
         report = withContext(Dispatchers.IO) { manager.diagnose() }
         message = if (report?.healthy == true) "DB整合性は正常です" else "DB整合性エラーを確認してください"
@@ -189,6 +193,7 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 autoStatus = autoStatusStore.load()
+                driveSyncStatus = driveSyncStatusStore.load()
                 autoSettings = autoSettingsStore.load()
                 scope.launch {
                     rollbackInventory = withContext(Dispatchers.IO) { RestoreRollbackSafetyV086.inventory(appContext) }
@@ -293,19 +298,32 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
 
                         AppUpdateDiagnosticsPanelV090(appContext)
 
-                        Text("自動バックアップ", fontWeight = FontWeight.Bold, color = DpNavy)
+                        val independentStatus = BackupDriveIndependenceV146.snapshot(autoStatus, driveSyncStatus)
+                        Text("バックアップ状態（端末復元用）", fontWeight = FontWeight.Bold, color = DpNavy)
                         Text(
-                            "Z精算後: 常時有効 / 定期: ${if (autoSettings.periodicEnabled) "${autoSettings.cadence.displayName} ${autoSettings.preferredHour}時台" else "OFF"}",
+                            "自動バックアップ: Z精算後は常時有効 / 定期: ${if (autoSettings.periodicEnabled) "${autoSettings.cadence.displayName} ${autoSettings.preferredHour}時台" else "OFF"}",
                             color = DpNavy,
                             fontWeight = FontWeight.Bold,
                         )
-                        Text("最終結果: ${autoStatus.lastResult.displayName}", color = if (autoStatus.lastResult == AutoBackupResultState.FAILED || autoStatus.lastResult == AutoBackupResultState.SKIPPED_LOW_STORAGE) DpDanger else DpGreen)
+                        Text("最終結果: ${independentStatus.backupResult.displayName}", color = if (autoStatus.lastResult == AutoBackupResultState.FAILED || autoStatus.lastResult == AutoBackupResultState.SKIPPED_LOW_STORAGE) DpDanger else DpGreen)
                         Text("最終実行: ${autoStatus.lastCompletedAt?.let(::formatTime) ?: "未実行"}", fontSize = 13.sp)
                         Text("次回定期予定: ${autoStatus.nextScheduledAt?.let(::formatTime) ?: if (autoSettings.periodicEnabled) "再登録待ち" else "OFF"}", fontSize = 13.sp)
                         Text("保持: Z精算 ${autoSettings.zRetentionBusinessDays}営業日 / 定期 ${autoSettings.monthlyRetentionMonths}か月", fontSize = 13.sp)
                         autoStatus.lastReason?.let { Text("作成理由: ${it.displayName}", fontSize = 13.sp) }
                         autoStatus.lastRetentionResult?.let { Text("自動整理: $it", fontSize = 13.sp) }
                         autoStatus.lastError?.let { Text("エラー詳細: $it", color = DpDanger, fontSize = 13.sp) }
+                        Text("バックアップ成功/失敗は、Google Drive売上同期の結果とは独立して判定します。", color = Color.DarkGray, fontSize = 12.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Google Drive売上同期状態（売上管理アプリ交換用）", fontWeight = FontWeight.Bold, color = DpNavy)
+                        Text(
+                            "同期状態: ${independentStatus.driveStateLabel}",
+                            color = if (driveSyncStatus.blockedCategory != null || driveSyncStatus.permanentFailureCount > 0) DpDanger else DpNavy,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text("最終同期: ${driveSyncStatus.lastCompletedAt?.let(::formatTime) ?: "未実行"}", fontSize = 13.sp)
+                        Text("送信 ${driveSyncStatus.uploadedCount}件 / 既存 ${driveSyncStatus.duplicateCount}件 / 再試行 ${driveSyncStatus.retryCount}件 / 永久失敗 ${driveSyncStatus.permanentFailureCount}件", fontSize = 13.sp)
+                        Text("詳細: ${driveSyncStatus.lastMessage}", color = if (driveSyncStatus.blockedCategory != null) DpDanger else Color.DarkGray, fontSize = 12.sp)
+                        Text("※ 売上同期が成功していても、端末復元用バックアップの成功を意味しません。", color = Color.DarkGray, fontSize = 12.sp)
                         Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(
@@ -357,7 +375,7 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                             onClick = { context.startActivity(Intent(context, ExternalBackupSettingsActivity::class.java)) },
                             enabled = !busy,
                             modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Google Drive・USBへの外部自動保存を設定") }
+                        ) { Text("バックアップ外部保存先（Google Drive・USB）を設定") }
                     }
                 }
                 Card(
