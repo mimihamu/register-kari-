@@ -45,6 +45,8 @@ jobs:
           PY
       - name: Apply SYN-001/002 patch
         run: python3 .github/v136-syn001002-patch.py
+      - name: Apply atomic coverage corrections
+        run: python3 .github/v136-syn001002-fix.py
       - name: Run REGISTER focused tests
         run: gradle --no-daemon :app:testDebugUnitTest --tests jp.co.tenposinfo.register.V150Syn001002ImmutableOutboxDocumentTest --stacktrace
       - name: Run Plus focused tests
