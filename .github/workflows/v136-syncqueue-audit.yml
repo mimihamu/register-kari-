@@ -17,17 +17,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: develop/v1.36
-      - name: Audit Plus ACK outbound path
+      - name: Audit formal F.1/F.4 envelope contracts
         shell: bash
         run: |
           set -uo pipefail
-          echo '=== ACK model / import result consumers ==='
-          grep -RInC 20 -E 'SalesJournalImportAck|ImportAck|acknowledgements|acknowledg|IMPORT_ACK|ACK_' management-app/src/main | head -n 1800 || true
-          echo '=== Drive upload / create paths in Plus ==='
-          grep -RInC 20 -E 'files\.create|createFile|multipart|upload|appProperties|Drive.*client|GoogleDrive.*Upload|GoogleDrive.*Sync' management-app/src/main | head -n 2200 || true
-          echo '=== importBatch call sites ==='
-          grep -RInC 30 -E 'importBatch\(' management-app/src/main | head -n 1400 || true
-          echo '=== outbox / pending / worker in Plus ==='
-          grep -RInC 20 -E 'outbox|WorkManager|Worker|pending|retry|next_attempt|PENDING|RETRY' management-app/src/main | head -n 1800 || true
-          echo '=== package tree candidate files ==='
-          find management-app/src/main/java -type f | sort | grep -Ei 'drive|sync|import|ack|worker|outbox|upload' || true
+          echo '=== SalesJournalJsonContract definition and wrap ==='
+          grep -RInC 40 -E 'object SalesJournalJsonContract|class SalesJournalJsonContract|fun wrap\(' app/src/main/java | head -n 2600 || true
+          echo '=== generated envelope formal fields ==='
+          grep -RInC 25 -E 'documentId|documentType|producerId|sequenceNo|producedAt|createdAt|appVersion|duplicateImportKey|minimumReaderVersion|payloadSchema|sha256' app/src/main/java/jp/co/tenposinfo/register/BusinessSyncFoundation.kt app/src/main/java/jp/co/tenposinfo/register/OutboxDocumentV150.kt | head -n 3200 || true
+          echo '=== UUID / store / terminal identity implementation ==='
+          grep -RInC 20 -E 'SalesJournalIdentity|storeId|terminalId|UUID|generation|sequence' app/src/main/java/jp/co/tenposinfo/register | head -n 2800 || true
+          echo '=== Plus parser accepted envelope fields ==='
+          grep -RInC 35 -E 'data class SalesJournalEnvelope|fun parse\(|requiredText|requiredInt|duplicateImportKey|payloadSchema|eventId|documentId|producerId|sequenceNo|sha256' management-app/src/main/java/jp/co/tenposinfo/register/plus/SalesJournalImportContract.kt | head -n 3200 || true
+          echo '=== Plus ACK current exact schema ==='
+          sed -n '1,360p' management-app/src/main/java/jp/co/tenposinfo/register/plus/PlusAckOutboxV150.kt || true
+          echo '=== app version definitions ==='
+          grep -RInC 8 -E 'versionName|VERSION_NAME|BuildConfig.VERSION_NAME' app/build.gradle* management-app/build.gradle* app/src/main management-app/src/main | head -n 1200 || true
