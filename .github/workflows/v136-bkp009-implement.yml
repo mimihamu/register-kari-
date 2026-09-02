@@ -33,9 +33,9 @@ jobs:
       - name: Apply BKP-009 patch
         run: python3 .github/v136-bkp009-patch.py
       - name: Run V147 focused unit test
-        run: gradle :app:testDevDebugUnitTest --tests jp.co.tenposinfo.register.V147Bkp009ManualExportTest --no-daemon
+        run: gradle --no-daemon :app:testDebugUnitTest --tests jp.co.tenposinfo.register.V147Bkp009ManualExportTest
       - name: Compile Kotlin
-        run: gradle :app:compileDevDebugKotlin --no-daemon
+        run: gradle --no-daemon :app:compileDebugKotlin
       - name: Commit BKP-009 product files
         run: |
           git config user.name 'github-actions[bot]'
