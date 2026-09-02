@@ -31,7 +31,9 @@ jobs:
         with:
           gradle-version: '9.5.0'
       - name: Apply BKP-010 patch
-        run: python3 .github/v136-bkp010-patch.py
+        run: |
+          python3 .github/v136-bkp010-patch.py
+          python3 .github/v136-bkp010-fix1.py
       - name: Run V148 focused unit test
         run: gradle --no-daemon :app:testDebugUnitTest --tests jp.co.tenposinfo.register.V148Bkp010RestoreAuditTest
       - name: Compile Kotlin
