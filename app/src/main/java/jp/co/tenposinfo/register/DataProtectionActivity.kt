@@ -130,7 +130,11 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
     ) { uri ->
         val fileName = pendingExport
         pendingExport = null
-        if (uri != null && fileName != null) {
+        if (uri == null || fileName == null) {
+            backupPassphrase = ""
+            backupPassphraseConfirm = ""
+            message = "外部保存をキャンセルしました"
+        } else {
             runCatching {
                 context.contentResolver.takePersistableUriPermission(
                     uri,
@@ -143,9 +147,11 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
             runTask {
                 val actor = OperatorSessionRegistry.current(appContext)?.name ?: "責任者"
                 val result = withContext(Dispatchers.IO) {
-                    context.contentResolver.openOutputStream(uri, "w")?.use { output ->
-                        manager.exportBackup(fileName, output, actor, chars)
-                    } ?: error("保存先を開けません")
+                    BackupSafAccessV147.guard("外部バックアップ保存") {
+                        context.contentResolver.openOutputStream(uri, "w")?.use { output ->
+                            manager.exportBackup(fileName, output, actor, chars)
+                        } ?: error("保存先を開けません")
+                    }
                 }
                 withContext(Dispatchers.IO) { metadataStore.registerExport(result) }
                 "外部保存完了: portable暗号化済み / ${result.fileName} / ${result.bytesWritten} bytes"
@@ -153,7 +159,11 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
         }
     }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
+        if (uri == null) {
+            backupPassphrase = ""
+            backupPassphraseConfirm = ""
+            message = "外部バックアップ取込をキャンセルしました"
+        } else {
             runCatching {
                 context.contentResolver.takePersistableUriPermission(
                     uri,
@@ -166,11 +176,13 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
             runTask {
                 val actor = OperatorSessionRegistry.current(appContext)?.name ?: "責任者"
                 val imported = withContext(Dispatchers.IO) {
-                    val record = context.contentResolver.openInputStream(uri)?.use { input ->
-                        manager.importBackup(input, actor, chars)
-                    } ?: error("取込ファイルを開けません")
-                    metadataStore.registerManualBackup(manager.verifyBackup(record.fileName))
-                    record
+                    BackupSafAccessV147.guard("外部バックアップ取込") {
+                        val record = context.contentResolver.openInputStream(uri)?.use { input ->
+                            manager.importBackup(input, actor, chars)
+                        } ?: error("取込ファイルを開けません")
+                        metadataStore.registerManualBackup(manager.verifyBackup(record.fileName))
+                        record
+                    }
                 }
                 selected = imported.fileName
                 "外部バックアップ取込完了: パスフレーズ復号検証済み / ${imported.fileName}"
