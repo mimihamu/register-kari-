@@ -22,13 +22,20 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android API 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
       - name: Apply BKP-009 patch
         run: python3 .github/v136-bkp009-patch.py
       - name: Run V147 focused unit test
-        run: ./gradlew :app:testDevDebugUnitTest --tests jp.co.tenposinfo.register.V147Bkp009ManualExportTest --no-daemon
+        run: gradle :app:testDevDebugUnitTest --tests jp.co.tenposinfo.register.V147Bkp009ManualExportTest --no-daemon
       - name: Compile Kotlin
-        run: ./gradlew :app:compileDevDebugKotlin --no-daemon
+        run: gradle :app:compileDevDebugKotlin --no-daemon
       - name: Commit BKP-009 product files
         run: |
           git config user.name 'github-actions[bot]'
