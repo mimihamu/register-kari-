@@ -203,19 +203,19 @@ internal object PendingRestoreApplierV086 {
         val plan = runCatching {
             DataProtectionManager.readSimpleProperties(planFile.readText(Charsets.UTF_8))
         }.getOrElse { error ->
-            return failWithoutReplacement(planFile, pending, resultFile, database, "復元計画を読み取れません: ${error.message}")
+            return failWithoutReplacement(context, planFile, pending, resultFile, database, "復元計画を読み取れません: ${error.message}")
         }
         val expectedHash = plan["database_sha256"]
-            ?: return failWithoutReplacement(planFile, pending, resultFile, database, "復元計画にSHA-256がありません")
+            ?: return failWithoutReplacement(context, planFile, pending, resultFile, database, "復元計画にSHA-256がありません")
         val actualHash = runCatching { DataProtectionManager.sha256(pending) }.getOrElse { error ->
-            return failWithoutReplacement(planFile, pending, resultFile, database, "復元予約DBを読み取れません: ${error.message}")
+            return failWithoutReplacement(context, planFile, pending, resultFile, database, "復元予約DBを読み取れません: ${error.message}")
         }
         if (actualHash != expectedHash) {
-            return failWithoutReplacement(planFile, pending, resultFile, database, "復元予約DBのSHA-256が一致しません")
+            return failWithoutReplacement(context, planFile, pending, resultFile, database, "復元予約DBのSHA-256が一致しません")
         }
         val contentMode = plan["content_bundle"] ?: "LEGACY_DB_ONLY"
         if (contentMode == BackupContentBundleV136.FORMAT && !BackupContentBundleV136.hasStagedContent(pendingContent)) {
-            return failWithoutReplacement(planFile, pending, resultFile, database, "BKP-003復元contentがありません")
+            return failWithoutReplacement(context, planFile, pending, resultFile, database, "BKP-003復元contentがありません")
         }
         if (contentMode != BackupContentBundleV136.FORMAT) {
             BackupContentBundleV136.removePending(pendingContent)
@@ -229,6 +229,7 @@ internal object PendingRestoreApplierV086 {
                 RestoreRollbackSafetyV086.createVerifiedSnapshot(database, restoreDir)
             }.getOrElse { error ->
                 return failWithoutReplacement(
+                    context,
                     planFile,
                     pending,
                     resultFile,
@@ -261,8 +262,8 @@ internal object PendingRestoreApplierV086 {
             // BKP-005: identity/generationと採番floorをrollback境界内で確定する。
             RestoreTerminalMigrationV136.apply(database, plan)
 
-            // migration後のschemaへ監査を書き込み、その書込み後にも正本DBを最終検証する。
-            insertRestoreAudit(database, plan, syncRebuild)
+            // migration後の正本DBを検証する。BKP-010のSUCCESS監査は設定・outboxを含む
+            // 全復元処理が完了した後に記録する。
             DatabaseRecoveryIntegrityV116.verifyFinal(context)
 
             // BKP-003: DBが正本として成立した後に設定・画像を適用する。現在値はrollback保持する。
@@ -274,6 +275,11 @@ internal object PendingRestoreApplierV086 {
                 outbox.recoverStaleProcessing(Long.MAX_VALUE)
                 outbox.requeueStaged()
             }
+            DatabaseRecoveryIntegrityV116.verifyFinal(context)
+
+            // BKP-010: SUCCESSはDB・設定・画像・outbox復旧まで完了した時点で初めて監査する。
+            // 監査書込み自体も復元成功条件に含め、その後にもう一度DBを最終検証する。
+            insertRestoreAudit(database, plan, syncRebuild)
             DatabaseRecoveryIntegrityV116.verifyFinal(context)
 
             // 成功記録の書込みまでrollback snapshotを保持する。
@@ -325,11 +331,18 @@ internal object PendingRestoreApplierV086 {
                 RestoreRollbackSafetyV086.deleteWalSidecars(database)
                 "復元前の元DBなし"
             }
+            val failureAuditResult = insertRestoreFailureAudit(
+                context = context,
+                file = database,
+                plan = plan,
+                reason = error.message ?: error.javaClass.simpleName,
+                rollbackResult = rollbackResult + contentRollbackResult,
+            )
             planFile.delete()
             pending.delete()
             BackupContentBundleV136.removePending(pendingContent)
             resultFile.writeText(
-                "復元失敗: ${error.message} / $rollbackResult$contentRollbackResult",
+                "復元失敗: ${error.message} / $rollbackResult$contentRollbackResult$failureAuditResult",
                 Charsets.UTF_8,
             )
         }
@@ -368,6 +381,47 @@ internal object PendingRestoreApplierV086 {
         plan: Map<String, String>,
         syncRebuild: RestoreSyncRebuildResultV136,
     ) {
+        val syncSummary =
+            "BKP-006=rebuild:${syncRebuild.rebuiltCount}," +
+                "missing:${syncRebuild.remainingMissingCount}," +
+                "sent-preserved:${syncRebuild.preservedSentCount}," +
+                "ack-preserved:${syncRebuild.preservedAckCount}," +
+                "documentId-preserved:${syncRebuild.preservedDocumentIdCount}"
+        insertRestoreAuditRecord(
+            file = file,
+            eventType = "DATA_RESTORE_APPLIED",
+            plan = plan,
+            detail = RestoreAuditContractV148.successDetail(plan, syncSummary),
+        )
+    }
+
+    private fun insertRestoreFailureAudit(
+        context: Context,
+        file: File,
+        plan: Map<String, String>,
+        reason: String,
+        rollbackResult: String,
+    ): String = runCatching {
+        if (!file.isFile) {
+            RegisterDatabase(context).use { helper -> helper.writableDatabase }
+        }
+        insertRestoreAuditRecord(
+            file = file,
+            eventType = "DATA_RESTORE_FAILED",
+            plan = plan,
+            detail = RestoreAuditContractV148.failureDetail(plan, reason, rollbackResult),
+        )
+        " / 復元失敗監査=記録済み"
+    }.getOrElse { auditError ->
+        " / 復元失敗監査=記録失敗:${auditError.message ?: auditError.javaClass.simpleName}"
+    }
+
+    private fun insertRestoreAuditRecord(
+        file: File,
+        eventType: String,
+        plan: Map<String, String>,
+        detail: String,
+    ) {
         val database = SQLiteDatabase.openDatabase(file.absolutePath, null, SQLiteDatabase.OPEN_READWRITE)
         try {
             database.execSQL(
@@ -380,25 +434,10 @@ internal object PendingRestoreApplierV086 {
                 "operation_audit",
                 null,
                 ContentValues().apply {
-                    put("event_type", "DATA_RESTORE_APPLIED")
+                    put("event_type", eventType)
                     put("reference_id", 0)
-                    put(
-                        "detail",
-                        "${plan["backup_file"].orEmpty()} / 起動時復元 / v1.16 WAL・migration-safe rollback / " +
-                            "BKP-005=${plan["restore_mode"].orEmpty()} / storeId=${plan["target_store_id"].orEmpty()} / " +
-                            "oldTerminalId=${plan["source_terminal_id"].orEmpty()} / " +
-                            "newTerminalId=${plan["target_terminal_id"].orEmpty()} / " +
-                            "source-generation=${plan["source_generation"].orEmpty()} / " +
-                            "generation=${plan["target_generation"].orEmpty()} / " +
-                            "sale-floor=${plan["sale_sequence_floor"].orEmpty()} / " +
-                            "confirmed-max=${plan["remote_ack_max_sale_id"].orEmpty()} / " +
-                            "BKP-006=rebuild:${syncRebuild.rebuiltCount}," +
-                            "missing:${syncRebuild.remainingMissingCount}," +
-                            "sent-preserved:${syncRebuild.preservedSentCount}," +
-                            "ack-preserved:${syncRebuild.preservedAckCount}," +
-                            "documentId-preserved:${syncRebuild.preservedDocumentIdCount}",
-                    )
-                    put("operator_name", plan["actor_name"].orEmpty().ifBlank { "責任者" })
+                    put("detail", detail)
+                    put("operator_name", plan["actor_name"].orEmpty().ifBlank { "責任者不明" })
                     put("created_at", System.currentTimeMillis())
                 },
             )
@@ -408,12 +447,23 @@ internal object PendingRestoreApplierV086 {
     }
 
     private fun failWithoutReplacement(
+        context: Context,
         plan: File,
         pending: File,
         result: File,
         database: File,
         message: String,
     ) {
+        val auditPlan = runCatching {
+            if (plan.isFile) DataProtectionManager.readSimpleProperties(plan.readText(Charsets.UTF_8)) else emptyMap()
+        }.getOrDefault(emptyMap())
+        val failureAuditResult = insertRestoreFailureAudit(
+            context = context,
+            file = database,
+            plan = auditPlan,
+            reason = message,
+            rollbackResult = "元DB保持",
+        )
         plan.delete()
         pending.delete()
         BackupContentBundleV136.removePending(File(plan.parentFile, "pending-content-v136"))
@@ -421,6 +471,6 @@ internal object PendingRestoreApplierV086 {
             .exceptionOrNull()
             ?.let { " / フェンス解除失敗: ${it.message}" }
             .orEmpty()
-        result.writeText("復元予約を破棄・元DB保持: $message$fenceCleanup", Charsets.UTF_8)
+        result.writeText("復元予約を破棄・元DB保持: $message$fenceCleanup$failureAuditResult", Charsets.UTF_8)
     }
 }

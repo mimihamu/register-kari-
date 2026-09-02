@@ -549,6 +549,9 @@ class DataProtectionManager(context: Context) {
                 "target_generation" to migrationPlan.targetGeneration.toString(),
                 "sale_sequence_floor" to migrationPlan.saleSequenceFloor.toString(),
                 "remote_ack_max_sale_id" to migrationPlan.remoteAckMaxSaleId.toString(),
+                "backup_created_at" to verification.manifest.createdAt.toString(),
+                "restore_record_count" to RestoreAuditContractV148.totalCount(verification.manifest.tableCounts).toString(),
+                "restore_table_counts" to RestoreAuditContractV148.encodeTableCounts(verification.manifest.tableCounts),
             ))
             recordAudit("DATA_RESTORE_STAGED", "${verification.fileName} / ${migrationPlan.displaySummary()} / 次回起動時に復元", actorName)
             return RestoreStageResult(verification, actorName, stagedAt, migrationPlan)
