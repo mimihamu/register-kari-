@@ -28,6 +28,21 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.0'
+      - name: Fix current BKP-006 anchor in temporary patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/v136-syn001002-patch.py')
+          s = p.read_text()
+          old = '''        val remainingMissing = missingCount(db)
+                  require(remainingMissing == 0) { "BKP-006同期キュー再構築後も不足行があります: $remainingMissing" }'''
+          new = '''        val remaining = missingCount(db)
+                  require(remaining == 0) { "BKP-006同期再構築後もoutbox不足が残っています: $remaining" }'''
+          if old not in s:
+              raise SystemExit('temporary patch anchor text not found')
+          p.write_text(s.replace(old, new))
+          PY
       - name: Apply SYN-001/002 patch
         run: python3 .github/v136-syn001002-patch.py
       - name: Run REGISTER focused tests
