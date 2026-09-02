@@ -17,15 +17,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: develop/v1.36
-      - name: Audit sync queue implementation
+      - name: Audit formal immutable document commit paths
         shell: bash
         run: |
           set -uo pipefail
-          echo '=== SyncOutboxStatus / sync_outbox references ==='
-          grep -RInE 'SyncOutboxStatus|sync_outbox|PROCESSING|STAGED|SENT|FAILED_PERMANENT|AUTH_REQUIRED|PERMISSION_DENIED|HELD_UNTIL_SETTLEMENT|UPLOADING|UPLOADED|ACKED|COMPLETED|DISCARDED' app/src/main management-app/src/main | head -n 700 || true
-          echo '=== Drive upload state / completion ==='
-          grep -RInE 'drive_api_uploads|upload.*status|file_id|fileId|mark.*sent|mark.*complete|ack|ACK|duplicate' app/src/main management-app/src/main | head -n 500 || true
-          echo '=== Retry / rate limit ==='
-          grep -RInE 'Retry-After|rateLimitExceeded|userRateLimitExceeded|429|backoff|jitter|retryDelay|next_attempt_at' app/src/main management-app/src/main | head -n 400 || true
-          echo '=== Outbox payload assembly ==='
-          grep -RInE 'OutboxPayloadAssembler|payload_json|canonicalPayload|sha256|sequenceNo|completionMode|documentId' app/src/main management-app/src/main | head -n 500 || true
+          echo '=== recordSale call sites and surrounding transactions ==='
+          grep -RInC 14 'JournalOutboxSchema.recordSale' app/src/main | head -n 500 || true
+          echo '=== sale commit transaction paths ==='
+          grep -RInC 10 -E 'beginTransaction|setTransactionSuccessful|runInTransaction|insert\("sales"|insertOrThrow\("sales"|saleId' app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt app/src/main/java/jp/co/tenposinfo/register/*Payment* app/src/main/java/jp/co/tenposinfo/register/*Sale* | head -n 900 || true
+          echo '=== settlement insert path ==='
+          grep -RInC 16 -E 'settlement_reports|SettlementReport|insert.*settlement' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt | head -n 900 || true
+          echo '=== menu revision apply/result path ==='
+          grep -RInC 18 -E 'menu_revisions|applyRevision|revision.*result|MENU_REVISION|MenuRevision' app/src/main/java/jp/co/tenposinfo/register | head -n 1200 || true
+          echo '=== ACK creation/writes ==='
+          grep -RInC 16 -E 'ACK|ack_|acknowledg|IMPORTED|DUPLICATE|REJECTED|results' app/src/main management-app/src/main | grep -E 'SalesJournal|Drive|Ack|ACK|ack|import|result' | head -n 1200 || true
+          echo '=== OutboxPayloadAssembler implementation ==='
+          awk 'BEGIN{p=0} /object OutboxPayloadAssembler/{p=1} p{print NR ":" $0} p && NR>980{exit}' app/src/main/java/jp/co/tenposinfo/register/BusinessSyncFoundation.kt || true
+          echo '=== exact journal/outbox insert helper ==='
+          awk 'BEGIN{p=0} /private fun insertJournalAndOutbox/{p=1} p{print NR ":" $0} p && /private fun createTrigger/{exit}' app/src/main/java/jp/co/tenposinfo/register/BusinessSyncFoundation.kt || true
