@@ -132,12 +132,16 @@ replace_once(
         return SettlementSaveResult''',
 )
 
-# Plus multipart must emit CRLF bytes, not literal backslash-r/backslash-n characters.
+# Plus multipart must emit HTTP CRLF bytes. Correct only a double-escaped source; accept an already-correct source.
 plus_drive = Path('management-app/src/main/java/jp/co/tenposinfo/register/plus/GoogleDriveDirectSync.kt')
 text = plus_drive.read_text()
-if r'\\r\\n' not in text:
-    raise SystemExit('expected escaped multipart CRLF not found')
-plus_drive.write_text(text.replace(r'\\r\\n', r'\r\n'))
+double_escaped = r'\\r\\n'
+correct_escape = r'\r\n'
+if double_escaped in text:
+    text = text.replace(double_escaped, correct_escape)
+if correct_escape not in text:
+    raise SystemExit('multipart CRLF escape not found after normalization')
+plus_drive.write_text(text)
 
 # Strengthen the focused REGISTER source contract to cover every trigger-produced event path.
 test_path = Path('app/src/test/java/jp/co/tenposinfo/register/V150Syn001002ImmutableOutboxDocumentTest.kt')
@@ -164,14 +168,14 @@ if needle not in test:
     raise SystemExit('REGISTER test insertion anchor missing')
 test_path.write_text(test.replace(needle, extra + needle, 1))
 
-# Strengthen Plus test against malformed multipart line endings.
+# Strengthen Plus test against malformed multipart line endings without Kotlin interpolation.
 plus_test_path = Path('management-app/src/test/java/jp/co/tenposinfo/register/plus/V150Syn001002AckOutboxTest.kt')
 plus_test = plus_test_path.read_text()
 needle = '''    @Test fun menuApplyResultIsAcceptedWithoutBlockingDriveImport() {'''
 extra = r'''    @Test fun ackMultipartUsesHttpCrLfEscapes() {
         val drive = source("GoogleDriveDirectSync.kt")
-        assertTrue(drive.contains("--$boundary\\r\\nContent-Type"))
-        assertTrue(!drive.contains("--$boundary\\\\r\\\\nContent-Type"))
+        assertTrue(drive.contains("\\r\\nContent-Type"))
+        assertTrue(!drive.contains("\\\\r\\\\nContent-Type"))
     }
 
 '''
