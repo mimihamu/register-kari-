@@ -1,0 +1,52 @@
+name: v1.36 BKP-010 implement
+
+on:
+  push:
+    branches: [ develop/v1.36 ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.36
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android API 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+      - name: Apply BKP-010 patch
+        run: python3 .github/v136-bkp010-patch.py
+      - name: Run V148 focused unit test
+        run: gradle --no-daemon :app:testDebugUnitTest --tests jp.co.tenposinfo.register.V148Bkp010RestoreAuditTest
+      - name: Compile Kotlin
+        run: gradle --no-daemon :app:compileDebugKotlin
+      - name: Commit BKP-010 product files
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            app/src/main/java/jp/co/tenposinfo/register/DataProtection.kt \
+            app/src/main/java/jp/co/tenposinfo/register/DataRestoreBootstrapV086.kt \
+            app/src/main/java/jp/co/tenposinfo/register/RestoreAuditContractV148.kt \
+            app/src/test/java/jp/co/tenposinfo/register/V148Bkp010RestoreAuditTest.kt \
+            docs/V1.36_BKP_010_RESTORE_AUDIT.md
+          git diff --cached --check
+          git diff --cached --quiet && exit 0
+          git commit -m 'feat(v1.36): make restore audit complete and failure-safe'
+          git push origin HEAD:develop/v1.36
