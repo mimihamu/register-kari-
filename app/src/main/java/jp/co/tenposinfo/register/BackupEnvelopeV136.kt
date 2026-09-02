@@ -166,6 +166,9 @@ object BackupEnvelopeV136 {
                 portableWrappedDek = portableWrap.second,
             )
             copyPayloadToEnvelope(localEnvelope, portableFile, manifest)
+            // BKP-011: prove the passphrase-wrapped DEK stored in the portable manifest can
+            // recover the exact DEK before the package is reported/exported as usable.
+            verifyPortableWrappedDekForExport(manifest, passphrase, dek)
             selfTestPortable(context, portableFile, passphrase)
             FileInputStream(portableFile).buffered().use { input -> copyLimited(input, output, MAX_ENVELOPE_BYTES) }
             return manifest.toBackupManifest()
@@ -223,6 +226,28 @@ object BackupEnvelopeV136 {
         } finally {
             dek.fill(0)
             work.deleteRecursively()
+        }
+    }
+
+    /**
+     * BKP-011 export-time portable-key proof. This deliberately uses only the passphrase wrap;
+     * Android Keystore is not consulted. Payload self-test follows separately and proves that the
+     * recovered DEK also decrypts the encrypted backup bytes.
+     */
+    internal fun verifyPortableWrappedDekForExport(
+        manifest: Manifest,
+        passphrase: CharArray,
+        expectedDek: ByteArray,
+    ) {
+        requirePassphrase(passphrase)
+        require(expectedDek.size == KEY_BITS / 8) { "可搬鍵検証用DEKサイズが不正です" }
+        val recoveredDek = unwrapPortable(manifest, passphrase)
+        try {
+            require(MessageDigest.isEqual(recoveredDek, expectedDek)) {
+                "保存した可搬鍵で元のバックアップ鍵を復号できません"
+            }
+        } finally {
+            recoveredDek.fill(0)
         }
     }
 
