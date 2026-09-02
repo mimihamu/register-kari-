@@ -246,8 +246,9 @@ class V147Bkp009ManualExportTest {
         assertTrue(protection.contains("fun importBackup(input: InputStream"))
         assertTrue(protection.contains("BackupEnvelopeV136.exportPortable"))
         assertTrue(protection.contains("BackupEnvelopeV136.importPortable"))
-        assertTrue(envelope.contains("PortableKeyV136.create(passphrase, dek)"))
-        assertTrue(envelope.contains("PortableKeyV136.unwrap"))
+        assertTrue(envelope.contains("derivePortableKey(passphrase, salt, PBKDF2_ITERATIONS)"))
+        assertTrue(envelope.contains("wrapRaw(dek, kek)"))
+        assertTrue(envelope.contains("unwrapPortable(manifest, passphrase)"))
 
         assertFalse(manifest.contains("MANAGE_EXTERNAL_STORAGE"))
         assertFalse(manifest.contains("READ_EXTERNAL_STORAGE"))
@@ -268,8 +269,8 @@ class V147Bkp009ManualExportTest {
 
 - `CreateDocument` / `OpenDocument` によりSAFを使用する。
 - `ContentResolver.openOutputStream()` / `openInputStream()` を通して `DataProtectionManager.exportBackup()` / `importBackup()` へstreamを渡す。
-- `ArchiveCipherV136.exportPortable()` は端末Keystoreで保護されたlocal DEKを一時展開し、`PortableKeyV136.create()` によりPBKDF2-HMAC-SHA256由来KEK + AES-GCMでDEKを再ラップする。
-- `ArchiveCipherV136.importPortable()` はportable wrapped key + パスフレーズからDEKを復元するため、元端末のAndroid Keystoreを必要としない。
+- `BackupEnvelopeV136.exportPortable()` は端末Keystoreで保護されたlocal DEKを一時展開し、PBKDF2-HMAC-SHA256由来KEK + AES-GCMでDEKを再ラップする。
+- `BackupEnvelopeV136.importPortable()` はportable wrapped key + パスフレーズからDEKを復元するため、元端末のAndroid Keystoreを必要としない。
 - `AndroidManifest.xml` は `MANAGE_EXTERNAL_STORAGE` / `READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE` を要求しない。
 - 平文SQLiteを外部へ直接書き出さない。
 
