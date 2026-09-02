@@ -46,11 +46,11 @@ jobs:
       - name: Apply SYN-001/002 patch
         run: python3 .github/v136-syn001002-patch.py
       - name: Run REGISTER focused tests
-        run: ./gradlew :app:testDebugUnitTest --tests jp.co.tenposinfo.register.V150Syn001002ImmutableOutboxDocumentTest --stacktrace
+        run: gradle --no-daemon :app:testDebugUnitTest --tests jp.co.tenposinfo.register.V150Syn001002ImmutableOutboxDocumentTest --stacktrace
       - name: Run Plus focused tests
-        run: ./gradlew :management-app:testDebugUnitTest --tests jp.co.tenposinfo.register.plus.V150Syn001002AckOutboxTest --stacktrace
+        run: gradle --no-daemon :management-app:testDebugUnitTest --tests jp.co.tenposinfo.register.plus.V150Syn001002AckOutboxTest --stacktrace
       - name: Compile REGISTER and Plus Kotlin
-        run: ./gradlew :app:compileDebugKotlin :management-app:compileDebugKotlin --stacktrace
+        run: gradle --no-daemon :app:compileDebugKotlin :management-app:compileDebugKotlin --stacktrace
       - name: Commit SYN-001/002 product files
         shell: bash
         run: |
