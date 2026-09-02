@@ -17,21 +17,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: develop/v1.36
-      - name: Audit formal immutable document commit paths
+      - name: Pinpoint finalization paths
         shell: bash
         run: |
           set -uo pipefail
-          echo '=== recordSale call sites and surrounding transactions ==='
-          grep -RInC 14 'JournalOutboxSchema.recordSale' app/src/main | head -n 500 || true
-          echo '=== sale commit transaction paths ==='
-          grep -RInC 10 -E 'beginTransaction|setTransactionSuccessful|runInTransaction|insert\("sales"|insertOrThrow\("sales"|saleId' app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt app/src/main/java/jp/co/tenposinfo/register/*Payment* app/src/main/java/jp/co/tenposinfo/register/*Sale* | head -n 900 || true
-          echo '=== settlement insert path ==='
-          grep -RInC 16 -E 'settlement_reports|SettlementReport|insert.*settlement' app/src/main/java/jp/co/tenposinfo/register/OperationsStore.kt app/src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt | head -n 900 || true
-          echo '=== menu revision apply/result path ==='
-          grep -RInC 18 -E 'menu_revisions|applyRevision|revision.*result|MENU_REVISION|MenuRevision' app/src/main/java/jp/co/tenposinfo/register | head -n 1200 || true
-          echo '=== ACK creation/writes ==='
-          grep -RInC 16 -E 'ACK|ack_|acknowledg|IMPORTED|DUPLICATE|REJECTED|results' app/src/main management-app/src/main | grep -E 'SalesJournal|Drive|Ack|ACK|ack|import|result' | head -n 1200 || true
-          echo '=== OutboxPayloadAssembler implementation ==='
-          awk 'BEGIN{p=0} /object OutboxPayloadAssembler/{p=1} p{print NR ":" $0} p && NR>980{exit}' app/src/main/java/jp/co/tenposinfo/register/BusinessSyncFoundation.kt || true
-          echo '=== exact journal/outbox insert helper ==='
-          awk 'BEGIN{p=0} /private fun insertJournalAndOutbox/{p=1} p{print NR ":" $0} p && /private fun createTrigger/{exit}' app/src/main/java/jp/co/tenposinfo/register/BusinessSyncFoundation.kt || true
+          echo '=== files containing DynamicCatalog/menu revisions ==='
+          grep -RIlE 'class DynamicCatalogStore|object DynamicCatalogStore|fun .*Revision|menu_revisions' app/src/main/java/jp/co/tenposinfo/register | sort
+          echo '=== exact menu revision mutations ==='
+          grep -RInC 30 -E 'insertOrThrow\("menu_revisions"|insert\("menu_revisions"|applyRevision|activateRevision|rollbackRevision|MenuRevisionApply' app/src/main/java/jp/co/tenposinfo/register | head -n 1600 || true
+          echo '=== all business session status writes ==='
+          grep -RInC 16 -E 'update\(.*business_sessions|"business_sessions"|put\("status"' app/src/main/java/jp/co/tenposinfo/register | grep -E 'OperationsStore|BusinessSession|status|business_sessions|closed_at' | head -n 1000 || true
+          echo '=== exact recordSale/enrich order ==='
+          grep -nC 30 -E 'JournalOutboxSchema.recordSale|enrichSaleJournal|setTransactionSuccessful' app/src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt | head -n 900 || true
+          echo '=== transaction helper implementation ==='
+          grep -RInC 12 -E 'fun <.*transaction|inline fun .*transaction|SQLiteDatabase.transaction' app/src/main/java/jp/co/tenposinfo/register | head -n 500 || true
