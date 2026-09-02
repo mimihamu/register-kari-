@@ -1,0 +1,31 @@
+name: v1.36 formal sync queue audit
+
+on:
+  push:
+    branches: [ develop/v1.36 ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.36
+      - name: Audit sync queue implementation
+        shell: bash
+        run: |
+          set -uo pipefail
+          echo '=== SyncOutboxStatus / sync_outbox references ==='
+          grep -RInE 'SyncOutboxStatus|sync_outbox|PROCESSING|STAGED|SENT|FAILED_PERMANENT|AUTH_REQUIRED|PERMISSION_DENIED|HELD_UNTIL_SETTLEMENT|UPLOADING|UPLOADED|ACKED|COMPLETED|DISCARDED' app/src/main management-app/src/main | head -n 700 || true
+          echo '=== Drive upload state / completion ==='
+          grep -RInE 'drive_api_uploads|upload.*status|file_id|fileId|mark.*sent|mark.*complete|ack|ACK|duplicate' app/src/main management-app/src/main | head -n 500 || true
+          echo '=== Retry / rate limit ==='
+          grep -RInE 'Retry-After|rateLimitExceeded|userRateLimitExceeded|429|backoff|jitter|retryDelay|next_attempt_at' app/src/main management-app/src/main | head -n 400 || true
+          echo '=== Outbox payload assembly ==='
+          grep -RInE 'OutboxPayloadAssembler|payload_json|canonicalPayload|sha256|sequenceNo|completionMode|documentId' app/src/main management-app/src/main | head -n 500 || true
