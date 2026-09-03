@@ -55,7 +55,7 @@ jobs:
         with:
           ref: develop/v1.36
           fetch-depth: 0
-      - name: Trace generated V1.18 compatibility gate
+      - name: Trace generated V1.19 compatibility gate
         shell: bash
         run: |
           set -uo pipefail
@@ -67,5 +67,9 @@ jobs:
             capture && inrun { sub(/^          /, ""); print }
           ' /tmp/v133-build-apk.yml > /tmp/v133-cumulative-checks.sh
           bash -uxo pipefail /tmp/v133-cumulative-checks.sh || true
-          echo '=== FINAL V118 GENERATED SCRIPT AROUND CONFLICT MARKERS ==='
-          nl -ba /tmp/v118-cumulative-checks.sh | grep -B55 -A80 'SYNC_IMPORT_CONFLICT_FINGERPRINT_AFTER_AUDIT' || true
+          echo '=== FINAL V119 GENERATED SCRIPT ==='
+          if test -f /tmp/v119-cumulative-checks.sh; then
+            nl -ba /tmp/v119-cumulative-checks.sh | sed -n '1,220p'
+          else
+            echo 'v119 script was not generated'
+          fi
