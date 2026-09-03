@@ -55,7 +55,7 @@ jobs:
         with:
           ref: develop/v1.36
           fetch-depth: 0
-      - name: Trace generated V1.19 compatibility gate
+      - name: Trace generated V1.18 compatibility gate
         shell: bash
         run: |
           set -uo pipefail
@@ -67,9 +67,9 @@ jobs:
             capture && inrun { sub(/^          /, ""); print }
           ' /tmp/v133-build-apk.yml > /tmp/v133-cumulative-checks.sh
           bash -uxo pipefail /tmp/v133-cumulative-checks.sh || true
-          echo '=== FINAL V119 GENERATED SCRIPT ==='
-          if test -f /tmp/v119-cumulative-checks.sh; then
-            nl -ba /tmp/v119-cumulative-checks.sh | sed -n '1,220p'
+          echo '=== FINAL V118 GENERATED SCRIPT ==='
+          if test -f /tmp/v118-cumulative-checks.sh; then
+            nl -ba /tmp/v118-cumulative-checks.sh | sed -n '1,180p'
           else
-            echo 'v119 script was not generated'
+            echo 'v118 script was not generated'
           fi
