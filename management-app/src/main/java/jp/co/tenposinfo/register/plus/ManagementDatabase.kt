@@ -232,6 +232,7 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
         const val DATABASE_NAME = "tsuguregi_plus.db"
         // v0.40-v0.45 cumulative-test baseline: DATABASE_VERSION = 4
         // v1.17-v1.18 cumulative-test baseline: const val DATABASE_VERSION = 5
+        // v1.19-v1.49 cumulative-test baseline: const val DATABASE_VERSION = 6
         const val DATABASE_VERSION = 7
     }
 }
