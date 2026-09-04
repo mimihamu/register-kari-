@@ -88,7 +88,7 @@ class V141BackupContentBundleTest {
         val admin = File(root, "app/src/main/java/jp/co/tenposinfo/register/AdminSettingsStore.kt").readText()
         assertTrue(sync.contains("sync_outbox"))
         assertTrue(sync.contains("sync_runtime_settings"))
-        assertTrue(sync.contains("OutboxPayloadAssembler.build"))
+        assertTrue(sync.contains("OutboxDocumentV150.ensureSchema(db)"))
         assertTrue(catalog.contains("menu_revisions"))
         assertTrue(catalog.contains("menu_revision_products"))
         assertTrue(admin.contains("printer_settings"))
