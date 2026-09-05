@@ -50,7 +50,7 @@ replace_once(
         db.update(''',
 )
 
-old_ref = '''payload_json = '{"schema":"${PrintDocumentSnapshotV136.SALE_JOB_REFERENCE_SCHEMA}","schemaVersion":${PrintDocumentSnapshotV136.SCHEMA_VERSION},"saleId":' || sale_id || ',"paperWidthMm":' || paper_width_mm || '}' '''
+old_ref = '''payload_json = '{"schema":"${PrintDocumentSnapshotV136.SALE_JOB_REFERENCE_SCHEMA}","schemaVersion":${PrintDocumentSnapshotV136.SCHEMA_VERSION},"saleId":' || sale_id || ',"paperWidthMm":' || paper_width_mm || '}' '''.rstrip()
 new_ref = '''payload_json = COALESCE(
                        (SELECT j.payload_json
                           FROM sales_journal j
@@ -60,10 +60,10 @@ new_ref = '''payload_json = COALESCE(
                          ORDER BY j.created_at DESC
                          LIMIT 1),
                        '{"schema":"${PrintDocumentSnapshotV136.SALE_JOB_REFERENCE_SCHEMA}","schemaVersion":${PrintDocumentSnapshotV136.SCHEMA_VERSION},"saleId":' || sale_id || ',"paperWidthMm":' || paper_width_mm || '}'
-                   ) '''
+                   )'''
 replace_once(snapshot, old_ref, new_ref)
 
-old_trigger_ref = '''payload_json = '{"schema":"${PrintDocumentSnapshotV136.SALE_JOB_REFERENCE_SCHEMA}","schemaVersion":${PrintDocumentSnapshotV136.SCHEMA_VERSION},"saleId":' || NEW.sale_id || ',"paperWidthMm":' || NEW.paper_width_mm || '}' '''
+old_trigger_ref = '''payload_json = '{"schema":"${PrintDocumentSnapshotV136.SALE_JOB_REFERENCE_SCHEMA}","schemaVersion":${PrintDocumentSnapshotV136.SCHEMA_VERSION},"saleId":' || NEW.sale_id || ',"paperWidthMm":' || NEW.paper_width_mm || '}' '''.rstrip()
 new_trigger_ref = '''payload_json = COALESCE(
                            (SELECT j.payload_json
                               FROM sales_journal j
@@ -73,7 +73,7 @@ new_trigger_ref = '''payload_json = COALESCE(
                              ORDER BY j.created_at DESC
                              LIMIT 1),
                            '{"schema":"${PrintDocumentSnapshotV136.SALE_JOB_REFERENCE_SCHEMA}","schemaVersion":${PrintDocumentSnapshotV136.SCHEMA_VERSION},"saleId":' || NEW.sale_id || ',"paperWidthMm":' || NEW.paper_width_mm || '}'
-                       ) '''
+                       )'''
 replace_once(snapshot, old_trigger_ref, new_trigger_ref)
 
 receipt = 'app/src/main/java/jp/co/tenposinfo/register/Receipt.kt'
