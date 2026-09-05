@@ -61,6 +61,7 @@ object SalesJournalImportContract {
         "BUSINESS_OPEN",
         "BUSINESS_STATE",
         "MENU_REVISION",
+        "MENU_APPLY_RESULT",
     )
 
     val supportedPayloadSchemas: Set<String> = setOf(

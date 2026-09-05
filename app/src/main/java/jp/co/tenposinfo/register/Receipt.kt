@@ -29,11 +29,14 @@ data class SaleDetailRecord(
     val items: List<CartItem>,
     val payments: List<PaymentAllocation>,
     val taxSummary: TaxSummary,
+    val invoiceAggregationBasis: InvoiceAggregationBasisV136 = InvoiceAggregationBasisV136.TAX_INCLUDED,
+    val taxSnapshotLegacyFallback: Boolean = false,
 )
 
 enum class PrintJobStatus {
     PENDING,
-    PRINTING,
+    PRINTING, // legacy: v1.35 and earlier in-flight row
+    SENDING,  // formal v2.5 §16.9: persisted before transport send
     COMPLETED,
     RETRY,
     FAILED,
@@ -64,6 +67,10 @@ data class ReceiptData(
     val payments: List<PaymentAllocation>,
     val changeAmount: Long,
     val reprint: Boolean = false,
+    val invoiceAggregationBasis: InvoiceAggregationBasisV136 = InvoiceAggregationBasisV136.TAX_INCLUDED,
+    val documentCopies: Int = 1,
+    val documentHeader: String = "",
+    val documentFooter: String = ReceiptFooterMessagePolicyV136.DEFAULT_MESSAGE,
 )
 
 enum class ReceiptPaper(val widthMm: Int, val charsPerLine: Int) {
@@ -80,7 +87,9 @@ object ReceiptFactory {
     private fun issuer(): InvoiceIssuerProfile = TaxInvoiceSettingsRegistry.current().issuer
 
     fun fromSale(detail: SaleDetailRecord, reprint: Boolean = false): ReceiptData {
-        val issuer = issuer()
+        // NOTICE-001: loadSaleDetail() が復元した売上時発行者snapshotを最優先する。
+        // snapshot導入前のlegacy売上だけは現在設定へフォールバックする。
+        val issuer = SaleInvoiceIssuerSnapshotRegistryV136.forSale(detail.summary.id) ?: issuer()
         return ReceiptData(
             storeName = issuer.storeName,
             storeAddress = issuer.address,
@@ -94,6 +103,7 @@ object ReceiptFactory {
             payments = detail.payments,
             changeAmount = detail.summary.changeAmount,
             reprint = reprint,
+            invoiceAggregationBasis = detail.invoiceAggregationBasis,
         )
     }
 
@@ -105,7 +115,8 @@ object ReceiptFactory {
         payments: List<PaymentAllocation>,
         changeAmount: Long,
     ): ReceiptData {
-        val issuer = issuer()
+        val settings = TaxInvoiceSettingsRegistry.current()
+        val issuer = settings.issuer
         return ReceiptData(
             storeName = issuer.storeName,
             storeAddress = issuer.address,
@@ -118,6 +129,7 @@ object ReceiptFactory {
             taxSummary = TaxEngine.calculate(items),
             payments = payments,
             changeAmount = changeAmount,
+            invoiceAggregationBasis = settings.invoiceAggregationBasis,
         )
     }
 }
@@ -132,32 +144,41 @@ object ReceiptRenderer {
     fun render(data: ReceiptData, paper: ReceiptPaper): String {
         val width = paper.charsPerLine
         val lines = mutableListOf<String>()
+        if (data.reprint) lines += center("【再発行】", width)
+        data.documentHeader.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.forEach { lines += fit(it, width) }
         lines += center(data.storeName, width)
         if (data.storeAddress.isNotBlank()) lines += center(data.storeAddress, width)
         if (data.storePhone.isNotBlank()) lines += center("TEL ${data.storePhone}", width)
-        if (data.reprint) lines += center("【再発行】", width)
         lines += center("領収書／レシート", width)
         lines += separator(width, '=')
-        lines += "No.${data.saleId}  ${formatDate(data.createdAt)}"
+        lines += "No.${ReceiptNumberV136.format(data.saleId)}  ${formatDate(data.createdAt)}"
         lines += "担当 ${data.operatorName}"
         lines += separator(width, '-')
 
         data.items.forEach { item ->
-            val symbol = item.product.taxSymbol
-            lines += fit("${item.product.name} [$symbol]", width)
+            val symbol = ReceiptTaxSymbolV136.fromProduct(item.product)
+            lines.addAll(ReceiptLineWrapV136.wrap("${item.product.name} [$symbol]", width))
             val amount = item.baseAmount
             lines += amountLine("${item.quantity} × ${yen(item.unitPrice)}", yen(amount), width)
             if (item.discountAmount > 0) {
                 lines += amountLine("  値引", "-${yen(item.discountAmount)}", width)
             }
-            if (item.note.isNotBlank()) lines += fit("  ※${item.note}", width)
+            if (item.note.isNotBlank()) lines.addAll(ReceiptLineWrapV136.wrap("  ※${item.note}", width))
         }
 
         lines += separator(width, '-')
         lines += amountLine("税抜金額等", yen(data.taxSummary.netAmount), width)
         data.taxSummary.buckets.forEach { bucket ->
             if (bucket.taxable) {
-                lines += amountLine("${bucket.ratePercent}%対象額（税込）", yen(bucket.grossAmount), width)
+                val taxableAmount = when (data.invoiceAggregationBasis) {
+                    InvoiceAggregationBasisV136.TAX_INCLUDED -> bucket.grossAmount
+                    InvoiceAggregationBasisV136.TAX_EXCLUDED -> bucket.netAmount
+                }
+                val basisLabel = when (data.invoiceAggregationBasis) {
+                    InvoiceAggregationBasisV136.TAX_INCLUDED -> "税込"
+                    InvoiceAggregationBasisV136.TAX_EXCLUDED -> "税抜"
+                }
+                lines += amountLine("${bucket.ratePercent}%対象額（$basisLabel）", yen(taxableAmount), width)
                 lines += amountLine("  消費税等", yen(bucket.taxAmount), width)
             } else {
                 lines += amountLine("非課税対象額", yen(bucket.grossAmount), width)
@@ -179,7 +200,8 @@ object ReceiptRenderer {
         }
         lines += "※は軽減税率対象商品です"
         lines += "内/外は内税・外税区分です"
-        lines += center("ありがとうございました", width)
+        lines.addAll(ReceiptFooterMessagePolicyV136.renderLines(data.documentFooter, paper))
+        if (data.reprint) lines += center("【再発行】", width)
         return lines.joinToString("\n")
     }
 
@@ -226,16 +248,16 @@ object EscPosEncoder {
         data: ReceiptData,
         configuration: PrinterConfiguration = PrinterConfigurationRegistry.current() ?: PrinterConfiguration(),
     ): ByteArray {
-        val openDrawer = configuration.drawerEnabled &&
-            configuration.drawerOpenOnCashSale &&
-            !data.reprint &&
-            data.payments.any { it.method == PaymentMethod.CASH }
-        return PrinterCommandEncoder.encodeText(
-            text = ReceiptRenderer.render(data, PrinterPaperSettingPolicy.paper(configuration)),
-            configuration = configuration,
-            openDrawer = openDrawer,
-            appendCut = true,
-        )
+        // CSH-004: physical drawer opening is a committed business event, never a print side effect.
+        val copies = DocumentPrintSettingsPolicyV136.normalizeCopies(data.documentCopies)
+        return (0 until copies).fold(ByteArray(0)) { payload, copyIndex ->
+            payload + PrinterCommandEncoder.encodeText(
+                text = ReceiptRenderer.render(data, PrinterPaperSettingPolicy.paper(configuration)),
+                configuration = configuration,
+                openDrawer = false,
+                appendCut = true,
+            )
+        }
     }
 }
 
@@ -289,6 +311,9 @@ object PrinterRetrySafety {
         var current: Throwable? = error
         while (current != null) {
             if (current is PrinterTransportException) return classify(current.phase)
+            if (current is PrinterDeliveryConfirmationExceptionV136) {
+                return PrinterFailureDisposition.MANUAL_CONFIRMATION_REQUIRED
+            }
             current = current.cause
         }
         return PrinterFailureDisposition.SAFE_TO_RETRY
@@ -362,6 +387,7 @@ class MemoryPrinterGateway : PrinterGateway {
 class PrintQueueProcessor(
     private val database: RegisterDatabase,
     private val gateway: PrinterGateway,
+    private val saleReceiptSetting: DocumentPrintSettingV136 = DocumentPrintSettingV136(footer = ReceiptFooterMessagePolicyV136.DEFAULT_MESSAGE),
 ) {
     fun processNext(): Boolean {
         val job = database.claimNextPrintableJob() ?: return false
@@ -370,11 +396,32 @@ class PrintQueueProcessor(
             database.markPrintFailed(job.id, "売上データが見つかりません", permanent = true)
             return false
         }
-        val receipt = ReceiptFactory.fromSale(detail, reprint = detail.summary.printCount > 0)
-        val configuredSnapshot = (PrinterConfigurationRegistry.current() ?: PrinterConfiguration()).copy(
-            paperWidthMm = job.paperWidthMm,
+        val isReprint = ReceiptReprintPolicyV136.isReprint(
+            jobCreatedAt = job.createdAt,
+            saleCreatedAt = detail.summary.createdAt,
+            completedPrintCount = detail.summary.printCount,
         )
-        val result = gateway.send(EscPosEncoder.encode(receipt, configuredSnapshot))
+        val renderedPayload = Syn003FrozenPrintPayloadV136.loadJobPayload(
+            db = database.readableDatabase,
+            jobId = job.id,
+            saleId = job.saleId,
+            reprint = isReprint,
+        ) ?: run {
+            // Legacy rows created before SYN-003 keep the historical rendering fallback.
+            val receipt = ReceiptFactory.fromSale(detail, reprint = isReprint)
+            val configuredSnapshot = (PrinterConfigurationRegistry.current() ?: PrinterConfiguration()).copy(
+                paperWidthMm = job.paperWidthMm,
+            )
+            val configuredReceipt = DocumentPrintSettingsPolicyV136.applyToReceipt(receipt, saleReceiptSetting)
+            EscPosEncoder.encode(configuredReceipt, configuredSnapshot)
+        }
+        PrintDocumentSnapshotSchemaV136.recordRenderedHash(
+            db = database.writableDatabase,
+            table = "print_jobs",
+            jobId = job.id,
+            payload = renderedPayload,
+        )
+        val result = gateway.send(renderedPayload)
         result.onSuccess {
             database.markPrintCompleted(job.id)
         }.onFailure { error ->

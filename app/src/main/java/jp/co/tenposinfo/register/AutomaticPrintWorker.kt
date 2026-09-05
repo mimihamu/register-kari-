@@ -168,6 +168,7 @@ class AutomaticPrintWorker(
 
         val database = RegisterDatabase(applicationContext)
         val operations = AdvancedOperationsStore(applicationContext)
+        val saleReceiptSetting = DocumentPrintSettingsStoreV136(applicationContext).load(DocumentPrintKindV136.SALE_RECEIPT)
         try {
             while (!AutomaticPrintQueuePolicy.batchLimitReached(attempted)) {
                 val dispatch = runCatching {
@@ -181,16 +182,39 @@ class AutomaticPrintWorker(
                             documentJobs = operations.listDocumentPrintJobs(500),
                         ) ?: return@withPermit null
 
-                        val gateway = TcpEscPosPrinterGateway(
+                        val rawGateway = TcpEscPosPrinterGateway(
                             host = configuration.host,
                             port = configuration.port,
                             timeoutMillis = configuration.timeoutMillis,
                         )
                         val success = when (candidate.source) {
-                            AutomaticPrintCandidateSource.SALE_RECEIPT ->
-                                PrintQueueProcessor(database, gateway).processNext()
-                            AutomaticPrintCandidateSource.DOCUMENT ->
-                                operations.processDocumentPrint(candidate.sourceId, gateway).isSuccess
+                            AutomaticPrintCandidateSource.SALE_RECEIPT -> {
+                                val width = database.loadPrintJob(candidate.sourceId)?.paperWidthMm
+                                    ?: configuration.paperWidthMm
+                                val receiptGateway = ReceiptStampGatewayV136(
+                                    context = applicationContext,
+                                    delegate = rawGateway,
+                                    paperWidthMm = width,
+                                )
+                                val deliveryGateway = DeliveryConfirmingPrinterGatewayV136(
+                                    context = applicationContext,
+                                    configuration = configuration.copy(paperWidthMm = width),
+                                    kind = PrintDeliveryJobKindV136.SALE_RECEIPT,
+                                    jobId = candidate.sourceId,
+                                    delegate = receiptGateway,
+                                )
+                                PrintQueueProcessor(database, deliveryGateway, saleReceiptSetting).processNext()
+                            }
+                            AutomaticPrintCandidateSource.DOCUMENT -> {
+                                val deliveryGateway = DeliveryConfirmingPrinterGatewayV136(
+                                    context = applicationContext,
+                                    configuration = configuration,
+                                    kind = PrintDeliveryJobKindV136.DOCUMENT,
+                                    jobId = candidate.sourceId,
+                                    delegate = rawGateway,
+                                )
+                                operations.processDocumentPrint(candidate.sourceId, deliveryGateway).isSuccess
+                            }
                         }
                         candidate to success
                     }

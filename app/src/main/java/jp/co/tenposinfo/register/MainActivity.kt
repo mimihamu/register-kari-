@@ -45,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +65,7 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 private val Navy = Color(0xFF173F6B)
 private val Blue = Color(0xFF1976B9)
@@ -97,8 +99,20 @@ internal object RegisterLayoutPolicy {
 }
 
 class MainActivity : ComponentActivity() {
+    private val scannerGatewayV136 = ScannerGatewayV136()
+
+    override fun onStart() {
+        super.onStart()
+        scannerGatewayV136.start()
+    }
+
+    override fun onStop() {
+        scannerGatewayV136.stop()
+        super.onStop()
+    }
+
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
-        if (BarcodeScannerRuntimeV135.handle(event)) return true
+        if (scannerGatewayV136.handle(event)) return true
         return super.dispatchKeyEvent(event)
     }
 
@@ -218,6 +232,7 @@ private fun RegisterApp() {
     val heldTicketCoordinator = remember { HeldTicketSafetyCoordinator(database) }
     val paymentDraftStore = remember { PaymentDraftStore(database) }
     val saleCommitGuard = remember { SaleCommitGuard() }
+    val checkoutScope = rememberCoroutineScope()
 
     fun replaceCart(items: List<CartItem>) {
         cart.clear()
@@ -387,11 +402,24 @@ private fun RegisterApp() {
                         accessMessage = null
                         val existing = database.listHeldTickets()
                         val name = HeldTicketSafetyPolicy.defaultName(existing.map { it.name })
-                        database.holdCart(name, operatorName, cart.toList())
+                        val heldTicketId = database.holdCart(name, operatorName, cart.toList())
+                        val automaticProvisional = runCatching {
+                            val service = HeldTicketProvisionalPrintServiceV135(context.applicationContext)
+                            try {
+                                service.enqueueIfAutomatic(heldTicketId, operatorName)
+                            } finally {
+                                service.close()
+                            }
+                        }.getOrNull()
                         database.clearCartCorrections()
                         corrections.clear()
                         replaceCart(emptyList())
-                        ticketMessage = "$name として保留しました"
+                        if (automaticProvisional != null) {
+                            runCatching { AutomaticPrintScheduler.enqueueNow(context.applicationContext) }
+                            ticketMessage = "$name として保留し、仮締め票を自動印刷キューへ登録しました"
+                        } else {
+                            ticketMessage = "$name として保留しました"
+                        }
                     }
                 },
                 onPayment = {
@@ -437,6 +465,9 @@ private fun RegisterApp() {
                     ManagementNavigationPolicyV030::canOpenManagement,
                 ) == true,
                 onOpenSettings = { context.startActivity(Intent(context, AdminSettingsActivity::class.java)) },
+                onOpenCatalogSettings = { scannedCode ->
+                    context.startActivity(CatalogNavigationContractV030.productRegistrationIntent(context, scannedCode))
+                },
                 onOpenManagement = { context.startActivity(Intent(context, OperationsHubActivityV030::class.java)) },
                 accessMessage = accessMessage,
                 onLogout = {
@@ -659,6 +690,18 @@ private fun RegisterApp() {
                                 ),
                             )
                         }
+                        val completedPaymentState = paymentState
+                        val completedOperatorName = operatorName
+                        checkoutScope.launch {
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                ReceiptAutoPrintRuntimeV136.dispatchDrawerIfNeeded(
+                                    context = context.applicationContext,
+                                    paymentState = completedPaymentState,
+                                    saleId = saleId,
+                                    actor = completedOperatorName,
+                                )
+                            }
+                        }
                         AutomaticPrintScheduler.enqueueNow(context.applicationContext)
                         DriveOutboxScheduler.enqueueNow(context.applicationContext)
                         lastSaleId = saleId
@@ -741,7 +784,7 @@ private fun RegisterApp() {
                         detail = detail,
                         paper = PrinterPaperSettingPolicy.currentPaper(context.applicationContext),
                         onEnqueue = {
-                            database.enqueueReprint(detail.summary.id)
+                            database.enqueueReprint(detail.summary.id, operatorName)
                             AutomaticPrintScheduler.enqueueNow(context.applicationContext)
                             queueMessage = "再印字をキューへ登録しました"
                         },
@@ -1010,6 +1053,7 @@ private fun SalesScreen(
     canOpenSettings: Boolean,
     canOpenManagement: Boolean,
     onOpenSettings: () -> Unit,
+    onOpenCatalogSettings: (String) -> Unit,
     onOpenManagement: () -> Unit,
     accessMessage: String?,
     onLogout: () -> Unit,
@@ -1019,22 +1063,41 @@ private fun SalesScreen(
     var pendingQuantity by remember { mutableStateOf<Int?>(null) }
     var showProductSearch by remember { mutableStateOf(false) }
     var lookupMessage by remember { mutableStateOf<String?>(null) }
+    var unregisteredBarcode by remember { mutableStateOf<String?>(null) }
+    val barcodeIndex = remember(products) { BarcodeProductIndexV136(products) }
     val responsive = rememberRegisterResponsiveMetrics()
 
-    androidx.compose.runtime.DisposableEffect(products, pendingQuantity, onAddProduct) {
-        val listener: (String) -> Unit = { scanned ->
-            val product = ProductLookupPolicyV135.findExact(products, scanned)
+    androidx.compose.runtime.DisposableEffect(barcodeIndex, pendingQuantity, onAddProduct) {
+        val listener: (BarcodeScannedV136) -> Unit = { event ->
+            val product = barcodeIndex.findExact(event.code)
             if (product == null) {
-                lookupMessage = "商品未登録: ${scanned.take(20)}"
+                unregisteredBarcode = event.code
+                lookupMessage = null
             } else {
                 onAddProduct(product, pendingQuantity ?: 1)
                 pendingQuantity = null
                 numericInput = ""
                 lookupMessage = null
+                unregisteredBarcode = null
             }
         }
-        BarcodeScannerRuntimeV135.setListener(listener)
-        onDispose { BarcodeScannerRuntimeV135.clearListener(listener) }
+        InputRouterV136.setBarcodeListener(listener)
+        onDispose { InputRouterV136.clearBarcodeListener(listener) }
+    }
+
+    unregisteredBarcode?.let { scannedCode ->
+        UnregisteredBarcodeDialogV136(
+            code = scannedCode,
+            canOpenProductSettings = canOpenSettings,
+            onTemporaryProduct = { product ->
+                onAddProduct(product, pendingQuantity ?: 1)
+                pendingQuantity = null
+                numericInput = ""
+                lookupMessage = "仮商品として登録しました"
+            },
+            onOpenProductSettings = { onOpenCatalogSettings(scannedCode) },
+            onDismiss = { unregisteredBarcode = null },
+        )
     }
 
     if (showProductSearch) {
@@ -2959,7 +3022,8 @@ private fun statusColor(status: PrintJobStatus): Color = when (status) {
     PrintJobStatus.COMPLETED -> Color(0xFF2E7D32)
     PrintJobStatus.FAILED -> Danger
     PrintJobStatus.RETRY -> Color(0xFFEF6C00)
-    PrintJobStatus.PRINTING -> Blue
+    PrintJobStatus.SENDING -> Color(0xFFEF6C00)
+    PrintJobStatus.PRINTING -> Color(0xFFEF6C00)
     PrintJobStatus.PENDING -> Navy
     PrintJobStatus.DISCARDED -> Color.Gray
 }

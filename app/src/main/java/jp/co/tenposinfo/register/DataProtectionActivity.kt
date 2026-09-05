@@ -81,6 +81,7 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
     val appContext = context.applicationContext
     val manager = remember { DataProtectionManager(appContext) }
     val autoStatusStore = remember { AutoBackupStatusStore(appContext) }
+    val driveSyncStatusStore = remember { GoogleDriveDirectUploadStatusStore(appContext) }
     val autoSettingsStore = remember { AutoBackupSettingsStore(appContext) }
     val metadataStore = remember { AutoBackupMetadataStore(appContext) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -92,11 +93,18 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
     var backups by remember { mutableStateOf<List<BackupRecord>>(emptyList()) }
     var metadataByFile by remember { mutableStateOf<Map<String, AutoBackupMetadata>>(emptyMap()) }
     var autoStatus by remember { mutableStateOf(autoStatusStore.load()) }
+    var driveSyncStatus by remember { mutableStateOf(driveSyncStatusStore.load()) }
     var autoSettings by remember { mutableStateOf(autoSettingsStore.load()) }
     var selected by remember { mutableStateOf<String?>(null) }
     var pending by remember { mutableStateOf(manager.pendingRestoreStatus()) }
     var rollbackInventory by remember { mutableStateOf(RestoreRollbackInventoryV086(0, null)) }
     var pin by remember { mutableStateOf("") }
+    var restoreMode by remember { mutableStateOf<RestoreTerminalModeV136?>(null) }
+    var spareStoreName by remember { mutableStateOf("") }
+    var spareRemoteMaxSaleId by remember { mutableStateOf("") }
+    var oldTerminalStopped by remember { mutableStateOf(false) }
+    var backupPassphrase by remember { mutableStateOf("") }
+    var backupPassphraseConfirm by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("診断を実行してください") }
     var busy by remember { mutableStateOf(false) }
 
@@ -108,6 +116,7 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
             backups = withContext(Dispatchers.IO) { manager.listBackups() }
             metadataByFile = withContext(Dispatchers.IO) { metadataStore.readAll() }
             autoStatus = autoStatusStore.load()
+            driveSyncStatus = driveSyncStatusStore.load()
             autoSettings = autoSettingsStore.load()
             pending = manager.pendingRestoreStatus()
             rollbackInventory = withContext(Dispatchers.IO) { RestoreRollbackSafetyV086.inventory(appContext) }
@@ -121,32 +130,62 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
     ) { uri ->
         val fileName = pendingExport
         pendingExport = null
-        if (uri != null && fileName != null) {
+        if (uri == null || fileName == null) {
+            backupPassphrase = ""
+            backupPassphraseConfirm = ""
+            message = "外部保存をキャンセルしました"
+        } else {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+            val chars = backupPassphrase.toCharArray()
+            backupPassphrase = ""
+            backupPassphraseConfirm = ""
             runTask {
                 val actor = OperatorSessionRegistry.current(appContext)?.name ?: "責任者"
                 val result = withContext(Dispatchers.IO) {
-                    context.contentResolver.openOutputStream(uri, "w")?.use { output ->
-                        manager.exportBackup(fileName, output, actor)
-                    } ?: error("保存先を開けません")
+                    BackupSafAccessV147.guard("外部バックアップ保存") {
+                        context.contentResolver.openOutputStream(uri, "w")?.use { output ->
+                            manager.exportBackup(fileName, output, actor, chars)
+                        } ?: error("保存先を開けません")
+                    }
                 }
                 withContext(Dispatchers.IO) { metadataStore.registerExport(result) }
-                "外部保存完了: ${result.fileName} / ${result.bytesWritten} bytes"
+                "外部保存完了: portable暗号化済み / ${result.fileName} / ${result.bytesWritten} bytes"
             }
         }
     }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
+        if (uri == null) {
+            backupPassphrase = ""
+            backupPassphraseConfirm = ""
+            message = "外部バックアップ取込をキャンセルしました"
+        } else {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            }
+            val chars = backupPassphrase.toCharArray()
+            backupPassphrase = ""
+            backupPassphraseConfirm = ""
             runTask {
                 val actor = OperatorSessionRegistry.current(appContext)?.name ?: "責任者"
                 val imported = withContext(Dispatchers.IO) {
-                    val record = context.contentResolver.openInputStream(uri)?.use { input ->
-                        manager.importBackup(input, actor)
-                    } ?: error("取込ファイルを開けません")
-                    metadataStore.registerManualBackup(manager.verifyBackup(record.fileName))
-                    record
+                    BackupSafAccessV147.guard("外部バックアップ取込") {
+                        val record = context.contentResolver.openInputStream(uri)?.use { input ->
+                            manager.importBackup(input, actor, chars)
+                        } ?: error("取込ファイルを開けません")
+                        metadataStore.registerManualBackup(manager.verifyBackup(record.fileName))
+                        record
+                    }
                 }
                 selected = imported.fileName
-                "外部バックアップ取込完了: ${imported.fileName}"
+                "外部バックアップ取込完了: パスフレーズ復号検証済み / ${imported.fileName}"
             }
         }
     }
@@ -156,6 +195,7 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
         metadataByFile = withContext(Dispatchers.IO) { metadataStore.readAll() }
         rollbackInventory = withContext(Dispatchers.IO) { RestoreRollbackSafetyV086.inventory(appContext) }
         autoStatus = autoStatusStore.load()
+        driveSyncStatus = driveSyncStatusStore.load()
         autoSettings = autoSettingsStore.load()
         report = withContext(Dispatchers.IO) { manager.diagnose() }
         message = if (report?.healthy == true) "DB整合性は正常です" else "DB整合性エラーを確認してください"
@@ -165,6 +205,7 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 autoStatus = autoStatusStore.load()
+                driveSyncStatus = driveSyncStatusStore.load()
                 autoSettings = autoSettingsStore.load()
                 scope.launch {
                     rollbackInventory = withContext(Dispatchers.IO) { RestoreRollbackSafetyV086.inventory(appContext) }
@@ -269,19 +310,32 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
 
                         AppUpdateDiagnosticsPanelV090(appContext)
 
-                        Text("自動バックアップ", fontWeight = FontWeight.Bold, color = DpNavy)
+                        val independentStatus = BackupDriveIndependenceV146.snapshot(autoStatus, driveSyncStatus)
+                        Text("バックアップ状態（端末復元用）", fontWeight = FontWeight.Bold, color = DpNavy)
                         Text(
-                            "Z精算後: 常時有効 / 定期: ${if (autoSettings.periodicEnabled) "${autoSettings.cadence.displayName} ${autoSettings.preferredHour}時台" else "OFF"}",
+                            "自動バックアップ: Z精算後は常時有効 / 定期: ${if (autoSettings.periodicEnabled) "${autoSettings.cadence.displayName} ${autoSettings.preferredHour}時台" else "OFF"}",
                             color = DpNavy,
                             fontWeight = FontWeight.Bold,
                         )
-                        Text("最終結果: ${autoStatus.lastResult.displayName}", color = if (autoStatus.lastResult == AutoBackupResultState.FAILED || autoStatus.lastResult == AutoBackupResultState.SKIPPED_LOW_STORAGE) DpDanger else DpGreen)
+                        Text("最終結果: ${independentStatus.backupResult.displayName}", color = if (autoStatus.lastResult == AutoBackupResultState.FAILED || autoStatus.lastResult == AutoBackupResultState.SKIPPED_LOW_STORAGE) DpDanger else DpGreen)
                         Text("最終実行: ${autoStatus.lastCompletedAt?.let(::formatTime) ?: "未実行"}", fontSize = 13.sp)
                         Text("次回定期予定: ${autoStatus.nextScheduledAt?.let(::formatTime) ?: if (autoSettings.periodicEnabled) "再登録待ち" else "OFF"}", fontSize = 13.sp)
                         Text("保持: Z精算 ${autoSettings.zRetentionBusinessDays}営業日 / 定期 ${autoSettings.monthlyRetentionMonths}か月", fontSize = 13.sp)
                         autoStatus.lastReason?.let { Text("作成理由: ${it.displayName}", fontSize = 13.sp) }
                         autoStatus.lastRetentionResult?.let { Text("自動整理: $it", fontSize = 13.sp) }
                         autoStatus.lastError?.let { Text("エラー詳細: $it", color = DpDanger, fontSize = 13.sp) }
+                        Text("バックアップ成功/失敗は、Google Drive売上同期の結果とは独立して判定します。", color = Color.DarkGray, fontSize = 12.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Google Drive売上同期状態（売上管理アプリ交換用）", fontWeight = FontWeight.Bold, color = DpNavy)
+                        Text(
+                            "同期状態: ${independentStatus.driveStateLabel}",
+                            color = if (driveSyncStatus.blockedCategory != null || driveSyncStatus.permanentFailureCount > 0) DpDanger else DpNavy,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text("最終同期: ${driveSyncStatus.lastCompletedAt?.let(::formatTime) ?: "未実行"}", fontSize = 13.sp)
+                        Text("送信 ${driveSyncStatus.uploadedCount}件 / 既存 ${driveSyncStatus.duplicateCount}件 / 再試行 ${driveSyncStatus.retryCount}件 / 永久失敗 ${driveSyncStatus.permanentFailureCount}件", fontSize = 13.sp)
+                        Text("詳細: ${driveSyncStatus.lastMessage}", color = if (driveSyncStatus.blockedCategory != null) DpDanger else Color.DarkGray, fontSize = 12.sp)
+                        Text("※ 売上同期が成功していても、端末復元用バックアップの成功を意味しません。", color = Color.DarkGray, fontSize = 12.sp)
                         Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(
@@ -333,7 +387,7 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                             onClick = { context.startActivity(Intent(context, ExternalBackupSettingsActivity::class.java)) },
                             enabled = !busy,
                             modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Google Drive・USBへの外部自動保存を設定") }
+                        ) { Text("バックアップ外部保存先（Google Drive・USB）を設定") }
                     }
                 }
                 Card(
@@ -419,6 +473,32 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                             enabled = !busy,
                         ) { Text("ロールバック再検証") }
                         Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            backupPassphrase,
+                            { backupPassphrase = it },
+                            label = { Text("外部バックアップ用パスフレーズ") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            backupPassphraseConfirm,
+                            { backupPassphraseConfirm = it },
+                            label = { Text("パスフレーズ確認（外部保存時）") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            when {
+                                backupPassphrase.isEmpty() -> "外部保存・別端末取込にはパスフレーズが必要です。端末内には保存しません。"
+                                backupPassphraseConfirm.isNotEmpty() && backupPassphrase != backupPassphraseConfirm -> "確認用パスフレーズが一致しません"
+                                else -> "AES-256-GCM / PBKDF2-HMAC-SHA256 210,000回でportable鍵を保護します"
+                            },
+                            color = if (backupPassphraseConfirm.isNotEmpty() && backupPassphrase != backupPassphraseConfirm) DpDanger else Color.Gray,
+                            fontSize = 12.sp,
+                        )
+                        Spacer(Modifier.height(6.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(
                                 onClick = {
@@ -426,15 +506,15 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                                     pendingExport = file
                                     exportLauncher.launch(file)
                                 },
-                                enabled = !busy && selected != null,
+                                enabled = !busy && selected != null && backupPassphrase.isNotEmpty() && backupPassphrase == backupPassphraseConfirm,
                                 colors = ButtonDefaults.buttonColors(containerColor = DpBlue),
-                            ) { Text("外部へ保存") }
+                            ) { Text("外部へ暗号化保存") }
                             OutlinedButton(
                                 onClick = { importLauncher.launch(arrayOf("application/octet-stream", "application/zip", "application/x-zip-compressed")) },
-                                enabled = !busy && !pending.staged,
+                                enabled = !busy && !pending.staged && backupPassphrase.isNotEmpty(),
                             ) { Text("外部から取込") }
                             Text(
-                                "Google Drive・USB・端末フォルダを選択できます",
+                                "Google Drive・USB・端末フォルダをSAFで選択できます",
                                 color = Color.Gray,
                                 fontSize = 12.sp,
                                 modifier = Modifier.align(Alignment.CenterVertically),
@@ -451,29 +531,84 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Spacer(Modifier.height(8.dp))
+                        Text("復元方式（必須）", fontWeight = FontWeight.Bold, color = DpNavy)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { restoreMode = RestoreTerminalModeV136.SAME_TERMINAL },
+                                enabled = !busy && !pending.staged,
+                            ) { Text(if (restoreMode == RestoreTerminalModeV136.SAME_TERMINAL) "✓ 同一端末復旧" else "同一端末復旧") }
+                            OutlinedButton(
+                                onClick = { restoreMode = RestoreTerminalModeV136.SPARE_TERMINAL },
+                                enabled = !busy && !pending.staged,
+                            ) { Text(if (restoreMode == RestoreTerminalModeV136.SPARE_TERMINAL) "✓ 予備端末移行" else "予備端末移行") }
+                        }
+                        if (restoreMode == RestoreTerminalModeV136.SPARE_TERMINAL) {
+                            Text(
+                                "旧端末を停止し、バックアップ内店舗名とDrive/既存イベントの最大売上番号を確認してください。新terminalId/generationを発行します。",
+                                color = DpDanger,
+                                fontSize = 12.sp,
+                            )
+                            OutlinedTextField(
+                                spareStoreName,
+                                { spareStoreName = it.take(80) },
+                                label = { Text("店舗名を再入力") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            OutlinedTextField(
+                                spareRemoteMaxSaleId,
+                                { spareRemoteMaxSaleId = it.filter(Char::isDigit).take(18) },
+                                label = { Text("Drive ACK/既存イベント 最大売上番号（該当なしは0）") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            OutlinedButton(
+                                onClick = { oldTerminalStopped = !oldTerminalStopped },
+                                enabled = !busy && !pending.staged,
+                            ) { Text(if (oldTerminalStopped) "✓ 旧端末停止を確認済み" else "旧端末停止を確認する") }
+                        }
+                        Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(
                                 onClick = {
                                     val file = selected ?: return@OutlinedButton
+                                    val mode = restoreMode ?: return@OutlinedButton
                                     runTask {
-                                        val verified = withContext(Dispatchers.IO) { manager.verifyBackup(file) }
-                                        "検証成功: ${verified.fileName} / SHA-256 ${verified.manifest.databaseSha256.take(12)}…"
+                                        val preflight = withContext(Dispatchers.IO) {
+                                            if (mode == RestoreTerminalModeV136.SAME_TERMINAL) manager.preflightRestore(file)
+                                            else manager.preflightRestore(file, mode)
+                                        }
+                                        preflight.displayText()
                                     }
                                 },
-                                enabled = !busy && selected != null,
+                                enabled = !busy && selected != null && restoreMode != null,
                             ) { Text("検証") }
                             Button(
                                 onClick = {
                                     val file = selected ?: return@Button
+                                    val mode = restoreMode ?: return@Button
+                                    val request = RestoreTerminalMigrationRequestV136(
+                                        mode = mode,
+                                        confirmedStoreName = spareStoreName,
+                                        oldTerminalStopped = oldTerminalStopped,
+                                        remoteAckMaxSaleId = if (mode == RestoreTerminalModeV136.SPARE_TERMINAL) spareRemoteMaxSaleId.toLongOrNull() else null,
+                                    )
                                     runTask {
                                         val staged = withContext(Dispatchers.IO) {
-                                            RestoreReservationCoordinatorV116.stage(appContext, manager, file, pin)
+                                            if (mode == RestoreTerminalModeV136.SAME_TERMINAL) {
+                                                RestoreReservationCoordinatorV116.stage(appContext, manager, file, pin)
+                                            } else {
+                                                RestoreReservationCoordinatorV116.stage(appContext, manager, file, pin, request)
+                                            }
                                         }
                                         pin = ""
-                                        "復元予約: ${staged.backup.fileName}。アプリを完全終了して再起動してください。"
+                                        "復元予約: ${staged.backup.fileName} / ${staged.migrationPlan?.displaySummary().orEmpty()}。アプリを完全終了して再起動してください。"
                                     }
                                 },
-                                enabled = !busy && selected != null && pin.length >= 4 && report?.restoreReady == true && !pending.staged,
+                                enabled = !busy && selected != null && pin.length >= 4 && report?.restoreReady == true && !pending.staged &&
+                                    restoreMode != null && (restoreMode != RestoreTerminalModeV136.SPARE_TERMINAL ||
+                                    (spareStoreName.isNotBlank() && spareRemoteMaxSaleId.toLongOrNull() != null && oldTerminalStopped)),
                                 colors = ButtonDefaults.buttonColors(containerColor = DpDanger),
                             ) { Text("次回起動時に復元") }
                             OutlinedButton(

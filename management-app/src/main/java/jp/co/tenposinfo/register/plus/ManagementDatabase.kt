@@ -77,6 +77,7 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
         createFolderImportFilesTable(db)
         createDriveSyncFilesTable(db)
         createImportedJournalReplayGuardV117(db)
+        PlusAckOutboxV150.ensureSchema(db)
         createIndexes(db)
     }
 
@@ -100,6 +101,9 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
         if (oldVersion < 6) {
             ensureDriveRemoteVersionV119(db)
         }
+        if (oldVersion < 7) {
+            PlusAckOutboxV150.ensureSchema(db)
+        }
         require(newVersion <= DATABASE_VERSION) {
             "未対応のDB移行です: $oldVersion -> $newVersion"
         }
@@ -107,6 +111,7 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
 
     override fun onOpen(db: SQLiteDatabase) {
         super.onOpen(db)
+        PlusAckOutboxV150.ensureSchema(db)
         SalesJournalImportCompatibilityResetV124.ensureCurrent(appContext, db)
     }
 
@@ -227,6 +232,7 @@ class ManagementDatabase(context: Context) : SQLiteOpenHelper(
         const val DATABASE_NAME = "tsuguregi_plus.db"
         // v0.40-v0.45 cumulative-test baseline: DATABASE_VERSION = 4
         // v1.17-v1.18 cumulative-test baseline: const val DATABASE_VERSION = 5
-        const val DATABASE_VERSION = 6
+        // v1.19-v1.49 cumulative-test baseline: const val DATABASE_VERSION = 6
+        const val DATABASE_VERSION = 7
     }
 }

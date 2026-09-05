@@ -92,7 +92,7 @@ data class UnifiedPrintQueueSummary(
     val printing: Int,
     val discarded: Int,
 ) {
-    val actionRequired: Int get() = failed + retry
+    val actionRequired: Int get() = failed + retry + printing
     val active: Int get() = pending + retry + failed + printing
 
     companion object {
@@ -102,7 +102,7 @@ data class UnifiedPrintQueueSummary(
             retry = jobs.count { it.status == PrintJobStatus.RETRY },
             failed = jobs.count { it.status == PrintJobStatus.FAILED },
             completed = jobs.count { it.status == PrintJobStatus.COMPLETED },
-            printing = jobs.count { it.status == PrintJobStatus.PRINTING },
+            printing = jobs.count { PrintJobUncertainPolicyV136.isUncertain(it.status) },
             discarded = jobs.count { it.status == PrintJobStatus.DISCARDED },
         )
     }
@@ -166,11 +166,14 @@ object UnifiedPrintQueueFilterPolicy {
                 PrintJobStatus.PENDING,
                 PrintJobStatus.RETRY,
                 PrintJobStatus.FAILED,
+                PrintJobStatus.SENDING,
                 PrintJobStatus.PRINTING,
             )
             UnifiedPrintStatusFilter.ACTION_REQUIRED -> job.status in setOf(
                 PrintJobStatus.RETRY,
                 PrintJobStatus.FAILED,
+                PrintJobStatus.SENDING,
+                PrintJobStatus.PRINTING,
             )
             UnifiedPrintStatusFilter.ALL -> true
             UnifiedPrintStatusFilter.COMPLETED -> job.status == PrintJobStatus.COMPLETED
@@ -259,11 +262,14 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
     private val applicationContext = context.applicationContext
     private val salesDatabase = RegisterDatabase(applicationContext)
     private val documentStore = AdvancedOperationsStore(applicationContext)
+    private val uncertainSafetyStore = PrintJobUncertainSafetyStoreV136(applicationContext)
     private val settingsStore = AdminSettingsStore(applicationContext)
     private val monitoringStore = PrinterMonitoringStore(applicationContext)
+    private val documentPrintSettingsStore = DocumentPrintSettingsStoreV136(applicationContext)
 
     override fun close() {
         monitoringStore.close()
+        uncertainSafetyStore.close()
         settingsStore.close()
         documentStore.close()
         salesDatabase.close()
@@ -277,8 +283,21 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
         val saleJobs = salesDatabase.listPrintJobs(limitPerType).map { job ->
             val detail = salesDatabase.loadSaleDetail(job.saleId)
             val preview = detail?.let {
-                val receipt = ReceiptFactory.fromSale(it, reprint = it.summary.printCount > 0)
-                ReceiptRenderer.render(receipt, ReceiptPaper.fromWidth(job.paperWidthMm))
+                val receipt = ReceiptFactory.fromSale(
+                    it,
+                    reprint = ReceiptReprintPolicyV136.isReprint(
+                        jobCreatedAt = job.createdAt,
+                        saleCreatedAt = it.summary.createdAt,
+                        completedPrintCount = it.summary.printCount,
+                    ),
+                )
+                ReceiptRenderer.render(
+                    DocumentPrintSettingsPolicyV136.applyToReceipt(
+                        receipt,
+                        documentPrintSettingsStore.load(DocumentPrintKindV136.SALE_RECEIPT),
+                    ),
+                    ReceiptPaper.fromWidth(job.paperWidthMm),
+                )
             } ?: "売上 No.${job.saleId} の明細が見つかりません"
             UnifiedPrintJob(
                 key = "SALE:${job.id}",
@@ -341,7 +360,8 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
             when (job.status) {
                 PrintJobStatus.COMPLETED -> "完了済みジョブは再送できません。再印字を登録してください"
                 PrintJobStatus.DISCARDED -> "破棄済みジョブは再送できません"
-                PrintJobStatus.PRINTING -> "印刷中のジョブは操作できません"
+                PrintJobStatus.SENDING,
+                PrintJobStatus.PRINTING -> "印刷済みの可能性があるため直接再送できません"
                 else -> "このジョブは再送できません"
             }
         }
@@ -360,6 +380,27 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
             actor = actor,
         )
         "再試行待ちへ戻しました（Job.${job.sourceId}）"
+    }
+
+    fun resolveUncertainAsCompleted(
+        job: UnifiedPrintJob,
+        reason: String,
+        actor: String,
+    ): Result<String> = runCatching {
+        require(PrintJobUncertainPolicyV136.isUncertain(job.status)) { "印刷結果不明のジョブではありません" }
+        uncertainSafetyStore.resolveAsPrinted(job, reason, actor)
+        "完了扱いにしました（Job.${job.sourceId} / 印刷済みの可能性を担当者確認）"
+    }
+
+    fun reprintUncertain(
+        job: UnifiedPrintJob,
+        reason: String,
+        actor: String,
+    ): Result<String> = runCatching {
+        require(PrintJobUncertainPolicyV136.isUncertain(job.status)) { "印刷結果不明のジョブではありません" }
+        val newJobId = uncertainSafetyStore.createReprint(job, reason, actor)
+        AutomaticPrintScheduler.enqueueNow(applicationContext)
+        "再印刷を新規登録しました（元Job.${job.sourceId} → 新Job.$newJobId）"
     }
 
     fun discard(
@@ -458,14 +499,27 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
                 port = configuration.port,
                 waitMillis = configuration.timeoutMillis.toLong(),
             ) {
-                val gateway = TcpEscPosPrinterGateway(
+                val rawGateway = TcpEscPosPrinterGateway(
                     host = configuration.host,
                     port = configuration.port,
                     timeoutMillis = configuration.timeoutMillis,
                 )
                 when (job.type) {
-                    UnifiedPrintJobType.SALE_RECEIPT ->
-                        printSaleJob(job, configuration, gateway).getOrThrow()
+                    UnifiedPrintJobType.SALE_RECEIPT -> {
+                        val receiptGateway = ReceiptStampGatewayV136(
+                            context = applicationContext,
+                            delegate = rawGateway,
+                            paperWidthMm = job.paperWidthMm,
+                        )
+                        val deliveryGateway = DeliveryConfirmingPrinterGatewayV136(
+                            context = applicationContext,
+                            configuration = configuration.copy(paperWidthMm = job.paperWidthMm),
+                            kind = PrintDeliveryJobKindV136.SALE_RECEIPT,
+                            jobId = job.sourceId,
+                            delegate = receiptGateway,
+                        )
+                        printSaleJob(job, configuration, deliveryGateway).getOrThrow()
+                    }
 
                     UnifiedPrintJobType.REVERSAL_RECEIPT,
                     UnifiedPrintJobType.HELD_TICKET_PROVISIONAL,
@@ -478,7 +532,14 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
                         if (!UnifiedPrintJobActionPolicy.mayPrint(current.status)) {
                             throw IllegalStateException(printabilityError(current.status))
                         }
-                        documentStore.processDocumentPrint(job.sourceId, gateway).getOrThrow()
+                        val deliveryGateway = DeliveryConfirmingPrinterGatewayV136(
+                            context = applicationContext,
+                            configuration = configuration,
+                            kind = PrintDeliveryJobKindV136.DOCUMENT,
+                            jobId = job.sourceId,
+                            delegate = rawGateway,
+                        )
+                        documentStore.processDocumentPrint(job.sourceId, deliveryGateway).getOrThrow()
                         "${job.type.displayName}を送信しました（Job.${job.sourceId}）"
                     }
                 }
@@ -549,9 +610,19 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
             salesDatabase.markPrintFailed(claimed.id, "売上データが見つかりません", permanent = true)
             return Result.failure(IllegalArgumentException("売上データが見つかりません"))
         }
-        val receipt = ReceiptFactory.fromSale(detail, reprint = detail.summary.printCount > 0)
+        val receipt = ReceiptFactory.fromSale(
+            detail,
+            reprint = ReceiptReprintPolicyV136.isReprint(
+                jobCreatedAt = claimed.createdAt,
+                saleCreatedAt = detail.summary.createdAt,
+                completedPrintCount = detail.summary.printCount,
+            ),
+        )
         val payload = EscPosEncoder.encode(
-            data = receipt,
+            data = DocumentPrintSettingsPolicyV136.applyToReceipt(
+                receipt,
+                documentPrintSettingsStore.load(DocumentPrintKindV136.SALE_RECEIPT),
+            ),
             configuration = configuration.copy(paperWidthMm = claimed.paperWidthMm),
         )
         val result = gateway.send(payload)
@@ -580,7 +651,8 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
     private fun printabilityError(status: PrintJobStatus): String = when (status) {
         PrintJobStatus.COMPLETED -> "完了済みジョブは送信できません。再印字を登録してください"
         PrintJobStatus.DISCARDED -> "破棄済みジョブは送信できません"
-        PrintJobStatus.PRINTING -> "印刷中のジョブは操作できません"
+        PrintJobStatus.SENDING,
+                PrintJobStatus.PRINTING -> "印刷済みの可能性があるため直接再送できません"
         else -> "このジョブは送信できません"
     }
 
@@ -590,8 +662,9 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
 
     private fun actionPriority(status: PrintJobStatus): Int = when (status) {
         PrintJobStatus.FAILED -> 6
+        PrintJobStatus.SENDING -> 7
         PrintJobStatus.RETRY -> 5
-        PrintJobStatus.PRINTING -> 4
+        PrintJobStatus.PRINTING -> 7
         PrintJobStatus.PENDING -> 3
         PrintJobStatus.COMPLETED -> 2
         PrintJobStatus.DISCARDED -> 1

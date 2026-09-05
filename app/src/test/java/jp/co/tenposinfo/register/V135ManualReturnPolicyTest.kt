@@ -150,8 +150,12 @@ class V135ManualReturnPolicyTest {
         assertTrue(manualReturn.contains("put(\"document_type\", OperationDocumentType.REVERSAL_RECEIPT.name)"))
         assertTrue(manualReturn.contains("put(\"reference_id\", -id)"))
         assertTrue(manualReturn.contains("put(\"payload_text\", preview)"))
-        assertTrue(advanced.contains("gateway.send(TextEscPosEncoder.encode(job.payloadText))"))
+        assertTrue(advanced.contains("val renderedPayload = TextEscPosEncoder.encode(job.payloadText)"))
+        assertTrue(advanced.contains("gateway.send(renderedPayload)"))
         assertTrue(unified.contains("OperationDocumentType.REVERSAL_RECEIPT -> UnifiedPrintJobType.REVERSAL_RECEIPT"))
-        assertTrue(worker.contains("operations.processDocumentPrint(candidate.sourceId, gateway).isSuccess"))
+        // v1.36 §16.9 keeps the stored payload path, but wraps the raw TCP gateway so delivery result is confirmed/persisted before completion.
+        assertTrue(worker.contains("kind = PrintDeliveryJobKindV136.DOCUMENT"))
+        assertTrue(worker.contains("delegate = rawGateway"))
+        assertTrue(worker.contains("operations.processDocumentPrint(candidate.sourceId, deliveryGateway).isSuccess"))
     }
 }
