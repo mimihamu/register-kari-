@@ -256,6 +256,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         val mixedTaxPolicy = taxSettings.mixedTaxPolicy
         val printerConfiguration = PrinterPaperSettingPolicy.currentConfiguration(applicationContext)
         val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
+        val saleReceiptSetting = DocumentPrintSettingsStoreV136(applicationContext)
+            .load(DocumentPrintKindV136.SALE_RECEIPT)
         TaxEngine.validateMixedTax(items, mixedTaxPolicy)
         val summary = TaxEngine.calculate(items)
         require(paymentState.remaining(summary.grossAmount) == 0L) { "Payment is incomplete" }
@@ -377,6 +379,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 payments = paymentState.allocations,
                 changeAmount = paymentState.changeAmount,
                 settings = taxSettings,
+                printerConfiguration = printerConfiguration.copy(paperWidthMm = paperWidthMm),
+                documentPrintSetting = saleReceiptSetting,
             )
             if (normalizedCommitKey != null) {
                 SaleCommitIdempotencySchema.record(

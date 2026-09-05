@@ -19,7 +19,10 @@ class V151Syn003FrozenPrintSnapshotTest {
             "normalSha256",
             "reprintSha256",
         ).forEach { marker -> assertTrue("missing $marker", frozen.contains(marker)) }
-        assertTrue(frozen.contains("PrinterConfigurationRegistry.current()"))
+        assertFalse(frozen.contains("PrinterConfigurationRegistry.current()"))
+        assertTrue(frozen.contains("printerConfiguration.copy("))
+        assertTrue(frozen.contains("documentPrintSettingSnapshot"))
+        assertTrue(frozen.contains("DocumentPrintSettingsPolicyV136.applyToReceipt"))
         assertTrue(frozen.contains("EscPosEncoder.encode(receipt(false), configuration)"))
         assertTrue(frozen.contains("EscPosEncoder.encode(receipt(true), configuration)"))
     }
@@ -29,6 +32,9 @@ class V151Syn003FrozenPrintSnapshotTest {
         assertTrue(snapshot.contains("Syn003FrozenPrintPayloadV136.freezeSalePayload"))
         assertTrue(snapshot.contains("ContentValues().apply { put(\"payload_json\", payload) }"))
         assertTrue(snapshot.contains("put(\"payload_json\", payload)"))
+        val database = source("RegisterDatabase.kt")
+        assertTrue(database.contains("printerConfiguration = printerConfiguration.copy(paperWidthMm = paperWidthMm)"))
+        assertTrue(database.contains("documentPrintSetting = saleReceiptSetting"))
     }
 
     @Test fun reprintJobInheritsOriginalSaleJournalSnapshot() {

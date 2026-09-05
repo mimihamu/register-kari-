@@ -25,24 +25,31 @@ object Syn003FrozenPrintPayloadV136 {
         payments: List<PaymentAllocation>,
         changeAmount: Long,
         settings: TaxInvoiceSettings,
+        printerConfiguration: PrinterConfiguration,
+        documentPrintSetting: DocumentPrintSettingV136,
     ): String {
         if (payloadJson.contains("\"syn003FrozenPrint\"")) return payloadJson
-        val configuration = PrinterConfigurationRegistry.current() ?: PrinterConfiguration()
+        val configuration = printerConfiguration.copy(
+            paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm),
+        )
         val issuer = settings.issuer
-        fun receipt(reprint: Boolean) = ReceiptData(
-            storeName = issuer.storeName,
-            storeAddress = issuer.address,
-            storePhone = issuer.phone,
-            registrationNumber = issuer.registrationNumber,
-            saleId = saleId,
-            createdAt = issuedAt,
-            operatorName = operatorName,
-            items = items,
-            taxSummary = taxSummary,
-            payments = payments,
-            changeAmount = changeAmount,
-            reprint = reprint,
-            invoiceAggregationBasis = settings.invoiceAggregationBasis,
+        fun receipt(reprint: Boolean): ReceiptData = DocumentPrintSettingsPolicyV136.applyToReceipt(
+            ReceiptData(
+                storeName = issuer.storeName,
+                storeAddress = issuer.address,
+                storePhone = issuer.phone,
+                registrationNumber = issuer.registrationNumber,
+                saleId = saleId,
+                createdAt = issuedAt,
+                operatorName = operatorName,
+                items = items,
+                taxSummary = taxSummary,
+                payments = payments,
+                changeAmount = changeAmount,
+                reprint = reprint,
+                invoiceAggregationBasis = settings.invoiceAggregationBasis,
+            ),
+            documentPrintSetting,
         )
         val normalBytes = EscPosEncoder.encode(receipt(false), configuration)
         val reprintBytes = EscPosEncoder.encode(receipt(true), configuration)
@@ -53,10 +60,20 @@ object Syn003FrozenPrintPayloadV136 {
             append("\"layoutVersion\":\"").append(LAYOUT_VERSION).append("\",")
             append("\"printerProfileSnapshot\":{")
             append("\"profile\":\"").append(configuration.profile.name).append("\",")
+            append("\"charsetName\":\"").append(escape(configuration.profile.charsetName)).append("\",")
+            append("\"codeTable\":").append(configuration.profile.codeTable).append(',')
+            append("\"kanjiCodeSystem\":")
+                .append(configuration.profile.kanjiCodeSystem?.toString() ?: "null").append(',')
             append("\"paperWidthMm\":").append(configuration.paperWidthMm).append(',')
+            append("\"printableDotWidth\":").append(configuration.printableDotWidth).append(',')
             append("\"cutMode\":\"").append(configuration.cutMode.name).append("\",")
             append("\"feedLines\":").append(configuration.feedLines)
             append("},")
+            append("\"documentPrintSettingSnapshot\":{")
+            append("\"copies\":").append(DocumentPrintSettingsPolicyV136.normalizeCopies(documentPrintSetting.copies)).append(',')
+            append("\"header\":\"").append(escape(documentPrintSetting.header.trim())).append("\",")
+            append("\"footer\":\"")
+                .append(escape(ReceiptFooterMessagePolicyV136.migrateLegacy(documentPrintSetting.footer))).append("\"},")
             append("\"normalSha256\":\"").append(PrintDocumentSnapshotV136.sha256Hex(normalBytes)).append("\",")
             append("\"reprintSha256\":\"").append(PrintDocumentSnapshotV136.sha256Hex(reprintBytes)).append("\",")
             append("\"").append(NORMAL_KEY).append("\":\"")
