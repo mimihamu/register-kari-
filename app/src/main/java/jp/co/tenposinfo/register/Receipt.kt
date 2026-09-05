@@ -396,19 +396,25 @@ class PrintQueueProcessor(
             database.markPrintFailed(job.id, "売上データが見つかりません", permanent = true)
             return false
         }
-        val receipt = ReceiptFactory.fromSale(
-            detail,
-            reprint = ReceiptReprintPolicyV136.isReprint(
-                jobCreatedAt = job.createdAt,
-                saleCreatedAt = detail.summary.createdAt,
-                completedPrintCount = detail.summary.printCount,
-            ),
+        val isReprint = ReceiptReprintPolicyV136.isReprint(
+            jobCreatedAt = job.createdAt,
+            saleCreatedAt = detail.summary.createdAt,
+            completedPrintCount = detail.summary.printCount,
         )
-        val configuredSnapshot = (PrinterConfigurationRegistry.current() ?: PrinterConfiguration()).copy(
-            paperWidthMm = job.paperWidthMm,
-        )
-        val configuredReceipt = DocumentPrintSettingsPolicyV136.applyToReceipt(receipt, saleReceiptSetting)
-        val renderedPayload = EscPosEncoder.encode(configuredReceipt, configuredSnapshot)
+        val renderedPayload = Syn003FrozenPrintPayloadV136.loadJobPayload(
+            db = database.readableDatabase,
+            jobId = job.id,
+            saleId = job.saleId,
+            reprint = isReprint,
+        ) ?: run {
+            // Legacy rows created before SYN-003 keep the historical rendering fallback.
+            val receipt = ReceiptFactory.fromSale(detail, reprint = isReprint)
+            val configuredSnapshot = (PrinterConfigurationRegistry.current() ?: PrinterConfiguration()).copy(
+                paperWidthMm = job.paperWidthMm,
+            )
+            val configuredReceipt = DocumentPrintSettingsPolicyV136.applyToReceipt(receipt, saleReceiptSetting)
+            EscPosEncoder.encode(configuredReceipt, configuredSnapshot)
+        }
         PrintDocumentSnapshotSchemaV136.recordRenderedHash(
             db = database.writableDatabase,
             table = "print_jobs",

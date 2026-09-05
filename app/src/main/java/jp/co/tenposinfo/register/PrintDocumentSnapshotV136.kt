@@ -34,10 +34,21 @@ object PrintDocumentSnapshotV136 {
             "SELECT payload_json FROM sales_journal WHERE event_type = ? AND aggregate_id = ? ORDER BY created_at DESC LIMIT 1",
             arrayOf(JournalEventType.SALE.name, saleId.toString()),
         ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else "{}" }
-        val payload = enrichSalePayload(
+        val structuredPayload = enrichSalePayload(
             basePayloadJson = basePayload,
             saleId = saleId,
             businessDate = businessDate,
+            issuedAt = issuedAt,
+            operatorName = operatorName,
+            items = items,
+            taxSummary = taxSummary,
+            payments = payments,
+            changeAmount = changeAmount,
+            settings = settings,
+        )
+        val payload = Syn003FrozenPrintPayloadV136.freezeSalePayload(
+            payloadJson = structuredPayload,
+            saleId = saleId,
             issuedAt = issuedAt,
             operatorName = operatorName,
             items = items,
@@ -204,7 +215,16 @@ object PrintDocumentSnapshotSchemaV136 {
             """
             UPDATE print_jobs
                SET payload_version = ${PrintDocumentSnapshotV136.SCHEMA_VERSION},
-                   payload_json = '{"schema":"${PrintDocumentSnapshotV136.SALE_JOB_REFERENCE_SCHEMA}","schemaVersion":${PrintDocumentSnapshotV136.SCHEMA_VERSION},"saleId":' || sale_id || ',"paperWidthMm":' || paper_width_mm || '}'
+                   payload_json = COALESCE(
+                       (SELECT j.payload_json
+                          FROM sales_journal j
+                         WHERE j.event_type = '${JournalEventType.SALE.name}'
+                           AND j.aggregate_id = CAST(print_jobs.sale_id AS TEXT)
+                           AND instr(j.payload_json, '"syn003FrozenPrint"') > 0
+                         ORDER BY j.created_at DESC
+                         LIMIT 1),
+                       '{"schema":"${PrintDocumentSnapshotV136.SALE_JOB_REFERENCE_SCHEMA}","schemaVersion":${PrintDocumentSnapshotV136.SCHEMA_VERSION},"saleId":' || sale_id || ',"paperWidthMm":' || paper_width_mm || '}'
+                   )
              WHERE payload_json IS NULL OR trim(payload_json) = ''
             """.trimIndent(),
         )
@@ -218,7 +238,16 @@ object PrintDocumentSnapshotSchemaV136 {
             BEGIN
                 UPDATE print_jobs
                    SET payload_version = ${PrintDocumentSnapshotV136.SCHEMA_VERSION},
-                       payload_json = '{"schema":"${PrintDocumentSnapshotV136.SALE_JOB_REFERENCE_SCHEMA}","schemaVersion":${PrintDocumentSnapshotV136.SCHEMA_VERSION},"saleId":' || NEW.sale_id || ',"paperWidthMm":' || NEW.paper_width_mm || '}'
+                       payload_json = COALESCE(
+                           (SELECT j.payload_json
+                              FROM sales_journal j
+                             WHERE j.event_type = '${JournalEventType.SALE.name}'
+                               AND j.aggregate_id = CAST(NEW.sale_id AS TEXT)
+                               AND instr(j.payload_json, '"syn003FrozenPrint"') > 0
+                             ORDER BY j.created_at DESC
+                             LIMIT 1),
+                           '{"schema":"${PrintDocumentSnapshotV136.SALE_JOB_REFERENCE_SCHEMA}","schemaVersion":${PrintDocumentSnapshotV136.SCHEMA_VERSION},"saleId":' || NEW.sale_id || ',"paperWidthMm":' || NEW.paper_width_mm || '}'
+                       )
                  WHERE id = NEW.id;
             END
             """.trimIndent(),
