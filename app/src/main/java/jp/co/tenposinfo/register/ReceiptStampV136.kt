@@ -49,6 +49,8 @@ data class ReceiptStampSettingsV136(
     val brightness: Int = 0,
     val threshold: Int = 128,
     val dither: ReceiptStampDitherV136 = ReceiptStampDitherV136.THRESHOLD,
+    val rotationDegrees: Int = 0,
+    val cropPercent: Int = 0,
     val stampVersion: Long = 0L,
     val sourceName: String = "",
 )
@@ -107,8 +109,17 @@ object ReceiptStampPolicyV136 {
     fun normalize(settings: ReceiptStampSettingsV136): ReceiptStampSettingsV136 = settings.copy(
         brightness = settings.brightness.coerceIn(MIN_BRIGHTNESS, MAX_BRIGHTNESS),
         threshold = settings.threshold.coerceIn(MIN_THRESHOLD, MAX_THRESHOLD),
+        rotationDegrees = normalizeRotation(settings.rotationDegrees),
+        cropPercent = settings.cropPercent.coerceIn(0, MAX_CROP_PERCENT),
         sourceName = settings.sourceName.trim().take(120),
     )
+
+    const val MAX_CROP_PERCENT = 40
+
+    fun normalizeRotation(degrees: Int): Int {
+        val normalized = ((degrees % 360) + 360) % 360
+        return if (normalized in setOf(0, 90, 180, 270)) normalized else 0
+    }
 
     fun validateSource(byteCount: Int, width: Int, height: Int) {
         require(byteCount in 1..MAX_SOURCE_BYTES) { "画像は2MB以下のPNG/JPEGを選択してください" }
@@ -126,6 +137,57 @@ object ReceiptStampPolicyV136 {
     }
 }
 
+object ReceiptStampTransformV136 {
+    fun apply(image: ArgbImageV136, settings: ReceiptStampSettingsV136): ArgbImageV136 {
+        val normalized = ReceiptStampPolicyV136.normalize(settings)
+        val cropX = (image.width * normalized.cropPercent / 100.0).roundToInt()
+            .coerceIn(0, (image.width - 1) / 2)
+        val cropY = (image.height * normalized.cropPercent / 100.0).roundToInt()
+            .coerceIn(0, (image.height - 1) / 2)
+        val croppedWidth = image.width - cropX * 2
+        val croppedHeight = image.height - cropY * 2
+        val cropped = IntArray(croppedWidth * croppedHeight)
+        for (y in 0 until croppedHeight) {
+            val sourceOffset = (y + cropY) * image.width + cropX
+            image.pixels.copyInto(cropped, y * croppedWidth, sourceOffset, sourceOffset + croppedWidth)
+        }
+        val source = ArgbImageV136(croppedWidth, croppedHeight, cropped)
+        return rotate(source, normalized.rotationDegrees)
+    }
+
+    private fun rotate(source: ArgbImageV136, degrees: Int): ArgbImageV136 = when (degrees) {
+        0 -> source
+        90 -> {
+            val width = source.height
+            val height = source.width
+            val out = IntArray(width * height)
+            for (y in 0 until source.height) for (x in 0 until source.width) {
+                val newX = source.height - 1 - y
+                val newY = x
+                out[newY * width + newX] = source.pixels[y * source.width + x]
+            }
+            ArgbImageV136(width, height, out)
+        }
+        180 -> {
+            val out = IntArray(source.pixels.size)
+            for (index in source.pixels.indices) out[source.pixels.lastIndex - index] = source.pixels[index]
+            ArgbImageV136(source.width, source.height, out)
+        }
+        270 -> {
+            val width = source.height
+            val height = source.width
+            val out = IntArray(width * height)
+            for (y in 0 until source.height) for (x in 0 until source.width) {
+                val newX = y
+                val newY = source.width - 1 - x
+                out[newY * width + newX] = source.pixels[y * source.width + x]
+            }
+            ArgbImageV136(width, height, out)
+        }
+        else -> error("unsupported rotation: $degrees")
+    }
+}
+
 object ReceiptStampRasterizerV136 {
     private val bayer4 = intArrayOf(
         0, 8, 2, 10,
@@ -140,11 +202,12 @@ object ReceiptStampRasterizerV136 {
         paper: ReceiptPaper,
     ): MonochromeRasterV136 {
         val normalized = ReceiptStampPolicyV136.normalize(settings)
-        val (targetWidth, targetHeight) = ReceiptStampPolicyV136.fitDimensions(image.width, image.height, paper)
-        val pixels = if (targetWidth == image.width && targetHeight == image.height) {
-            image.pixels.copyOf()
+        val transformed = ReceiptStampTransformV136.apply(image, normalized)
+        val (targetWidth, targetHeight) = ReceiptStampPolicyV136.fitDimensions(transformed.width, transformed.height, paper)
+        val pixels = if (targetWidth == transformed.width && targetHeight == transformed.height) {
+            transformed.pixels.copyOf()
         } else {
-            scaleNearest(image, targetWidth, targetHeight)
+            scaleNearest(transformed, targetWidth, targetHeight)
         }
         val luminance = DoubleArray(pixels.size) { index ->
             adjustedLuminance(pixels[index], normalized.brightness)
@@ -283,6 +346,8 @@ class ReceiptStampSettingsStoreV136(context: Context) {
                     preferences.getString("dither", ReceiptStampDitherV136.THRESHOLD.name).orEmpty(),
                 )
             }.getOrDefault(ReceiptStampDitherV136.THRESHOLD),
+            rotationDegrees = preferences.getInt("rotation_degrees", 0),
+            cropPercent = preferences.getInt("crop_percent", 0),
             stampVersion = preferences.getLong("stamp_version", 0L).coerceAtLeast(0L),
             sourceName = preferences.getString("source_name", "").orEmpty(),
         )
@@ -396,6 +461,8 @@ class ReceiptStampSettingsStoreV136(context: Context) {
             .putInt("brightness", settings.brightness)
             .putInt("threshold", settings.threshold)
             .putString("dither", settings.dither.name)
+            .putInt("rotation_degrees", settings.rotationDegrees)
+            .putInt("crop_percent", settings.cropPercent)
             .putLong("stamp_version", settings.stampVersion)
             .putString("source_name", settings.sourceName)
             .apply()
@@ -487,6 +554,8 @@ fun ReceiptStampSettingsPanelV136() {
     var brightnessText by remember(revision) { mutableStateOf(loaded.brightness.toString()) }
     var thresholdText by remember(revision) { mutableStateOf(loaded.threshold.toString()) }
     var dither by remember(revision) { mutableStateOf(loaded.dither) }
+    var rotationDegrees by remember(revision) { mutableIntStateOf(loaded.rotationDegrees) }
+    var cropText by remember(revision) { mutableStateOf(loaded.cropPercent.toString()) }
     var message by remember { mutableStateOf("") }
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -502,14 +571,24 @@ fun ReceiptStampSettingsPanelV136() {
 
     val brightness = brightnessText.toIntOrNull()
     val threshold = thresholdText.toIntOrNull()
-    val draft = if (brightness != null && threshold != null) {
-        loaded.copy(enabled = enabled, brightness = brightness, threshold = threshold, dither = dither)
+    val cropPercent = cropText.toIntOrNull()
+    val draft = if (brightness != null && threshold != null && cropPercent != null) {
+        loaded.copy(
+            enabled = enabled,
+            brightness = brightness,
+            threshold = threshold,
+            dither = dither,
+            rotationDegrees = rotationDegrees,
+            cropPercent = cropPercent,
+        )
     } else {
         null
     }
     val validDraft = draft?.takeIf {
         it.brightness in ReceiptStampPolicyV136.MIN_BRIGHTNESS..ReceiptStampPolicyV136.MAX_BRIGHTNESS &&
-            it.threshold in ReceiptStampPolicyV136.MIN_THRESHOLD..ReceiptStampPolicyV136.MAX_THRESHOLD
+            it.threshold in ReceiptStampPolicyV136.MIN_THRESHOLD..ReceiptStampPolicyV136.MAX_THRESHOLD &&
+            it.rotationDegrees in setOf(0, 90, 180, 270) &&
+            it.cropPercent in 0..ReceiptStampPolicyV136.MAX_CROP_PERCENT
     }
     val preview58 = remember(revision, validDraft) {
         validDraft?.let { runCatching { store.previewBitmap(it, ReceiptPaper.MM58) }.getOrNull() }
@@ -549,6 +628,28 @@ fun ReceiptStampSettingsPanelV136() {
                 Text("変更は次回印刷から反映", style = MaterialTheme.typography.bodySmall)
             }
         }
+        Text("切抜き・回転", fontWeight = FontWeight.Bold)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            listOf(0, 90, 180, 270).forEach { degrees ->
+                OutlinedButton(
+                    onClick = { rotationDegrees = degrees },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(if (rotationDegrees == degrees) "● ${degrees}°" else "${degrees}°")
+                }
+            }
+        }
+        OutlinedTextField(
+            value = cropText,
+            onValueChange = { cropText = it.filter(Char::isDigit).take(2) },
+            label = { Text("中央切抜き（四辺 0～40%）") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            "四辺を同率で切抜いた後に回転し、その結果を58/80mmの印字可能幅へ縮小します。プレビューと実印刷は同じ変換結果です。",
+            style = MaterialTheme.typography.bodySmall,
+        )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
                 value = brightnessText,
@@ -580,7 +681,7 @@ fun ReceiptStampSettingsPanelV136() {
             }
         }
         if (validDraft == null) {
-            Text("明るさは-100～100、閾値は0～255で入力してください", color = MaterialTheme.colorScheme.error)
+            Text("明るさ-100～100、閾値0～255、切抜き0～40%で入力してください", color = MaterialTheme.colorScheme.error)
         }
         if (preview58 != null) {
             Text("58mm実幅プレビュー（最大384dot）", fontWeight = FontWeight.Bold)
