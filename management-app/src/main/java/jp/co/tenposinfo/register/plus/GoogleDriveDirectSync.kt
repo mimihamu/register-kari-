@@ -49,7 +49,31 @@ enum class GoogleDriveSyncFailureCategory(val retryable: Boolean) {
 class GoogleDriveSyncApiException(
     val responseCode: Int,
     val responseBody: String,
+    val retryAfterMillis: Long? = null,
 ) : IOException("Google Drive API HTTP $responseCode")
+
+object GoogleDriveSyncRetryPolicyV152 {
+    const val MAX_ATTEMPTS = 5
+    private const val BASE_DELAY_MS = 1_000L
+    private const val MAX_DELAY_MS = 60_000L
+
+    fun shouldRetry(error: Throwable): Boolean = when (GoogleDriveSyncErrorPolicy.classify(error)) {
+        GoogleDriveSyncFailureCategory.RATE_LIMITED,
+        GoogleDriveSyncFailureCategory.NETWORK,
+        GoogleDriveSyncFailureCategory.SERVER,
+        -> true
+        else -> false
+    }
+
+    fun delayMillis(attempt: Int, retryAfterMillis: Long?, jitterUnit: Double): Long {
+        require(attempt >= 1)
+        val exponent = (attempt - 1).coerceAtMost(6)
+        val exponential = (BASE_DELAY_MS * (1L shl exponent)).coerceAtMost(MAX_DELAY_MS)
+        val normalizedJitter = jitterUnit.coerceIn(0.0, 1.0)
+        val jittered = (exponential * (0.5 + normalizedJitter)).toLong().coerceAtLeast(1L)
+        return maxOf(retryAfterMillis ?: 0L, jittered).coerceAtMost(MAX_DELAY_MS)
+    }
+}
 
 class GoogleDriveSyncAuthorizationRequiredException(message: String) : IllegalStateException(message)
 
@@ -196,6 +220,7 @@ data class GoogleDriveSyncRemotePage(
     val files: List<GoogleDriveSyncRemoteFile>,
     val nextPageToken: String?,
     val incompleteSearch: Boolean,
+    val newStartPageToken: String? = null,
 )
 
 class GoogleDriveSyncRestClient(private val accessToken: String) {
@@ -235,6 +260,59 @@ class GoogleDriveSyncRestClient(private val accessToken: String) {
             files = result,
             nextPageToken = root.optString("nextPageToken").takeIf(String::isNotBlank),
             incompleteSearch = root.optBoolean("incompleteSearch", false),
+        )
+    }
+
+    // SYN004_DRIVE_CHANGES_API: normal incremental synchronization is driven by
+    // the Drive Changes API. The initial full listing is retained only as a baseline bootstrap.
+    fun getStartPageToken(): String {
+        val root = JSONObject(
+            execute(
+                "GET",
+                "$DRIVE_CHANGES_START_TOKEN_URL?supportsAllDrives=false&fields=startPageToken",
+            ),
+        )
+        return root.getString("startPageToken").also { require(it.isNotBlank()) }
+    }
+
+    fun listJournalChangesPage(pageToken: String): GoogleDriveSyncRemotePage {
+        val fields = "nextPageToken,newStartPageToken,changes(removed,fileId,file(id,name,mimeType,trashed,modifiedTime,version,size,appProperties))"
+        val url = buildString {
+            append(DRIVE_CHANGES_URL)
+            append("?pageToken=").append(encode(pageToken))
+            append("&spaces=drive&includeRemoved=true&restrictToMyDrive=true")
+            append("&pageSize=$PAGE_SIZE")
+            append("&fields=").append(encode(fields))
+        }
+        val root = JSONObject(execute("GET", url))
+        val changes = root.optJSONArray("changes") ?: JSONArray()
+        val result = ArrayList<GoogleDriveSyncRemoteFile>(changes.length())
+        for (index in 0 until changes.length()) {
+            val change = changes.getJSONObject(index)
+            if (change.optBoolean("removed", false)) continue
+            val item = change.optJSONObject("file") ?: continue
+            if (item.optBoolean("trashed", false) || item.optString("mimeType") != "application/json") continue
+            val properties = linkedMapOf<String, String>()
+            item.optJSONObject("appProperties")?.let { source ->
+                source.keys().forEach { key -> properties[key] = source.optString(key) }
+            }
+            if (properties["app"] != APP || properties["role"] != ROLE) continue
+            val id = item.optString("id").ifBlank { change.optString("fileId") }
+            if (id.isBlank()) continue
+            result += GoogleDriveSyncRemoteFile(
+                id = id,
+                name = item.optString("name").ifBlank { "$id.json" },
+                modifiedTime = item.optString("modifiedTime"),
+                version = item.optString("version").takeIf(String::isNotBlank),
+                size = item.optString("size").toLongOrNull(),
+                appProperties = properties,
+            )
+        }
+        return GoogleDriveSyncRemotePage(
+            files = result,
+            nextPageToken = root.optString("nextPageToken").takeIf(String::isNotBlank),
+            incompleteSearch = false,
+            newStartPageToken = root.optString("newStartPageToken").takeIf(String::isNotBlank),
         )
     }
 
@@ -311,6 +389,32 @@ class GoogleDriveSyncRestClient(private val accessToken: String) {
         requestBody: ByteArray? = null,
         contentType: String? = null,
     ): ByteArray {
+        var attempt = 1
+        while (true) {
+            try {
+                return executeBytesOnce(method, url, requestBody, contentType)
+            } catch (error: Throwable) {
+                if (attempt >= GoogleDriveSyncRetryPolicyV152.MAX_ATTEMPTS || !GoogleDriveSyncRetryPolicyV152.shouldRetry(error)) {
+                    throw error
+                }
+                val retryAfter = (error as? GoogleDriveSyncApiException)?.retryAfterMillis
+                val delay = GoogleDriveSyncRetryPolicyV152.delayMillis(
+                    attempt = attempt,
+                    retryAfterMillis = retryAfter,
+                    jitterUnit = java.util.concurrent.ThreadLocalRandom.current().nextDouble(),
+                )
+                Thread.sleep(delay)
+                attempt += 1
+            }
+        }
+    }
+
+    private fun executeBytesOnce(
+        method: String,
+        url: String,
+        requestBody: ByteArray?,
+        contentType: String?,
+    ): ByteArray {
         val connection = URL(url).openConnection() as HttpURLConnection
         return try {
             connection.requestMethod = method
@@ -329,7 +433,11 @@ class GoogleDriveSyncRestClient(private val accessToken: String) {
                 ?.use { it.readBytes() }
                 ?: ByteArray(0)
             if (code !in 200..299) {
-                throw GoogleDriveSyncApiException(code, bytes.toString(Charsets.UTF_8))
+                throw GoogleDriveSyncApiException(
+                    responseCode = code,
+                    responseBody = bytes.toString(Charsets.UTF_8),
+                    retryAfterMillis = retryAfterMillis(connection.getHeaderField("Retry-After")),
+                )
             }
             bytes
         } finally {
@@ -337,11 +445,22 @@ class GoogleDriveSyncRestClient(private val accessToken: String) {
         }
     }
 
+    private fun retryAfterMillis(value: String?): Long? {
+        val text = value?.trim()?.takeIf(String::isNotEmpty) ?: return null
+        text.toLongOrNull()?.let { seconds -> return (seconds.coerceAtLeast(0L) * 1_000L).coerceAtMost(60_000L) }
+        return runCatching {
+            val retryAt = java.time.ZonedDateTime.parse(text, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli()
+            (retryAt - System.currentTimeMillis()).coerceAtLeast(0L).coerceAtMost(60_000L)
+        }.getOrNull()
+    }
+
     private fun propertyQuery(key: String, value: String): String =
         " and appProperties has { key='${quoted(key)}' and value='${quoted(value)}' }"
 
     companion object {
         const val DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files"
+        const val DRIVE_CHANGES_URL = "https://www.googleapis.com/drive/v3/changes"
+        const val DRIVE_CHANGES_START_TOKEN_URL = "https://www.googleapis.com/drive/v3/changes/startPageToken"
         const val DRIVE_UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files"
         const val APP = "tsuguregi"
         const val ROLE = "sales-journal"
@@ -586,8 +705,12 @@ class GoogleDriveDirectSyncRepository(
                 val client = GoogleDriveSyncRestClient(accessToken)
                 // Retry any ACK committed by a previous run before reading more journal files.
                 PlusAckOutboxV150.deliverPending(initialDb, client)
+                val persistedChangesToken = if (forceReimport) null else loadChangesPageToken(initialDb)
+                var changesMode = persistedChangesToken != null
+                // Capture before the initial full scan so writes racing with the baseline cannot be lost.
+                val baselineChangesToken = if (changesMode) null else client.getStartPageToken()
                 val visitedPageTokens = mutableSetOf<String>()
-                var pageToken: String? = null
+                var pageToken: String? = persistedChangesToken
                 var listed = 0
                 var downloaded = 0
                 var unchanged = 0
@@ -597,10 +720,15 @@ class GoogleDriveDirectSyncRepository(
                 var errors = 0
 
                 do {
-                    if (pageToken != null && !visitedPageTokens.add(pageToken)) {
+                    val visitKey = "${if (changesMode) "changes" else "files"}:${pageToken ?: "first"}"
+                    if (!visitedPageTokens.add(visitKey)) {
                         throw GoogleDriveSyncIncompleteListingException("Google Driveのpage tokenが循環しました")
                     }
-                    val page = client.listJournalPage(pageToken)
+                    val page = if (changesMode) {
+                        client.listJournalChangesPage(checkNotNull(pageToken))
+                    } else {
+                        client.listJournalPage(pageToken)
+                    }
                     if (page.incompleteSearch) {
                         throw GoogleDriveSyncIncompleteListingException("Google Driveの一覧検索が不完全なため再試行します")
                     }
@@ -696,6 +824,9 @@ class GoogleDriveDirectSyncRepository(
                             runToken = runToken,
                             result = result,
                         )
+                        if (changesMode && !page.newStartPageToken.isNullOrBlank()) {
+                            persistChangesPageToken(pageDb, page.newStartPageToken)
+                        }
                         pageDb.setTransactionSuccessful()
                         committedPageResult = result
                     } finally {
@@ -716,6 +847,10 @@ class GoogleDriveDirectSyncRepository(
                         result = pageResult,
                     )
                     pageToken = page.nextPageToken
+                    if (!changesMode && pageToken == null) {
+                        changesMode = true
+                        pageToken = baselineChangesToken
+                    }
                 } while (pageToken != null)
 
                 val result = GoogleDriveDirectSyncResult(
@@ -748,6 +883,25 @@ class GoogleDriveDirectSyncRepository(
 
     override fun close() {
         database.close()
+    }
+
+    private fun loadChangesPageToken(db: SQLiteDatabase): String? = db.rawQuery(
+        "SELECT page_token FROM $CURSOR_TABLE WHERE singleton_id=1",
+        null,
+    ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0).takeIf(String::isNotBlank) else null }
+
+    private fun persistChangesPageToken(db: SQLiteDatabase, pageToken: String) {
+        require(pageToken.isNotBlank())
+        db.insertWithOnConflict(
+            CURSOR_TABLE,
+            null,
+            ContentValues().apply {
+                put("singleton_id", 1)
+                put("page_token", pageToken)
+                put("updated_at", System.currentTimeMillis())
+            },
+            SQLiteDatabase.CONFLICT_REPLACE,
+        )
     }
 
     private fun known(fileId: String): KnownDriveFile? = database.readableDatabase.rawQuery(
@@ -806,6 +960,15 @@ class GoogleDriveDirectSyncRepository(
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS idx_drive_sync_files_modified ON $TABLE(modified_time, last_processed_at DESC)",
         )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $CURSOR_TABLE (
+                singleton_id INTEGER PRIMARY KEY CHECK(singleton_id=1),
+                page_token TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            """.trimIndent(),
+        )
     }
 
     private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
@@ -817,6 +980,7 @@ class GoogleDriveDirectSyncRepository(
 
     companion object {
         const val TABLE = "drive_sync_files"
+        const val CURSOR_TABLE = "drive_changes_cursor"
     }
 }
 
