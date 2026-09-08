@@ -3,6 +3,7 @@ package jp.co.tenposinfo.register
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
@@ -29,6 +30,7 @@ class V156ReceiptStampSnapshotContractTest {
         assertNotEquals(base.stampVersion, imageChanged.stampVersion)
         assertNotEquals(base.stampVersion, modeChanged.stampVersion)
         assertTrue(base.prefixSha256.matches(Regex("[0-9a-f]{64}")))
+        assertEquals("AQI=", base.prefixBase64())
     }
 
     @Test fun saleFinalizationOwnsStampSnapshotAndTransportDoesNotRestamp() {
@@ -41,6 +43,7 @@ class V156ReceiptStampSnapshotContractTest {
         assertTrue(db.contains("stampSnapshot = stampSnapshot"))
         assertTrue(frozen.contains("\\\"stampSnapshot\\\""))
         assertTrue(frozen.contains("sourceImageSha256"))
+        assertTrue(frozen.contains("prefixBase64"))
         assertTrue(frozen.contains("stampSnapshot.applyToPayload"))
         assertTrue(receipt.contains("suppressStoreHeader"))
         assertFalse(automatic.contains("ReceiptStampGatewayV136("))
