@@ -1,0 +1,38 @@
+name: v1.36 SCR-720 text stamp apply
+
+on:
+  push:
+    branches:
+      - develop/v1.36
+    paths:
+      - .github/v136-scr720-text-stamp-apply.py
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.36
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply SCR-720 text stamp integration
+        run: python .github/v136-scr720-text-stamp-apply.py
+      - name: Commit integration
+        run: |
+          if git diff --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/jp/co/tenposinfo/register/AutomaticPrintWorker.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/UnifiedPrintQueue.kt \
+                  app/src/main/java/jp/co/tenposinfo/register/DocumentPrintSettingsV136.kt
+          git commit -m "v1.36 SCR-720 wire text stamp printing"
+          git push origin HEAD:develop/v1.36
