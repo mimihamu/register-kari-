@@ -506,22 +506,12 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
                 )
                 when (job.type) {
                     UnifiedPrintJobType.SALE_RECEIPT -> {
-                        val receiptGateway = ReceiptStampGatewayV136(
-                            context = applicationContext,
-                            delegate = rawGateway,
-                            paperWidthMm = job.paperWidthMm,
-                        )
-                        val textStampGateway = ReceiptTextStampGatewayV136(
-                            context = applicationContext,
-                            delegate = receiptGateway,
-                            configuration = configuration.copy(paperWidthMm = job.paperWidthMm),
-                        )
                         val deliveryGateway = DeliveryConfirmingPrinterGatewayV136(
                             context = applicationContext,
                             configuration = configuration.copy(paperWidthMm = job.paperWidthMm),
                             kind = PrintDeliveryJobKindV136.SALE_RECEIPT,
                             jobId = job.sourceId,
-                            delegate = textStampGateway,
+                            delegate = rawGateway,
                         )
                         printSaleJob(job, configuration, deliveryGateway).getOrThrow()
                     }

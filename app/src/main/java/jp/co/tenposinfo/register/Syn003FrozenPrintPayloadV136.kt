@@ -27,6 +27,7 @@ object Syn003FrozenPrintPayloadV136 {
         settings: TaxInvoiceSettings,
         printerConfiguration: PrinterConfiguration,
         documentPrintSetting: DocumentPrintSettingV136,
+        stampSnapshot: ReceiptStampSnapshotV136 = ReceiptStampSnapshotV136.none(),
     ): String {
         if (payloadJson.contains("\"syn003FrozenPrint\"")) return payloadJson
         val configuration = printerConfiguration.copy(
@@ -48,11 +49,12 @@ object Syn003FrozenPrintPayloadV136 {
                 changeAmount = changeAmount,
                 reprint = reprint,
                 invoiceAggregationBasis = settings.invoiceAggregationBasis,
+                suppressStoreHeader = stampSnapshot.prefixBytes.isNotEmpty(),
             ),
             documentPrintSetting,
         )
-        val normalBytes = EscPosEncoder.encode(receipt(false), configuration)
-        val reprintBytes = EscPosEncoder.encode(receipt(true), configuration)
+        val normalBytes = stampSnapshot.applyToPayload(EscPosEncoder.encode(receipt(false), configuration))
+        val reprintBytes = stampSnapshot.applyToPayload(EscPosEncoder.encode(receipt(true), configuration))
         val documentId = "SALE_RECEIPT:$saleId:$issuedAt"
         val frozen = buildString {
             append("\"syn003FrozenPrint\":{")
@@ -69,6 +71,14 @@ object Syn003FrozenPrintPayloadV136 {
             append("\"cutMode\":\"").append(configuration.cutMode.name).append("\",")
             append("\"feedLines\":").append(configuration.feedLines)
             append("},")
+            append("\"stampSnapshot\":{")
+            append("\"stampVersion\":").append(stampSnapshot.stampVersion).append(',')
+            append("\"headerMode\":\"").append(stampSnapshot.headerMode.name).append("\",")
+            append("\"imageStampVersion\":").append(stampSnapshot.imageStampVersion).append(',')
+            append("\"textStampVersion\":").append(stampSnapshot.textStampVersion).append(',')
+            append("\"sourceImageSha256\":\"").append(stampSnapshot.sourceImageSha256).append("\",")
+            append("\"prefixSha256\":\"").append(stampSnapshot.prefixSha256).append("\",")
+            append("\"prefixBase64\":\"").append(stampSnapshot.prefixBase64()).append("\"},")
             append("\"documentPrintSettingSnapshot\":{")
             append("\"copies\":").append(DocumentPrintSettingsPolicyV136.normalizeCopies(documentPrintSetting.copies)).append(',')
             append("\"header\":\"").append(escape(documentPrintSetting.header.trim())).append("\",")

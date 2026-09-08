@@ -71,6 +71,7 @@ data class ReceiptData(
     val documentCopies: Int = 1,
     val documentHeader: String = "",
     val documentFooter: String = ReceiptFooterMessagePolicyV136.DEFAULT_MESSAGE,
+    val suppressStoreHeader: Boolean = false,
 )
 
 enum class ReceiptPaper(val widthMm: Int, val charsPerLine: Int) {
@@ -146,9 +147,11 @@ object ReceiptRenderer {
         val lines = mutableListOf<String>()
         if (data.reprint) lines += center("【再発行】", width)
         data.documentHeader.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.forEach { lines += fit(it, width) }
-        lines += center(data.storeName, width)
-        if (data.storeAddress.isNotBlank()) lines += center(data.storeAddress, width)
-        if (data.storePhone.isNotBlank()) lines += center("TEL ${data.storePhone}", width)
+        if (!data.suppressStoreHeader) {
+            lines += center(data.storeName, width)
+            if (data.storeAddress.isNotBlank()) lines += center(data.storeAddress, width)
+            if (data.storePhone.isNotBlank()) lines += center("TEL ${data.storePhone}", width)
+        }
         lines += center("領収書／レシート", width)
         lines += separator(width, '=')
         lines += "No.${ReceiptNumberV136.format(data.saleId)}  ${formatDate(data.createdAt)}"

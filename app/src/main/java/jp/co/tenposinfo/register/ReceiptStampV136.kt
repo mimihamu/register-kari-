@@ -358,6 +358,20 @@ class ReceiptStampSettingsStoreV136(context: Context) {
 
     fun hasImage(): Boolean = sourceFile.isFile && sourceFile.length() > 0L
 
+    fun sourceSha256(): String? {
+        if (!hasImage()) return null
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        sourceFile.inputStream().use { input ->
+            val buffer = ByteArray(16 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
     fun save(settings: ReceiptStampSettingsV136): ReceiptStampSettingsV136 {
         val normalized = ReceiptStampPolicyV136.normalize(settings)
         require(!normalized.enabled || hasImage()) { "画像スタンプを有効にするにはPNG/JPEG画像を選択してください" }

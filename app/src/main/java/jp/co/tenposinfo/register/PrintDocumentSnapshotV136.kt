@@ -31,6 +31,7 @@ object PrintDocumentSnapshotV136 {
         settings: TaxInvoiceSettings,
         printerConfiguration: PrinterConfiguration,
         documentPrintSetting: DocumentPrintSettingV136,
+        stampSnapshot: ReceiptStampSnapshotV136 = ReceiptStampSnapshotV136.none(),
     ): String {
         val basePayload = db.rawQuery(
             "SELECT payload_json FROM sales_journal WHERE event_type = ? AND aggregate_id = ? ORDER BY created_at DESC LIMIT 1",
@@ -60,6 +61,7 @@ object PrintDocumentSnapshotV136 {
             settings = settings,
             printerConfiguration = printerConfiguration,
             documentPrintSetting = documentPrintSetting,
+            stampSnapshot = stampSnapshot,
         )
         db.update(
             "sales_journal",
