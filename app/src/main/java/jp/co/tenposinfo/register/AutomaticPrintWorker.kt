@@ -196,12 +196,17 @@ class AutomaticPrintWorker(
                                     delegate = rawGateway,
                                     paperWidthMm = width,
                                 )
+                                val textStampGateway = ReceiptTextStampGatewayV136(
+                                    context = applicationContext,
+                                    delegate = receiptGateway,
+                                    configuration = configuration.copy(paperWidthMm = width),
+                                )
                                 val deliveryGateway = DeliveryConfirmingPrinterGatewayV136(
                                     context = applicationContext,
                                     configuration = configuration.copy(paperWidthMm = width),
                                     kind = PrintDeliveryJobKindV136.SALE_RECEIPT,
                                     jobId = candidate.sourceId,
-                                    delegate = receiptGateway,
+                                    delegate = textStampGateway,
                                 )
                                 PrintQueueProcessor(database, deliveryGateway, saleReceiptSetting).processNext()
                             }

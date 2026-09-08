@@ -407,6 +407,7 @@ fun DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled: Boolean) {
         ) { Text("文書別設定を保存") }
         if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall)
         if (selected == DocumentPrintKindV136.SALE_RECEIPT) {
+            ReceiptTextStampSettingsPanelV136()
             ReceiptStampSettingsPanelV136()
         }
     }
