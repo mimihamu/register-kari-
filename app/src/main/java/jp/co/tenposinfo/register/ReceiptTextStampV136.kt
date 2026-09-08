@@ -160,7 +160,7 @@ object ReceiptTextStampEscPosV136 {
             ) - 1
             val size = ((scale shl 4) or scale).toByte()
             output.write(byteArrayOf(0x1B, 0x61, line.alignment.escPosValue.toByte()))
-            output.write(byteArrayOf(0x1B, 0x45, if (line.bold) 1 else 0))
+            output.write(byteArrayOf(0x1B, 0x45, (if (line.bold) 1 else 0).toByte()))
             output.write(byteArrayOf(0x1D, 0x21, size))
             output.write(line.text.toByteArray(charset))
             output.write(0x0A)
