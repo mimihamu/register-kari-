@@ -1,0 +1,45 @@
+name: v1.36 CI clean-test fix
+
+on:
+  push:
+    branches:
+      - develop/v1.36
+
+permissions:
+  contents: write
+
+jobs:
+  patch-build-workflow:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: develop/v1.36
+          fetch-depth: 0
+
+      - name: Patch cumulative unit-test command and self-remove
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/build-apk.yml')
+          text = path.read_text()
+          old = '      - name: Run cumulative unit tests\n        run: gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest :management-app:testDebugUnitTest\n'
+          new = '      - name: Run cumulative unit tests\n        run: gradle --no-daemon clean :app:testDebugUnitTest :customer-display:testDebugUnitTest :management-app:testDebugUnitTest\n'
+          if old not in text:
+              raise SystemExit('expected cumulative unit-test command not found')
+          if text.count(old) != 1:
+              raise SystemExit('expected cumulative unit-test command must occur exactly once')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          git rm .github/workflows/v136-ci-clean-test-fix.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/build-apk.yml
+          git diff --cached --check
+          grep -Fq 'run: gradle --no-daemon clean :app:testDebugUnitTest :customer-display:testDebugUnitTest :management-app:testDebugUnitTest' .github/workflows/build-apk.yml
+          git commit -m 'ci: clean before cumulative unit tests'
+          git push origin HEAD:develop/v1.36
