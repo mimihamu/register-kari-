@@ -121,15 +121,15 @@ class V136ReceiptStampToneTest {
     }
 
     @Test
-    fun settingsUiAndBothAutomaticAndManualSalePathsUseStampGateway() {
+    fun settingsUiRemainsAndTransportPathsDoNotRestampFrozenSales() {
         val settingsUi = File("src/main/java/jp/co/tenposinfo/register/DocumentPrintSettingsV136.kt").readText()
         val automatic = File("src/main/java/jp/co/tenposinfo/register/AutomaticPrintWorker.kt").readText()
         val manual = File("src/main/java/jp/co/tenposinfo/register/UnifiedPrintQueue.kt").readText()
         val stampSource = File("src/main/java/jp/co/tenposinfo/register/ReceiptStampV136.kt").readText()
 
         assertTrue(settingsUi.contains("ReceiptStampSettingsPanelV136()"))
-        assertTrue(automatic.contains("ReceiptStampGatewayV136("))
-        assertTrue(manual.contains("ReceiptStampGatewayV136("))
+        assertFalse(automatic.contains("ReceiptStampGatewayV136("))
+        assertFalse(manual.contains("ReceiptStampGatewayV136("))
         assertTrue(stampSource.contains("PNGまたはJPEG"))
         assertTrue(stampSource.contains("透過背景は白"))
         assertTrue(stampSource.contains("MM58_MAX_DOTS = 384"))
