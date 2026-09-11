@@ -24,17 +24,17 @@ jobs:
           p = Path('app/src/main/java/jp/co/tenposinfo/register/Syn003FrozenPrintPayloadV136.kt')
           s = p.read_text()
           old = '''        val issuer = settings.issuer
-          fun receipt(reprint: Boolean): ReceiptData = DocumentPrintSettingsPolicyV136.applyToReceipt('''
+          fun receipt(reprint: Boolean): ReceiptData = DocumentPrintSettingsPolicyV136.applyToReceipt('''.replace('          fun', '        fun')
           new = '''        val issuer = settings.issuer
           val stampPlacement = DocumentStampPlacementPolicyV136.normalize(
               DocumentPrintKindV136.SALE_RECEIPT,
               documentPrintSetting.stampPlacement,
           )
-          fun receipt(reprint: Boolean): ReceiptData = DocumentPrintSettingsPolicyV136.applyToReceipt('''
+          fun receipt(reprint: Boolean): ReceiptData = DocumentPrintSettingsPolicyV136.applyToReceipt('''.replace('          val', '        val').replace('              ', '            ').replace('          )', '        )').replace('          fun', '        fun')
           if old not in s:
               raise SystemExit('issuer/receipt anchor missing')
           s = s.replace(old, new, 1)
-          old = '''                suppressStoreHeader = stampSnapshot.prefixBytes.isNotEmpty(),'''
+          old = '                suppressStoreHeader = stampSnapshot.prefixBytes.isNotEmpty(),'
           new = '''                suppressStoreHeader = stampSnapshot.prefixBytes.isNotEmpty() &&
                       stampPlacement != DocumentStampPlacementV136.NONE,'''
           if old not in s:
@@ -44,7 +44,7 @@ jobs:
               DocumentPrintKindV136.SALE_RECEIPT,
               documentPrintSetting.stampPlacement,
           )
-          val normalBytes'''
+          val normalBytes'''.replace('              ', '            ').replace('          )', '        )').replace('          val normalBytes', '        val normalBytes')
           if duplicate not in s:
               raise SystemExit('duplicate placement anchor missing')
           s = s.replace(duplicate, '        val normalBytes', 1)
