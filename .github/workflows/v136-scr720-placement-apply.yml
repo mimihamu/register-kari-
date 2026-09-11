@@ -1,0 +1,32 @@
+name: Apply v1.36 SCR-720 document placement
+
+on:
+  push:
+    branches:
+      - develop/v1.36
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: develop/v1.36
+          fetch-depth: 0
+
+      - name: Apply patch
+        run: python .github/v136-scr720-placement-apply.py
+
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat(v1.36): honor SCR-720 document stamp placement"
+          git push origin HEAD:develop/v1.36
