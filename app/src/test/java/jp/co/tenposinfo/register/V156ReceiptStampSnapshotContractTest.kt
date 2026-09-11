@@ -1,12 +1,12 @@
 package jp.co.tenposinfo.register
 
 import java.io.File
-import kotlin.test.Test
-import kotlin.test.assertContentEquals
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNotEquals
-import kotlin.test.assertTrue
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
 
 class V156ReceiptStampSnapshotContractTest {
     @Test fun textImageBothSelectExactDeterministicPrefix() {
@@ -19,7 +19,7 @@ class V156ReceiptStampSnapshotContractTest {
         )
         common.forEach { (mode, expected) ->
             val snapshot = ReceiptStampSnapshotV136.compose(mode, image, text, 7L, 9L, "a".repeat(64))
-            assertContentEquals(expected, snapshot.prefixBytes)
+            assertArrayEquals(expected, snapshot.prefixBytes)
         }
     }
 
