@@ -1,0 +1,59 @@
+name: Fix v1.36 SCR-720 placement suppression
+
+on:
+  push:
+    branches: [develop/v1.36]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/v1.36
+          fetch-depth: 0
+      - name: Patch and self-clean
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('app/src/main/java/jp/co/tenposinfo/register/Syn003FrozenPrintPayloadV136.kt')
+          s = p.read_text()
+          old = '''        val issuer = settings.issuer
+          fun receipt(reprint: Boolean): ReceiptData = DocumentPrintSettingsPolicyV136.applyToReceipt('''
+          new = '''        val issuer = settings.issuer
+          val stampPlacement = DocumentStampPlacementPolicyV136.normalize(
+              DocumentPrintKindV136.SALE_RECEIPT,
+              documentPrintSetting.stampPlacement,
+          )
+          fun receipt(reprint: Boolean): ReceiptData = DocumentPrintSettingsPolicyV136.applyToReceipt('''
+          if old not in s:
+              raise SystemExit('issuer/receipt anchor missing')
+          s = s.replace(old, new, 1)
+          old = '''                suppressStoreHeader = stampSnapshot.prefixBytes.isNotEmpty(),'''
+          new = '''                suppressStoreHeader = stampSnapshot.prefixBytes.isNotEmpty() &&
+                      stampPlacement != DocumentStampPlacementV136.NONE,'''
+          if old not in s:
+              raise SystemExit('suppress header anchor missing')
+          s = s.replace(old, new, 1)
+          duplicate = '''        val stampPlacement = DocumentStampPlacementPolicyV136.normalize(
+              DocumentPrintKindV136.SALE_RECEIPT,
+              documentPrintSetting.stampPlacement,
+          )
+          val normalBytes'''
+          if duplicate not in s:
+              raise SystemExit('duplicate placement anchor missing')
+          s = s.replace(duplicate, '        val normalBytes', 1)
+          p.write_text(s)
+          Path('.github/workflows/v136-scr720-placement-fix.yml').unlink()
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(v1.36): keep receipt issuer header when stamp placement is none"
+          git push origin HEAD:develop/v1.36
