@@ -21,8 +21,10 @@ data class ReceiptStampSnapshotV136(
     val prefixSha256: String
         get() = if (prefixBytes.isEmpty()) "" else PrintDocumentSnapshotV136.sha256Hex(prefixBytes)
 
-    fun applyToPayload(payload: ByteArray): ByteArray =
-        ReceiptStampPayloadComposerV136.prependToEachDocument(payload, prefixBytes)
+    fun applyToPayload(
+        payload: ByteArray,
+        placement: DocumentStampPlacementV136 = DocumentStampPlacementV136.TOP,
+    ): ByteArray = DocumentStampPayloadComposerV136.apply(payload, prefixBytes, placement)
 
     fun prefixBase64(): String = Base64.getEncoder().encodeToString(prefixBytes)
 

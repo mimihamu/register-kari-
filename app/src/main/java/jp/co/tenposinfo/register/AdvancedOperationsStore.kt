@@ -845,13 +845,15 @@ class AdvancedOperationsStore(context: Context) {
             return Result.failure(IllegalStateException("印刷ジョブの状態が変更されたため送信を開始できませんでした"))
         }
         val renderedPayload = TextEscPosEncoder.encode(job.payloadText)
+        val stampSnapshot = DocumentStampJobSchemaV136.load(db, jobId)
+        val finalPayload = stampSnapshot.applyToPayload(renderedPayload)
         PrintDocumentSnapshotSchemaV136.recordRenderedHash(
             db = db,
             table = "document_print_jobs",
             jobId = jobId,
-            payload = renderedPayload,
+            payload = finalPayload,
         )
-        val result = gateway.send(renderedPayload)
+        val result = gateway.send(finalPayload)
         return result.fold(
             onSuccess = {
                 val updated = db.update(
@@ -1135,6 +1137,7 @@ class AdvancedOperationsStore(context: Context) {
             )
             """.trimIndent(),
         )
+        DocumentStampJobSchemaV136.ensure(db)
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_business_sessions_status ON business_sessions(status, opened_at)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_reversal_items_sale_item ON reversal_items(sale_item_id)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_document_jobs_status ON document_print_jobs(status, created_at)")

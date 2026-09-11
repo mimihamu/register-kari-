@@ -137,6 +137,7 @@ internal data class ReceiptVoucherDocumentData(
     val supplementary: Boolean = sequenceCount > 1,
     val reprintedAt: Long? = null,
     val reprintedBy: String? = null,
+    val suppressIssuerHeader: Boolean = false,
 )
 
 internal object ReceiptVoucherRenderer {
@@ -146,9 +147,11 @@ internal object ReceiptVoucherRenderer {
     fun render(data: ReceiptVoucherDocumentData, paper: ReceiptPaper): String {
         val width = paper.charsPerLine
         val lines = mutableListOf<String>()
-        lines += center(data.issuer.storeName, width)
-        if (data.issuer.address.isNotBlank()) lines += center(data.issuer.address, width)
-        if (data.issuer.phone.isNotBlank()) lines += center(data.issuer.phone, width)
+        if (!data.suppressIssuerHeader) {
+            lines += center(data.issuer.storeName, width)
+            if (data.issuer.address.isNotBlank()) lines += center(data.issuer.address, width)
+            if (data.issuer.phone.isNotBlank()) lines += center(data.issuer.phone, width)
+        }
         lines += center("【領収書】", width)
         if (data.reprintedAt != null) lines += center("【再発行】", width)
         if (data.supplementary) lines += center("【$NOT_QUALIFIED_LABEL】", width)
@@ -174,7 +177,7 @@ internal object ReceiptVoucherRenderer {
         }
         lines += fit("元売上レシート No.${data.saleId} と関連する領収書です", width)
         lines += fit("発行担当 ${data.operatorName}", width)
-        if (!data.supplementary && data.issuer.registrationNumber.isNotBlank()) {
+        if (!data.supplementary && !data.suppressIssuerHeader && data.issuer.registrationNumber.isNotBlank()) {
             lines += fit("登録番号 ${data.issuer.registrationNumber}", width)
         }
         return lines.joinToString("\n")
@@ -257,6 +260,15 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
         val documentPrintSetting = DocumentPrintSettingsStoreV136(appContext).load(
             DocumentPrintKindV136.RECEIPT_VOUCHER,
         )
+        val documentStampSnapshot = if (documentPrintSetting.autoPrintEnabled) {
+            DocumentStampJobSchemaV136.capture(
+                context = appContext,
+                paperWidthMm = paperWidthMm,
+                setting = documentPrintSetting,
+            )
+        } else {
+            DocumentStampJobSnapshotV136.none()
+        }
         var result: ReceiptVoucherIssueResult? = null
 
         db.beginTransaction()
@@ -324,6 +336,7 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
                             issuer = issuer,
                             batchId = batchId,
                             supplementary = plan.copies > 1,
+                            suppressIssuerHeader = documentStampSnapshot.hasStamp,
                         ),
                         ReceiptPaper.fromWidth(paperWidthMm),
                     )
@@ -341,6 +354,7 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
                                 paperWidthMm,
                                 decoratedPayload,
                                 now + offsetBase + copyIndex,
+                                documentStampSnapshot,
                             )
                         }
                     }
@@ -398,6 +412,11 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
         val documentPrintSetting = DocumentPrintSettingsStoreV136(appContext).load(
             DocumentPrintKindV136.RECEIPT_VOUCHER,
         )
+        val documentStampSnapshot = DocumentStampJobSchemaV136.capture(
+            context = appContext,
+            paperWidthMm = paperWidthMm,
+            setting = documentPrintSetting,
+        )
         val payload = ReceiptVoucherRenderer.render(
             ReceiptVoucherDocumentData(
                 issuanceId = record.id,
@@ -414,6 +433,7 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
                 supplementary = record.sequenceCount > 1,
                 reprintedAt = now,
                 reprintedBy = actor,
+                suppressIssuerHeader = documentStampSnapshot.hasStamp,
             ),
             ReceiptPaper.fromWidth(paperWidthMm),
         )
@@ -423,7 +443,15 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
         try {
             val printJobIds = buildList {
                 kotlin.repeat(DocumentPrintSettingsPolicyV136.normalizeCopies(documentPrintSetting.copies)) { copyIndex ->
-                    add(insertDocumentPrintJob(record.id, paperWidthMm, decoratedPayload, now + copyIndex))
+                    add(
+                        insertDocumentPrintJob(
+                            record.id,
+                            paperWidthMm,
+                            decoratedPayload,
+                            now + copyIndex,
+                            documentStampSnapshot,
+                        ),
+                    )
                 }
             }
             val printJobId = printJobIds.first()
@@ -513,6 +541,7 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
         paperWidthMm: Int,
         payload: String,
         now: Long,
+        stampSnapshot: DocumentStampJobSnapshotV136,
     ): Long = db.insertOrThrow(
         "document_print_jobs",
         null,
@@ -524,6 +553,7 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
             put("attempt_count", 0)
             putNull("last_error")
             put("payload_text", payload)
+            DocumentStampJobSchemaV136.putInto(this, stampSnapshot)
             put("created_at", now)
             put("updated_at", now)
         },
@@ -597,6 +627,7 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
             """.trimIndent(),
         )
         ensureBatchLifecycleSchema()
+        DocumentStampJobSchemaV136.ensure(db)
         OperationAuditSchemaV136.ensure(db)
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_receipt_voucher_sale ON receipt_voucher_issuances(sale_id, created_at)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_receipt_voucher_reprints ON receipt_voucher_reprints(issuance_id, created_at)")

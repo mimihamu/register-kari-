@@ -53,8 +53,18 @@ object Syn003FrozenPrintPayloadV136 {
             ),
             documentPrintSetting,
         )
-        val normalBytes = stampSnapshot.applyToPayload(EscPosEncoder.encode(receipt(false), configuration))
-        val reprintBytes = stampSnapshot.applyToPayload(EscPosEncoder.encode(receipt(true), configuration))
+        val stampPlacement = DocumentStampPlacementPolicyV136.normalize(
+            DocumentPrintKindV136.SALE_RECEIPT,
+            documentPrintSetting.stampPlacement,
+        )
+        val normalBytes = stampSnapshot.applyToPayload(
+            EscPosEncoder.encode(receipt(false), configuration),
+            stampPlacement,
+        )
+        val reprintBytes = stampSnapshot.applyToPayload(
+            EscPosEncoder.encode(receipt(true), configuration),
+            stampPlacement,
+        )
         val documentId = "SALE_RECEIPT:$saleId:$issuedAt"
         val frozen = buildString {
             append("\"syn003FrozenPrint\":{")
@@ -81,6 +91,7 @@ object Syn003FrozenPrintPayloadV136 {
             append("\"prefixBase64\":\"").append(stampSnapshot.prefixBase64()).append("\"},")
             append("\"documentPrintSettingSnapshot\":{")
             append("\"copies\":").append(DocumentPrintSettingsPolicyV136.normalizeCopies(documentPrintSetting.copies)).append(',')
+            append("\"stampPlacement\":\"").append(stampPlacement.name).append("\",")
             append("\"header\":\"").append(escape(documentPrintSetting.header.trim())).append("\",")
             append("\"footer\":\"")
                 .append(escape(ReceiptFooterMessagePolicyV136.migrateLegacy(documentPrintSetting.footer))).append("\"},")

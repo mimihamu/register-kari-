@@ -43,6 +43,7 @@ data class DocumentPrintSettingV136(
     val copies: Int = 1,
     val header: String = "",
     val footer: String = "",
+    val stampPlacement: DocumentStampPlacementV136 = DocumentStampPlacementV136.NONE,
 )
 
 /**
@@ -173,6 +174,17 @@ class DocumentPrintSettingsStoreV136(context: Context) {
             } else {
                 storedFooter
             },
+            stampPlacement = DocumentStampPlacementPolicyV136.normalize(
+                kind,
+                runCatching {
+                    DocumentStampPlacementV136.valueOf(
+                        preferences.getString(
+                            "${kind.storageKey}.stamp_placement",
+                            DocumentStampPlacementPolicyV136.defaultFor(kind).name,
+                        ).orEmpty(),
+                    )
+                }.getOrDefault(DocumentStampPlacementPolicyV136.defaultFor(kind)),
+            ),
         )
     }
 
@@ -190,6 +202,10 @@ class DocumentPrintSettingsStoreV136(context: Context) {
             )
             .putString("${kind.storageKey}.header", setting.header.trim().take(200))
             .putString("${kind.storageKey}.footer", normalizedFooter)
+            .putString(
+                "${kind.storageKey}.stamp_placement",
+                DocumentStampPlacementPolicyV136.normalize(kind, setting.stampPlacement).name,
+            )
             .apply()
     }
 }
@@ -244,6 +260,7 @@ fun DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled: Boolean) {
     var copies by remember(selected, revision) { mutableIntStateOf(loaded.copies) }
     var header by remember(selected, revision) { mutableStateOf(loaded.header) }
     var footer by remember(selected, revision) { mutableStateOf(loaded.footer) }
+    var stampPlacement by remember(selected, revision) { mutableStateOf(loaded.stampPlacement) }
     var previewPaper by remember { mutableStateOf(ReceiptPaper.MM58) }
     var message by remember { mutableStateOf("") }
     val effectiveAutoPrint = if (selected == DocumentPrintKindV136.SALE_RECEIPT) {
@@ -261,6 +278,7 @@ fun DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled: Boolean) {
         copies = copies,
         header = header,
         footer = footer,
+        stampPlacement = stampPlacement,
     )
     val previewResult = runCatching {
         DocumentPrintPreviewV136.render(selected, draftSetting, previewPaper)
@@ -347,6 +365,28 @@ fun DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled: Boolean) {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
         }
+        if (DocumentStampPlacementPolicyV136.supports(selected)) {
+            Spacer(Modifier.height(6.dp))
+            Text("店名スタンプ配置（SCR-720）", fontWeight = FontWeight.Bold)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                DocumentStampPlacementV136.entries.forEach { placement ->
+                    OutlinedButton(
+                        onClick = { stampPlacement = placement },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(if (stampPlacement == placement) "● ${placement.displayName}" else placement.displayName)
+                    }
+                }
+            }
+            Text(
+                if (selected == DocumentPrintKindV136.SALE_RECEIPT) {
+                    "初期値: 上端。売上確定時のスタンプsnapshotへ固定します。"
+                } else {
+                    "初期値: 下端。領収書ジョブ作成時のスタンプsnapshotへ固定します。"
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
 
         Spacer(Modifier.height(8.dp))
         Text("印刷プレビュー（SCR-640・保存前）", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -394,6 +434,7 @@ fun DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled: Boolean) {
                             copies = copies,
                             header = header,
                             footer = footer,
+                            stampPlacement = stampPlacement,
                         ),
                     )
                 }.onSuccess {
