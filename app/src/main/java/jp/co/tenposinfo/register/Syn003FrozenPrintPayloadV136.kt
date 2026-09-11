@@ -34,6 +34,10 @@ object Syn003FrozenPrintPayloadV136 {
             paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm),
         )
         val issuer = settings.issuer
+        val stampPlacement = DocumentStampPlacementPolicyV136.normalize(
+            DocumentPrintKindV136.SALE_RECEIPT,
+            documentPrintSetting.stampPlacement,
+        )
         fun receipt(reprint: Boolean): ReceiptData = DocumentPrintSettingsPolicyV136.applyToReceipt(
             ReceiptData(
                 storeName = issuer.storeName,
@@ -49,13 +53,10 @@ object Syn003FrozenPrintPayloadV136 {
                 changeAmount = changeAmount,
                 reprint = reprint,
                 invoiceAggregationBasis = settings.invoiceAggregationBasis,
-                suppressStoreHeader = stampSnapshot.prefixBytes.isNotEmpty(),
+                suppressStoreHeader = stampSnapshot.prefixBytes.isNotEmpty() &&
+                    stampPlacement != DocumentStampPlacementV136.NONE,
             ),
             documentPrintSetting,
-        )
-        val stampPlacement = DocumentStampPlacementPolicyV136.normalize(
-            DocumentPrintKindV136.SALE_RECEIPT,
-            documentPrintSetting.stampPlacement,
         )
         val normalBytes = stampSnapshot.applyToPayload(
             EscPosEncoder.encode(receipt(false), configuration),
