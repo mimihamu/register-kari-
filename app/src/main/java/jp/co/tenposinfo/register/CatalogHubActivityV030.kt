@@ -54,6 +54,7 @@ private val CatalogHubPaleYellowV030 = Color(0xFFFFF4D9)
 
 object CatalogNavigationContractV030 {
     const val EXTRA_INITIAL_SCREEN = "jp.co.tenposinfo.register.extra.CATALOG_INITIAL_SCREEN"
+    const val EXTRA_PREFILL_BARCODE = "jp.co.tenposinfo.register.extra.CATALOG_PREFILL_BARCODE"
     const val PRODUCTS = "PRODUCTS"
     const val DEPARTMENTS = "DEPARTMENTS"
     const val GROUPS = "GROUPS"
@@ -64,6 +65,10 @@ object CatalogNavigationContractV030 {
     fun intent(context: Context, destination: String): Intent =
         Intent(context, CatalogSettingsActivity::class.java)
             .putExtra(EXTRA_INITIAL_SCREEN, destination)
+
+    fun productRegistrationIntent(context: Context, scannedCode: String): Intent =
+        intent(context, PRODUCTS)
+            .putExtra(EXTRA_PREFILL_BARCODE, scannedCode.take(64))
 }
 
 /** SCR-200の商品・分類・税・販売プロファイル用レスポンシブ入口。 */

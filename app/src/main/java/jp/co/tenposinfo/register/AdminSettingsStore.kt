@@ -46,12 +46,20 @@ data class PrinterConfiguration(
     val host: String = "",
     val port: Int = 9100,
     val paperWidthMm: Int = 80,
+    val printableDotWidth: Int = if (paperWidthMm == 58) 384 else 576,
+    val feedLines: Int = 5,
     val timeoutMillis: Int = 5_000,
     val enabled: Boolean = false,
+    val receiptAutoPrintEnabled: Boolean = true,
     val profile: PrinterProfile = PrinterProfile.EPSON_TM_JAPAN,
     val cutMode: PrinterCutMode = PrinterCutMode.PARTIAL,
     val drawerEnabled: Boolean = false,
     val drawerOpenOnCashSale: Boolean = true,
+    val drawerOpenOnCashRefund: Boolean = true,
+    val drawerOpenOnCashMovement: Boolean = true,
+    val drawerOpenOnExchange: Boolean = true,
+    val drawerStandaloneEnabled: Boolean = false,
+    val drawerOpenReasonRequired: Boolean = true,
     val drawerPort: Int = 0,
     val drawerOnMillis: Int = 100,
     val drawerOffMillis: Int = 500,
@@ -162,7 +170,8 @@ object PrinterPaperSettingPolicy {
 }
 
 class AdminSettingsStore(context: Context) : AutoCloseable {
-    private val baseDatabase = RegisterDatabase(context.applicationContext)
+    private val appContext = context.applicationContext
+    private val baseDatabase = RegisterDatabase(appContext)
     private val db: SQLiteDatabase = baseDatabase.writableDatabase
 
     init {
@@ -360,9 +369,11 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
     fun loadPrinterConfiguration(): PrinterConfiguration = db.query(
         "printer_settings",
         arrayOf(
-            "printer_name", "host", "port", "paper_width_mm", "timeout_millis", "enabled",
-            "profile_key", "cut_mode", "drawer_enabled", "drawer_open_on_cash",
-            "drawer_port", "drawer_on_millis", "drawer_off_millis",
+            "printer_name", "host", "port", "paper_width_mm", "printable_dot_width", "feed_lines",
+            "timeout_millis", "enabled", "profile_key", "cut_mode", "drawer_enabled", "drawer_open_on_cash",
+            "drawer_port", "drawer_on_millis", "drawer_off_millis", "receipt_auto_print",
+            "drawer_open_on_cash_refund", "drawer_open_on_cash_movement", "drawer_open_on_exchange",
+            "drawer_standalone_enabled", "drawer_open_reason_required",
         ),
         "id = 1",
         null,
@@ -375,15 +386,23 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             host = cursor.getString(1),
             port = cursor.getInt(2),
             paperWidthMm = cursor.getInt(3),
-            timeoutMillis = cursor.getInt(4),
-            enabled = cursor.getInt(5) != 0,
-            profile = enumValueOrDefault(cursor.getString(6), PrinterProfile.EPSON_TM_JAPAN),
-            cutMode = enumValueOrDefault(cursor.getString(7), PrinterCutMode.PARTIAL),
-            drawerEnabled = cursor.getInt(8) != 0,
-            drawerOpenOnCashSale = cursor.getInt(9) != 0,
-            drawerPort = cursor.getInt(10),
-            drawerOnMillis = cursor.getInt(11),
-            drawerOffMillis = cursor.getInt(12),
+            printableDotWidth = cursor.getInt(4),
+            feedLines = cursor.getInt(5),
+            timeoutMillis = cursor.getInt(6),
+            enabled = cursor.getInt(7) != 0,
+            profile = enumValueOrDefault(cursor.getString(8), PrinterProfile.EPSON_TM_JAPAN),
+            cutMode = enumValueOrDefault(cursor.getString(9), PrinterCutMode.PARTIAL),
+            drawerEnabled = cursor.getInt(10) != 0,
+            drawerOpenOnCashSale = cursor.getInt(11) != 0,
+            drawerPort = cursor.getInt(12),
+            drawerOnMillis = cursor.getInt(13),
+            drawerOffMillis = cursor.getInt(14),
+            receiptAutoPrintEnabled = cursor.getInt(15) != 0,
+            drawerOpenOnCashRefund = cursor.getInt(16) != 0,
+            drawerOpenOnCashMovement = cursor.getInt(17) != 0,
+            drawerOpenOnExchange = cursor.getInt(18) != 0,
+            drawerStandaloneEnabled = cursor.getInt(19) != 0,
+            drawerOpenReasonRequired = cursor.getInt(20) != 0,
         )
     }
 
@@ -391,9 +410,12 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
         require(configuration.name.isNotBlank()) { "プリンター名を入力してください" }
         require(configuration.port in 1..65535) { "ポート番号は1～65535で入力してください" }
         require(configuration.paperWidthMm == 58 || configuration.paperWidthMm == 80) { "用紙幅は58mmまたは80mmです" }
+        PrinterProfileContractV136.validatePersistedConfiguration(configuration)
         require(configuration.timeoutMillis in 1_000..30_000) { "タイムアウトは1000～30000msで入力してください" }
         require(configuration.drawerPort == 0 || configuration.drawerPort == 1) { "ドロアポートはDK1またはDK2です" }
-        require(configuration.drawerOnMillis in 20..500) { "ドロアON時間は20～500msです" }
+        require(configuration.drawerOnMillis in CashDrawerSafetyPolicyV136.MIN_OPEN_PULSE_MS..CashDrawerSafetyPolicyV136.MAX_OPEN_PULSE_MS) {
+            "ドロアON時間は${CashDrawerSafetyPolicyV136.MIN_OPEN_PULSE_MS}～${CashDrawerSafetyPolicyV136.MAX_OPEN_PULSE_MS}msです"
+        }
         require(configuration.drawerOffMillis in 20..500) { "ドロアOFF時間は20～500msです" }
         if (configuration.enabled) require(configuration.host.isNotBlank()) { "有効にする場合はIPアドレスまたはホスト名が必要です" }
         if (configuration.drawerEnabled) require(configuration.profile.supportsDrawer) { "選択中のプロファイルはドロア制御に対応していません" }
@@ -406,12 +428,20 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
                     put("host", configuration.host.trim())
                     put("port", configuration.port)
                     put("paper_width_mm", configuration.paperWidthMm)
+                    put("printable_dot_width", configuration.printableDotWidth)
+                    put("feed_lines", configuration.feedLines)
                     put("timeout_millis", configuration.timeoutMillis)
                     put("enabled", if (configuration.enabled) 1 else 0)
+                    put("receipt_auto_print", if (configuration.receiptAutoPrintEnabled) 1 else 0)
                     put("profile_key", configuration.profile.name)
                     put("cut_mode", configuration.cutMode.name)
                     put("drawer_enabled", if (configuration.drawerEnabled) 1 else 0)
                     put("drawer_open_on_cash", if (configuration.drawerOpenOnCashSale) 1 else 0)
+                    put("drawer_open_on_cash_refund", if (configuration.drawerOpenOnCashRefund) 1 else 0)
+                    put("drawer_open_on_cash_movement", if (configuration.drawerOpenOnCashMovement) 1 else 0)
+                    put("drawer_open_on_exchange", if (configuration.drawerOpenOnExchange) 1 else 0)
+                    put("drawer_standalone_enabled", if (configuration.drawerStandaloneEnabled) 1 else 0)
+                    put("drawer_open_reason_required", if (configuration.drawerOpenReasonRequired) 1 else 0)
                     put("drawer_port", configuration.drawerPort)
                     put("drawer_on_millis", configuration.drawerOnMillis)
                     put("drawer_off_millis", configuration.drawerOffMillis)
@@ -423,7 +453,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             insertAudit(
                 "PRINTER_SETTINGS_UPDATED",
                 1,
-                "${configuration.name} ${configuration.host}:${configuration.port} ${configuration.paperWidthMm}mm / ${configuration.profile.displayName} / ${configuration.cutMode.displayName} / ドロア${if (configuration.drawerEnabled) "有効" else "無効"}",
+                "${configuration.name} ${configuration.host}:${configuration.port} ${configuration.paperWidthMm}mm/${configuration.printableDotWidth}dot / 紙送り${configuration.feedLines}行 / ${configuration.profile.displayName} / ${configuration.cutMode.displayName} / レシート自動${if (configuration.receiptAutoPrintEnabled) "ON" else "OFF"} / ドロア${if (configuration.drawerEnabled) "有効" else "無効"}",
                 actor,
                 now,
             )
@@ -432,29 +462,31 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
 
     fun testPrinter(configuration: PrinterConfiguration): Result<Unit> {
         require(configuration.host.isNotBlank()) { "IPアドレスまたはホスト名を入力してください" }
+        PrinterProfileContractV136.validatePersistedConfiguration(configuration)
         val now = Instant.now().toString()
+        val paper = PrinterPaperSettingPolicy.paper(configuration)
         val text = buildString {
             append("つぐレジ プリンターテスト\n")
             append("${configuration.name}\n")
             append("${configuration.host}:${configuration.port}\n")
             append("${configuration.profile.displayName}\n")
-            append("用紙 ${configuration.paperWidthMm}mm / ${configuration.cutMode.displayName}\n")
-            append("$now\n")
-            append("--------------------------------\n")
-            append("日本語印字テスト 1234567890\n")
+            append("用紙 ${paper.widthMm}mm / ${configuration.printableDotWidth}dot / 紙送り ${configuration.feedLines}行\n")
+            append("${configuration.cutMode.displayName}\n")
+            append("$now\n\n")
+            append(PrinterPaperWidthTestV136.buildAll(paper, now))
         }
         val payload = PrinterCommandEncoder.encodeText(
             text = text,
-            configuration = configuration,
+            configuration = configuration.copy(paperWidthMm = paper.widthMm),
             openDrawer = false,
             appendCut = true,
         )
         return printerGateway(configuration).send(payload)
     }
 
-    fun testDrawer(configuration: PrinterConfiguration): Result<Unit> {
+    fun testDrawer(configuration: PrinterConfiguration, actor: String): Result<Unit> {
         require(configuration.host.isNotBlank()) { "IPアドレスまたはホスト名を入力してください" }
-        return printerGateway(configuration).send(PrinterCommandEncoder.drawerOnly(configuration))
+        return CashDrawerRuntimeV136.dispatchDiagnostic(appContext, configuration, actor).map { Unit }
     }
 
     fun recordPrinterTest(configuration: PrinterConfiguration, success: Boolean, message: String, actor: String) {
@@ -630,8 +662,11 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
                 host TEXT NOT NULL,
                 port INTEGER NOT NULL,
                 paper_width_mm INTEGER NOT NULL,
+                printable_dot_width INTEGER NOT NULL DEFAULT 576,
+                feed_lines INTEGER NOT NULL DEFAULT 5,
                 timeout_millis INTEGER NOT NULL,
                 enabled INTEGER NOT NULL,
+                receipt_auto_print INTEGER NOT NULL DEFAULT 1,
                 profile_key TEXT NOT NULL DEFAULT 'EPSON_TM_JAPAN',
                 cut_mode TEXT NOT NULL DEFAULT 'PARTIAL',
                 drawer_enabled INTEGER NOT NULL DEFAULT 0,
@@ -639,10 +674,16 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
                 drawer_port INTEGER NOT NULL DEFAULT 0,
                 drawer_on_millis INTEGER NOT NULL DEFAULT 100,
                 drawer_off_millis INTEGER NOT NULL DEFAULT 500,
+                drawer_open_on_cash_refund INTEGER NOT NULL DEFAULT 1,
+                drawer_open_on_cash_movement INTEGER NOT NULL DEFAULT 1,
+                drawer_open_on_exchange INTEGER NOT NULL DEFAULT 1,
+                drawer_standalone_enabled INTEGER NOT NULL DEFAULT 0,
+                drawer_open_reason_required INTEGER NOT NULL DEFAULT 1,
                 updated_at INTEGER NOT NULL
             )
             """.trimIndent(),
         )
+        ensurePrinterColumn("receipt_auto_print", "INTEGER NOT NULL DEFAULT 1")
         ensurePrinterColumn("profile_key", "TEXT NOT NULL DEFAULT 'EPSON_TM_JAPAN'")
         ensurePrinterColumn("cut_mode", "TEXT NOT NULL DEFAULT 'PARTIAL'")
         ensurePrinterColumn("drawer_enabled", "INTEGER NOT NULL DEFAULT 0")
@@ -650,6 +691,30 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
         ensurePrinterColumn("drawer_port", "INTEGER NOT NULL DEFAULT 0")
         ensurePrinterColumn("drawer_on_millis", "INTEGER NOT NULL DEFAULT 100")
         ensurePrinterColumn("drawer_off_millis", "INTEGER NOT NULL DEFAULT 500")
+        ensurePrinterColumn("drawer_open_on_cash_refund", "INTEGER NOT NULL DEFAULT 1")
+        ensurePrinterColumn("drawer_open_on_cash_movement", "INTEGER NOT NULL DEFAULT 1")
+        ensurePrinterColumn("drawer_open_on_exchange", "INTEGER NOT NULL DEFAULT 1")
+        ensurePrinterColumn("drawer_standalone_enabled", "INTEGER NOT NULL DEFAULT 0")
+        ensurePrinterColumn("drawer_open_reason_required", "INTEGER NOT NULL DEFAULT 1")
+        ensurePrinterColumn("printable_dot_width", "INTEGER NOT NULL DEFAULT 0")
+        ensurePrinterColumn("feed_lines", "INTEGER NOT NULL DEFAULT 5")
+        db.execSQL(
+            """
+            UPDATE printer_settings
+            SET printable_dot_width = CASE paper_width_mm
+                WHEN 58 THEN ${PrinterProfileContractV136.MM58_STANDARD_DOTS}
+                WHEN 80 THEN ${PrinterProfileContractV136.MM80_STANDARD_DOTS}
+                ELSE printable_dot_width
+            END
+            WHERE printable_dot_width <= 0
+               OR (paper_width_mm = 58 AND printable_dot_width != ${PrinterProfileContractV136.MM58_STANDARD_DOTS})
+               OR (paper_width_mm = 80 AND printable_dot_width != ${PrinterProfileContractV136.MM80_STANDARD_DOTS})
+            """.trimIndent(),
+        )
+        db.execSQL(
+            "UPDATE printer_settings SET feed_lines = ${PrinterProfileContractV136.DEFAULT_FEED_LINES} " +
+                "WHERE feed_lines < ${PrinterProfileContractV136.MIN_FEED_LINES} OR feed_lines > ${PrinterProfileContractV136.MAX_FEED_LINES}",
+        )
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS operation_audit (
@@ -784,12 +849,12 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
         db.execSQL(
             """
             INSERT OR IGNORE INTO printer_settings(
-                id, printer_name, host, port, paper_width_mm, timeout_millis, enabled,
-                profile_key, cut_mode, drawer_enabled, drawer_open_on_cash,
-                drawer_port, drawer_on_millis, drawer_off_millis, updated_at
+                id, printer_name, host, port, paper_width_mm, printable_dot_width, feed_lines,
+                timeout_millis, enabled, profile_key, cut_mode, drawer_enabled, drawer_open_on_cash,
+                drawer_port, drawer_on_millis, drawer_off_millis, receipt_auto_print, updated_at
             ) VALUES(
-                1, 'レシートプリンター', '', 9100, 80, 5000, 0,
-                'EPSON_TM_JAPAN', 'PARTIAL', 0, 1, 0, 100, 500, 0
+                1, 'レシートプリンター', '', 9100, 80, ${PrinterProfileContractV136.MM80_STANDARD_DOTS}, ${PrinterProfileContractV136.DEFAULT_FEED_LINES},
+                5000, 0, 'EPSON_TM_JAPAN', 'PARTIAL', 0, 1, 0, 100, 500, 1, 0
             )
             """.trimIndent(),
         )

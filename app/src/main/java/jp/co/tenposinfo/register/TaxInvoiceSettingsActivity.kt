@@ -60,6 +60,7 @@ private fun TaxInvoiceSettingsScreen(onClose: () -> Unit) {
     val store = remember { TaxInvoiceSettingsStore(context.applicationContext) }
     val initial = remember { store.load() }
     var policy by remember { mutableStateOf(initial.mixedTaxPolicy) }
+    var aggregationBasis by remember { mutableStateOf(initial.invoiceAggregationBasis) }
     var storeName by remember { mutableStateOf(initial.issuer.storeName) }
     var address by remember { mutableStateOf(initial.issuer.address) }
     var phone by remember { mutableStateOf(initial.issuer.phone) }
@@ -97,10 +98,25 @@ private fun TaxInvoiceSettingsScreen(onClose: () -> Unit) {
                         MixedPolicyButton("警告", "会計画面で確認操作後に確定できます", MixedTaxPolicy.WARN, policy) { policy = it }
                         Spacer(Modifier.height(8.dp))
                         MixedPolicyButton("禁止", "商品税区分を直すまで会計確定できません（既定）", MixedTaxPolicy.BLOCK, policy) { policy = it }
-                        Spacer(Modifier.height(18.dp))
+                        Spacer(Modifier.height(16.dp))
+                        Text("適格請求書の税率別対価額", color = TiNavy, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(8.dp))
+                        AggregationBasisButton(
+                            title = "税込へ統一",
+                            value = InvoiceAggregationBasisV136.TAX_INCLUDED,
+                            selected = aggregationBasis,
+                        ) { aggregationBasis = it }
+                        Spacer(Modifier.height(6.dp))
+                        AggregationBasisButton(
+                            title = "税抜へ統一",
+                            value = InvoiceAggregationBasisV136.TAX_EXCLUDED,
+                            selected = aggregationBasis,
+                        ) { aggregationBasis = it }
+                        Spacer(Modifier.height(12.dp))
                         Text(
-                            "混在時も税率ごとの税額は、値引後金額を集計し、税率単位で最後に1回だけ端数処理します。",
+                            "同一税率の内税・外税が混在しても、税額は税率ごとに最後に1回だけ端数処理します。選択した対価額基準は会計時に保存され、後から設定を変えても過去伝票は変わりません。",
                             color = Color.DarkGray,
+                            fontSize = 13.sp,
                         )
                     }
                 }
@@ -162,6 +178,7 @@ private fun TaxInvoiceSettingsScreen(onClose: () -> Unit) {
                                     store.save(
                                         TaxInvoiceSettings(
                                             mixedTaxPolicy = policy,
+                                            invoiceAggregationBasis = aggregationBasis,
                                             issuer = InvoiceIssuerProfile(storeName, address, phone, registration),
                                         ),
                                     )
@@ -202,5 +219,21 @@ private fun MixedPolicyButton(
             Text(title, modifier = Modifier.width(62.dp), color = TiNavy, fontWeight = FontWeight.Bold)
             Text(description, color = Color.DarkGray, fontSize = 13.sp)
         }
+    }
+}
+
+@Composable
+private fun AggregationBasisButton(
+    title: String,
+    value: InvoiceAggregationBasisV136,
+    selected: InvoiceAggregationBasisV136,
+    onSelect: (InvoiceAggregationBasisV136) -> Unit,
+) {
+    OutlinedButton(
+        onClick = { onSelect(value) },
+        modifier = Modifier.fillMaxWidth().height(46.dp),
+        border = BorderStroke(if (selected == value) 3.dp else 1.dp, if (selected == value) TiDanger else TiBorder),
+    ) {
+        Text(title, color = TiNavy, fontWeight = FontWeight.Bold)
     }
 }

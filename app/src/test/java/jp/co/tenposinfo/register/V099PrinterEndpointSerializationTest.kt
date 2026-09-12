@@ -145,8 +145,12 @@ class V099PrinterEndpointSerializationTest {
         assertTrue(receiptSource.indexOf("PrinterEndpointSendGate.withPermit(") < receiptSource.indexOf("Socket().use { socket ->"))
         assertTrue(receiptSource.contains("private fun sendExclusive(payload: ByteArray)"))
         assertTrue(receiptSource.contains("TcpEscPosPrinterGateway("))
-        assertTrue(autoSource.contains("val gateway = TcpEscPosPrinterGateway("))
-        assertTrue(queueSource.contains("val gateway = TcpEscPosPrinterGateway("))
+        // v1.36 sale receipts wrap the raw TCP gateway with ReceiptStampGatewayV136,
+        // but the actual TCP transport remains inside the existing endpoint permit.
+        assertTrue(autoSource.contains("val rawGateway = TcpEscPosPrinterGateway("))
+        assertTrue(queueSource.contains("val rawGateway = TcpEscPosPrinterGateway("))
+        assertTrue(autoSource.contains("delegate = rawGateway"))
+        assertTrue(queueSource.contains("delegate = rawGateway"))
         assertTrue(receiptSource.contains("future = executor.submit<Unit>"))
     }
 

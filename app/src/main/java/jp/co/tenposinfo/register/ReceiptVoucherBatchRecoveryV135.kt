@@ -32,7 +32,8 @@ internal data class ReceiptVoucherBatchProgressV135(
 ) {
     val remainingCount: Int get() = (copyCount - printedCount).coerceAtLeast(0)
     val resumable: Boolean get() = status != ReceiptVoucherBatchPrintStatus.PRINTED &&
-        items.none { it.status == PrintJobStatus.DISCARDED || it.jobId == null }
+        items.none { it.status == PrintJobStatus.DISCARDED || it.jobId == null } &&
+        items.none { it.status == PrintJobStatus.SENDING || it.status == PrintJobStatus.PRINTING }
 }
 
 internal object ReceiptVoucherBatchRecoveryPolicyV135 {
@@ -49,7 +50,7 @@ internal object ReceiptVoucherBatchRecoveryPolicyV135 {
             it.jobId == null || it.status in setOf(PrintJobStatus.FAILED, PrintJobStatus.DISCARDED)
         }
         val hasStarted = ordered.any {
-            it.attemptCount > 0 || it.status in setOf(PrintJobStatus.PRINTING, PrintJobStatus.RETRY)
+            it.attemptCount > 0 || it.status in setOf(PrintJobStatus.SENDING, PrintJobStatus.PRINTING, PrintJobStatus.RETRY)
         }
         val status = when {
             ordered.isNotEmpty() && printed == copyCount && ordered.size == copyCount ->
@@ -126,8 +127,8 @@ internal class ReceiptVoucherBatchRecoveryStoreV135(context: Context) : AutoClos
         require(before.items.none { it.status == PrintJobStatus.DISCARDED }) {
             "破棄済み印刷ジョブがあるため、統合印刷キューで確認してください"
         }
-        require(before.items.none { it.status == PrintJobStatus.PRINTING }) {
-            "印刷中の票があります。完了または失敗を確認してから再開してください"
+        require(before.items.none { it.status == PrintJobStatus.SENDING || it.status == PrintJobStatus.PRINTING }) {
+            "送信中または印刷済みの可能性がある票があります。統合印刷キューで完了扱い／再印刷を判断してください"
         }
         val now = System.currentTimeMillis()
         val failedJobIds = before.items

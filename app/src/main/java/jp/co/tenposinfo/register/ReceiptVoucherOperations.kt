@@ -127,7 +127,8 @@ internal object ReceiptVoucherLedgerPolicy {
 
     fun printStatusLabel(status: PrintJobStatus): String = when (status) {
         PrintJobStatus.PENDING -> "待機"
-        PrintJobStatus.PRINTING -> "印刷中"
+        PrintJobStatus.SENDING -> "印刷済みの可能性"
+        PrintJobStatus.PRINTING -> "印刷済みの可能性（旧状態）"
         PrintJobStatus.COMPLETED -> "完了"
         PrintJobStatus.RETRY -> "再試行待ち"
         PrintJobStatus.FAILED -> "要確認"

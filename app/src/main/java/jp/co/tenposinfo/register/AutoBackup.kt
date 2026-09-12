@@ -160,6 +160,37 @@ object AutoBackupRetentionPolicy {
         return deletion
     }
 
+    fun selectGenerationDeletionCandidates(
+        entries: List<BackupRetentionEntry>,
+        generations: Int = DEFAULT_BACKUP_RETENTION_GENERATIONS,
+    ): Set<String> {
+        require(generations in MIN_BACKUP_RETENTION_GENERATIONS..MAX_BACKUP_RETENTION_GENERATIONS) {
+            "バックアップ保持世代は${MIN_BACKUP_RETENTION_GENERATIONS}～${MAX_BACKUP_RETENTION_GENERATIONS}世代で指定してください"
+        }
+        val automaticReady = entries
+            .filter {
+                it.valid &&
+                    !it.pendingRestore &&
+                    it.state == AutoBackupFileState.READY &&
+                    (it.reason == BackupCreationReason.Z_SETTLEMENT || it.reason == BackupCreationReason.PERIODIC)
+            }
+            .sortedByDescending { it.createdAt }
+        return automaticReady.drop(generations).mapTo(linkedSetOf()) { it.fileName }
+    }
+
+    fun selectCapacityDeletionCandidates(entries: List<BackupRetentionEntry>): List<String> {
+        val automaticReady = entries
+            .filter {
+                it.valid &&
+                    !it.pendingRestore &&
+                    it.state == AutoBackupFileState.READY &&
+                    (it.reason == BackupCreationReason.Z_SETTLEMENT || it.reason == BackupCreationReason.PERIODIC)
+            }
+            .sortedBy { it.createdAt }
+        // Always retain the newest successful automatic generation under capacity pressure.
+        return automaticReady.dropLast(1).map { it.fileName }
+    }
+
     private fun monthKey(createdAt: Long): String {
         val date = Instant.ofEpochMilli(createdAt).atZone(ZoneOffset.UTC)
         return "%04d-%02d".format(Locale.ROOT, date.year, date.monthValue)
@@ -305,7 +336,7 @@ class AutoBackupRetentionManager(context: Context) {
     private val manager = DataProtectionManager(appContext)
     private val metadataStore = AutoBackupMetadataStore(appContext)
 
-    fun apply(actorName: String): BackupRetentionResult {
+    fun apply(actorName: String, capacityReliefDatabaseBytes: Long? = null): BackupRetentionResult {
         val backups = manager.listBackups()
         val metadata = metadataStore.readAll()
         val pendingName = manager.pendingRestoreStatus().backupFileName
@@ -322,15 +353,22 @@ class AutoBackupRetentionManager(context: Context) {
             )
         }
         val settings = AutoBackupSettingsStore(appContext).load()
-        val plan = AutoBackupRetentionPolicy.selectDeletionCandidates(
+        val planned = linkedSetOf<String>()
+        planned += AutoBackupRetentionPolicy.selectGenerationDeletionCandidates(
             entries = entries,
-            zBusinessDays = settings.zRetentionBusinessDays,
-            monthlyMonths = settings.monthlyRetentionMonths,
-        ).sorted()
-        AutoBackupAudit.record(appContext, "DATA_BACKUP_RETENTION_STARTED", "削除候補 ${plan.size}件", actorName)
+            generations = settings.retentionGenerations,
+        ).sortedBy { fileName -> entries.first { it.fileName == fileName }.createdAt }
+
+        AutoBackupAudit.record(
+            appContext,
+            "DATA_BACKUP_RETENTION_STARTED",
+            "保持=${settings.retentionGenerations}世代 / 初期削除候補 ${planned.size}件 / capacityRelief=${capacityReliefDatabaseBytes != null}",
+            actorName,
+        )
         val deleted = mutableListOf<String>()
         val failed = linkedMapOf<String, String>()
-        plan.forEach { fileName ->
+
+        fun deleteOne(fileName: String) {
             val archive = File(backupDir, BackupFilePolicy.requireSafe(fileName))
             runCatching {
                 require(archive.isFile) { "対象ファイルがありません" }
@@ -345,8 +383,24 @@ class AutoBackupRetentionManager(context: Context) {
                 }
             }
         }
-        return BackupRetentionResult(plan, deleted, failed)
+
+        planned.toList().forEach(::deleteOne)
+
+        if (capacityReliefDatabaseBytes != null &&
+            !AutoBackupStoragePolicy.hasCapacity(availableBytes(), capacityReliefDatabaseBytes)
+        ) {
+            val remaining = entries.filter { it.fileName !in deleted }
+            val capacityCandidates = AutoBackupRetentionPolicy.selectCapacityDeletionCandidates(remaining)
+            for (fileName in capacityCandidates) {
+                if (AutoBackupStoragePolicy.hasCapacity(availableBytes(), capacityReliefDatabaseBytes)) break
+                if (fileName !in planned) planned += fileName
+                deleteOne(fileName)
+            }
+        }
+        return BackupRetentionResult(planned.toList(), deleted, failed)
     }
+
+    private fun availableBytes(): Long = StatFs(appContext.filesDir.absolutePath).availableBytes
 }
 
 object AutoBackupScheduler {
@@ -363,8 +417,9 @@ object AutoBackupScheduler {
         settlementId: Long,
         actorName: String,
     ) {
+        val appContext = context.applicationContext
         enqueue(
-            context = context,
+            context = appContext,
             uniqueName = AutoBackupTriggerPolicy.uniqueZWorkName(settlementId),
             reason = BackupCreationReason.Z_SETTLEMENT,
             businessDate = businessDate,
@@ -486,7 +541,10 @@ class AutoBackupWorker(
 
             val databaseBytes = databaseWorkingBytes(appContext)
             if (!AutoBackupStoragePolicy.hasCapacity(availableBytes(appContext), databaseBytes)) {
-                val retention = AutoBackupRetentionManager(appContext).apply(actorName)
+                val retention = AutoBackupRetentionManager(appContext).apply(
+                    actorName,
+                    capacityReliefDatabaseBytes = databaseBytes,
+                )
                 statusStore.retention(retention.summary())
             }
             if (!AutoBackupStoragePolicy.hasCapacity(availableBytes(appContext), databaseBytes)) {

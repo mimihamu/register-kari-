@@ -70,7 +70,9 @@ class V091DataProtectionResponsiveTest {
         ).readText()
 
         assertTrue(source.contains("manager.createBackup(actor)"))
-        assertTrue(source.contains("manager.verifyBackup(file)"))
+        // BKP-004 strengthens the restore-side verification contract: the UI must run the full
+        // preflight (version/schema/identity/hash/capacity/Drive destination), not only DB verify.
+        assertTrue(source.contains("manager.preflightRestore(file)"))
         assertTrue(source.contains("RestoreReservationCoordinatorV116.stage(appContext, manager, file, pin)"))
         assertTrue(source.contains("RestoreReservationCoordinatorV116.cancel(appContext, manager, pin)"))
         assertTrue(source.contains("report?.restoreReady == true"))

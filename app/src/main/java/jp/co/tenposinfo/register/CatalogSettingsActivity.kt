@@ -88,6 +88,12 @@ private fun CatalogSettingsApp(onClose: () -> Unit) {
     val context = LocalContext.current
     val store = remember { CatalogMasterStore(context.applicationContext) }
     val actor = remember { OperatorSessionRegistry.current(context.applicationContext)?.name ?: "責任者" }
+    val initialBarcode = remember {
+        (context as? ComponentActivity)?.intent
+            ?.getStringExtra(CatalogNavigationContractV030.EXTRA_PREFILL_BARCODE)
+            ?.let { runCatching { CatalogValidation.normalizeBarcode(it) }.getOrNull() }
+            .orEmpty()
+    }
     val initialScreen = remember {
     when ((context as? ComponentActivity)?.intent?.getStringExtra(CatalogNavigationContractV030.EXTRA_INITIAL_SCREEN)) {
         CatalogNavigationContractV030.PRODUCTS -> CatalogScreen.PRODUCTS
@@ -132,6 +138,7 @@ var screen by remember { mutableStateOf(initialScreen) }
                 store = store,
                 refresh = refresh,
                 actor = actor,
+                initialBarcode = initialBarcode,
                 onSaved = { saved("商品マスターを保存しました") },
                 onBack = { screen = CatalogScreen.MENU },
             )
@@ -360,6 +367,7 @@ private fun ProductMasterScreen(
     store: CatalogMasterStore,
     refresh: Int,
     actor: String,
+    initialBarcode: String,
     onSaved: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -370,7 +378,7 @@ private fun ProductMasterScreen(
     var productId by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     var kana by remember { mutableStateOf("") }
-    var barcode by remember { mutableStateOf("") }
+    var barcode by remember(initialBarcode) { mutableStateOf(initialBarcode) }
     var price by remember { mutableStateOf("0") }
     var tax by remember { mutableStateOf(TaxCategory.INCLUDED_10) }
     var departmentId by remember { mutableStateOf<Long?>(null) }
@@ -385,7 +393,7 @@ private fun ProductMasterScreen(
         productId = selected?.productId.orEmpty()
         name = selected?.name.orEmpty()
         kana = selected?.kana.orEmpty()
-        barcode = selected?.barcode.orEmpty()
+        barcode = selected?.barcode ?: initialBarcode
         price = selected?.basePrice?.toString() ?: "0"
         tax = selected?.baseTaxCategory ?: TaxCategory.INCLUDED_10
         departmentId = selected?.departmentId ?: departments.firstOrNull()?.id
