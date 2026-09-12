@@ -1,0 +1,85 @@
+name: v1.36 SCR-720 diagnostic
+
+on:
+  push:
+    branches:
+      - develop/v1.36
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v136-scr720-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  focused-test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 36
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle 9.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Run focused SCR-720 unit test
+        id: focused
+        shell: bash
+        run: |
+          set +e
+          gradle --no-daemon :app:testDebugUnitTest --tests 'jp.co.tenposinfo.register.V136Scr720DocumentStampPlacementTest' --stacktrace
+          status=$?
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Print compact test failure summary
+        if: always()
+        shell: bash
+        run: |
+          echo '=== JUnit XML summary ==='
+          if compgen -G 'app/build/test-results/testDebugUnitTest/*.xml' > /dev/null; then
+            grep -R -n -E '<testsuite|<failure|<error|AssertionError|Caused by:|expected:|but was:' app/build/test-results/testDebugUnitTest/*.xml || true
+          else
+            echo 'No JUnit XML produced; likely test compilation/configuration failure.'
+          fi
+          echo '=== Kotlin/Gradle reports present ==='
+          find app/build -maxdepth 5 -type f \( -name '*.xml' -o -name '*.html' -o -name '*.txt' \) -print 2>/dev/null | sort | head -200 || true
+
+      - name: Upload diagnostic reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v136-scr720-diagnostic-${{ github.sha }}
+          path: |
+            app/build/test-results/
+            app/build/reports/tests/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Fail if focused test failed
+        if: always()
+        shell: bash
+        run: |
+          test '${{ steps.focused.outputs.exit_code }}' = '0'
