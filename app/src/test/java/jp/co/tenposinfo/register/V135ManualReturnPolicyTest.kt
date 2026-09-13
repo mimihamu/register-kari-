@@ -151,7 +151,10 @@ class V135ManualReturnPolicyTest {
         assertTrue(manualReturn.contains("put(\"reference_id\", -id)"))
         assertTrue(manualReturn.contains("put(\"payload_text\", preview)"))
         assertTrue(advanced.contains("val renderedPayload = TextEscPosEncoder.encode(job.payloadText)"))
-        assertTrue(advanced.contains("gateway.send(renderedPayload)"))
+        // SCR-720 preserves the stored payload route while allowing a frozen document stamp snapshot to wrap the rendered bytes.
+        assertTrue(advanced.contains("val stampSnapshot = DocumentStampJobSchemaV136.load(db, jobId)"))
+        assertTrue(advanced.contains("val finalPayload = stampSnapshot.applyToPayload(renderedPayload)"))
+        assertTrue(advanced.contains("gateway.send(finalPayload)"))
         assertTrue(unified.contains("OperationDocumentType.REVERSAL_RECEIPT -> UnifiedPrintJobType.REVERSAL_RECEIPT"))
         // v1.36 §16.9 keeps the stored payload path, but wraps the raw TCP gateway so delivery result is confirmed/persisted before completion.
         assertTrue(worker.contains("kind = PrintDeliveryJobKindV136.DOCUMENT"))
