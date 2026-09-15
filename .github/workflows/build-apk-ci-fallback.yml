@@ -1,0 +1,72 @@
+name: Build つぐレジ APK CI fallback
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fallback-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-debug-apk-fallback:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Use runner Android SDK
+        shell: bash
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          test -d "$SDK"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+          echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          sdkmanager --version
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Set up Gradle 9.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+      - name: Run cumulative unit tests
+        run: gradle testDebugUnitTest --stacktrace
+      - name: Compile Kotlin
+        run: gradle :app:compileDebugKotlin :management-app:compileDebugKotlin :customer-display:compileDebugKotlin --stacktrace
+      - name: Build all debug APKs
+        run: gradle :app:assembleDebug :management-app:assembleDebug :customer-display:assembleDebug --stacktrace
+      - name: Verify APK outputs and SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          register_apk=artifacts/TSUGUREGI_v1.36_debug.apk
+          plus_apk=artifacts/TSUGUREGI_PLUS_v1.36_debug.apk
+          cd_apk=artifacts/TSUGUREGI_CD_v1.36_debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
+          cp management-app/build/outputs/apk/debug/management-app-debug.apk "$plus_apk"
+          cp customer-display/build/outputs/apk/debug/customer-display-debug.apk "$cd_apk"
+          test -s "$register_apk"
+          test -s "$plus_apk"
+          test -s "$cd_apk"
+          sha256sum artifacts/*.apk | tee artifacts/SHA256SUMS.txt
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSUGUREGI-v1.36-fallback-apks
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30

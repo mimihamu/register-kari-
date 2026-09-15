@@ -253,6 +253,8 @@ private fun AdminMenuScreen(
                 AsValueRow("接続先", if (printer.host.isBlank()) "－" else "${printer.host}:${printer.port}")
                 AsValueRow("機種", printer.profile.displayName)
                 AsValueRow("用紙幅", "${printer.paperWidthMm}mm")
+                AsValueRow("印字幅", "${printer.printableDotWidth}dot")
+                AsValueRow("紙送り", "${printer.feedLines}行")
                 AsValueRow("ドロア", if (printer.drawerEnabled) "DK${printer.drawerPort + 1} 有効" else "無効")
                 AsValueRow("監査ログ", "${auditCount}件")
                     Spacer(Modifier.height(10.dp))
@@ -481,12 +483,18 @@ private fun PrinterSettingsScreen(
     var host by remember { mutableStateOf(initial.host) }
     var port by remember { mutableStateOf(initial.port.toString()) }
     var paperWidth by remember { mutableStateOf(initial.paperWidthMm) }
+    var printableDotWidth by remember { mutableStateOf(initial.printableDotWidth.toString()) }
+    var feedLines by remember { mutableStateOf(initial.feedLines.toString()) }
     var timeout by remember { mutableStateOf(initial.timeoutMillis.toString()) }
     var enabled by remember { mutableStateOf(initial.enabled) }
+    var receiptAutoPrint by remember { mutableStateOf(initial.receiptAutoPrintEnabled) }
     var profile by remember { mutableStateOf(initial.profile) }
     var cutMode by remember { mutableStateOf(initial.cutMode) }
     var drawerEnabled by remember { mutableStateOf(initial.drawerEnabled) }
     var drawerOpenOnCash by remember { mutableStateOf(initial.drawerOpenOnCashSale) }
+    var drawerOpenOnCashRefund by remember { mutableStateOf(initial.drawerOpenOnCashRefund) }
+    var drawerOpenOnCashMovement by remember { mutableStateOf(initial.drawerOpenOnCashMovement) }
+    var drawerOpenOnExchange by remember { mutableStateOf(initial.drawerOpenOnExchange) }
     var drawerPort by remember { mutableStateOf(initial.drawerPort) }
     var drawerOnMillis by remember { mutableStateOf(initial.drawerOnMillis.toString()) }
     var drawerOffMillis by remember { mutableStateOf(initial.drawerOffMillis.toString()) }
@@ -500,16 +508,29 @@ private fun PrinterSettingsScreen(
         host = host,
         port = port.toIntOrNull() ?: 0,
         paperWidthMm = paperWidth,
+        printableDotWidth = printableDotWidth.toIntOrNull() ?: 0,
+        feedLines = feedLines.toIntOrNull() ?: 0,
         timeoutMillis = timeout.toIntOrNull() ?: 0,
         enabled = enabled,
+        receiptAutoPrintEnabled = receiptAutoPrint,
         profile = profile,
         cutMode = cutMode,
         drawerEnabled = drawerEnabled,
         drawerOpenOnCashSale = drawerOpenOnCash,
+        drawerOpenOnCashRefund = drawerOpenOnCashRefund,
+        drawerOpenOnCashMovement = drawerOpenOnCashMovement,
+        drawerOpenOnExchange = drawerOpenOnExchange,
+        drawerStandaloneEnabled = false,
+        drawerOpenReasonRequired = true,
         drawerPort = drawerPort,
         drawerOnMillis = drawerOnMillis.toIntOrNull() ?: 0,
         drawerOffMillis = drawerOffMillis.toIntOrNull() ?: 0,
     )
+
+    fun selectPaper(widthMm: Int) {
+        paperWidth = widthMm
+        printableDotWidth = PrinterProfileContractV136.standardPrintableDotWidth(widthMm).toString()
+    }
 
     fun executeTest(kind: String, action: suspend (PrinterConfiguration) -> Result<Unit>) {
         val config = currentConfiguration()
@@ -574,10 +595,40 @@ private fun PrinterSettingsScreen(
                     }
                     Text(profile.description, color = Color.Gray, fontSize = 13.sp)
                     Spacer(Modifier.height(8.dp))
-                    Text("用紙幅・カット", fontWeight = FontWeight.Bold, color = AsNavy)
+                    Text("レシート発行", fontWeight = FontWeight.Bold, color = AsNavy)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = receiptAutoPrint, onCheckedChange = { receiptAutoPrint = it })
+                        Column {
+                            Text("会計確定時にレシートを自動発行")
+                            Text("OFFでも売上一覧・会計完了から後レシート／再印字できます", color = Color.Gray, fontSize = 12.sp)
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled = receiptAutoPrint)
+                    Spacer(Modifier.height(8.dp))
+                    Text("用紙幅・印字幅・紙送り・カット", fontWeight = FontWeight.Bold, color = AsNavy)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        AsChoiceButton("58mm", paperWidth == 58, Modifier.weight(1f)) { paperWidth = 58 }
-                        AsChoiceButton("80mm", paperWidth == 80, Modifier.weight(1f)) { paperWidth = 80 }
+                        AsChoiceButton("58mm", paperWidth == 58, Modifier.weight(1f)) { selectPaper(58) }
+                        AsChoiceButton("80mm", paperWidth == 80, Modifier.weight(1f)) { selectPaper(80) }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = printableDotWidth,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("印字可能幅 dot（用紙幅連動）") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = feedLines,
+                            onValueChange = { feedLines = it.filter(Char::isDigit).take(1) },
+                            label = { Text("カット前紙送り行数") },
+                            supportingText = { Text("${PrinterProfileContractV136.MIN_FEED_LINES}～${PrinterProfileContractV136.MAX_FEED_LINES}行") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         PrinterCutMode.entries.forEach { candidate ->
@@ -589,14 +640,22 @@ private fun PrinterSettingsScreen(
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = drawerEnabled, onCheckedChange = { drawerEnabled = it })
                         Text("プリンター接続ドロアを使用")
-                        Spacer(Modifier.width(18.dp))
-                        Checkbox(
-                            checked = drawerOpenOnCash,
-                            onCheckedChange = { drawerOpenOnCash = it },
-                            enabled = drawerEnabled,
-                        )
-                        Text("現金会計時に自動オープン")
                     }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = drawerOpenOnCash, onCheckedChange = { drawerOpenOnCash = it }, enabled = drawerEnabled)
+                        Text("現金会計")
+                        Spacer(Modifier.width(12.dp))
+                        Checkbox(checked = drawerOpenOnCashRefund, onCheckedChange = { drawerOpenOnCashRefund = it }, enabled = drawerEnabled)
+                        Text("現金返金")
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = drawerOpenOnCashMovement, onCheckedChange = { drawerOpenOnCashMovement = it }, enabled = drawerEnabled)
+                        Text("入金・出金")
+                        Spacer(Modifier.width(12.dp))
+                        Checkbox(checked = drawerOpenOnExchange, onCheckedChange = { drawerOpenOnExchange = it }, enabled = drawerEnabled)
+                        Text("両替")
+                    }
+                    Text("単独開放は無効。開放は業務確定後に理由・担当者付きで監査記録します。", color = Color.Gray, fontSize = 12.sp)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         AsChoiceButton("DK1", drawerPort == 0, Modifier.weight(1f)) { drawerPort = 0 }
                         AsChoiceButton("DK2", drawerPort == 1, Modifier.weight(1f)) { drawerPort = 1 }
@@ -627,11 +686,20 @@ private fun PrinterSettingsScreen(
                     Button(
                         onClick = {
                             val config = currentConfiguration()
-                            val result = runCatching { store.savePrinterConfiguration(config, actorName) }
+                            val result = runCatching {
+                                store.savePrinterConfiguration(config, actorName)
+                                val reloaded = store.loadPrinterConfiguration()
+                                require(reloaded.printableDotWidth == config.printableDotWidth && reloaded.feedLines == config.feedLines) {
+                                    "プリンタープロファイルの保存後再読込に失敗しました"
+                                }
+                                reloaded
+                            }
                             message = result.fold(
-                                onSuccess = {
+                                onSuccess = { reloaded ->
+                                    printableDotWidth = reloaded.printableDotWidth.toString()
+                                    feedLines = reloaded.feedLines.toString()
                                     PrinterConfigurationRegistry.reload(context.applicationContext)
-                                    "設定を保存しました"
+                                    "設定を保存し、再読込を確認しました"
                                 },
                                 onFailure = { it.message ?: "保存に失敗しました" },
                             )
@@ -646,7 +714,7 @@ private fun PrinterSettingsScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = AsGreen),
                     ) { Text("テスト印刷", fontWeight = FontWeight.Bold) }
                     Button(
-                        onClick = { executeTest("ドロアテスト") { store.testDrawer(it) } },
+                        onClick = { executeTest("ドロアテスト") { store.testDrawer(it, actorName) } },
                         enabled = !testing && drawerEnabled,
                         modifier = Modifier.weight(1f).height(54.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = AsGreen),
@@ -664,9 +732,20 @@ private fun PrinterSettingsScreen(
                 AsValueRow("機種", profile.displayName)
                 AsValueRow("接続", "${host.ifBlank { "未設定" }}:${port.ifBlank { "9100" }}")
                 AsValueRow("用紙", "${paperWidth}mm")
+                AsValueRow("印字可能幅", "${printableDotWidth.ifBlank { "－" }}dot")
+                AsValueRow("カット前紙送り", "${feedLines.ifBlank { "－" }}行")
+                AsValueRow("レシート自動発行", if (receiptAutoPrint) "ON" else "OFF（後レシート可）")
                 AsValueRow("カット", cutMode.displayName)
                 AsValueRow("ドロア", if (drawerEnabled) "DK${drawerPort + 1}" else "無効")
-                AsValueRow("自動オープン", if (drawerEnabled && drawerOpenOnCash) "現金会計時" else "なし")
+                AsValueRow(
+                    "自動オープン",
+                    if (!drawerEnabled) "なし" else listOfNotNull(
+                        "現金会計".takeIf { drawerOpenOnCash },
+                        "現金返金".takeIf { drawerOpenOnCashRefund },
+                        "入出金".takeIf { drawerOpenOnCashMovement },
+                        "両替".takeIf { drawerOpenOnExchange },
+                    ).joinToString("・").ifBlank { "なし" },
+                )
                 Spacer(Modifier.height(12.dp))
                 AsFlowStep("1", "会計・精算・返品をSQLiteへ確定")
                 AsFlowStep("2", "印刷キューへ登録")
@@ -675,7 +754,7 @@ private fun PrinterSettingsScreen(
                 AsFlowStep("5", "送信結果不明時は自動再印刷を停止")
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "現金会計の初回レシートだけにドロアキックを付加します。再発行、返品票、X点検票、Z精算票では自動でドロアを開きません。",
+                    "ドロア開放は印刷から分離し、現金会計・現金返金・入出金・両替の業務確定後だけ実行します。同じ業務イベントは再送・再印字されても再開放しません。単独開放は無効です。",
                     color = Color.DarkGray,
                     lineHeight = 22.sp,
                 )

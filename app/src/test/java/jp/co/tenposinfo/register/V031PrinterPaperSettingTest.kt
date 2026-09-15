@@ -39,7 +39,13 @@ class V031PrinterPaperSettingTest {
         val coordinator = source("SecureOperationsCoordinator.kt")
         val receipt = source("Receipt.kt")
 
-        assertTrue(database.contains("fun enqueueReprint(saleId: Long): Long"))
+        // RCP-004 adds actor for audit, but paper width remains resolved from printer settings.
+        val enqueueReprintSignature = database
+            .substringAfter("fun enqueueReprint(")
+            .substringBefore("): Long")
+        assertTrue(enqueueReprintSignature.contains("saleId: Long"))
+        assertTrue(enqueueReprintSignature.contains("actor: String"))
+        assertFalse(enqueueReprintSignature.contains("paperWidth"))
         assertFalse(database.substringAfter("fun saveSale(").substringBefore("): Long").contains("paperWidthMm"))
         assertFalse(operations.substringAfter("fun previewSettlement(").substringBefore("): String").contains("paperWidth"))
         assertFalse(operations.substringAfter("fun reprintSettlement(").substringBefore("): Long").contains("paperWidth"))

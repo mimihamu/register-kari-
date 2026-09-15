@@ -261,6 +261,7 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
             val assignments = assignmentMap(db)
             val taxRules = listTaxRules().associateBy { it.key }
             return db.transaction {
+                val revisionCreatedAt = System.currentTimeMillis()
                 val revisionId = insertOrThrow(
                     "menu_revisions",
                     null,
@@ -269,7 +270,7 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
                         put("effective_date", cleanDate)
                         put("status", "SCHEDULED")
                         put("created_by", actor)
-                        put("created_at", System.currentTimeMillis())
+                        put("created_at", revisionCreatedAt)
                     },
                 )
                 metadata.values.sortedBy { it.displayOrder }.forEach { meta ->
@@ -307,6 +308,7 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
                     )
                 }
                 audit(this, "MENU_REVISION_SCHEDULED", revisionId.toString(), "$cleanName / $cleanDate / ${metadata.size}商品", actor)
+                OutboxDocumentV150.materializeLatest(this, JournalEventType.MENU_REVISION.name, revisionId.toString())
                 revisionId
             }
         }
@@ -353,14 +355,202 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
         }
     }
 
+    fun applyDueRevisionIfNeeded(
+        date: LocalDate = BusinessDateResolver.current(applicationContext),
+        actor: String = "SYSTEM",
+    ): MenuRevisionApplyOutcomeV145? {
+        val revision = dueRevision(date) ?: return null
+        val items = revisionProducts(revision.id)
+        val rules = listTaxRules().associateBy { it.key }
+        val validation = runCatching { MenuRevisionApplyValidationV145.validate(items, rules) }
+        if (validation.isFailure) {
+            val message = validation.exceptionOrNull()?.message ?: "改訂検証に失敗しました"
+            db.transaction {
+                update("menu_revisions", ContentValues().apply { put("status", "FAILED") }, "id = ?", arrayOf(revision.id.toString()))
+                audit(this, "MENU_REVISION_APPLY_FAILED", revision.id.toString(), "validation / $message", actor)
+                JournalOutboxSchema.recordMenuApplyResult(
+                    db = this,
+                    revisionId = revision.id,
+                    status = "FAILED_VALIDATION",
+                    itemCount = items.size,
+                    reason = message,
+                    actor = actor,
+                )
+            }
+            return MenuRevisionApplyOutcomeV145(revision.id, false, false, items.size, message)
+        }
+
+        var snapshot: MenuMasterPreApplySnapshotV145? = null
+        var failure: Throwable? = null
+        db.beginTransaction()
+        try {
+            // BKP-007: capture under the same SQLite writer transaction immediately before first master mutation.
+            val capturedSnapshot = MenuRevisionPreApplySnapshotV145.capture(db)
+            snapshot = capturedSnapshot
+            val before = capturedSnapshot.rows.associateBy { it.productId }
+            val now = System.currentTimeMillis()
+
+            db.update("product_meta", ContentValues().apply { put("enabled", 0); put("updated_at", now) }, null, null)
+            items.forEach { item ->
+                val existing = before[item.productId]
+                val productValues = ContentValues().apply {
+                    put("name", item.name)
+                    put("unit_price", item.unitPrice)
+                    put("tax_category", item.legacyTaxCategory.name)
+                    put("display_order", item.displayOrder)
+                }
+                val productExists = scalarLong(db, "SELECT COUNT(*) FROM products WHERE id = ?", arrayOf(item.productId)) > 0L
+                if (productExists) {
+                    db.update("products", productValues, "id = ?", arrayOf(item.productId))
+                } else {
+                    productValues.put("id", item.productId)
+                    db.insertOrThrow("products", null, productValues)
+                }
+                db.insertWithOnConflict(
+                    "catalog_product_base", null,
+                    ContentValues().apply {
+                        put("product_id", item.productId)
+                        put("base_price", item.unitPrice)
+                        put("base_tax_category", item.legacyTaxCategory.name)
+                        put("updated_at", now)
+                    },
+                    SQLiteDatabase.CONFLICT_REPLACE,
+                )
+                db.insertWithOnConflict(
+                    "product_meta", null,
+                    ContentValues().apply {
+                        put("product_id", item.productId)
+                        if (existing?.departmentId == null) putNull("department_id") else put("department_id", existing.departmentId)
+                        if (existing?.groupId == null) putNull("group_id") else put("group_id", existing.groupId)
+                        put("enabled", if (item.enabled) 1 else 0)
+                        put("button_color", item.buttonColor)
+                        put("page_no", item.pageNo)
+                        put("slot_no", item.slotNo)
+                        put("kana", existing?.kana ?: "")
+                        put("barcode", existing?.barcode ?: "")
+                        put("updated_at", now)
+                    },
+                    SQLiteDatabase.CONFLICT_REPLACE,
+                )
+                db.insertWithOnConflict(
+                    "product_tax_assignments", null,
+                    ContentValues().apply {
+                        put("product_id", item.productId)
+                        put("tax_key", item.taxKey)
+                        put("updated_at", now)
+                    },
+                    SQLiteDatabase.CONFLICT_REPLACE,
+                )
+            }
+            db.execSQL("UPDATE catalog_revision SET revision = revision + 1 WHERE id = 1")
+            db.update(
+                "menu_revisions",
+                ContentValues().apply { put("status", "SUPERSEDED") },
+                "status = 'SCHEDULED' AND effective_date <= ? AND id <> ?",
+                arrayOf(date.toString(), revision.id.toString()),
+            )
+            require(
+                db.update(
+                    "menu_revisions",
+                    ContentValues().apply { put("status", "APPLIED") },
+                    "id = ? AND status = 'SCHEDULED'",
+                    arrayOf(revision.id.toString()),
+                ) == 1,
+            ) { "改訂状態が変化したため適用を中止しました" }
+            audit(
+                db,
+                "MENU_REVISION_APPLIED",
+                revision.id.toString(),
+                "snapshotRows=${capturedSnapshot.rows.size} / masterRevision=${capturedSnapshot.catalogRevision} / applied=${items.size}",
+                actor,
+            )
+            JournalOutboxSchema.recordMenuApplyResult(
+                db = db,
+                revisionId = revision.id,
+                status = "APPLIED",
+                itemCount = items.size,
+                reason = "適用完了",
+                actor = actor,
+            )
+            db.setTransactionSuccessful()
+        } catch (t: Throwable) {
+            failure = t
+        } finally {
+            db.endTransaction()
+        }
+
+        if (failure != null) {
+            val original = failure!!
+            val captured = snapshot
+            val restored = runCatching {
+                db.beginTransaction()
+                try {
+                    captured?.restore(db)
+                    db.update("menu_revisions", ContentValues().apply { put("status", "FAILED") }, "id = ?", arrayOf(revision.id.toString()))
+                    audit(
+                        db,
+                        "MENU_REVISION_APPLY_ROLLED_BACK",
+                        revision.id.toString(),
+                        "snapshotRows=${captured?.rows?.size ?: 0} / ${original.message ?: original.javaClass.simpleName}",
+                        actor,
+                    )
+                    JournalOutboxSchema.recordMenuApplyResult(
+                        db = db,
+                        revisionId = revision.id,
+                        status = "ROLLED_BACK",
+                        itemCount = items.size,
+                        reason = original.message ?: original.javaClass.simpleName,
+                        actor = actor,
+                    )
+                    db.setTransactionSuccessful()
+                } finally {
+                    db.endTransaction()
+                }
+            }
+            if (restored.isFailure) {
+                throw IllegalStateException(
+                    "メニュー改訂の適用失敗後、snapshot復旧にも失敗しました",
+                    restored.exceptionOrNull(),
+                )
+            }
+            return MenuRevisionApplyOutcomeV145(
+                revision.id,
+                false,
+                true,
+                items.size,
+                original.message ?: "適用失敗のため旧版へロールバックしました",
+            )
+        }
+        return MenuRevisionApplyOutcomeV145(revision.id, true, false, items.size, "適用完了")
+    }
+
+    private fun dueRevision(date: LocalDate): MenuRevisionRecord? = db.rawQuery(
+        """
+        SELECT r.id, r.name, r.effective_date, r.status, r.created_by, r.created_at,
+               (SELECT COUNT(*) FROM menu_revision_products p WHERE p.revision_id = r.id)
+        FROM menu_revisions r
+        WHERE r.status = 'SCHEDULED' AND r.effective_date <= ?
+        ORDER BY r.effective_date DESC, r.id DESC
+        LIMIT 1
+        """.trimIndent(),
+        arrayOf(date.toString()),
+    ).use { cursor ->
+        if (!cursor.moveToFirst()) null else MenuRevisionRecord(
+            id = cursor.getLong(0), name = cursor.getString(1), effectiveDate = cursor.getString(2),
+            status = cursor.getString(3), createdBy = cursor.getString(4), createdAt = cursor.getLong(5), itemCount = cursor.getInt(6),
+        )
+    }
+
     fun activeRevision(date: LocalDate = BusinessDateResolver.current(applicationContext)): MenuRevisionRecord? {
         db.rawQuery(
             """
             SELECT r.id, r.name, r.effective_date, r.status, r.created_by, r.created_at,
                    (SELECT COUNT(*) FROM menu_revision_products p WHERE p.revision_id = r.id)
             FROM menu_revisions r
-            WHERE r.status = 'SCHEDULED' AND r.effective_date <= ?
-            ORDER BY r.effective_date DESC, r.id DESC
+            WHERE r.status IN ('APPLIED', 'SCHEDULED') AND r.effective_date <= ?
+            ORDER BY r.effective_date DESC,
+                     CASE r.status WHEN 'SCHEDULED' THEN 1 ELSE 0 END DESC,
+                     r.id DESC
             LIMIT 1
             """.trimIndent(),
             arrayOf(date.toString()),
@@ -383,6 +573,7 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
         metadata: Map<String, ProductMasterRecord>,
         date: LocalDate = BusinessDateResolver.current(applicationContext),
     ): List<Product> {
+        applyDueRevisionIfNeeded(date)
         val rules = listTaxRules().associateBy { it.key }
         val revision = activeRevision(date)
         if (revision != null) {

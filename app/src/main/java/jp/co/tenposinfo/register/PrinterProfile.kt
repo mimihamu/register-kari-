@@ -51,7 +51,9 @@ enum class PrinterCutMode(val displayName: String) {
 object PrinterPulsePolicy {
     fun command(port: Int, onMillis: Int, offMillis: Int): ByteArray {
         require(port == 0 || port == 1) { "ドロアポートはDK1またはDK2です" }
-        require(onMillis in 20..500) { "ドロアON時間は20～500msです" }
+        require(onMillis in CashDrawerSafetyPolicyV136.MIN_OPEN_PULSE_MS..CashDrawerSafetyPolicyV136.MAX_OPEN_PULSE_MS) {
+            "ドロアON時間は${CashDrawerSafetyPolicyV136.MIN_OPEN_PULSE_MS}～${CashDrawerSafetyPolicyV136.MAX_OPEN_PULSE_MS}msです"
+        }
         require(offMillis in 20..500) { "ドロアOFF時間は20～500msです" }
         val onUnits = (onMillis / 2).coerceIn(1, 255)
         val offUnits = (offMillis / 2).coerceIn(1, 255)
@@ -86,7 +88,10 @@ object PrinterCommandEncoder {
         }
         output.write(text.toByteArray(Charset.forName(configuration.profile.charsetName)))
         if (appendCut) {
-            output.write(byteArrayOf(0x0A, 0x0A, 0x0A))
+            require(configuration.feedLines in PrinterProfileContractV136.MIN_FEED_LINES..PrinterProfileContractV136.MAX_FEED_LINES) {
+                "紙送り行数は${PrinterProfileContractV136.MIN_FEED_LINES}～${PrinterProfileContractV136.MAX_FEED_LINES}行で指定してください"
+            }
+            kotlin.repeat(configuration.feedLines) { output.write(0x0A) }
             output.write(cutCommand(configuration.cutMode))
         }
         return output.toByteArray()
