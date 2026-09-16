@@ -41,7 +41,6 @@ jobs:
           echo "$SDK/platform-tools" >> "$GITHUB_PATH"
           echo "$SDK/build-tools/36.0.0" >> "$GITHUB_PATH"
           echo "Using preinstalled Android SDK: $SDK"
-          ls -ld "$SDK/platforms/android-36" "$SDK/build-tools/36.0.0"
 
       - name: Set up Gradle 9.5
         uses: gradle/actions/setup-gradle@v4
@@ -52,33 +51,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          text = Path('.github/workflows/build-apk.yml').read_text()
-          start = text.index('      - name: Verify cumulative v0.14-v1.34 sources')
-          end = text.index('      - name: Verify launcher and orientation configuration', start)
-          block = text[start:end]
-          env_marker = '        env:\n'
-          run_marker = '        run: |\n'
-          env_text = block.split(env_marker, 1)[1].split(run_marker, 1)[0]
-          exports = []
-          for line in env_text.splitlines():
-              stripped = line.strip()
-              if not stripped or ':' not in stripped:
-                  continue
-              key, value = stripped.split(':', 1)
-              exports.append(f"export {key.strip()}={value.strip()}")
-          run = block.split(run_marker, 1)[1]
-          lines = []
-          for line in run.splitlines():
-              if line.startswith('          '):
-                  lines.append(line[10:])
-              else:
-                  lines.append(line)
-          Path('/tmp/cumulative-source-gate.sh').write_text('\n'.join(exports + lines) + '\n')
-          PY
-          test -s /tmp/cumulative-source-gate.sh
-          bash -euxo pipefail /tmp/cumulative-source-gate.sh
+          ruby -ryaml -rshellwords -e '
+            workflow = YAML.load_file(".github/workflows/build-apk.yml", aliases: true)
+            job = workflow.fetch("jobs").fetch("build-debug-apk")
+            step = job.fetch("steps").find { |s| s["name"] == "Verify cumulative v0.14-v1.34 sources" }
+            raise "formal source gate not found" unless step
+            File.open("/tmp/formal-source-gate.sh", "w") do |f|
+              (step["env"] || {}).each { |k,v| f.puts "export #{k}=#{Shellwords.escape(v.to_s)}" }
+              f.write(step.fetch("run"))
+              f.write("\n")
+            end
+          '
+          bash -euxo pipefail /tmp/formal-source-gate.sh
 
       - name: Verify launcher and orientation configuration
         shell: bash
