@@ -37,7 +37,7 @@ class V136Scr720PrinterTest {
         val controlText = buildString {
             append(PrinterPaperWidthTestV136.buildAll(ReceiptPaper.MM80, "2026-09-15T00:00:00Z"))
             append('\n')
-            append(PrinterProfilePrintabilityV136.diagnosticControlText(configuration.profile))
+            append(PrinterProfilePrintabilityV136.diagnosticText())
         }
         val payload = PrinterCommandEncoder.encodeText(controlText, configuration, appendCut = true)
 
