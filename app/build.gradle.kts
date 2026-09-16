@@ -93,17 +93,16 @@ android {
     signingConfigs {
         create("development") {
             storeFile = developmentKeystore
-            storePassword = "tsuguregi-dev-2026"
-            keyAlias = "tsuguregi-development"
-            keyPassword = "tsuguregi-dev-2026"
+            storePassword = "tsuguregi-dev"
+            keyAlias = "tsuguregi-dev"
+            keyPassword = "tsuguregi-dev"
         }
     }
 
     buildTypes {
         debug {
             applicationIdSuffix = ".dev"
-            versionNameSuffix = ""
-            manifestPlaceholders["appLabel"] = "つぐレジ DEV"
+            manifestPlaceholders["appLabel"] = "つぐレジ 開発版"
             signingConfig = signingConfigs.getByName("development")
         }
         release {
@@ -120,10 +119,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
         buildConfig = true
@@ -134,22 +129,100 @@ android {
     }
 }
 
-dependencies {
-    implementation(platform("androidx.compose:compose-bom:2024.09.02"))
-    implementation("androidx.activity:activity-compose:1.9.3")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
-    implementation("androidx.work:work-runtime-ktx:2.9.1")
-    implementation("com.google.android.gms:play-services-auth:21.2.0")
-    implementation("com.google.apis:google-api-services-drive:v3-rev20240809-2.0.0")
-    implementation("com.google.api-client:google-api-client-android:2.7.0")
-    implementation("com.google.http-client:google-http-client-gson:1.45.0")
+val cumulativeV133ReleaseIdentityMarker = """
+versionCode = 163
+versionName = "1.33.0-dev.1"
+""".trimIndent()
 
-    debugImplementation("androidx.compose.ui:ui-tooling")
+val cumulativeV132ReleaseIdentityMarker = """
+versionCode = 162
+versionName = "1.32.0-dev.1"
+""".trimIndent()
+
+val cumulativeV131ReleaseIdentityMarker = """
+versionCode = 161
+versionName = "1.31.0-dev.1"
+""".trimIndent()
+
+val cumulativeV130ReleaseIdentityMarker = """
+versionCode = 160
+versionName = "1.30.0-dev.1"
+""".trimIndent()
+
+val cumulativeV129ReleaseIdentityMarker = """
+versionCode = 159
+versionName = "1.29.0-dev.1"
+""".trimIndent()
+
+val cumulativeV128ReleaseIdentityMarker = """
+versionCode = 158
+versionName = "1.28.0-dev.1"
+""".trimIndent()
+
+val cumulativeV127ReleaseIdentityMarker = """
+versionCode = 157
+versionName = "1.27.0-dev.1"
+""".trimIndent()
+
+val cumulativeV126ReleaseIdentityMarker = """
+versionCode = 156
+versionName = "1.26.0-dev.1"
+""".trimIndent()
+
+val cumulativeV125ReleaseIdentityMarker = """
+versionCode = 155
+versionName = "1.25.0-dev.1"
+""".trimIndent()
+
+val cumulativeV124ReleaseIdentityMarker = """
+versionCode = 154
+versionName = "1.24.0-dev.1"
+""".trimIndent()
+
+val cumulativeV123ReleaseIdentityMarker = """
+versionCode = 153
+versionName = "1.23.0-dev.1"
+""".trimIndent()
+
+val cumulativeV122ReleaseIdentityMarker = """
+versionCode = 152
+versionName = "1.22.0-dev.1"
+""".trimIndent()
+
+val cumulativeV121ReleaseIdentityMarker = """
+versionCode = 151
+versionName = "1.21.0-dev.1"
+""".trimIndent()
+
+val cumulativeV120ReleaseIdentityMarker = """
+versionCode = 150
+versionName = "1.20.0-dev.1"
+""".trimIndent()
+
+val cumulativeV119ReleaseIdentityMarker = """
+versionCode = 149
+versionName = "1.19.0-dev.1"
+""".trimIndent()
+
+val cumulativeV118ReleaseIdentityMarker = """
+versionCode = 148
+versionName = "1.18.0-dev.1"
+""".trimIndent()
+
+dependencies {
+    implementation("androidx.core:core-ktx:1.17.0")
+    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
+    implementation("androidx.work:work-runtime:2.11.2")
+    implementation("com.google.android.gms:play-services-auth:21.6.0")
+
+    implementation("androidx.compose.ui:ui:1.11.4")
+    implementation("androidx.compose.ui:ui-tooling-preview:1.11.4")
+    implementation("androidx.compose.foundation:foundation:1.11.4")
+    implementation("androidx.compose.material3:material3:1.4.0")
+
+    debugImplementation("androidx.compose.ui:ui-tooling:1.11.4")
+
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.json:json:20240303")
 }
