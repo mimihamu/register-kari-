@@ -21,11 +21,13 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
+
       - name: Use runner Android SDK
         shell: bash
         run: |
@@ -40,35 +42,98 @@ jobs:
           echo "$SDK/build-tools/36.0.0" >> "$GITHUB_PATH"
           echo "Using preinstalled Android SDK: $SDK"
           ls -ld "$SDK/platforms/android-36" "$SDK/build-tools/36.0.0"
+
       - name: Set up Gradle 9.5
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.5.0"
+
+      - name: Verify cumulative source gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('.github/workflows/build-apk.yml').read_text()
+          start = text.index('      - name: Verify cumulative v0.14-v1.34 sources')
+          end = text.index('      - name: Verify launcher and orientation configuration', start)
+          block = text[start:end]
+          marker = '        run: |\n'
+          run = block.split(marker, 1)[1]
+          lines = []
+          for line in run.splitlines():
+              if line.startswith('          '):
+                  lines.append(line[10:])
+              else:
+                  lines.append(line)
+          Path('/tmp/cumulative-source-gate.sh').write_text('\n'.join(lines) + '\n')
+          PY
+          test -s /tmp/cumulative-source-gate.sh
+          bash -euxo pipefail /tmp/cumulative-source-gate.sh
+
+      - name: Verify launcher and orientation configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          register_launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' app/src/main app/src/debug | wc -l)
+          cd_launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' customer-display/src/main | wc -l)
+          plus_launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' management-app/src/main | wc -l)
+          test "$register_launcher_count" -eq 1
+          test "$cd_launcher_count" -eq 1
+          test "$plus_launcher_count" -eq 1
+          grep -q 'android:screenOrientation="landscape"' app/src/main/AndroidManifest.xml
+          grep -q 'android:screenOrientation="sensorPortrait"' management-app/src/main/AndroidManifest.xml
+          ! grep -q 'android:screenOrientation="landscape"' management-app/src/main/AndroidManifest.xml
+
       - name: Run cumulative unit tests
-        run: gradle testDebugUnitTest --stacktrace
+        run: gradle --no-daemon clean :app:testDebugUnitTest :customer-display:testDebugUnitTest :management-app:testDebugUnitTest --stacktrace
+
       - name: Compile Kotlin
-        run: gradle :app:compileDebugKotlin :management-app:compileDebugKotlin :customer-display:compileDebugKotlin --stacktrace
+        run: gradle --no-daemon :app:compileDebugKotlin :customer-display:compileDebugKotlin :management-app:compileDebugKotlin --stacktrace
+
       - name: Build all debug APKs
-        run: gradle :app:assembleDebug :management-app:assembleDebug :customer-display:assembleDebug --stacktrace
-      - name: Verify APK outputs and SHA-256
+        run: gradle --no-daemon :app:assembleDebug :customer-display:assembleDebug :management-app:assembleDebug --stacktrace
+
+      - name: Verify APK release identity and integrity
+        shell: bash
+        env:
+          POS_VERSION_CODE: 164
+          POS_VERSION_NAME: 1.34.0-dev.1
+          PLUS_VERSION_CODE: 33
+          PLUS_VERSION_NAME: 0.33.0-dev.1
+          BUILD_TOOLS_VERSION: 36.0.0
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          bash ci/verify-apk-release-integrity.sh
+          cat artifacts/apk-integrity-summary.txt
+
+      - name: Prepare named APKs and SHA-256
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v1.36_debug.apk
-          plus_apk=artifacts/TSUGUREGI_PLUS_v1.36_debug.apk
-          cd_apk=artifacts/TSUGUREGI_CD_v1.36_debug.apk
+          register_apk=artifacts/TSUGUREGI_v1.34.0_dev1_drive_page_commit_checkpoint_recovery_debug.apk
+          plus_apk=artifacts/TSUGUREGI_PLUS_v0.33.0_dev1_drive_page_commit_checkpoint_recovery_debug.apk
+          cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
           cp management-app/build/outputs/apk/debug/management-app-debug.apk "$plus_apk"
           cp customer-display/build/outputs/apk/debug/customer-display-debug.apk "$cd_apk"
-          test -s "$register_apk"
-          test -s "$plus_apk"
-          test -s "$cd_apk"
-          sha256sum artifacts/*.apk | tee artifacts/SHA256SUMS.txt
+          sha256sum "$register_apk" | tee "$register_apk.sha256"
+          sha256sum "$plus_apk" | tee "$plus_apk.sha256"
+          sha256sum "$cd_apk" | tee "$cd_apk.sha256"
+          git rev-parse HEAD | sed 's/^/HEAD=/' > artifacts/build-summary.txt
+          echo 'FORMAL_CUMULATIVE_SOURCE_GATE=true' >> artifacts/build-summary.txt
+          echo 'FORMAL_APK_RELEASE_INTEGRITY_GATE=true' >> artifacts/build-summary.txt
+
       - name: Upload APKs
+        id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v1.36-fallback-apks
+          name: TSUGUREGI-v1.36-formal-gates-preinstalled-sdk-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Report artifact ID
+        run: echo "ARTIFACT_ID=${{ steps.upload.outputs.artifact-id }}"
