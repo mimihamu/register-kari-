@@ -52,7 +52,7 @@ jobs:
         run: |
           set -euo pipefail
           ruby -ryaml -rshellwords -e '
-            workflow = YAML.load_file(".github/workflows/build-apk.yml", aliases: true)
+            workflow = YAML.load_file(".github/workflows/build-apk.yml")
             job = workflow.fetch("jobs").fetch("build-debug-apk")
             step = job.fetch("steps").find { |s| s["name"] == "Verify cumulative v0.14-v1.34 sources" }
             raise "formal source gate not found" unless step
