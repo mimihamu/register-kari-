@@ -27,8 +27,8 @@ data class ReceiptStampTemplateV136(
 /**
  * SCR-720 placement composer.
  * TOP inserts immediately before PrinterCommandEncoder.beginDocument().
- * BOTTOM inserts immediately before the ESC/POS cut command when present, otherwise at payload end.
- * This keeps feed/cut semantics intact and never mutates the source payload.
+ * BOTTOM handles each document independently: before that document's cut command, or at that
+ * document's end when no cut exists. Source payloads are never mutated.
  */
 object ReceiptStampDocumentComposerV136 {
     private val documentMarker = byteArrayOf(0x1B, 0x40, 0x1B, 0x74)
@@ -45,9 +45,15 @@ object ReceiptStampDocumentComposerV136 {
         }
         return when (placement) {
             ReceiptStampPlacementV136.TOP -> insertBeforeEachDocument(payload, stamp)
-            ReceiptStampPlacementV136.BOTTOM -> insertBeforeEachCutOrEnd(payload, stamp)
+            ReceiptStampPlacementV136.BOTTOM -> insertAtEachDocumentBottom(payload, stamp)
             ReceiptStampPlacementV136.NONE -> payload.copyOf()
         }
+    }
+
+    fun countDocuments(payload: ByteArray): Int {
+        if (payload.isEmpty()) return 0
+        val starts = findAll(payload, documentMarker)
+        return starts.size.coerceAtLeast(1)
     }
 
     private fun insertBeforeEachDocument(payload: ByteArray, stamp: ByteArray): ByteArray {
@@ -56,10 +62,42 @@ object ReceiptStampDocumentComposerV136 {
         return insertAt(payload, stamp, starts)
     }
 
-    private fun insertBeforeEachCutOrEnd(payload: ByteArray, stamp: ByteArray): ByteArray {
-        val cuts = (findAll(payload, partialCut) + findAll(payload, fullCut)).sorted()
-        if (cuts.isEmpty()) return payload + stamp
-        return insertAt(payload, stamp, cuts)
+    private fun insertAtEachDocumentBottom(payload: ByteArray, stamp: ByteArray): ByteArray {
+        val starts = findAll(payload, documentMarker)
+        if (starts.isEmpty()) {
+            val cut = firstCutInRange(payload, 0, payload.size)
+            return insertAt(payload, stamp, listOf(cut ?: payload.size))
+        }
+
+        val offsets = ArrayList<Int>(starts.size)
+        starts.forEachIndexed { index, start ->
+            val end = starts.getOrElse(index + 1) { payload.size }
+            offsets += firstCutInRange(payload, start, end) ?: end
+        }
+        return insertAt(payload, stamp, offsets)
+    }
+
+    private fun firstCutInRange(payload: ByteArray, start: Int, end: Int): Int? {
+        val partial = findFirst(payload, partialCut, start, end)
+        val full = findFirst(payload, fullCut, start, end)
+        return listOfNotNull(partial, full).minOrNull()
+    }
+
+    private fun findFirst(payload: ByteArray, marker: ByteArray, start: Int, end: Int): Int? {
+        var index = start.coerceAtLeast(0)
+        val last = (end - marker.size).coerceAtMost(payload.size - marker.size)
+        while (index <= last) {
+            var matches = true
+            for (i in marker.indices) {
+                if (payload[index + i] != marker[i]) {
+                    matches = false
+                    break
+                }
+            }
+            if (matches) return index
+            index++
+        }
+        return null
     }
 
     private fun insertAt(payload: ByteArray, bytes: ByteArray, offsets: List<Int>): ByteArray {
