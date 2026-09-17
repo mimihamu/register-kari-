@@ -34,6 +34,18 @@ class V136ReceiptStampPlacementTest {
         assertArrayEquals(payload + stamp, result)
     }
 
+    @Test fun bottomPlacementHandlesCutAndCutlessDocumentsIndependently() {
+        val payload = begin + byteArrayOf(0x11) + begin + byteArrayOf(0x22) + cut
+        val result = ReceiptStampDocumentComposerV136.compose(payload, stamp, ReceiptStampPlacementV136.BOTTOM)
+        assertArrayEquals(begin + byteArrayOf(0x11) + stamp + begin + byteArrayOf(0x22) + stamp + cut, result)
+        assertEquals(2, ReceiptStampDocumentComposerV136.countDocuments(payload))
+    }
+
+    @Test fun payloadWithoutDocumentMarkerStillCountsAsOneDocument() {
+        assertEquals(1, ReceiptStampDocumentComposerV136.countDocuments(byteArrayOf(0x11, 0x22)))
+        assertEquals(0, ReceiptStampDocumentComposerV136.countDocuments(byteArrayOf()))
+    }
+
     @Test fun noneAndEmptyStampPreservePayload() {
         val payload = begin + byteArrayOf(0x11) + cut
         assertArrayEquals(payload, ReceiptStampDocumentComposerV136.compose(payload, stamp, ReceiptStampPlacementV136.NONE))
