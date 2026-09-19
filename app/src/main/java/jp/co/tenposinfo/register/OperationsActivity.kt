@@ -1002,6 +1002,7 @@ private fun CashMovementScreen(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OpChoiceButton("入金", type == CashMovementType.IN, Modifier.weight(1f)) { type = CashMovementType.IN }
                     OpChoiceButton("出金", type == CashMovementType.OUT, Modifier.weight(1f)) { type = CashMovementType.OUT }
+                    OpChoiceButton("両替", type == CashMovementType.EXCHANGE, Modifier.weight(1f)) { type = CashMovementType.EXCHANGE }
                 }
                 Spacer(Modifier.height(10.dp))
                 OpNumericField("金額", amount, { amount = it })
@@ -1022,7 +1023,13 @@ private fun CashMovementScreen(
                         reason = ""
                     },
                     modifier = Modifier.fillMaxWidth().height(56.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = if (type == CashMovementType.IN) OpBlue else OpDanger),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = when (type) {
+                            CashMovementType.IN -> OpBlue
+                            CashMovementType.OUT -> OpDanger
+                            CashMovementType.EXCHANGE -> OpNavy
+                        },
+                    ),
                 ) { Text("${type.displayName}を保存", fontWeight = FontWeight.Bold) }
                 if (message != null) {
                     Spacer(Modifier.height(8.dp))
@@ -1039,14 +1046,26 @@ private fun CashMovementScreen(
                     LazyColumn {
                         itemsIndexed(records) { _, record ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(record.type.displayName, color = if (record.type == CashMovementType.IN) OpBlue else OpDanger, fontWeight = FontWeight.Bold)
+                                Text(
+                                    record.type.displayName,
+                                    color = when (record.type) {
+                                        CashMovementType.IN -> OpBlue
+                                        CashMovementType.OUT -> OpDanger
+                                        CashMovementType.EXCHANGE -> OpNavy
+                                    },
+                                    fontWeight = FontWeight.Bold,
+                                )
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(record.reason, fontWeight = FontWeight.Medium)
                                     Text("${opDateTime(record.createdAt)} / ${record.operatorName}", color = Color.Gray)
                                 }
                                 Text(
-                                    if (record.type == CashMovementType.IN) "+${opYen(record.amount)}" else "-${opYen(record.amount)}",
+                                    when (record.type) {
+                                        CashMovementType.IN -> "+${opYen(record.amount)}"
+                                        CashMovementType.OUT -> "-${opYen(record.amount)}"
+                                        CashMovementType.EXCHANGE -> "±${opYen(record.amount)}"
+                                    },
                                     fontSize = 19.sp,
                                     fontWeight = FontWeight.Bold,
                                 )

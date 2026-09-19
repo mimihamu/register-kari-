@@ -76,6 +76,7 @@ class PrinterToolsHubActivity : ComponentActivity() {
                     onOpenSoakTest = { startActivity(Intent(this, PrinterSoakTestActivity::class.java)) },
                     onOpenHistory = { startActivity(Intent(this, PrinterSoakTestHistoryActivity::class.java)) },
                     onOpenQueue = { startActivity(Intent(this, UnifiedPrintQueueActivity::class.java)) },
+                    onOpenPerformanceDiagnostics = { startActivity(Intent(this, PerformanceDiagnosticsActivityV136::class.java)) },
                     onClose = { finish() },
                 )
             }
@@ -93,6 +94,7 @@ private fun PrinterToolsHubScreen(
     onOpenSoakTest: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenQueue: () -> Unit,
+    onOpenPerformanceDiagnostics: () -> Unit,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -212,6 +214,7 @@ private fun PrinterToolsHubScreen(
                         PrinterHubAction("連続印刷試験", "状態確認付きで1～500回。自動再送なし", PhOrange, onOpenSoakTest, Modifier.weight(1f))
                         PrinterHubAction("試験履歴・CSV", "詳細、保持期間、削除、過去CSV再出力", PhPurple, onOpenHistory, Modifier.weight(1f))
                         PrinterHubAction("統合印刷キュー", "FAILEDを含む全帳票と紙確認後の再印刷", PhRed, onOpenQueue, Modifier.weight(1f))
+                        PrinterHubAction("性能診断", "メモリ・PSS・端末メモリ・ストレージを現在値で確認", PhBlue, onOpenPerformanceDiagnostics, Modifier.weight(1f))
                     }
 
                     PrinterHubPanel(Modifier.weight(1f).fillMaxHeight()) {
