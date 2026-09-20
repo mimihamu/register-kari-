@@ -2339,7 +2339,7 @@ private fun PaymentScreen(
                                 PaymentAmountRow("支払済", yen(state.paidAmount))
                             }
                             Column(Modifier.weight(1f)) {
-                                PaymentAmountRow("残額", yen(remaining), emphasized = true)
+                                PaymentAmountRow(if (remaining == 0L) "残額（支払完了）" else "残額", yen(remaining), emphasized = true)
                                 PaymentAmountRow("お釣り", yen(state.changeAmount))
                             }
                         }
@@ -2372,6 +2372,12 @@ private fun PaymentScreen(
                                 maxLines = 2,
                             )
                         }
+                        Text(
+                            if (input.isBlank()) "金額指定なし：支払方法を押すと残額全額を充当" else "指定金額",
+                            color = Color.Gray,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                        )
                         ValueBox(
                             if (input.isBlank()) "残額全額" else input,
                             compact = true,
@@ -2464,7 +2470,14 @@ private fun CompleteScreen(
             ) {
                 AmountRow("売上番号", detail?.summary?.id?.toString() ?: "-")
                 AmountRow("合計", yen(detail?.summary?.totalAmount ?: 0), emphasized = true)
-                AmountRow("お釣り", yen(detail?.summary?.changeAmount ?: 0), emphasized = true)
+                Text(
+                    "お釣り  ${yen(detail?.summary?.changeAmount ?: 0)}",
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Navy,
+                    fontSize = if (responsive.isCompact) 28.sp else 36.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.End,
+                )
                 Text(
                     "売上・支払・印刷キューを同一トランザクションで保存済み",
                     color = Color(0xFF2E7D32),
