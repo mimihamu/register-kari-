@@ -461,7 +461,6 @@ private fun OperatorMasterScreen(
                             )
                             Column {
                                 Text(permission.displayName, fontWeight = FontWeight.SemiBold)
-                                Text(permission.name, color = Color.Gray, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                             }
                         }
                     }
