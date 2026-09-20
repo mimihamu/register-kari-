@@ -1151,7 +1151,21 @@ private fun SalesScreen(
             horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
         ) {
             CardPanel(Modifier.weight(responsive.salesListWeight).fillMaxHeight()) {
-                Text("注文一覧", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Navy)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("注文一覧", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Navy)
+                    Spacer(Modifier.weight(1f))
+                    if (selectedIndex != null) {
+                        Surface(color = PaleBlue, shape = RoundedCornerShape(12.dp)) {
+                            Text(
+                                "選択中",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                color = Navy,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                }
                 Spacer(Modifier.height(8.dp))
                 LazyColumn(Modifier.weight(1f)) {
                     itemsIndexed(cart) { index, item ->
@@ -1165,15 +1179,6 @@ private fun SalesScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
-                                if (selected) {
-                                    Text(
-                                        "選択中",
-                                        color = Navy,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                    )
-                                }
                                 Text(item.product.name, fontWeight = FontWeight.SemiBold)
                                 Text(
                                     "${item.quantity} × ${yen(item.unitPrice)}  ${item.product.taxSymbol}",
@@ -1216,7 +1221,7 @@ private fun SalesScreen(
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text("${cart.sumOf { it.quantity }}点")
                     Spacer(Modifier.weight(1f))
-                    Text("合計 ${yen(summary.grossAmount)}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Navy)
+                    Text("合計 ${yen(summary.grossAmount)}", fontSize = if (responsive.isCompact) 24.sp else 28.sp, fontWeight = FontWeight.Bold, color = Navy)
                 }
             }
 
@@ -1407,7 +1412,7 @@ private fun SalesScreen(
             OutlinedButton(onClick = onPrinterStatus, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("プリンター", maxLines = 1) }
             OutlinedButton(onClick = onPrintQueue, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("印刷管理", maxLines = 1) }
             BlueButton(
-                "小計／会計  ${yen(summary.grossAmount)}",
+                "会計へ  ${yen(summary.grossAmount)}",
                 onPayment,
                 Modifier.weight(if (responsive.isCompact) 2.2f else 2.8f).fillMaxHeight(),
                 cart.isNotEmpty(),
