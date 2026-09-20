@@ -10,8 +10,9 @@ class V136SalesUiHierarchyTest {
     fun primaryCheckoutActionAndSelectionStateRemainUnambiguous() {
         val source = File("src/main/java/jp/co/tenposinfo/register/MainActivity.kt").readText()
 
-        assertTrue(source.contains("\"会計へ  \${yen(summary.grossAmount)}\""))
-        assertFalse(source.contains("\"小計／会計  \${yen(summary.grossAmount)}\""))
+        assertTrue(source.contains("\"小計／会計  \${yen(summary.grossAmount)}\""))
+        assertFalse(source.contains("\"会計へ  \${yen(summary.grossAmount)}\""))
+        assertTrue(source.contains("if (selected) {"))
         assertTrue(source.contains("if (selectedIndex != null)"))
         assertTrue(source.contains("Surface(color = PaleBlue, shape = RoundedCornerShape(12.dp))"))
         assertTrue(source.contains("\"選択中\""))
