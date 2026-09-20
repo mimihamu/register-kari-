@@ -35,15 +35,15 @@ class V136BarcodeInputSafetyTest {
 
     @Test
     fun scannerGatewaySuppressesSameCodeOnlyInsideDuplicateWindow() {
-        val gateway = ScannerGatewayV136(duplicateSuppressMillis = 500L)
-        assertFalse(gateway.shouldSuppressDuplicate("4901234567890", 1000L))
+        assertFalse(DuplicateBarcodePolicyV136.shouldSuppress(null, Long.MIN_VALUE, "4901234567890", 1000L, 500L))
+        assertTrue(DuplicateBarcodePolicyV136.shouldSuppress("4901234567890", 1000L, "4901234567890", 1500L, 500L))
+        assertFalse(DuplicateBarcodePolicyV136.shouldSuppress("4901234567890", 1000L, "4901234567890", 1501L, 500L))
+        assertFalse(DuplicateBarcodePolicyV136.shouldSuppress("4901234567890", 1000L, "4901234567891", 1200L, 500L))
+        assertFalse(DuplicateBarcodePolicyV136.shouldSuppress("4901234567890", 1000L, "4901234567890", 999L, 500L))
 
-        // Pure suppression contract is also source-audited below because Android KeyEvent cannot be
-        // constructed reliably in the local JVM test environment.
         val scanner = File("src/main/java/jp/co/tenposinfo/register/BarcodeInputV136.kt").readText()
         assertTrue(scanner.contains("DEFAULT_DUPLICATE_SUPPRESS_MS = 500L"))
-        assertTrue(scanner.contains("code == lastDeliveredCode"))
-        assertTrue(scanner.contains("elapsed <= duplicateSuppressMillis"))
+        assertTrue(scanner.contains("DuplicateBarcodePolicyV136.shouldSuppress"))
         assertTrue(scanner.contains("lastDeliveredCode = token"))
         assertTrue(scanner.contains("lastDeliveredAt = event.eventTime"))
     }
