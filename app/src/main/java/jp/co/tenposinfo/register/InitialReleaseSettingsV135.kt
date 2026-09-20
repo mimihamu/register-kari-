@@ -719,7 +719,6 @@ private fun Enum<*>.settingsDisplayNameV136(): String = when (this) {
 }
 
 @Composable
-@Composable
 private inline fun <reified T : Enum<T>> EnumCycleRowV135(label: String, value: T, crossinline onChange: (T) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(label, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
