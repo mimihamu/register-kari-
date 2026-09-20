@@ -3,6 +3,7 @@ package jp.co.tenposinfo.register
 import java.io.File
 import kotlin.system.measureNanoTime
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
