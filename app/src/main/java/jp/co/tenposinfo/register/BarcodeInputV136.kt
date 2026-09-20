@@ -115,13 +115,31 @@ internal class ScannerGatewayV136(
         return false
     }
 
-    internal fun shouldSuppressDuplicate(code: String, timestamp: Long): Boolean {
-        val elapsed = timestamp - lastDeliveredAt
-        return code == lastDeliveredCode && elapsed >= 0L && elapsed <= duplicateSuppressMillis
-    }
+    internal fun shouldSuppressDuplicate(code: String, timestamp: Long): Boolean =
+        DuplicateBarcodePolicyV136.shouldSuppress(
+            previousCode = lastDeliveredCode,
+            previousAt = lastDeliveredAt,
+            code = code,
+            timestamp = timestamp,
+            windowMillis = duplicateSuppressMillis,
+        )
 
     companion object {
         const val DEFAULT_DUPLICATE_SUPPRESS_MS = 500L
+    }
+}
+
+internal object DuplicateBarcodePolicyV136 {
+    fun shouldSuppress(
+        previousCode: String?,
+        previousAt: Long,
+        code: String,
+        timestamp: Long,
+        windowMillis: Long = ScannerGatewayV136.DEFAULT_DUPLICATE_SUPPRESS_MS,
+    ): Boolean {
+        if (previousCode == null || previousAt == Long.MIN_VALUE) return false
+        val elapsed = timestamp - previousAt
+        return code == previousCode && elapsed >= 0L && elapsed <= windowMillis
     }
 }
 
