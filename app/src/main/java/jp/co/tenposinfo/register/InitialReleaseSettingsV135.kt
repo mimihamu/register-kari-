@@ -688,6 +688,37 @@ private fun BoolRowV135(label: String, checked: Boolean, onChange: (Boolean) -> 
     }
 }
 
+private fun Enum<*>.settingsDisplayNameV136(): String = when (this) {
+    QuantityInputModeV135.QUANTITY_THEN_ITEM -> "数量→商品"
+    QuantityInputModeV135.PRICE_THEN_QTY -> "単価→数量"
+    SettingPermissionPolicyV135.DENY -> "禁止"
+    SettingPermissionPolicyV135.MANAGER -> "責任者のみ"
+    SettingPermissionPolicyV135.ALLOW -> "許可"
+    ZeroPricePolicyV135.PRODUCT_SETTING -> "商品設定に従う"
+    ZeroPricePolicyV135.DENY -> "禁止"
+    LineDeletePolicyV135.ALLOW -> "許可"
+    LineDeletePolicyV135.MANAGER -> "責任者のみ"
+    RestoreWorkCartPolicyV135.ASK -> "確認する"
+    RestoreWorkCartPolicyV135.ALWAYS -> "常に復元"
+    RestoreWorkCartPolicyV135.NEVER -> "復元しない"
+    BusinessDateModeV135.AUTO -> "自動"
+    BusinessDateModeV135.CONFIRM -> "確認して決定"
+    BusinessDateModeV135.MANUAL -> "手動"
+    PrintOnHoldV135.NONE -> "印刷しない"
+    PrintOnHoldV135.ORDER -> "注文伝票"
+    PrintOnHoldV135.OPEN_CHECK -> "保留伝票"
+    SettlementWarningPolicyV135.BLOCK -> "禁止"
+    SettlementWarningPolicyV135.WARN -> "警告"
+    SettlementWarningPolicyV135.ALLOW -> "許可"
+    ZeroItemsPrintV135.SHOW -> "印字する"
+    ZeroItemsPrintV135.HIDE -> "印字しない"
+    ReceiptHeaderModeV135.TEXT -> "文字"
+    ReceiptHeaderModeV135.IMAGE -> "画像"
+    ReceiptHeaderModeV135.BOTH -> "文字＋画像"
+    else -> name
+}
+
+@Composable
 @Composable
 private inline fun <reified T : Enum<T>> EnumCycleRowV135(label: String, value: T, crossinline onChange: (T) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -695,7 +726,7 @@ private inline fun <reified T : Enum<T>> EnumCycleRowV135(label: String, value: 
         OutlinedButton(onClick = {
             val values = enumValues<T>()
             onChange(values[(value.ordinal + 1) % values.size])
-        }) { Text(value.name) }
+        }) { Text(value.settingsDisplayNameV136()) }
     }
 }
 
