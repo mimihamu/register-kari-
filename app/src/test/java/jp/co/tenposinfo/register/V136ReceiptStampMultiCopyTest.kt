@@ -2,6 +2,7 @@ package jp.co.tenposinfo.register
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class V136ReceiptStampMultiCopyTest {
@@ -29,6 +30,46 @@ class V136ReceiptStampMultiCopyTest {
 
         assertEquals(3, ReceiptStampPayloadComposerV136.countDocuments(payload))
         assertArrayEquals(stamp + first + stamp + second + stamp + third, composed)
+    }
+
+    @Test
+    fun formalMultiCopyReceiptHasPerCopyOrdinal() {
+        val data = ReceiptData(
+            storeName = "つぐレジ店",
+            registrationNumber = "",
+            saleId = 136L,
+            createdAt = 0L,
+            operatorName = "担当者",
+            items = emptyList(),
+            taxSummary = TaxEngine.calculate(emptyList()),
+            payments = emptyList(),
+            changeAmount = 0L,
+            documentCopies = 3,
+        )
+        val first = ReceiptRenderer.render(data, ReceiptPaper.MM58, copyOrdinal = 1, copyTotal = 3)
+        val second = ReceiptRenderer.render(data, ReceiptPaper.MM58, copyOrdinal = 2, copyTotal = 3)
+        val third = ReceiptRenderer.render(data, ReceiptPaper.MM58, copyOrdinal = 3, copyTotal = 3)
+
+        assertTrue(first.contains("部数 1/3"))
+        assertTrue(second.contains("部数 2/3"))
+        assertTrue(third.contains("部数 3/3"))
+    }
+
+    @Test
+    fun singleCopyDoesNotAddOrdinalNoise() {
+        val data = ReceiptData(
+            storeName = "つぐレジ店",
+            registrationNumber = "",
+            saleId = 137L,
+            createdAt = 0L,
+            operatorName = "担当者",
+            items = emptyList(),
+            taxSummary = TaxEngine.calculate(emptyList()),
+            payments = emptyList(),
+            changeAmount = 0L,
+            documentCopies = 1,
+        )
+        assertTrue(!ReceiptRenderer.render(data, ReceiptPaper.MM58).contains("部数 1/1"))
     }
 
     @Test
