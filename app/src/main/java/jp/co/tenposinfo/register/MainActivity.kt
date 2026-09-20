@@ -1179,6 +1179,15 @@ private fun SalesScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
+                                if (selected) {
+                                    Text(
+                                        "選択中",
+                                        color = Navy,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                    )
+                                }
                                 Text(item.product.name, fontWeight = FontWeight.SemiBold)
                                 Text(
                                     "${item.quantity} × ${yen(item.unitPrice)}  ${item.product.taxSymbol}",
@@ -1412,7 +1421,7 @@ private fun SalesScreen(
             OutlinedButton(onClick = onPrinterStatus, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("プリンター", maxLines = 1) }
             OutlinedButton(onClick = onPrintQueue, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("印刷管理", maxLines = 1) }
             BlueButton(
-                "会計へ  ${yen(summary.grossAmount)}",
+                "小計／会計  ${yen(summary.grossAmount)}",
                 onPayment,
                 Modifier.weight(if (responsive.isCompact) 2.2f else 2.8f).fillMaxHeight(),
                 cart.isNotEmpty(),
