@@ -74,17 +74,24 @@ internal class HidBarcodeDecoderV136(
  */
 internal class ScannerGatewayV136(
     private val decoder: HidBarcodeDecoderV136 = HidBarcodeDecoderV136(),
+    private val duplicateSuppressMillis: Long = DEFAULT_DUPLICATE_SUPPRESS_MS,
 ) {
     @Volatile private var started = false
+    private var lastDeliveredCode: String? = null
+    private var lastDeliveredAt: Long = Long.MIN_VALUE
 
     fun start() {
         decoder.reset()
+        lastDeliveredCode = null
+        lastDeliveredAt = Long.MIN_VALUE
         started = true
     }
 
     fun stop() {
         started = false
         decoder.reset()
+        lastDeliveredCode = null
+        lastDeliveredAt = Long.MIN_VALUE
     }
 
     fun handle(event: KeyEvent): Boolean {
@@ -93,6 +100,9 @@ internal class ScannerGatewayV136(
         val char = if (isEnter) null else event.unicodeChar.takeIf { it != 0 }?.toChar()
         val token = decoder.accept(char, isEnter, event.eventTime)
         if (token != null) {
+            if (shouldSuppressDuplicate(token, event.eventTime)) return true
+            lastDeliveredCode = token
+            lastDeliveredAt = event.eventTime
             InputRouterV136.barcodeScanned(
                 BarcodeScannedV136(
                     code = token,
@@ -103,6 +113,15 @@ internal class ScannerGatewayV136(
             return true
         }
         return false
+    }
+
+    internal fun shouldSuppressDuplicate(code: String, timestamp: Long): Boolean {
+        val elapsed = timestamp - lastDeliveredAt
+        return code == lastDeliveredCode && elapsed >= 0L && elapsed <= duplicateSuppressMillis
+    }
+
+    companion object {
+        const val DEFAULT_DUPLICATE_SUPPRESS_MS = 500L
     }
 }
 
