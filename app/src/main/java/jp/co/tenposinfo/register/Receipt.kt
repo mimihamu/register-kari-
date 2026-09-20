@@ -142,7 +142,9 @@ object ReceiptFactory {
 object ReceiptRenderer {
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss")
 
-    fun render(data: ReceiptData, paper: ReceiptPaper): String {
+    fun render(data: ReceiptData, paper: ReceiptPaper, copyOrdinal: Int = 1, copyTotal: Int = data.documentCopies): String {
+        require(copyTotal >= 1) { "印刷部数は1以上です" }
+        require(copyOrdinal in 1..copyTotal) { "印刷通番が範囲外です" }
         val width = paper.charsPerLine
         val lines = mutableListOf<String>()
         if (data.reprint) lines += center("【再発行】", width)
@@ -153,6 +155,7 @@ object ReceiptRenderer {
             if (data.storePhone.isNotBlank()) lines += center("TEL ${data.storePhone}", width)
         }
         lines += center("領収書／レシート", width)
+        if (copyTotal > 1) lines += center("部数 $copyOrdinal/$copyTotal", width)
         lines += separator(width, '=')
         lines += "No.${ReceiptNumberV136.format(data.saleId)}  ${formatDate(data.createdAt)}"
         lines += "担当 ${data.operatorName}"
@@ -255,7 +258,12 @@ object EscPosEncoder {
         val copies = DocumentPrintSettingsPolicyV136.normalizeCopies(data.documentCopies)
         return (0 until copies).fold(ByteArray(0)) { payload, copyIndex ->
             payload + PrinterCommandEncoder.encodeText(
-                text = ReceiptRenderer.render(data, PrinterPaperSettingPolicy.paper(configuration)),
+                text = ReceiptRenderer.render(
+                    data = data,
+                    paper = PrinterPaperSettingPolicy.paper(configuration),
+                    copyOrdinal = copyIndex + 1,
+                    copyTotal = copies,
+                ),
                 configuration = configuration,
                 openDrawer = false,
                 appendCut = true,
