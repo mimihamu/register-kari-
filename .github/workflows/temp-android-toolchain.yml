@@ -136,13 +136,106 @@ jobs:
           cp -a "$GRADLE_USER_HOME/caches" /tmp/v0927-toolchain/gradle-home/
           cp -a "$GRADLE_USER_HOME/notifications" /tmp/v0927-toolchain/gradle-home/ 2>/dev/null || true
           tar -C /tmp/v0927-toolchain -czf /tmp/android-v0927-toolchain.tar.gz .
-          sha256sum /tmp/android-v0927-toolchain.tar.gz
+          sha256sum /tmp/android-v0927-toolchain.tar.gz | tee /tmp/android-v0927-toolchain.sha256
           du -h /tmp/android-v0927-toolchain.tar.gz
+          split -b 55M -d -a 2 /tmp/android-v0927-toolchain.tar.gz /tmp/toolchain.part-
+          ls -lh /tmp/toolchain.part-*
 
-      - name: Upload toolchain
+      - name: Upload manifest
         uses: actions/upload-artifact@v4
         with:
-          name: android-v0927-toolchain
-          path: /tmp/android-v0927-toolchain.tar.gz
+          name: toolchain-manifest
+          path: /tmp/android-v0927-toolchain.sha256
           compression-level: 0
           retention-days: 1
+
+      - name: Upload part 00
+        uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-part-00
+          path: /tmp/toolchain.part-00
+          compression-level: 0
+          retention-days: 1
+      - name: Upload part 01
+        uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-part-01
+          path: /tmp/toolchain.part-01
+          compression-level: 0
+          retention-days: 1
+      - name: Upload part 02
+        uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-part-02
+          path: /tmp/toolchain.part-02
+          compression-level: 0
+          retention-days: 1
+      - name: Upload part 03
+        uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-part-03
+          path: /tmp/toolchain.part-03
+          compression-level: 0
+          retention-days: 1
+      - name: Upload part 04
+        uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-part-04
+          path: /tmp/toolchain.part-04
+          compression-level: 0
+          retention-days: 1
+      - name: Upload part 05
+        uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-part-05
+          path: /tmp/toolchain.part-05
+          compression-level: 0
+          retention-days: 1
+      - name: Upload part 06
+        uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-part-06
+          path: /tmp/toolchain.part-06
+          compression-level: 0
+          retention-days: 1
+      - name: Upload part 07
+        uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-part-07
+          path: /tmp/toolchain.part-07
+          compression-level: 0
+          retention-days: 1
+      - name: Upload part 08
+        uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-part-08
+          path: /tmp/toolchain.part-08
+          compression-level: 0
+          retention-days: 1
+      - name: Upload part 09
+        if: ${{ hashFiles('/tmp/toolchain.part-09') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-part-09
+          path: /tmp/toolchain.part-09
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: ignore
+      - name: Upload part 10
+        if: ${{ hashFiles('/tmp/toolchain.part-10') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-part-10
+          path: /tmp/toolchain.part-10
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: ignore
+      - name: Upload part 11
+        if: ${{ hashFiles('/tmp/toolchain.part-11') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-part-11
+          path: /tmp/toolchain.part-11
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: ignore
