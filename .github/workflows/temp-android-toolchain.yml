@@ -1,8 +1,8 @@
 name: Temp Android Toolchain Prep
 
 on:
-  pull_request:
-    branches: [ main ]
+  push:
+    branches: [ tmp-android-toolchain ]
 
 jobs:
   prep:
