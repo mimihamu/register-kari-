@@ -1,0 +1,19 @@
+name: Temp Android Toolchain Prep
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  prep:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Smoke test
+        run: |
+          echo "runner-ok" > hello.txt
+          uname -a
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runner-smoke
+          path: hello.txt
