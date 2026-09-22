@@ -213,7 +213,6 @@ jobs:
           compression-level: 0
           retention-days: 1
       - name: Upload part 09
-        if: ${{ hashFiles('/tmp/toolchain.part-09') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: toolchain-part-09
@@ -222,7 +221,6 @@ jobs:
           retention-days: 1
           if-no-files-found: ignore
       - name: Upload part 10
-        if: ${{ hashFiles('/tmp/toolchain.part-10') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: toolchain-part-10
@@ -231,7 +229,6 @@ jobs:
           retention-days: 1
           if-no-files-found: ignore
       - name: Upload part 11
-        if: ${{ hashFiles('/tmp/toolchain.part-11') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: toolchain-part-11
