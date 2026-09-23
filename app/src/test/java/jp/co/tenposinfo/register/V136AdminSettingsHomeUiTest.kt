@@ -62,7 +62,7 @@ class V136AdminSettingsHomeUiTest {
         assertTrue(source.contains("title = \"顧客表示\""))
         assertTrue(source.contains("title = \"データ保全\""))
         assertTrue(source.contains("title = \"Google Drive・同期\""))
-        assertTrue(source.contains("title = \"プリンター運用\""))
+        assertTrue(source.contains("title = \"保守・診断\""))
         assertTrue(source.contains("title = \"監査ログ\""))
         assertTrue(source.contains("title = \"責任者PIN\""))
         assertTrue(source.contains("onTaxInvoice ="))
