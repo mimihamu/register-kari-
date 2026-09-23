@@ -76,9 +76,17 @@ private fun ReceiptSettingsApp(
 ) {
     val context = LocalContext.current
     val store = remember { AdminSettingsStore(context.applicationContext) }
+    val layoutStore = remember { ReceiptLayoutSettingsStoreV136(context.applicationContext) }
     var revision by remember { mutableIntStateOf(0) }
     val printer = remember(revision) { store.loadPrinterConfiguration() }
+    val layout = remember(revision) { layoutStore.load() }
     var receiptAutoPrint by remember(revision) { mutableStateOf(printer.receiptAutoPrintEnabled) }
+    var showLogo by remember(revision) { mutableStateOf(layout.showLogo) }
+    var showAddress by remember(revision) { mutableStateOf(layout.showAddress) }
+    var showPhone by remember(revision) { mutableStateOf(layout.showPhone) }
+    var showOperator by remember(revision) { mutableStateOf(layout.showOperator) }
+    var showProductCode by remember(revision) { mutableStateOf(layout.showProductCode) }
+    var reprintAuth by remember(revision) { mutableStateOf(layout.reprintAuth) }
     var message by remember { mutableStateOf<String?>(null) }
 
     DisposableEffect(Unit) {
@@ -116,7 +124,12 @@ private fun ReceiptSettingsApp(
                     border = BorderStroke(1.dp, RsBorder),
                     shape = RoundedCornerShape(10.dp),
                 ) {
-                    Column(Modifier.fillMaxSize().padding(16.dp)) {
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .padding(16.dp)
+                            .verticalScroll(rememberScrollState()),
+                    ) {
                         Text("レシート基本", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = RsNavy)
                         Spacer(Modifier.height(12.dp))
 
@@ -157,6 +170,72 @@ private fun ReceiptSettingsApp(
                                     Text("自動発行設定を保存", fontWeight = FontWeight.Bold)
                                 }
                             }
+                        }
+
+                        Spacer(Modifier.height(12.dp))
+                        Text("表示項目", fontWeight = FontWeight.Bold, color = RsNavy)
+                        listOf(
+                            "画像ロゴを使用" to (showLogo to { value: Boolean -> showLogo = value }),
+                            "住所を印字" to (showAddress to { value: Boolean -> showAddress = value }),
+                            "電話番号を印字" to (showPhone to { value: Boolean -> showPhone = value }),
+                            "担当者を印字" to (showOperator to { value: Boolean -> showOperator = value }),
+                            "商品コードを印字" to (showProductCode to { value: Boolean -> showProductCode = value }),
+                        ).forEach { (label, state) ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = state.first,
+                                    onCheckedChange = { state.second(it); message = null },
+                                )
+                                Text(label, fontSize = 13.sp)
+                            }
+                        }
+                        Text(
+                            "商品コードは商品名とは別行で印字します。画像未登録時は文字の店名表示を使用します。",
+                            fontSize = 11.sp,
+                            color = Color.DarkGray,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text("再印字権限", fontWeight = FontWeight.Bold, color = RsNavy)
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            ReceiptReprintAuthV136.entries.forEach { candidate ->
+                                OutlinedButton(
+                                    onClick = { reprintAuth = candidate; message = null },
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text(
+                                        if (reprintAuth == candidate) "● ${candidate.displayName}" else candidate.displayName,
+                                        fontSize = 12.sp,
+                                    )
+                                }
+                            }
+                        }
+                        Button(
+                            onClick = {
+                                runCatching {
+                                    layoutStore.save(
+                                        layout.copy(
+                                            showLogo = showLogo,
+                                            showAddress = showAddress,
+                                            showPhone = showPhone,
+                                            showOperator = showOperator,
+                                            showProductCode = showProductCode,
+                                            reprintAuth = reprintAuth,
+                                        ),
+                                    )
+                                }.onSuccess {
+                                    revision++
+                                    message = "レシート表示設定を保存しました"
+                                }.onFailure {
+                                    message = it.message ?: "レシート表示設定を保存できませんでした"
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = RsBlue),
+                        ) {
+                            Text("表示・再印字設定を保存", fontWeight = FontWeight.Bold)
                         }
 
                         Spacer(Modifier.height(12.dp))
