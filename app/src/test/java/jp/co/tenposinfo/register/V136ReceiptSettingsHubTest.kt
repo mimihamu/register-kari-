@@ -5,7 +5,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class V136ReceiptSettingsHubTest {
-    private val root = File(System.getProperty("user.dir")).parentFile ?: File(".")
+    private val root = File(System.getProperty("user.dir") ?: ".").parentFile ?: File(".")
 
     @Test
     fun scr640CollectsReceiptSettingsWithoutDuplicatingStores() {
