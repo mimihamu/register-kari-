@@ -230,6 +230,8 @@ object DiscountEngine {
 enum class PaymentMethod(val displayName: String) {
     CASH("現金"),
     CARD("クレジット"),
+    ELECTRONIC_MONEY("電子マネー"),
+    QR("QR"),
     GIFT_CERTIFICATE("商品券"),
     ACCOUNT_RECEIVABLE("掛売"),
     OTHER("その他"),
@@ -258,6 +260,7 @@ object PaymentEngine {
         total: Long,
         method: PaymentMethod,
         inputAmount: Long?,
+        policy: PaymentTenderPolicyV136 = PaymentTenderPolicyV136.defaultFor(method),
     ): PaymentState {
         val remaining = state.remaining(total)
         require(remaining > 0) { "payment is already complete" }
@@ -266,10 +269,16 @@ object PaymentEngine {
             require(received > 0) { "cash received must be positive" }
             PaymentAllocation(method, received.coerceAtMost(remaining), received)
         } else {
-            val applied = inputAmount ?: remaining
-            require(applied > 0) { "payment amount must be positive" }
-            require(applied <= remaining) { "non-cash payment must not exceed remaining amount" }
-            PaymentAllocation(method, applied, applied)
+            val received = inputAmount ?: remaining
+            require(received > 0) { "payment amount must be positive" }
+            if (received > remaining) {
+                require(policy.allowOverpaymentWithChange) {
+                    "non-cash payment must not exceed remaining amount"
+                }
+                PaymentAllocation(method, remaining, received)
+            } else {
+                PaymentAllocation(method, received, received)
+            }
         }
         return state.copy(allocations = state.allocations + allocation)
     }
