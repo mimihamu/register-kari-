@@ -20,7 +20,7 @@ class V136SettingsUiJapaneseLabelsTest {
         val initialSettings = File("src/main/java/jp/co/tenposinfo/register/InitialReleaseSettingsV135.kt").readText()
 
         assertTrue(dataProtection.contains("metadata.state.displayName"))
-        assertFalse(dataProtection.contains("状態: ${metadata.state.name}"))
+        assertFalse(dataProtection.contains("metadata.state.name"))
 
         assertTrue(initialSettings.contains("未会計伝票: 禁止"))
         assertFalse(initialSettings.contains("未会計伝票: BLOCK"))
