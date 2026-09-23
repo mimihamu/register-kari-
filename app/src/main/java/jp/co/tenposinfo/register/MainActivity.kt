@@ -2234,6 +2234,10 @@ private fun PaymentScreen(
     val remaining = state.remaining(summary.grossAmount)
     val paymentContext = LocalContext.current
     val mixedPolicy = remember { TaxInvoiceSettingsStore(paymentContext.applicationContext).load().mixedTaxPolicy }
+    val paymentSettings = remember { PaymentSettingsStoreV136(paymentContext.applicationContext).load() }
+    val enabledNonCashMethods = remember(paymentSettings) {
+        paymentSettings.enabledMethods().filter { it != PaymentMethod.CASH }
+    }
     var input by remember { mutableStateOf("") }
     var operationMessage by remember { mutableStateOf<String?>(null) }
     var acknowledgedMixedTax by remember { mutableStateOf(false) }
@@ -2245,7 +2249,19 @@ private fun PaymentScreen(
     fun add(method: PaymentMethod) {
         val amount = input.toLongOrNull()
         if (completing) return
-        runCatching { PaymentEngine.addPayment(state, summary.grossAmount, method, amount) }
+        if (method !in paymentSettings.enabledMethods()) {
+            operationMessage = "この支払方法は設定で無効です"
+            return
+        }
+        runCatching {
+            PaymentEngine.addPayment(
+                state,
+                summary.grossAmount,
+                method,
+                amount,
+                paymentSettings.tenderPolicyFor(method),
+            )
+        }
             .onSuccess {
                 onStateChange(it)
                 input = ""
@@ -2322,7 +2338,7 @@ private fun PaymentScreen(
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val keypad = RegisterResponsiveLayoutPolicy.keypadMetrics(
                         availableHeightDp = maxHeight.value.toInt(),
-                        functionRows = 1,
+                        functionRows = ((enabledNonCashMethods.size + 2) / 3).coerceAtLeast(1),
                         reservedTopDp = if (responsive.isCompact) 104 else 126,
                     )
                     val keypadScroll = rememberScrollState()
@@ -2395,25 +2411,25 @@ private fun PaymentScreen(
                         )
                         Spacer(Modifier.height(keypad.gapDp.dp))
                         CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(keypad.gapDp.dp),
-                            ) {
-                                OutlinedButton(
-                                    onClick = { add(PaymentMethod.CARD) },
-                                    enabled = remaining > 0 && !completing,
-                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
-                                ) { Text("カード", fontSize = 13.sp, maxLines = 1) }
-                                OutlinedButton(
-                                    onClick = { add(PaymentMethod.GIFT_CERTIFICATE) },
-                                    enabled = remaining > 0 && !completing,
-                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
-                                ) { Text("商品券", fontSize = 13.sp, maxLines = 1) }
-                                OutlinedButton(
-                                    onClick = { add(PaymentMethod.ACCOUNT_RECEIVABLE) },
-                                    enabled = remaining > 0 && !completing,
-                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
-                                ) { Text("掛売", fontSize = 13.sp, maxLines = 1) }
+                            enabledNonCashMethods.chunked(3).forEachIndexed { rowIndex, methods ->
+                                if (rowIndex > 0) Spacer(Modifier.height(keypad.gapDp.dp))
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(keypad.gapDp.dp),
+                                ) {
+                                    methods.forEach { method ->
+                                        OutlinedButton(
+                                            onClick = { add(method) },
+                                            enabled = remaining > 0 && !completing,
+                                            modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                        ) {
+                                            Text(method.displayName, fontSize = 12.sp, maxLines = 1)
+                                        }
+                                    }
+                                    repeat(3 - methods.size) {
+                                        Spacer(Modifier.weight(1f))
+                                    }
+                                }
                             }
                         }
                     }
