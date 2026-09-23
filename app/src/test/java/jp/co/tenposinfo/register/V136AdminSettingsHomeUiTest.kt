@@ -51,6 +51,8 @@ class V136AdminSettingsHomeUiTest {
         assertTrue(source.contains("title = \"保守・診断・データ\""))
         assertTrue(source.contains("AsValueRow(\"未保存変更\", \"0件（ホーム）\")"))
         assertTrue(source.contains("\"最終バックアップ\""))
+        assertTrue(source.contains("\"Drive同期\""))
+        assertTrue(source.contains("driveSyncHasError"))
         assertTrue(source.contains("\"設定異常\""))
         assertTrue(source.contains("title = \"店舗・レジ設定\""))
         assertTrue(source.contains("title = \"担当者・権限\""))
