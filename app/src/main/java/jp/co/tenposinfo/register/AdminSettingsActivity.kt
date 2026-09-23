@@ -150,6 +150,12 @@ private fun AdminSettingsApp(onClose: () -> Unit) {
                     onPrinter = { screen = AdminScreen.PRINTER },
                     onCatalog = { context.startActivity(Intent(context, CatalogHubActivityV030::class.java)) },
                     onTaxInvoice = { context.startActivity(Intent(context, TaxInvoiceSettingsActivity::class.java)) },
+                    onReceiptSettings = {
+                        context.startActivity(
+                            Intent(context, ReceiptSettingsActivity::class.java)
+                                .putExtra(ReceiptSettingsActivity.EXTRA_ACTOR, actorName),
+                        )
+                    },
                     onCustomerDisplay = { context.startActivity(Intent(context, CustomerDisplaySettingsActivity::class.java)) },
                     onPrinterTools = { context.startActivity(Intent(context, PrinterToolsHubActivity::class.java)) },
                     onDataProtection = { context.startActivity(Intent(context, DataProtectionActivity::class.java)) },
@@ -254,6 +260,7 @@ private fun AdminMenuScreen(
     onPrinter: () -> Unit,
     onCatalog: () -> Unit,
     onTaxInvoice: () -> Unit,
+    onReceiptSettings: () -> Unit,
     onCustomerDisplay: () -> Unit,
     onPrinterTools: () -> Unit,
     onDataProtection: () -> Unit,
@@ -301,9 +308,16 @@ private fun AdminMenuScreen(
             onClick = onTaxInvoice,
         ),
         AdminMenuEntryV136(
-            title = "プリンター設定",
-            description = "機種、IP、用紙、レシート・領収書、ドロア",
-            searchTerms = "プリンター 周辺機器 紙幅 58mm 80mm カッター ドロア IP レシート 領収書 自動発行 部数 ヘッダ フッタ",
+            title = "レシート設定",
+            description = "自動発行、文書別設定、店名スタンプ、58/80mmプレビュー",
+            searchTerms = "レシート 領収書 印字 文書別 自動発行 部数 ヘッダ フッタ 店名スタンプ ロゴ 58mm 80mm SCR-640",
+            background = Color(0xFFFFF3E5),
+            onClick = onReceiptSettings,
+        ),
+        AdminMenuEntryV136(
+            title = "周辺機器設定",
+            description = "プリンター、IP、用紙幅、カッター、ドロア",
+            searchTerms = "プリンター 周辺機器 紙幅 58mm 80mm カッター ドロア IP SCR-660",
             background = AsPaleGreen,
             onClick = onPrinter,
         ),
