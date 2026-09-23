@@ -5,10 +5,16 @@ import android.content.Context
 
 data class PaymentTenderPolicyV136(
     val allowOverpaymentWithChange: Boolean,
+    val allowOverpay: Boolean = allowOverpaymentWithChange,
+    val givesChange: Boolean = allowOverpaymentWithChange,
 ) {
     companion object {
         fun defaultFor(method: PaymentMethod): PaymentTenderPolicyV136 =
-            PaymentTenderPolicyV136(allowOverpaymentWithChange = method == PaymentMethod.CASH)
+            PaymentTenderPolicyV136(
+                allowOverpaymentWithChange = method == PaymentMethod.CASH,
+                allowOverpay = method == PaymentMethod.CASH,
+                givesChange = method == PaymentMethod.CASH,
+            )
     }
 }
 
@@ -17,6 +23,11 @@ data class PaymentMethodSettingV136(
     val enabled: Boolean,
     val displayOrder: Int,
     val allowOverpaymentWithChange: Boolean,
+    val allowOverpay: Boolean = allowOverpaymentWithChange,
+    val givesChange: Boolean = allowOverpaymentWithChange,
+    val gateway: PaymentTerminalAdapterV136 = PaymentTerminalAdapterV136.NONE,
+    val drawerOpen: Boolean = method == PaymentMethod.CASH,
+    val receiptName: String = method.displayName,
 )
 
 enum class PaymentTerminalAdapterV136(val displayName: String) {
@@ -36,14 +47,23 @@ data class PaymentSettingsV136(
             .sortedBy { it.displayOrder }
             .map { it.method }
 
-    fun tenderPolicyFor(method: PaymentMethod): PaymentTenderPolicyV136 =
-        PaymentTenderPolicyV136(
-            allowOverpaymentWithChange = if (method == PaymentMethod.CASH) {
-                true
-            } else {
-                settingFor(method).allowOverpaymentWithChange
-            },
+    fun tenderPolicyFor(method: PaymentMethod): PaymentTenderPolicyV136 {
+        val setting = settingFor(method)
+        val allowOverpay = if (method == PaymentMethod.CASH) true else setting.allowOverpay
+        val givesChange = if (method == PaymentMethod.CASH) true else setting.givesChange
+        return PaymentTenderPolicyV136(
+            allowOverpaymentWithChange = allowOverpay && givesChange,
+            allowOverpay = allowOverpay,
+            givesChange = givesChange,
         )
+    }
+
+    fun receiptNameFor(method: PaymentMethod): String = settingFor(method).receiptName
+
+    fun gatewayFor(method: PaymentMethod): PaymentTerminalAdapterV136 = settingFor(method).gateway
+
+    fun drawerOpenFor(method: PaymentMethod): Boolean =
+        method == PaymentMethod.CASH && settingFor(method).drawerOpen
 }
 
 class PaymentSettingsStoreV136(context: Context) {
@@ -69,6 +89,23 @@ class PaymentSettingsStoreV136(context: Context) {
                         fallback.allowOverpaymentWithChange,
                     )
                 },
+                allowOverpay = if (method == PaymentMethod.CASH) {
+                    true
+                } else {
+                    prefs.getBoolean(key(method, "allow_overpay"), fallback.allowOverpay)
+                },
+                givesChange = if (method == PaymentMethod.CASH) {
+                    true
+                } else {
+                    prefs.getBoolean(key(method, "gives_change"), fallback.givesChange)
+                },
+                gateway = runCatching {
+                    PaymentTerminalAdapterV136.valueOf(
+                        prefs.getString(key(method, "gateway"), fallback.gateway.name).orEmpty(),
+                    )
+                }.getOrDefault(fallback.gateway),
+                drawerOpen = prefs.getBoolean(key(method, "drawer_open"), fallback.drawerOpen),
+                receiptName = prefs.getString(key(method, "receipt_name"), fallback.receiptName).orEmpty(),
             )
         }
         val normalized = normalize(settings)
@@ -84,6 +121,19 @@ class PaymentSettingsStoreV136(context: Context) {
             "現金は無効にできません"
         }
         require(normalized.count { it.enabled } >= 1) { "支払方法を1つ以上有効にしてください" }
+        normalized.forEach { setting ->
+            val receiptName = setting.receiptName.trim()
+            val codePoints = receiptName.codePointCount(0, receiptName.length)
+            require(codePoints in 1..16) {
+                "${setting.method.displayName}のレシート表示名は1～16文字で入力してください"
+            }
+            require(setting.method == PaymentMethod.CASH || !setting.drawerOpen) {
+                "ドロア開放は現金支払だけ設定できます"
+            }
+            require(setting.gateway == PaymentTerminalAdapterV136.NONE) {
+                "未接続の決済端末アダプタは選択できません"
+            }
+        }
 
         val editor = prefs.edit()
         normalized.forEach { setting ->
@@ -94,6 +144,11 @@ class PaymentSettingsStoreV136(context: Context) {
                     key(setting.method, "overpay_change"),
                     setting.allowOverpaymentWithChange,
                 )
+                .putBoolean(key(setting.method, "allow_overpay"), setting.allowOverpay)
+                .putBoolean(key(setting.method, "gives_change"), setting.givesChange)
+                .putString(key(setting.method, "gateway"), setting.gateway.name)
+                .putBoolean(key(setting.method, "drawer_open"), setting.drawerOpen)
+                .putString(key(setting.method, "receipt_name"), setting.receiptName.trim())
         }
         check(editor.commit()) { "支払設定を保存できませんでした" }
 
@@ -101,10 +156,12 @@ class PaymentSettingsStoreV136(context: Context) {
             appContext,
             actor,
             normalized.joinToString(" / ") {
-                "${it.method.name}:enabled=${it.enabled},order=${it.displayOrder},overpayChange=${it.allowOverpaymentWithChange}"
+                "${it.method.name}:enabled=${it.enabled},order=${it.displayOrder},allowOverpay=${it.allowOverpay},givesChange=${it.givesChange},gateway=${it.gateway.name},drawerOpen=${it.drawerOpen},receiptName=${it.receiptName}"
             },
         )
-        return PaymentSettingsV136(normalized, PaymentTerminalAdapterV136.NONE)
+        val saved = PaymentSettingsV136(normalized, PaymentTerminalAdapterV136.NONE)
+        PaymentSettingsRegistryV136.update(saved)
+        return saved
     }
 
     companion object {
@@ -136,6 +193,11 @@ class PaymentSettingsStoreV136(context: Context) {
                 enabled = enabled,
                 displayOrder = order,
                 allowOverpaymentWithChange = method == PaymentMethod.CASH,
+                allowOverpay = method == PaymentMethod.CASH,
+                givesChange = method == PaymentMethod.CASH,
+                gateway = PaymentTerminalAdapterV136.NONE,
+                drawerOpen = method == PaymentMethod.CASH,
+                receiptName = method.displayName,
             )
         }
 
@@ -144,13 +206,16 @@ class PaymentSettingsStoreV136(context: Context) {
             return PaymentMethod.entries
                 .map { method ->
                     val raw = byMethod[method] ?: defaultSetting(method)
+                    val allowOverpay = if (method == PaymentMethod.CASH) true else raw.allowOverpay
+                    val givesChange = if (method == PaymentMethod.CASH) true else raw.givesChange
                     raw.copy(
                         enabled = if (method == PaymentMethod.CASH) true else raw.enabled,
-                        allowOverpaymentWithChange = if (method == PaymentMethod.CASH) {
-                            true
-                        } else {
-                            raw.allowOverpaymentWithChange
-                        },
+                        allowOverpaymentWithChange = allowOverpay && givesChange,
+                        allowOverpay = allowOverpay,
+                        givesChange = givesChange,
+                        gateway = raw.gateway,
+                        drawerOpen = method == PaymentMethod.CASH && raw.drawerOpen,
+                        receiptName = raw.receiptName.trim().ifBlank { method.displayName },
                     )
                 }
                 .sortedWith(compareBy<PaymentMethodSettingV136> { it.displayOrder }.thenBy { it.method.ordinal })
@@ -159,6 +224,22 @@ class PaymentSettingsStoreV136(context: Context) {
 
         private fun key(method: PaymentMethod, suffix: String): String =
             "method.${method.name}.$suffix"
+    }
+}
+
+object PaymentSettingsRegistryV136 {
+    @Volatile
+    private var current: PaymentSettingsV136? = null
+
+    fun current(): PaymentSettingsV136 =
+        current ?: PaymentSettingsV136(PaymentMethod.entries.map(PaymentSettingsStoreV136::defaultSetting))
+
+    fun reload(context: Context) {
+        current = runCatching { PaymentSettingsStoreV136(context.applicationContext).load() }.getOrNull()
+    }
+
+    fun update(settings: PaymentSettingsV136) {
+        current = settings
     }
 }
 
