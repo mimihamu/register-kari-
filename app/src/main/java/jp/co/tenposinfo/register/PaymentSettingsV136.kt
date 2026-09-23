@@ -164,9 +164,10 @@ class PaymentSettingsStoreV136(context: Context) {
 
 private object PaymentSettingsAuditV136 {
     fun record(context: Context, actor: String, detail: String) {
-        OperationAuditSchemaV136.ensure(context)
         RegisterDatabase(context.applicationContext).use { helper ->
-            helper.writableDatabase.insertOrThrow(
+            val db = helper.writableDatabase
+            OperationAuditSchemaV136.ensure(db)
+            db.insertOrThrow(
                 "operation_audit",
                 null,
                 ContentValues().apply {
