@@ -91,6 +91,14 @@ private enum class AdminScreen {
     AUDIT,
 }
 
+private data class AdminMenuEntryV136(
+    val title: String,
+    val description: String,
+    val searchTerms: String,
+    val background: Color,
+    val onClick: () -> Unit,
+)
+
 @Composable
 private fun AdminSettingsApp(onClose: () -> Unit) {
     val context = LocalContext.current
@@ -124,6 +132,8 @@ private fun AdminSettingsApp(onClose: () -> Unit) {
                     operatorCount = store.listOperators().count { it.enabled },
                     printer = store.loadPrinterConfiguration(),
                     auditCount = store.auditCount(),
+                    lastBackupAt = AutoBackupStatusStore(context.applicationContext).load().lastCompletedAt,
+                    backupHasError = AutoBackupStatusStore(context.applicationContext).load().lastError != null,
                     actorName = actorName,
                     onInitialReleaseSettings = {
                         context.startActivity(
@@ -227,6 +237,8 @@ private fun AdminMenuScreen(
     operatorCount: Int,
     printer: PrinterConfiguration,
     auditCount: Long,
+    lastBackupAt: Long?,
+    backupHasError: Boolean,
     actorName: String,
     onInitialReleaseSettings: () -> Unit,
     onOperators: () -> Unit,
@@ -241,53 +253,231 @@ private fun AdminMenuScreen(
     onLock: () -> Unit,
     onClose: () -> Unit,
 ) {
+    var query by remember { mutableStateOf("") }
+    val settingIssueCount = listOf(
+        operatorCount <= 0,
+        !printer.usable,
+        backupHasError,
+    ).count { it }
+
+    val dailyEntries = listOf(
+        AdminMenuEntryV136(
+            title = "店舗・レジ設定",
+            description = "店舗基本、販売操作、営業日・精算、端末・初期設定",
+            searchTerms = "店舗 レジ 販売操作 営業日 精算 端末 アプリ 初期設定 SCR-691 SCR-692 SCR-693 SCR-694 SCR-695",
+            background = AsPaleBlue,
+            onClick = onInitialReleaseSettings,
+        ),
+        AdminMenuEntryV136(
+            title = "担当者・権限",
+            description = "担当者登録、停止、並び順、権限",
+            searchTerms = "担当者 権限 PIN ロール 責任者",
+            background = AsPaleBlue,
+            onClick = onOperators,
+        ),
+        AdminMenuEntryV136(
+            title = "商品設定",
+            description = "商品、部門、税区分、価格改定",
+            searchTerms = "商品 部門 グループ 税区分 価格 バーコード",
+            background = Color(0xFFE8F0FC),
+            onClick = onCatalog,
+        ),
+        AdminMenuEntryV136(
+            title = "プリンター設定",
+            description = "機種、IP、用紙、カット、ドロア",
+            searchTerms = "プリンター 周辺機器 紙幅 58mm 80mm カッター ドロア IP",
+            background = AsPaleGreen,
+            onClick = onPrinter,
+        ),
+        AdminMenuEntryV136(
+            title = "顧客表示",
+            description = "つぐレジ CDの接続と表示設定",
+            searchTerms = "顧客表示 Customer Display CD 接続 ペアリング",
+            background = Color(0xFFEDEBFA),
+            onClick = onCustomerDisplay,
+        ),
+    )
+    val maintenanceEntries = listOf(
+        AdminMenuEntryV136(
+            title = "データ保全",
+            description = "整合性診断、バックアップ、復元",
+            searchTerms = "バックアップ 復元 DB 整合性 診断 データ",
+            background = Color(0xFFE8F3EE),
+            onClick = onDataProtection,
+        ),
+        AdminMenuEntryV136(
+            title = "Google Drive・同期",
+            description = "初期設定、アカウント、送信状況、診断",
+            searchTerms = "Google Drive 同期 Outbox 送信 再送 アカウント",
+            background = Color(0xFFE8F0FC),
+            onClick = onSync,
+        ),
+        AdminMenuEntryV136(
+            title = "プリンター運用",
+            description = "診断、印刷キュー、検証、試験履歴",
+            searchTerms = "プリンター 保守 診断 印刷 キュー テスト 試験",
+            background = Color(0xFFE5F3FA),
+            onClick = onPrinterTools,
+        ),
+        AdminMenuEntryV136(
+            title = "監査ログ",
+            description = "設定、返品、精算、入出金を確認",
+            searchTerms = "監査 ログ 履歴 返品 精算 入出金 設定変更",
+            background = Color(0xFFF0EAF8),
+            onClick = onAudit,
+        ),
+        AdminMenuEntryV136(
+            title = "責任者PIN",
+            description = "責任者PINを安全に更新",
+            searchTerms = "責任者 PIN セキュリティ 再認証",
+            background = AsPaleYellow,
+            onClick = onSecurity,
+        ),
+    )
+
+    val filteredDaily = dailyEntries.filter {
+        settingsMenuMatchesV136(query, it.title, it.description, it.searchTerms)
+    }
+    val filteredMaintenance = maintenanceEntries.filter {
+        settingsMenuMatchesV136(query, it.title, it.description, it.searchTerms)
+    }
+
     Column(Modifier.fillMaxSize()) {
         AsHeader("SCR-690", "各種設定", "認証：$actorName")
         Row(Modifier.weight(1f).padding(20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             AsPanel(Modifier.width(360.dp).fillMaxHeight()) {
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                     Text("設定状態", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AsNavy)
-                Spacer(Modifier.height(18.dp))
-                AsValueRow("有効担当者", "${operatorCount}名")
-                AsValueRow("プリンター", if (printer.usable) "接続設定済み" else "未設定")
-                AsValueRow("接続先", if (printer.host.isBlank()) "－" else "${printer.host}:${printer.port}")
-                AsValueRow("機種", printer.profile.displayName)
-                AsValueRow("用紙幅", "${printer.paperWidthMm}mm")
-                AsValueRow("印字幅", "${printer.printableDotWidth}dot")
-                AsValueRow("紙送り", "${printer.feedLines}行")
-                AsValueRow("ドロア", if (printer.drawerEnabled) "DK${printer.drawerPort + 1} 有効" else "無効")
-                AsValueRow("監査ログ", "${auditCount}件")
-                    Spacer(Modifier.height(10.dp))
-                    Button(
-                    onClick = onInitialReleaseSettings,
-                    modifier = Modifier.fillMaxWidth().height(58.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = AsBlue),
-                ) {
-                    Text("店舗・レジ設定  SCR-691～695", fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    "店舗基本、販売操作、営業日・精算、端末・アプリ、初期設定に加え、担当者・プリンター等を管理します。",
-                    color = Color.DarkGray,
-                    lineHeight = 23.sp,
-                )
+                    Spacer(Modifier.height(18.dp))
+                    AsValueRow("有効担当者", "${operatorCount}名")
+                    AsValueRow("プリンター", if (printer.usable) "接続設定済み" else "未設定")
+                    AsValueRow("接続先", if (printer.host.isBlank()) "－" else "${printer.host}:${printer.port}")
+                    AsValueRow("機種", printer.profile.displayName)
+                    AsValueRow("用紙幅", "${printer.paperWidthMm}mm")
+                    AsValueRow("監査ログ", "${auditCount}件")
+                    AsValueRow("未保存変更", "0件（ホーム）")
+                    AsValueRow(
+                        "最終バックアップ",
+                        lastBackupAt?.let(::asDateTime) ?: "未実行",
+                    )
+                    AsValueRow(
+                        "設定異常",
+                        if (settingIssueCount == 0) "なし" else "${settingIssueCount}件 要確認",
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (settingIssueCount == 0) AsPaleGreen else AsPaleYellow,
+                        ),
+                        border = BorderStroke(1.dp, AsBorder),
+                    ) {
+                        Text(
+                            if (settingIssueCount == 0) {
+                                "主要な設定状態に異常はありません。右側から目的の設定を選択してください。"
+                            } else {
+                                "担当者・プリンター・バックアップ状態に要確認項目があります。該当カテゴリから確認してください。"
+                            },
+                            modifier = Modifier.padding(12.dp),
+                            color = Color.DarkGray,
+                            lineHeight = 20.sp,
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "設定名や関連語で検索できます。例：プリンター、バックアップ、担当者、Drive",
+                        color = Color.DarkGray,
+                        lineHeight = 21.sp,
+                    )
                 }
             }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    AsMenuTile("担当者・権限", "担当者登録、停止、並び順、権限", AsPaleBlue, Modifier.weight(1f), onOperators)
-                    AsMenuTile("商品設定", "商品、部門、税区分、価格改定", Color(0xFFE8F0FC), Modifier.weight(1f), onCatalog)
-                    AsMenuTile("プリンター設定", "機種、IP、用紙、カット、ドロア", AsPaleGreen, Modifier.weight(1f), onPrinter)
-                }
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    AsMenuTile("顧客表示", "つぐレジ CDの接続と表示設定", Color(0xFFEDEBFA), Modifier.weight(1f), onCustomerDisplay)
-                    AsMenuTile("プリンター運用", "診断、印刷キュー、検証、試験履歴", Color(0xFFE5F3FA), Modifier.weight(1f), onPrinterTools)
-                    AsMenuTile("監査ログ", "設定、返品、精算、入出金を確認", Color(0xFFF0EAF8), Modifier.weight(1f), onAudit)
-                }
-                Row(Modifier.weight(0.72f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    AsMenuTile("責任者PIN", "責任者PINを安全に更新", AsPaleYellow, Modifier.weight(1f), onSecurity)
-                    AsMenuTile("データ保全", "整合性診断、バックアップ、復元", Color(0xFFE8F3EE), Modifier.weight(1f), onDataProtection)
-                    AsMenuTile("Google Drive・同期", "初期設定、アカウント、送信状況、診断", Color(0xFFE8F0FC), Modifier.weight(1f), onSync)
+
+            Column(Modifier.weight(1f)) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it.take(40) },
+                    label = { Text("設定を検索") },
+                    placeholder = { Text("設定名・機能名・関連語") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(10.dp))
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    if (filteredDaily.isNotEmpty()) {
+                        item {
+                            AsSettingsSectionHeaderV136(
+                                title = "日常設定",
+                                description = "店舗運用で日常的に使う設定",
+                            )
+                        }
+                        items(filteredDaily.chunked(3)) { rowEntries ->
+                            Row(
+                                Modifier.fillMaxWidth().height(132.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                rowEntries.forEach { entry ->
+                                    AsMenuTile(
+                                        entry.title,
+                                        entry.description,
+                                        entry.background,
+                                        Modifier.weight(1f),
+                                        entry.onClick,
+                                    )
+                                }
+                                repeat(3 - rowEntries.size) {
+                                    Spacer(Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+
+                    if (filteredMaintenance.isNotEmpty()) {
+                        item {
+                            AsSettingsSectionHeaderV136(
+                                title = "保守・診断・データ",
+                                description = "バックアップ、同期、監査、診断など管理・保守向け",
+                            )
+                        }
+                        items(filteredMaintenance.chunked(3)) { rowEntries ->
+                            Row(
+                                Modifier.fillMaxWidth().height(132.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                rowEntries.forEach { entry ->
+                                    AsMenuTile(
+                                        entry.title,
+                                        entry.description,
+                                        entry.background,
+                                        Modifier.weight(1f),
+                                        entry.onClick,
+                                    )
+                                }
+                                repeat(3 - rowEntries.size) {
+                                    Spacer(Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+
+                    if (filteredDaily.isEmpty() && filteredMaintenance.isEmpty()) {
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                border = BorderStroke(1.dp, AsBorder),
+                            ) {
+                                Column(
+                                    Modifier.fillMaxWidth().padding(24.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    Text("該当する設定はありません", fontWeight = FontWeight.Bold, color = AsNavy)
+                                    Spacer(Modifier.height(6.dp))
+                                    Text("別の設定名・機能名で検索してください", color = Color.Gray)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -299,6 +489,20 @@ private fun AdminMenuScreen(
             Spacer(Modifier.weight(1f))
             OutlinedButton(onClick = onLock, modifier = Modifier.width(220.dp).fillMaxHeight()) { Text("設定をロック") }
         }
+    }
+}
+
+internal fun settingsMenuMatchesV136(query: String, vararg texts: String): Boolean {
+    val normalized = query.trim().lowercase(Locale.JAPAN)
+    if (normalized.isBlank()) return true
+    return texts.any { it.lowercase(Locale.JAPAN).contains(normalized) }
+}
+
+@Composable
+private fun AsSettingsSectionHeaderV136(title: String, description: String) {
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp)) {
+        Text(title, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = AsNavy)
+        Text(description, fontSize = 13.sp, color = Color.DarkGray)
     }
 }
 
