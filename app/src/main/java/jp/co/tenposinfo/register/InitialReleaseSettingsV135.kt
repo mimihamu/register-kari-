@@ -578,8 +578,8 @@ private fun BusinessSettingsScreenV135(store: InitialReleaseSettingsStoreV135, a
         Card(colors = CardDefaults.cardColors(containerColor = IrPaleYellow), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp)) {
                 Text("v1.35 精算安全弁", fontWeight = FontWeight.Bold)
-                Text("現金実査: 必須 / 未会計伝票: BLOCK / 未印刷: 責任者確認")
-                Text("REP-003で確定済みの安全条件はこの設定画面から弱めません。", fontSize = 13.sp)
+                Text("現金実査: 必須 / 未会計伝票: 禁止 / 未印刷: 責任者確認")
+                Text("精算の安全条件は、この設定画面から弱めることはできません。", fontSize = 13.sp)
             }
         }
         BoolRowV135("Z精算後の自動バックアップ", value.autoBackupAfterSettlement) { value = value.copy(autoBackupAfterSettlement = it) }
@@ -601,7 +601,7 @@ private fun DeviceSettingsScreenV135(store: InitialReleaseSettingsStoreV135, act
         Text("キオスク・画面・音・更新・容量警告", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = IrNavy)
         BoolRowV135("販売中は画面を消灯しない", value.keepScreenOn) { value = value.copy(keepScreenOn = it) }
         BoolRowV135("キオスク運用を要求", value.kioskModeRequested) { value = value.copy(kioskModeRequested = it) }
-        Text("※ Androidの端末固定モード自体はDevice Owner等の端末側許可がある場合のみ有効化します。", fontSize = 13.sp)
+        Text("※ Androidの端末固定モードは、端末管理者（Device Owner）などの端末側許可がある場合のみ有効になります。", fontSize = 13.sp)
         BoolRowV135("操作音を有効", value.operationSoundEnabled) { value = value.copy(operationSoundEnabled = it) }
         BoolRowV135("更新確認を有効", value.automaticUpdateCheck) { value = value.copy(automaticUpdateCheck = it) }
         NumericSettingV135("空き容量警告しきい値（MB）", value.storageWarningMb) { value = value.copy(storageWarningMb = it) }
