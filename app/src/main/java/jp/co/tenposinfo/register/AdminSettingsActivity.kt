@@ -134,6 +134,11 @@ private fun AdminSettingsApp(onClose: () -> Unit) {
                     auditCount = store.auditCount(),
                     lastBackupAt = AutoBackupStatusStore(context.applicationContext).load().lastCompletedAt,
                     backupHasError = AutoBackupStatusStore(context.applicationContext).load().lastError != null,
+                    driveSyncAt = GoogleDriveDirectUploadStatusStore(context.applicationContext).load().lastCompletedAt,
+                    driveSyncRunning = GoogleDriveDirectUploadStatusStore(context.applicationContext).load().running,
+                    driveSyncHasError = GoogleDriveDirectUploadStatusStore(context.applicationContext).load().let {
+                        it.blockedCategory != null || it.permanentFailureCount > 0
+                    },
                     actorName = actorName,
                     onInitialReleaseSettings = {
                         context.startActivity(
@@ -240,6 +245,9 @@ private fun AdminMenuScreen(
     auditCount: Long,
     lastBackupAt: Long?,
     backupHasError: Boolean,
+    driveSyncAt: Long?,
+    driveSyncRunning: Boolean,
+    driveSyncHasError: Boolean,
     actorName: String,
     onInitialReleaseSettings: () -> Unit,
     onOperators: () -> Unit,
@@ -260,6 +268,7 @@ private fun AdminMenuScreen(
         operatorCount <= 0,
         !printer.usable,
         backupHasError,
+        driveSyncHasError,
     ).count { it }
 
     val dailyEntries = listOf(
@@ -370,6 +379,15 @@ private fun AdminMenuScreen(
                         lastBackupAt?.let(::asDateTime) ?: "未実行",
                     )
                     AsValueRow(
+                        "Drive同期",
+                        when {
+                            driveSyncRunning -> "送信中"
+                            driveSyncHasError -> "要確認"
+                            driveSyncAt != null -> "最終 " + asDateTime(driveSyncAt)
+                            else -> "未実行"
+                        },
+                    )
+                    AsValueRow(
                         "設定異常",
                         if (settingIssueCount == 0) "なし" else "${settingIssueCount}件 要確認",
                     )
@@ -384,7 +402,7 @@ private fun AdminMenuScreen(
                             if (settingIssueCount == 0) {
                                 "主要な設定状態に異常はありません。右側から目的の設定を選択してください。"
                             } else {
-                                "担当者・プリンター・バックアップ状態に要確認項目があります。該当カテゴリから確認してください。"
+                                "担当者・プリンター・バックアップ・Drive同期状態に要確認項目があります。該当カテゴリから確認してください。"
                             },
                             modifier = Modifier.padding(12.dp),
                             color = Color.DarkGray,
