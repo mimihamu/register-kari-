@@ -272,10 +272,14 @@ object PaymentEngine {
             val received = inputAmount ?: remaining
             require(received > 0) { "payment amount must be positive" }
             if (received > remaining) {
-                require(policy.allowOverpaymentWithChange) {
+                require(policy.allowOverpay) {
                     "non-cash payment must not exceed remaining amount"
                 }
-                PaymentAllocation(method, remaining, received)
+                if (policy.givesChange) {
+                    PaymentAllocation(method, remaining, received)
+                } else {
+                    PaymentAllocation(method, remaining, remaining)
+                }
             } else {
                 PaymentAllocation(method, received, received)
             }
