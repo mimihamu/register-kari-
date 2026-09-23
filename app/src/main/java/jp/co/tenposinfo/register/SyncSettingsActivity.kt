@@ -187,7 +187,7 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                                 },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = SyBlue),
-                            ) { Text("送信状況・個別再送の詳細") }
+                            ) { Text("送信運用・個別再試行の詳細") }
                             Spacer(Modifier.height(12.dp))
                             Text("端末内の送信準備フォルダ", fontWeight = FontWeight.Bold, color = SyNavy)
                             Text(store.stagingRoot().absolutePath, fontSize = 12.sp, color = Color.DarkGray)
