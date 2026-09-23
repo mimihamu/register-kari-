@@ -194,7 +194,7 @@ object ReceiptRenderer {
         lines += amountLine("合計", yen(data.taxSummary.grossAmount), width)
         lines += separator(width, '-')
         data.payments.forEach { payment ->
-            lines += amountLine(payment.method.displayName, yen(payment.receivedAmount), width)
+            lines += amountLine(PaymentSettingsRegistryV136.current().receiptNameFor(payment.method), yen(payment.receivedAmount), width)
             if (payment.receivedAmount != payment.appliedAmount) {
                 lines += amountLine("  充当", yen(payment.appliedAmount), width)
             }
