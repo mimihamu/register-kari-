@@ -32,10 +32,10 @@ enum class BackupCreationReason(val displayName: String) {
     PERIODIC("定期バックアップ"),
 }
 
-enum class AutoBackupFileState {
-    VERIFYING,
-    READY,
-    CORRUPT,
+enum class AutoBackupFileState(val displayName: String) {
+    VERIFYING("検証中"),
+    READY("利用可能"),
+    CORRUPT("破損"),
 }
 
 enum class AutoBackupResultState(val displayName: String) {
