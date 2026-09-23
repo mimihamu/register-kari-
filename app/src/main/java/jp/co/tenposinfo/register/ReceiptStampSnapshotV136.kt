@@ -62,7 +62,11 @@ data class ReceiptStampSnapshotV136(
             )
         }
 
-        fun capture(context: Context, configuration: PrinterConfiguration): ReceiptStampSnapshotV136 {
+        fun capture(
+            context: Context,
+            configuration: PrinterConfiguration,
+            layoutSettings: ReceiptLayoutSettingsV136 = ReceiptLayoutSettingsRegistryV136.current(),
+        ): ReceiptStampSnapshotV136 {
             val appContext = context.applicationContext
             val storeSettings = InitialReleaseSettingsStoreV135(appContext).loadStore()
             val imageStore = ReceiptStampSettingsStoreV136(appContext)
@@ -70,15 +74,27 @@ data class ReceiptStampSnapshotV136(
             val textStore = ReceiptTextStampSettingsStoreV136(appContext)
             val textSettings = textStore.load()
             val paper = ReceiptPaper.fromWidth(configuration.paperWidthMm)
-            val imagePrefix = imageStore.printPrefix(paper)
-            val textPrefix = ReceiptTextStampEscPosV136.encode(textStore.resolvedLines(), configuration)
+            val imagePrefix = if (layoutSettings.showLogo) imageStore.printPrefix(paper) else ByteArray(0)
+            val resolvedTextLines = textStore.resolvedLines().filter { line ->
+                when (line.field) {
+                    ReceiptTextStampFieldV136.ADDRESS -> layoutSettings.showAddress
+                    ReceiptTextStampFieldV136.PHONE -> layoutSettings.showPhone
+                    else -> true
+                }
+            }
+            val textPrefix = ReceiptTextStampEscPosV136.encode(resolvedTextLines, configuration)
+            val effectiveMode = if (layoutSettings.showLogo) {
+                storeSettings.receiptHeaderMode
+            } else {
+                ReceiptHeaderModeV135.TEXT
+            }
             return compose(
-                mode = storeSettings.receiptHeaderMode,
+                mode = effectiveMode,
                 imagePrefix = imagePrefix,
                 textPrefix = textPrefix,
                 imageStampVersion = imageSettings.stampVersion,
                 textStampVersion = textSettings.stampVersion,
-                sourceImageSha256 = imageStore.sourceSha256().orEmpty(),
+                sourceImageSha256 = if (layoutSettings.showLogo) imageStore.sourceSha256().orEmpty() else "",
             )
         }
 
