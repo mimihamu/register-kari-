@@ -28,6 +28,7 @@ object Syn003FrozenPrintPayloadV136 {
         printerConfiguration: PrinterConfiguration,
         documentPrintSetting: DocumentPrintSettingV136,
         stampSnapshot: ReceiptStampSnapshotV136 = ReceiptStampSnapshotV136.none(),
+        receiptLayoutSettings: ReceiptLayoutSettingsV136 = ReceiptLayoutSettingsRegistryV136.current(),
     ): String {
         if (payloadJson.contains("\"syn003FrozenPrint\"")) return payloadJson
         val configuration = printerConfiguration.copy(
@@ -55,6 +56,12 @@ object Syn003FrozenPrintPayloadV136 {
                 invoiceAggregationBasis = settings.invoiceAggregationBasis,
                 suppressStoreHeader = stampSnapshot.prefixBytes.isNotEmpty() &&
                     stampPlacement != DocumentStampPlacementV136.NONE,
+                layoutSettings = receiptLayoutSettings.copy(
+                    taxDisplayMode = ReceiptLayoutSettingsPolicyV136.effectiveTaxDisplayMode(
+                        receiptLayoutSettings.taxDisplayMode,
+                        issuer.registrationNumber,
+                    ),
+                ),
             ),
             documentPrintSetting,
         )
@@ -90,6 +97,16 @@ object Syn003FrozenPrintPayloadV136 {
             append("\"sourceImageSha256\":\"").append(stampSnapshot.sourceImageSha256).append("\",")
             append("\"prefixSha256\":\"").append(stampSnapshot.prefixSha256).append("\",")
             append("\"prefixBase64\":\"").append(stampSnapshot.prefixBase64()).append("\"},")
+            append("\"receiptLayoutConfigSnapshot\":{")
+            append("\"defaultPrinterId\":").append(receiptLayoutSettings.defaultPrinterId).append(',')
+            append("\"showLogo\":").append(receiptLayoutSettings.showLogo).append(',')
+            append("\"showAddress\":").append(receiptLayoutSettings.showAddress).append(',')
+            append("\"showPhone\":").append(receiptLayoutSettings.showPhone).append(',')
+            append("\"showOperator\":").append(receiptLayoutSettings.showOperator).append(',')
+            append("\"showProductCode\":").append(receiptLayoutSettings.showProductCode).append(',')
+            append("\"taxDisplayMode\":\"").append(receiptLayoutSettings.taxDisplayMode.name).append("\",")
+            append("\"reprintAuth\":\"").append(receiptLayoutSettings.reprintAuth.name).append("\",")
+            append("\"qrMode\":\"").append(receiptLayoutSettings.qrMode.name).append("\"},")
             append("\"documentPrintSettingSnapshot\":{")
             append("\"copies\":").append(DocumentPrintSettingsPolicyV136.normalizeCopies(documentPrintSetting.copies)).append(',')
             append("\"stampPlacement\":\"").append(stampPlacement.name).append("\",")
