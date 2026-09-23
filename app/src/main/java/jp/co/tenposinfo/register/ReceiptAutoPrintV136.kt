@@ -36,13 +36,17 @@ object ReceiptAutoPrintRuntimeV136 {
         paymentState: PaymentState,
         saleId: Long,
         actor: String,
-    ): Result<Boolean> = CashDrawerRuntimeV136.dispatch(
-        context = context.applicationContext,
-        openContext = CashDrawerOpenContextV136.CASH_SALE,
-        referenceId = saleId,
-        eventKey = "SALE:$saleId",
-        reason = "現金会計",
-        actor = actor.ifBlank { "SYSTEM" },
-        hasCashPayment = paymentState.allocations.any { it.method == PaymentMethod.CASH },
-    )
+    ): Result<Boolean> {
+        val hasCashPayment = paymentState.allocations.any { it.method == PaymentMethod.CASH }
+        val tenderAllowsDrawer = PaymentSettingsRegistryV136.current().drawerOpenFor(PaymentMethod.CASH)
+        return CashDrawerRuntimeV136.dispatch(
+            context = context.applicationContext,
+            openContext = CashDrawerOpenContextV136.CASH_SALE,
+            referenceId = saleId,
+            eventKey = "SALE:$saleId",
+            reason = "現金会計",
+            actor = actor.ifBlank { "SYSTEM" },
+            hasCashPayment = hasCashPayment && tenderAllowsDrawer,
+        )
+    }
 }
