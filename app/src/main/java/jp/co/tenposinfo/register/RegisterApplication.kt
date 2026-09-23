@@ -22,6 +22,7 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         super.onCreate()
         CrashReportRuntimeV138.install(this)
         PrinterConfigurationRegistry.reload(this)
+        PaymentSettingsRegistryV136.reload(this)
         AutomaticPrintScheduler.schedule(this)
         AutoBackupPeriodicScheduler.apply(this)
         ExternalBackupScheduler.apply(this)
