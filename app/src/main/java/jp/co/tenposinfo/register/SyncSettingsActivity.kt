@@ -92,7 +92,7 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     SySummary("ジャーナル", summary.journalCount, Modifier.weight(1f))
                     SySummary("送信待ち", summary.pendingCount + summary.retryCount, Modifier.weight(1f))
-                    SySummary("ステージ済み", summary.stagedCount, Modifier.weight(1f))
+                    SySummary("送信準備済み", summary.stagedCount, Modifier.weight(1f))
                     SySummary("送信済み", summary.sentCount, Modifier.weight(1f))
                     SySummary("失敗", summary.failedCount, Modifier.weight(1f))
                 }
@@ -108,7 +108,7 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                             Spacer(Modifier.height(10.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(automatic, { automatic = it })
-                                Text("Outboxを1時間ごとに自動処理")
+                                Text("未送信データを1時間ごとに自動処理")
                             }
                             OutlinedTextField(
                                 value = folderName,
@@ -153,10 +153,10 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                                     DriveOutboxScheduler.enqueueNow(context.applicationContext)
                                     GoogleDriveDirectUploadScheduler.enqueueNow(context.applicationContext)
                                     refresh++
-                                    message = "$count 件をローカルステージへ出力し、Drive APIと互換用送信を要求しました"
+                                    message = "$count 件の未送信データを送信準備し、Google Driveへ送信を要求しました"
                                 },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
-                            ) { Text("今すぐステージ出力・送信") }
+                            ) { Text("未送信データを今すぐ送信") }
                             Spacer(Modifier.height(8.dp))
                             OutlinedButton(
                                 onClick = {
@@ -164,14 +164,14 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                                     DriveOutboxScheduler.enqueueNow(context.applicationContext)
                                     GoogleDriveDirectUploadScheduler.enqueueNow(context.applicationContext)
                                     refresh++
-                                    message = "$count 件を再キューしました"
+                                    message = "$count 件を再送待ちへ戻しました"
                                 },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
-                            ) { Text("ステージ済みを再キュー") }
+                            ) { Text("送信準備済みを再送待ちへ") }
                             Spacer(Modifier.height(14.dp))
                             Card(colors = CardDefaults.cardColors(containerColor = SyPaleGreen)) {
                                 Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                                    Text("v0.55 同期運用", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                                    Text("同期運用", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
                                     Text(
                                         "Googleかんたん接続を通常経路にしつつ、送信状態と個別再試行は下の運用画面から確認できます。既存売上と同期履歴は削除しません。",
                                         fontSize = 13.sp,
@@ -187,9 +187,9 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                                 },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = SyBlue),
-                            ) { Text("送信運用・個別再試行（互換用フォルダ送信設定）") }
+                            ) { Text("送信状況・個別再送の詳細") }
                             Spacer(Modifier.height(12.dp))
-                            Text("ローカル出力先", fontWeight = FontWeight.Bold, color = SyNavy)
+                            Text("端末内の送信準備フォルダ", fontWeight = FontWeight.Bold, color = SyNavy)
                             Text(store.stagingRoot().absolutePath, fontSize = 12.sp, color = Color.DarkGray)
                             if (message != null) {
                                 Spacer(Modifier.height(10.dp))
@@ -198,7 +198,7 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                             Spacer(Modifier.weight(1f))
                             Card(colors = CardDefaults.cardColors(containerColor = SyPaleGreen)) {
                                 Text(
-                                    "販売確定時は、売上・明細・支払・税スナップショット・印刷キュー・ジャーナル・Outboxを同一SQLiteトランザクションで保存します。Driveは同期経路であり、唯一の原本にはしません。",
+                                    "販売確定時は、売上・明細・支払・税スナップショット・印刷キュー・ジャーナル・未送信キューを同一SQLiteトランザクションで保存します。Google Driveは同期経路であり、唯一の原本にはしません。",
                                     modifier = Modifier.padding(12.dp),
                                     fontSize = 13.sp,
                                 )
@@ -213,7 +213,7 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                     ) {
                         Column(Modifier.fillMaxSize().padding(14.dp)) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Text("Outbox一覧", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = SyNavy)
+                                Text("同期キュー（未送信・送信履歴）", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = SyNavy)
                                 Spacer(Modifier.weight(1f))
                                 OutlinedButton(onClick = { refresh++ }) { Text("更新") }
                             }
@@ -264,7 +264,7 @@ private fun SyHeader(onClose: () -> Unit) {
     ) {
         Text("つぐレジ", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(22.dp))
-        Text("SCR-760  Google Drive・同期", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        Text("SCR-672  同期キュー・Google Drive", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.weight(1f))
         Text("営業日 ${BusinessDateResolver.current(LocalContext.current)}", color = Color.White, fontSize = 13.sp)
         Spacer(Modifier.width(12.dp))
@@ -286,7 +286,7 @@ private fun statusLabel(status: SyncOutboxStatus): String = when (status) {
     SyncOutboxStatus.PENDING -> "待機"
     SyncOutboxStatus.PROCESSING -> "処理中"
     SyncOutboxStatus.RETRY -> "再試行"
-    SyncOutboxStatus.STAGED -> "ステージ済"
+    SyncOutboxStatus.STAGED -> "送信準備済"
     SyncOutboxStatus.SENT -> "送信済"
     SyncOutboxStatus.FAILED -> "失敗"
 }
