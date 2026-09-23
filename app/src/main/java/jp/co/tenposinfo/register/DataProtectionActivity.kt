@@ -245,7 +245,7 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                     .padding(horizontal = responsive.screenPaddingDp.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("SCR-767", color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text("SCR-670", color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
                 Spacer(Modifier.width(if (responsive.isCompact) 10.dp else 18.dp))
                 Text(
                     "データ保全・バックアップ・復元",
