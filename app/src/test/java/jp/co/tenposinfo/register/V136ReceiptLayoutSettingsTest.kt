@@ -12,7 +12,7 @@ class V136ReceiptLayoutSettingsTest {
             id = "P-001",
             name = "テスト商品",
             unitPrice = 1_100L,
-            taxCategory = TaxCategory.STANDARD_INCLUDED,
+            taxCategory = TaxCategory.INCLUDED_10,
             displayOrder = 1,
         )
         val item = CartItem(product = product, quantity = 1)
