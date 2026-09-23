@@ -76,7 +76,7 @@ private fun TaxInvoiceSettingsScreen(onClose: () -> Unit) {
             ) {
                 Text("つぐレジ", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.width(22.dp))
-                Text("SCR-275  税計算・インボイス設定", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                Text("SCR-630A  税計算・インボイス設定", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.weight(1f))
                 OutlinedButton(onClick = onClose) { Text("閉じる", color = Color.White) }
             }
