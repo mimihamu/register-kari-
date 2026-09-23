@@ -258,9 +258,11 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
         val saleReceiptSetting = DocumentPrintSettingsStoreV136(applicationContext)
             .load(DocumentPrintKindV136.SALE_RECEIPT)
+        val receiptLayoutSettings = ReceiptLayoutSettingsStoreV136(applicationContext).load()
         val stampSnapshot = ReceiptStampSnapshotV136.capture(
             applicationContext,
             printerConfiguration.copy(paperWidthMm = paperWidthMm),
+            receiptLayoutSettings,
         )
         TaxEngine.validateMixedTax(items, mixedTaxPolicy)
         val summary = TaxEngine.calculate(items)
@@ -386,6 +388,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 printerConfiguration = printerConfiguration.copy(paperWidthMm = paperWidthMm),
                 documentPrintSetting = saleReceiptSetting,
                 stampSnapshot = stampSnapshot,
+                receiptLayoutSettings = receiptLayoutSettings,
             )
             if (normalizedCommitKey != null) {
                 SaleCommitIdempotencySchema.record(
