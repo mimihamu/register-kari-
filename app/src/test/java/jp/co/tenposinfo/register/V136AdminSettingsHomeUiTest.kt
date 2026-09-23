@@ -67,7 +67,7 @@ class V136AdminSettingsHomeUiTest {
         assertTrue(source.contains("title = \"責任者PIN\""))
         assertTrue(source.contains("onTaxInvoice ="))
         assertTrue(source.contains("TaxInvoiceSettingsActivity::class.java"))
-        assertTrue(source.contains("領収書 自動発行"))
+        assertTrue(source.contains("SCR-640"))\n        assertTrue(source.contains("onReceiptSettings ="))\n        assertTrue(source.contains("ReceiptSettingsActivity::class.java"))
         assertTrue(source.contains("onCustomerDisplay ="))
         assertTrue(source.contains("onDataProtection ="))
         assertTrue(source.contains("onSync ="))
