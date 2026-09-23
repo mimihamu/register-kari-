@@ -72,6 +72,7 @@ data class ReceiptData(
     val documentHeader: String = "",
     val documentFooter: String = ReceiptFooterMessagePolicyV136.DEFAULT_MESSAGE,
     val suppressStoreHeader: Boolean = false,
+    val layoutSettings: ReceiptLayoutSettingsV136 = ReceiptLayoutSettingsV136(),
 )
 
 enum class ReceiptPaper(val widthMm: Int, val charsPerLine: Int) {
@@ -105,6 +106,14 @@ object ReceiptFactory {
             changeAmount = detail.summary.changeAmount,
             reprint = reprint,
             invoiceAggregationBasis = detail.invoiceAggregationBasis,
+            layoutSettings = ReceiptLayoutSettingsRegistryV136.current().let { layout ->
+                layout.copy(
+                    taxDisplayMode = ReceiptLayoutSettingsPolicyV136.effectiveTaxDisplayMode(
+                        layout.taxDisplayMode,
+                        issuer.registrationNumber,
+                    ),
+                )
+            },
         )
     }
 
@@ -131,6 +140,14 @@ object ReceiptFactory {
             payments = payments,
             changeAmount = changeAmount,
             invoiceAggregationBasis = settings.invoiceAggregationBasis,
+            layoutSettings = ReceiptLayoutSettingsRegistryV136.current().let { layout ->
+                layout.copy(
+                    taxDisplayMode = ReceiptLayoutSettingsPolicyV136.effectiveTaxDisplayMode(
+                        layout.taxDisplayMode,
+                        issuer.registrationNumber,
+                    ),
+                )
+            },
         )
     }
 }
@@ -151,19 +168,28 @@ object ReceiptRenderer {
         data.documentHeader.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.forEach { lines += fit(it, width) }
         if (!data.suppressStoreHeader) {
             lines += center(data.storeName, width)
-            if (data.storeAddress.isNotBlank()) lines += center(data.storeAddress, width)
-            if (data.storePhone.isNotBlank()) lines += center("TEL ${data.storePhone}", width)
+            if (data.layoutSettings.showAddress && data.storeAddress.isNotBlank()) {
+                lines += center(data.storeAddress, width)
+            }
+            if (data.layoutSettings.showPhone && data.storePhone.isNotBlank()) {
+                lines += center("TEL ${data.storePhone}", width)
+            }
         }
         lines += center("領収書／レシート", width)
         if (copyTotal > 1) lines += center("部数 $copyOrdinal/$copyTotal", width)
         lines += separator(width, '=')
         lines += "No.${ReceiptNumberV136.format(data.saleId)}  ${formatDate(data.createdAt)}"
-        lines += "担当 ${data.operatorName}"
+        if (data.layoutSettings.showOperator) {
+            lines += "担当 ${data.operatorName}"
+        }
         lines += separator(width, '-')
 
         data.items.forEach { item ->
             val symbol = ReceiptTaxSymbolV136.fromProduct(item.product)
             lines.addAll(ReceiptLineWrapV136.wrap("${item.product.name} [$symbol]", width))
+            if (data.layoutSettings.showProductCode) {
+                lines.addAll(ReceiptLineWrapV136.wrap("  商品コード ${item.product.id}", width))
+            }
             val amount = item.baseAmount
             lines += amountLine("${item.quantity} × ${yen(item.unitPrice)}", yen(amount), width)
             if (item.discountAmount > 0) {
