@@ -73,6 +73,14 @@ class PaymentSettingsStoreV136(context: Context) {
     fun load(): PaymentSettingsV136 {
         val settings = PaymentMethod.entries.map { method ->
             val fallback = defaultSetting(method)
+            val legacyOverpayChange = if (method == PaymentMethod.CASH) {
+                true
+            } else {
+                prefs.getBoolean(
+                    key(method, "overpay_change"),
+                    fallback.allowOverpaymentWithChange,
+                )
+            }
             PaymentMethodSettingV136(
                 method = method,
                 enabled = if (method == PaymentMethod.CASH) {
@@ -81,23 +89,20 @@ class PaymentSettingsStoreV136(context: Context) {
                     prefs.getBoolean(key(method, "enabled"), fallback.enabled)
                 },
                 displayOrder = prefs.getInt(key(method, "order"), fallback.displayOrder),
-                allowOverpaymentWithChange = if (method == PaymentMethod.CASH) {
-                    true
-                } else {
-                    prefs.getBoolean(
-                        key(method, "overpay_change"),
-                        fallback.allowOverpaymentWithChange,
-                    )
-                },
+                allowOverpaymentWithChange = legacyOverpayChange,
                 allowOverpay = if (method == PaymentMethod.CASH) {
                     true
-                } else {
+                } else if (prefs.contains(key(method, "allow_overpay"))) {
                     prefs.getBoolean(key(method, "allow_overpay"), fallback.allowOverpay)
+                } else {
+                    legacyOverpayChange
                 },
                 givesChange = if (method == PaymentMethod.CASH) {
                     true
-                } else {
+                } else if (prefs.contains(key(method, "gives_change"))) {
                     prefs.getBoolean(key(method, "gives_change"), fallback.givesChange)
+                } else {
+                    legacyOverpayChange
                 },
                 gateway = runCatching {
                     PaymentTerminalAdapterV136.valueOf(
