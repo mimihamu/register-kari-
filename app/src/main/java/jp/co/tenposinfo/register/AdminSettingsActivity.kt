@@ -149,7 +149,12 @@ private fun AdminSettingsApp(onClose: () -> Unit) {
                     onOperators = { screen = AdminScreen.OPERATORS },
                     onPrinter = { screen = AdminScreen.PRINTER },
                     onCatalog = { context.startActivity(Intent(context, CatalogHubActivityV030::class.java)) },
-                    onTaxInvoice = { context.startActivity(Intent(context, TaxInvoiceSettingsActivity::class.java)) },
+                    onTaxInvoice = {
+                        context.startActivity(
+                            Intent(context, TaxPaymentSettingsHubActivity::class.java)
+                                .putExtra(TaxPaymentSettingsHubActivity.EXTRA_ACTOR, actorName),
+                        )
+                    },
                     onReceiptSettings = {
                         context.startActivity(
                             Intent(context, ReceiptSettingsActivity::class.java)
@@ -301,9 +306,9 @@ private fun AdminMenuScreen(
             onClick = onCatalog,
         ),
         AdminMenuEntryV136(
-            title = "税・インボイス",
-            description = "税計算、内外税混在、適格請求書設定",
-            searchTerms = "税 税区分 インボイス 適格請求書 内税 外税 混在 端数",
+            title = "税・支払設定",
+            description = "税・インボイス、現金、カード、電子マネー、QR、商品券、掛売",
+            searchTerms = "税 税区分 インボイス 適格請求書 内税 外税 支払 現金 カード 電子マネー QR 商品券 掛売 複合支払 SCR-630 SCR-630A SCR-630B",
             background = Color(0xFFF3ECFA),
             onClick = onTaxInvoice,
         ),
