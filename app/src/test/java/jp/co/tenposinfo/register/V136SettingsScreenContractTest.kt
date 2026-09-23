@@ -16,6 +16,7 @@ class V136SettingsScreenContractTest {
         val sync = source("SyncSettingsActivity.kt")
         val tax = source("TaxInvoiceSettingsActivity.kt")
         val maintenance = source("PrinterToolsHubActivity.kt")
+        val receipt = source("ReceiptSettingsActivity.kt")
 
         assertTrue(admin.contains("AsHeader(\"SCR-690\", \"各種設定\""))
         assertTrue(admin.contains("AsHeader(\"SCR-650\", \"担当者・権限マスター\""))
@@ -26,9 +27,10 @@ class V136SettingsScreenContractTest {
         assertTrue(sync.contains("Text(\"SCR-672  同期キュー・Google Drive\""))
         assertTrue(tax.contains("Text(\"SCR-630A  税計算・インボイス設定\""))
         assertTrue(maintenance.contains("PrinterHubHeader(\"SCR-680  保守・診断\""))
+        assertTrue(receipt.contains("Text(\"SCR-640  レシート設定\""))
 
         listOf("SCR-760", "SCR-761", "SCR-762", "SCR-763", "SCR-764", "SCR-767", "SCR-275").forEach {
-            assertFalse("legacy screen id leaked: $it", admin.contains(it) || backup.contains(it) || sync.contains(it) || tax.contains(it))
+            assertFalse("legacy screen id leaked: $it", admin.contains(it) || backup.contains(it) || sync.contains(it) || tax.contains(it) || receipt.contains(it))
         }
     }
 
