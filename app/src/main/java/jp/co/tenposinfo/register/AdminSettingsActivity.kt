@@ -266,7 +266,7 @@ private fun AdminMenuScreen(
         AdminMenuEntryV136(
             title = "店舗・レジ設定",
             description = "店舗基本、販売操作、営業日・精算、端末・初期設定",
-            searchTerms = "店舗 レジ 販売操作 営業日 精算 端末 アプリ 初期設定 SCR-691 SCR-692 SCR-693 SCR-694 SCR-695",
+            searchTerms = "店舗・レジ設定  SCR-691～695 店舗 レジ 販売操作 営業日 精算 端末 アプリ 初期設定 SCR-691 SCR-692 SCR-693 SCR-694 SCR-695",
             background = AsPaleBlue,
             onClick = onInitialReleaseSettings,
         ),
