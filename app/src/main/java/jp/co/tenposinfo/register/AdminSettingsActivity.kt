@@ -326,13 +326,13 @@ private fun AdminMenuScreen(
         AdminMenuEntryV136(
             title = "Google Drive・同期",
             description = "初期設定、アカウント、送信状況、診断",
-            searchTerms = "Google Drive 同期 Outbox 送信 再送 アカウント",
+            searchTerms = "Google Drive 同期 未送信 送信 再送 アカウント",
             background = Color(0xFFE8F0FC),
             onClick = onSync,
         ),
         AdminMenuEntryV136(
-            title = "プリンター運用",
-            description = "診断、印刷キュー、検証、試験履歴",
+            title = "保守・診断",
+            description = "プリンター診断、印刷キュー、検証、試験履歴",
             searchTerms = "プリンター 保守 診断 印刷 キュー テスト 試験",
             background = Color(0xFFE5F3FA),
             onClick = onPrinterTools,
@@ -570,7 +570,7 @@ private fun OperatorMasterScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        AsHeader("SCR-761", "担当者・権限マスター", "有効 ${operators.count { it.enabled }}名")
+        AsHeader("SCR-650", "担当者・権限マスター", "有効 ${operators.count { it.enabled }}名")
         Row(Modifier.weight(1f).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             AsPanel(Modifier.width(420.dp).fillMaxHeight()) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -784,7 +784,7 @@ private fun PrinterSettingsScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        AsHeader("SCR-762", "プリンター・ドロア設定", profile.displayName)
+        AsHeader("SCR-660", "プリンター・ドロア設定", profile.displayName)
         Row(Modifier.weight(1f).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             AsPanel(Modifier.width(650.dp).fillMaxHeight()) {
                 Text("接続・機種設定", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AsNavy)
@@ -1007,7 +1007,7 @@ private fun ManagerPinScreen(
     var message by remember { mutableStateOf<String?>(null) }
 
     Column(Modifier.fillMaxSize()) {
-        AsHeader("SCR-763", "責任者PIN設定", "認証：$actorName")
+        AsHeader("SCR-650", "責任者PIN設定", "認証：$actorName")
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             AsPanel(Modifier.width(600.dp).height(520.dp)) {
                 Text("責任者PINを変更", fontSize = 27.sp, fontWeight = FontWeight.Bold, color = AsNavy)
@@ -1065,7 +1065,7 @@ private fun AuditLogScreen(
     val logs = remember(query, revision) { store.listAuditLogs(query = query) }
 
     Column(Modifier.fillMaxSize()) {
-        AsHeader("SCR-764", "監査ログ", "${logs.size}件表示")
+        AsHeader("SCR-680", "監査ログ", "${logs.size}件表示")
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
