@@ -25,6 +25,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -124,7 +125,7 @@ private fun PaymentSettingsScreen(
                     Column(Modifier.fillMaxSize().padding(16.dp)) {
                         Text("支払方法・表示順", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = PsNavy)
                         Text(
-                            "現金は常時有効です。その他の支払方法は有効/無効と会計画面の表示順を設定できます。",
+                            "現金は常時有効です。表示順、レシート表示名、過入金・釣銭、ドロア開放、決済端末連携を支払方法ごとに設定します。",
                             color = Color.DarkGray,
                             fontSize = 13.sp,
                         )
@@ -167,16 +168,32 @@ private fun PaymentSettingsScreen(
                                                 enabled = row.method != PaymentMethod.CASH && rows.indexOf(row) in 1 until rows.lastIndex,
                                             ) { Text("下へ") }
                                         }
+                                        OutlinedTextField(
+                                            value = row.receiptName,
+                                            onValueChange = { value ->
+                                                update(row.method) {
+                                                    it.copy(receiptName = value.take(16))
+                                                }
+                                            },
+                                            label = { Text("レシート表示名（1～16文字）") },
+                                            singleLine = true,
+                                            enabled = row.enabled,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
                                         Row(
                                             Modifier.fillMaxWidth(),
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {
                                             Checkbox(
-                                                checked = row.allowOverpaymentWithChange,
+                                                checked = row.allowOverpay,
                                                 onCheckedChange = { checked ->
                                                     if (row.method != PaymentMethod.CASH) {
                                                         update(row.method) {
-                                                            it.copy(allowOverpaymentWithChange = checked)
+                                                            it.copy(
+                                                                allowOverpay = checked,
+                                                                allowOverpaymentWithChange = checked && it.givesChange,
+                                                                givesChange = if (checked) it.givesChange else false,
+                                                            )
                                                         }
                                                     }
                                                 },
@@ -184,14 +201,71 @@ private fun PaymentSettingsScreen(
                                             )
                                             Text(
                                                 if (row.method == PaymentMethod.CASH) {
-                                                    "残額超過を許可し、お釣りを計算（固定）"
+                                                    "残額を超える預りを許可（現金は固定）"
                                                 } else {
-                                                    "残額超過を許可し、超過分をお釣りとして扱う"
+                                                    "残額を超える支払を許可"
                                                 },
                                                 fontSize = 12.sp,
                                                 color = Color.DarkGray,
                                             )
                                         }
+                                        Row(
+                                            Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Checkbox(
+                                                checked = row.givesChange,
+                                                onCheckedChange = { checked ->
+                                                    if (row.method != PaymentMethod.CASH) {
+                                                        update(row.method) {
+                                                            it.copy(
+                                                                givesChange = checked,
+                                                                allowOverpay = if (checked) true else it.allowOverpay,
+                                                                allowOverpaymentWithChange = checked,
+                                                            )
+                                                        }
+                                                    }
+                                                },
+                                                enabled = row.method != PaymentMethod.CASH && row.enabled && row.allowOverpay,
+                                            )
+                                            Text(
+                                                if (row.method == PaymentMethod.CASH) {
+                                                    "超過分をお釣りとして返す（現金は固定）"
+                                                } else {
+                                                    "超過分を現金の釣銭として返す"
+                                                },
+                                                fontSize = 12.sp,
+                                                color = Color.DarkGray,
+                                            )
+                                        }
+                                        Row(
+                                            Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Checkbox(
+                                                checked = row.drawerOpen,
+                                                onCheckedChange = { checked ->
+                                                    if (row.method == PaymentMethod.CASH) {
+                                                        update(row.method) { it.copy(drawerOpen = checked) }
+                                                    }
+                                                },
+                                                enabled = row.method == PaymentMethod.CASH && row.enabled,
+                                            )
+                                            Text(
+                                                if (row.method == PaymentMethod.CASH) {
+                                                    "会計確定時にドロアを開く"
+                                                } else {
+                                                    "ドロア開放なし（現金会計のみ）"
+                                                },
+                                                fontSize = 12.sp,
+                                                color = Color.DarkGray,
+                                            )
+                                        }
+                                        Text(
+                                            "決済端末連携：${row.gateway.displayName}",
+                                            fontSize = 12.sp,
+                                            color = Color.DarkGray,
+                                        )
                                     }
                                 }
                             }
