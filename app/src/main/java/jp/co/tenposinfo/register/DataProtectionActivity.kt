@@ -432,7 +432,7 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                                     )
                                     if (metadata != null) {
                                         Text("営業日: ${metadata.businessDate ?: "なし"} / セッション: ${metadata.businessSessionId ?: "なし"} / Z精算: ${metadata.settlementId ?: "なし"}", fontSize = 13.sp)
-                                        Text("外部保存: ${if (metadata.exportedExternally) "済み" else "未保存"} / 最終検証: ${metadata.lastVerifiedAt?.let(::formatTime) ?: "未検証"} / 状態: ${metadata.state.name}", fontSize = 13.sp)
+                                        Text("外部保存: ${if (metadata.exportedExternally) "済み" else "未保存"} / 最終検証: ${metadata.lastVerifiedAt?.let(::formatTime) ?: "未検証"} / 状態: ${metadata.state.displayName}", fontSize = 13.sp)
                                     }
                                     if (!backup.valid) Text(backup.error.orEmpty(), color = DpDanger)
                                 }
