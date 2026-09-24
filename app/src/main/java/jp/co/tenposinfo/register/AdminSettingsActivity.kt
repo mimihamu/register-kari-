@@ -863,9 +863,14 @@ private fun PrinterSettingsScreen(
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = printableDotWidth,
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("印字可能幅 dot（用紙幅連動）") },
+                            onValueChange = { printableDotWidth = it.filter(Char::isDigit).take(4) },
+                            label = { Text("印字可能幅 dot") },
+                            supportingText = {
+                                Text(
+                                    "標準: ${PrinterProfileContractV136.standardPrintableDotWidth(paperWidth)}dot。機種仕様に合わせて変更可",
+                                )
+                            },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true,
                             modifier = Modifier.weight(1f),
                         )
