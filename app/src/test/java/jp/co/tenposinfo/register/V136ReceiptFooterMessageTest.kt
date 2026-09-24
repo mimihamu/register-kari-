@@ -112,7 +112,7 @@ class V136ReceiptFooterMessageTest {
     fun settingsUiUsesFormalLimitAndBothPaperWidthPreviews() {
         val source = File("src/main/java/jp/co/tenposinfo/register/DocumentPrintSettingsV136.kt").readText()
         assertTrue(source.contains("店舗固定文（最大10行・1行64文字）"))
-        assertTrue(source.contains("印刷プレビュー（SCR-640・保存前）"))
+        assertTrue(source.contains("印刷プレビュー（保存前）"))
         assertTrue(source.contains("previewPaper = ReceiptPaper.MM58"))
         assertTrue(source.contains("previewPaper = ReceiptPaper.MM80"))
         assertFalse(source.contains("MAX_LOGICAL_LINES = 12"))
