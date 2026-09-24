@@ -28,7 +28,7 @@ class V136ReceiptSettingsOperatorCopyTest {
 
         assertTrue(imageStamp.contains("Text(\"店名画像スタンプ\""))
         assertFalse(imageStamp.contains("Text(\"店名画像スタンプ（SCR-720）\""))
-        assertFalse(imageStamp.contains("stampVersion ${loaded.stampVersion}"))
+        assertFalse(imageStamp.contains(" / stampVersion "))
         assertFalse(imageStamp.contains("（version "))
     }
 }
