@@ -255,7 +255,11 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
         existingBatchResult(request.requestId.trim())?.let { return it.copy(idempotentReplay = true) }
         val sale = baseDatabase.loadSaleDetail(request.saleId) ?: error("売上No.${request.saleId}が見つかりません")
         val now = System.currentTimeMillis()
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
+        val printerConfiguration = PrinterRoutingV136.resolve(
+            appContext,
+            DocumentPrintKindV136.RECEIPT_VOUCHER,
+        )
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
         val issuer = TaxInvoiceSettingsRegistry.current().issuer
         val documentPrintSetting = DocumentPrintSettingsStoreV136(appContext).load(
             DocumentPrintKindV136.RECEIPT_VOUCHER,
@@ -351,7 +355,7 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
                         kotlin.repeat(copyCount) { copyIndex ->
                             printJobIds += insertDocumentPrintJob(
                                 issuanceId,
-                                paperWidthMm,
+                                printerConfiguration,
                                 decoratedPayload,
                                 now + offsetBase + copyIndex,
                                 documentStampSnapshot,
@@ -408,7 +412,11 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
         val record = loadIssuance(issuanceId) ?: error("領収書No.R${issuanceId}が見つかりません")
         val actor = ReceiptVoucherPolicy.normalizeRequired(operatorName, "再発行担当者")
         val now = System.currentTimeMillis()
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
+        val printerConfiguration = PrinterRoutingV136.resolve(
+            appContext,
+            DocumentPrintKindV136.RECEIPT_VOUCHER,
+        )
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
         val documentPrintSetting = DocumentPrintSettingsStoreV136(appContext).load(
             DocumentPrintKindV136.RECEIPT_VOUCHER,
         )
@@ -446,7 +454,7 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
                     add(
                         insertDocumentPrintJob(
                             record.id,
-                            paperWidthMm,
+                            printerConfiguration,
                             decoratedPayload,
                             now + copyIndex,
                             documentStampSnapshot,
@@ -538,7 +546,7 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
 
     private fun insertDocumentPrintJob(
         issuanceId: Long,
-        paperWidthMm: Int,
+        configuration: PrinterConfiguration,
         payload: String,
         now: Long,
         stampSnapshot: DocumentStampJobSnapshotV136,
@@ -548,7 +556,12 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
         ContentValues().apply {
             put("document_type", OperationDocumentType.RECEIPT_VOUCHER.name)
             put("reference_id", issuanceId)
-            put("paper_width_mm", if (paperWidthMm >= 80) 80 else 58)
+            put(
+                "paper_width_mm",
+                PrinterPaperSettingPolicy.normalizeWidthMm(configuration.paperWidthMm),
+            )
+            put("printer_id", configuration.printerId)
+            put("printable_dot_width", configuration.printableDotWidth)
             put("status", PrintJobStatus.PENDING.name)
             put("attempt_count", 0)
             putNull("last_error")
@@ -571,6 +584,8 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
                 document_type TEXT NOT NULL,
                 reference_id INTEGER NOT NULL,
                 paper_width_mm INTEGER NOT NULL,
+                printer_id TEXT NOT NULL DEFAULT 'printer-1',
+                printable_dot_width INTEGER NOT NULL DEFAULT 576,
                 status TEXT NOT NULL,
                 attempt_count INTEGER NOT NULL,
                 last_error TEXT,
@@ -628,6 +643,7 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
         )
         ensureBatchLifecycleSchema()
         DocumentStampJobSchemaV136.ensure(db)
+        PrinterJobRouteSchemaV136.ensureDocument(db)
         OperationAuditSchemaV136.ensure(db)
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_receipt_voucher_sale ON receipt_voucher_issuances(sale_id, created_at)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_receipt_voucher_reprints ON receipt_voucher_reprints(issuance_id, created_at)")
