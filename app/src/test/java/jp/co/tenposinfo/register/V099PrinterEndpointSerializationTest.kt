@@ -158,8 +158,13 @@ class V099PrinterEndpointSerializationTest {
     fun automaticAndManualPathsHoldEndpointGateAcrossJobClaimAndSend() {
         assertTrue(autoSource.contains("PrinterEndpointSendGate.withPermit("))
         assertTrue(autoSource.contains("val candidate = AutomaticPrintQueuePolicy.oldestCandidate("))
-        assertTrue(autoSource.contains("return@withPermit null"))
-        assertTrue(autoSource.indexOf("PrinterEndpointSendGate.withPermit(") < autoSource.indexOf("val candidate = AutomaticPrintQueuePolicy.oldestCandidate("))
+        assertTrue(
+            autoSource.indexOf("val candidate = AutomaticPrintQueuePolicy.oldestCandidate(") <
+                autoSource.indexOf("PrinterEndpointSendGate.withPermit("),
+        )
+        assertTrue(autoSource.contains("resolveCandidateConfiguration("))
+        assertTrue(autoSource.contains(").processJob(candidate.sourceId)"))
+        assertTrue(autoSource.contains("業務帳票の印刷ジョブ状態が変更されたため送信を中止しました"))
         assertTrue(queueSource.contains("PrinterEndpointSendGate.withPermit("))
         assertTrue(queueSource.contains("requireCurrentStatus(job.status, current.status)"))
         assertTrue(queueSource.contains("requireCurrentStatus(unifiedJob.status, sourceJob.status)"))
