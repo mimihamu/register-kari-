@@ -478,6 +478,12 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
                 now,
             )
         }
+        PrinterProfileStoreV136(appContext).use { profileStore ->
+            profileStore.save(
+                configuration.copy(printerId = PrinterProfileContractV136.SINGLE_PRINTER_ID),
+                actor,
+            )
+        }
     }
 
     fun testPrinter(configuration: PrinterConfiguration): Result<Unit> {
