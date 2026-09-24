@@ -443,5 +443,25 @@ class PrinterProfileStoreV136(context: Context) : AutoCloseable {
     }
 }
 
+
+object PrinterRoutingV136 {
+    fun resolve(
+        context: Context,
+        kind: DocumentPrintKindV136,
+    ): PrinterConfiguration = PrinterProfileStoreV136(context.applicationContext).use { store ->
+        store.resolve(kind)
+    } ?: PrinterConfiguration()
+
+    fun loadById(
+        context: Context,
+        printerId: String,
+    ): PrinterConfiguration? = PrinterProfileStoreV136(context.applicationContext).use { store ->
+        store.load(printerId)
+    }
+
+    fun kindFor(type: OperationDocumentType): DocumentPrintKindV136 =
+        DocumentPrintSettingsPolicyV136.kindFor(type) ?: DocumentPrintKindV136.SALE_RECEIPT
+}
+
 private inline fun <reified T : Enum<T>> enumOrDefault(value: String?, fallback: T): T =
     runCatching { enumValueOf<T>(value.orEmpty()) }.getOrDefault(fallback)
