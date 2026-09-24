@@ -1,7 +1,17 @@
 package jp.co.tenposinfo.register
 
+import android.Manifest
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.hardware.usb.UsbManager
+import android.os.Build
 import android.os.Bundle
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -731,6 +741,9 @@ private fun PrinterSettingsScreen(
     var name by remember { mutableStateOf(initial.name) }
     var host by remember { mutableStateOf(initial.host) }
     var port by remember { mutableStateOf(initial.port.toString()) }
+    var connectionType by remember { mutableStateOf(initial.connectionType) }
+    var usbDeviceName by remember { mutableStateOf(initial.usbDeviceName) }
+    var bluetoothAddress by remember { mutableStateOf(initial.bluetoothAddress) }
     var paperWidth by remember { mutableStateOf(initial.paperWidthMm) }
     var printableDotWidth by remember { mutableStateOf(initial.printableDotWidth.toString()) }
     var feedLines by remember { mutableStateOf(initial.feedLines.toString()) }
@@ -751,11 +764,54 @@ private fun PrinterSettingsScreen(
     var testing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val usbManager = remember(context) {
+        context.applicationContext.getSystemService(Context.USB_SERVICE) as UsbManager
+    }
+    val bluetoothPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        message = if (granted) "Bluetooth接続を許可しました" else "Bluetooth接続権限が許可されませんでした"
+    }
+    val usbPermissionAction = remember(context) { "${context.packageName}.USB_PERMISSION_V136" }
+    DisposableEffect(context, usbPermissionAction) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(receiverContext: Context?, intent: Intent?) {
+                if (intent?.action != usbPermissionAction) return
+                val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
+                message = if (granted) "USBプリンター接続を許可しました" else "USBプリンター接続が許可されませんでした"
+            }
+        }
+        ContextCompat.registerReceiver(
+            context,
+            receiver,
+            IntentFilter(usbPermissionAction),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        onDispose { runCatching { context.unregisterReceiver(receiver) } }
+    }
+
+    fun requestUsbPermission(deviceName: String) {
+        val device = usbManager.deviceList.values.firstOrNull { it.deviceName == deviceName }
+        if (device == null) {
+            message = "選択したUSB機器が接続されていません"
+            return
+        }
+        if (usbManager.hasPermission(device)) {
+            message = "USBプリンター接続は許可済みです"
+            return
+        }
+        val intent = Intent(usbPermissionAction).setPackage(context.packageName)
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        usbManager.requestPermission(device, PendingIntent.getBroadcast(context, 0, intent, flags))
+    }
 
     fun currentConfiguration() = PrinterConfiguration(
         name = name,
         host = host,
         port = port.toIntOrNull() ?: 0,
+        connectionType = connectionType,
+        usbDeviceName = usbDeviceName,
+        bluetoothAddress = bluetoothAddress,
         paperWidthMm = paperWidth,
         printableDotWidth = printableDotWidth.toIntOrNull() ?: 0,
         feedLines = feedLines.toIntOrNull() ?: 0,
@@ -811,24 +867,90 @@ private fun PrinterSettingsScreen(
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                     OutlinedTextField(name, { name = it.take(40) }, label = { Text("プリンター名") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(host, { host = it.take(255) }, label = { Text("IPアドレス／ホスト名") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Text("接続方式", fontWeight = FontWeight.Bold, color = AsNavy)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        PrinterConnectionTypeV136.entries.forEach { candidate ->
+                            AsChoiceButton(
+                                candidate.displayName,
+                                connectionType == candidate,
+                                Modifier.weight(1f),
+                            ) { connectionType = candidate }
+                        }
+                    }
                     Spacer(Modifier.height(6.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            port,
-                            { port = it.filter(Char::isDigit).take(5) },
-                            label = { Text("ポート") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                        )
+                    when (connectionType) {
+                        PrinterConnectionTypeV136.TCP_9100 -> {
+                            OutlinedTextField(host, { host = it.take(255) }, label = { Text("IPアドレス／ホスト名") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                            Spacer(Modifier.height(6.dp))
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(
+                                    port,
+                                    { port = it.filter(Char::isDigit).take(5) },
+                                    label = { Text("ポート") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                OutlinedTextField(
+                                    timeout,
+                                    { timeout = it.filter(Char::isDigit).take(5) },
+                                    label = { Text("タイムアウトms") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                        PrinterConnectionTypeV136.USB -> {
+                            OutlinedTextField(
+                                usbDeviceName,
+                                { usbDeviceName = it.take(255) },
+                                label = { Text("USB機器名") },
+                                supportingText = { Text("接続中のAndroid USB deviceNameを保存します") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    val device = usbManager.deviceList.values.sortedBy { it.deviceName }.firstOrNull()
+                                    if (device == null) {
+                                        message = "接続中のUSB機器が見つかりません"
+                                    } else {
+                                        usbDeviceName = device.deviceName
+                                        requestUsbPermission(device.deviceName)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("接続中USB機器を選択・許可") }
+                        }
+                        PrinterConnectionTypeV136.BLUETOOTH -> {
+                            OutlinedTextField(
+                                bluetoothAddress,
+                                { bluetoothAddress = it.uppercase().filter { c -> c.isDigit() || c in 'A'..'F' || c == ':' }.take(17) },
+                                label = { Text("Bluetoothアドレス") },
+                                supportingText = { Text("AA:BB:CC:DD:EE:FF") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                Spacer(Modifier.height(4.dp))
+                                OutlinedButton(
+                                    onClick = { bluetoothPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) { Text("Bluetooth接続を許可") }
+                            }
+                        }
+                    }
+                    if (connectionType != PrinterConnectionTypeV136.TCP_9100) {
+                        Spacer(Modifier.height(6.dp))
                         OutlinedTextField(
                             timeout,
                             { timeout = it.filter(Char::isDigit).take(5) },
                             label = { Text("タイムアウトms") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
                     Spacer(Modifier.height(8.dp))
@@ -943,8 +1065,14 @@ private fun PrinterSettingsScreen(
                             val result = runCatching {
                                 store.savePrinterConfiguration(config, actorName)
                                 val reloaded = store.loadPrinterConfiguration()
-                                require(reloaded.printableDotWidth == config.printableDotWidth && reloaded.feedLines == config.feedLines) {
-                                    "プリンタープロファイルの保存後再読込に失敗しました"
+                                require(
+                                    reloaded.printableDotWidth == config.printableDotWidth &&
+                                        reloaded.feedLines == config.feedLines &&
+                                        reloaded.connectionType == config.connectionType &&
+                                        reloaded.usbDeviceName == config.usbDeviceName.trim() &&
+                                        reloaded.bluetoothAddress == config.bluetoothAddress.trim().uppercase()
+                                ) {
+                                    "プリンター設定の保存後再読込に失敗しました"
                                 }
                                 reloaded
                             }
@@ -984,7 +1112,11 @@ private fun PrinterSettingsScreen(
                 Text("適用内容", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AsNavy)
                 Spacer(Modifier.height(14.dp))
                 AsValueRow("機種", profile.displayName)
-                AsValueRow("接続", "${host.ifBlank { "未設定" }}:${port.ifBlank { "9100" }}")
+                AsValueRow("接続方式", connectionType.displayName)
+                AsValueRow(
+                    "接続先",
+                    PrinterTransportPolicyV136.endpointDisplay(currentConfiguration()).ifBlank { "未設定" },
+                )
                 AsValueRow("用紙", "${paperWidth}mm")
                 AsValueRow("印字可能幅", "${printableDotWidth.ifBlank { "－" }}dot")
                 AsValueRow("カット前紙送り", "${feedLines.ifBlank { "－" }}行")
