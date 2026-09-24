@@ -214,6 +214,7 @@ object PrintDocumentSnapshotSchemaV136 {
 
     fun ensureSale(db: SQLiteDatabase) {
         if (!SchemaMigration.tableExists(db, "print_jobs")) return
+        PrinterJobRouteSchemaV136.ensureSale(db)
         ensureCommonTables(db)
         SchemaMigration.ensureColumn(db, "print_jobs", "payload_version", "INTEGER NOT NULL DEFAULT 1")
         SchemaMigration.ensureColumn(db, "print_jobs", "payload_json", "TEXT")
@@ -231,7 +232,7 @@ object PrintDocumentSnapshotSchemaV136 {
                            AND instr(j.payload_json, '"syn003FrozenPrint"') > 0
                          ORDER BY j.created_at DESC
                          LIMIT 1),
-                       '{"schema":"${PrintDocumentSnapshotV136.SALE_JOB_REFERENCE_SCHEMA}","schemaVersion":${PrintDocumentSnapshotV136.SCHEMA_VERSION},"saleId":' || sale_id || ',"paperWidthMm":' || paper_width_mm || '}'
+                       '{"schema":"${PrintDocumentSnapshotV136.SALE_JOB_REFERENCE_SCHEMA}","schemaVersion":${PrintDocumentSnapshotV136.SCHEMA_VERSION},"saleId":' || sale_id || ',"paperWidthMm":' || paper_width_mm || ',"printerId":"' || printer_id || '","printableDotWidth":' || printable_dot_width || '}'
                    )
              WHERE payload_json IS NULL OR trim(payload_json) = ''
             """.trimIndent(),
@@ -254,7 +255,7 @@ object PrintDocumentSnapshotSchemaV136 {
                                AND instr(j.payload_json, '"syn003FrozenPrint"') > 0
                              ORDER BY j.created_at DESC
                              LIMIT 1),
-                           '{"schema":"${PrintDocumentSnapshotV136.SALE_JOB_REFERENCE_SCHEMA}","schemaVersion":${PrintDocumentSnapshotV136.SCHEMA_VERSION},"saleId":' || NEW.sale_id || ',"paperWidthMm":' || NEW.paper_width_mm || '}'
+                           '{"schema":"${PrintDocumentSnapshotV136.SALE_JOB_REFERENCE_SCHEMA}","schemaVersion":${PrintDocumentSnapshotV136.SCHEMA_VERSION},"saleId":' || NEW.sale_id || ',"paperWidthMm":' || NEW.paper_width_mm || ',"printerId":"' || NEW.printer_id || '","printableDotWidth":' || NEW.printable_dot_width || '}'
                        )
                  WHERE id = NEW.id;
             END
@@ -265,6 +266,7 @@ object PrintDocumentSnapshotSchemaV136 {
 
     fun ensureDocument(db: SQLiteDatabase) {
         if (!SchemaMigration.tableExists(db, "document_print_jobs")) return
+        PrinterJobRouteSchemaV136.ensureDocument(db)
         ensureCommonTables(db)
         SchemaMigration.ensureColumn(db, "document_print_jobs", "payload_version", "INTEGER NOT NULL DEFAULT 1")
         SchemaMigration.ensureColumn(db, "document_print_jobs", "payload_json", "TEXT")
@@ -280,14 +282,14 @@ object PrintDocumentSnapshotSchemaV136 {
             BEGIN
                 INSERT OR IGNORE INTO print_document_journal_v136(
                     job_id, document_type, reference_id, source_job_id, paper_width_mm,
-                    rendered_text, rendered_hash, created_at
+                    printer_id, printable_dot_width, rendered_text, rendered_hash, created_at
                 ) VALUES(
                     NEW.id, NEW.document_type, NEW.reference_id, NEW.source_job_id, NEW.paper_width_mm,
-                    NEW.payload_text, NULL, NEW.created_at
+                    NEW.printer_id, NEW.printable_dot_width, NEW.payload_text, NULL, NEW.created_at
                 );
                 UPDATE document_print_jobs
                    SET payload_version = ${PrintDocumentSnapshotV136.SCHEMA_VERSION},
-                       payload_json = '{"schema":"${PrintDocumentSnapshotV136.DOCUMENT_JOB_REFERENCE_SCHEMA}","schemaVersion":${PrintDocumentSnapshotV136.SCHEMA_VERSION},"journalJobId":' || NEW.id || ',"documentType":"' || NEW.document_type || '","referenceId":' || NEW.reference_id || ',"paperWidthMm":' || NEW.paper_width_mm || '}'
+                       payload_json = '{"schema":"${PrintDocumentSnapshotV136.DOCUMENT_JOB_REFERENCE_SCHEMA}","schemaVersion":${PrintDocumentSnapshotV136.SCHEMA_VERSION},"journalJobId":' || NEW.id || ',"documentType":"' || NEW.document_type || '","referenceId":' || NEW.reference_id || ',"paperWidthMm":' || NEW.paper_width_mm || ',"printerId":"' || NEW.printer_id || '","printableDotWidth":' || NEW.printable_dot_width || '}'
                  WHERE id = NEW.id AND (payload_json IS NULL OR trim(payload_json) = '');
             END
             """.trimIndent(),
@@ -324,12 +326,16 @@ object PrintDocumentSnapshotSchemaV136 {
                 reference_id INTEGER NOT NULL,
                 source_job_id INTEGER,
                 paper_width_mm INTEGER NOT NULL,
+                printer_id TEXT NOT NULL DEFAULT 'printer-1',
+                printable_dot_width INTEGER NOT NULL DEFAULT 576,
                 rendered_text TEXT NOT NULL,
                 rendered_hash TEXT,
                 created_at INTEGER NOT NULL
             )
             """.trimIndent(),
         )
+        SchemaMigration.ensureColumn(db, "print_document_journal_v136", "printer_id", "TEXT NOT NULL DEFAULT 'printer-1'")
+        SchemaMigration.ensureColumn(db, "print_document_journal_v136", "printable_dot_width", "INTEGER NOT NULL DEFAULT 576")
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS print_error_journal_v136 (
@@ -372,10 +378,10 @@ object PrintDocumentSnapshotSchemaV136 {
             """
             INSERT OR IGNORE INTO print_document_journal_v136(
                 job_id, document_type, reference_id, source_job_id, paper_width_mm,
-                rendered_text, rendered_hash, created_at
+                printer_id, printable_dot_width, rendered_text, rendered_hash, created_at
             )
             SELECT id, document_type, reference_id, source_job_id, paper_width_mm,
-                   payload_text, rendered_hash, created_at
+                   printer_id, printable_dot_width, payload_text, rendered_hash, created_at
               FROM document_print_jobs
             """.trimIndent(),
         )
@@ -383,7 +389,7 @@ object PrintDocumentSnapshotSchemaV136 {
             """
             UPDATE document_print_jobs
                SET payload_version = ${PrintDocumentSnapshotV136.SCHEMA_VERSION},
-                   payload_json = '{"schema":"${PrintDocumentSnapshotV136.DOCUMENT_JOB_REFERENCE_SCHEMA}","schemaVersion":${PrintDocumentSnapshotV136.SCHEMA_VERSION},"journalJobId":' || id || ',"documentType":"' || document_type || '","referenceId":' || reference_id || ',"paperWidthMm":' || paper_width_mm || '}'
+                   payload_json = '{"schema":"${PrintDocumentSnapshotV136.DOCUMENT_JOB_REFERENCE_SCHEMA}","schemaVersion":${PrintDocumentSnapshotV136.SCHEMA_VERSION},"journalJobId":' || id || ',"documentType":"' || document_type || '","referenceId":' || reference_id || ',"paperWidthMm":' || paper_width_mm || ',"printerId":"' || printer_id || '","printableDotWidth":' || printable_dot_width || '}'
              WHERE payload_json IS NULL OR trim(payload_json) = ''
             """.trimIndent(),
         )
