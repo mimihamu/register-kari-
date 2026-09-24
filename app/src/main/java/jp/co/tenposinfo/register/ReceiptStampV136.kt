@@ -582,6 +582,17 @@ class ReceiptStampGatewayV136(
 fun ReceiptStampSettingsPanelV136() {
     val context = LocalContext.current.applicationContext
     val store = remember(context) { ReceiptStampSettingsStoreV136(context) }
+    val printerConfiguration = remember(context) { PrinterPaperSettingPolicy.currentConfiguration(context) }
+    val preview58Dots = if (printerConfiguration.paperWidthMm == 58) {
+        printerConfiguration.printableDotWidth
+    } else {
+        ReceiptStampPolicyV136.MM58_MAX_DOTS
+    }
+    val preview80Dots = if (printerConfiguration.paperWidthMm == 80) {
+        printerConfiguration.printableDotWidth
+    } else {
+        ReceiptStampPolicyV136.MM80_MAX_DOTS
+    }
     var revision by remember { mutableIntStateOf(0) }
     val loaded = remember(revision) { store.load() }
     var enabled by remember(revision) { mutableStateOf(loaded.enabled) }
@@ -624,18 +635,22 @@ fun ReceiptStampSettingsPanelV136() {
             it.rotationDegrees in setOf(0, 90, 180, 270) &&
             it.cropPercent in 0..ReceiptStampPolicyV136.MAX_CROP_PERCENT
     }
-    val preview58 = remember(revision, validDraft) {
-        validDraft?.let { runCatching { store.previewBitmap(it, ReceiptPaper.MM58) }.getOrNull() }
+    val preview58 = remember(revision, validDraft, preview58Dots) {
+        validDraft?.let {
+            runCatching { store.previewBitmap(it, ReceiptPaper.MM58, preview58Dots) }.getOrNull()
+        }
     }
-    val preview80 = remember(revision, validDraft) {
-        validDraft?.let { runCatching { store.previewBitmap(it, ReceiptPaper.MM80) }.getOrNull() }
+    val preview80 = remember(revision, validDraft, preview80Dots) {
+        validDraft?.let {
+            runCatching { store.previewBitmap(it, ReceiptPaper.MM80, preview80Dots) }.getOrNull()
+        }
     }
 
     Column(Modifier.fillMaxWidth()) {
         Spacer(Modifier.height(12.dp))
         Text("店名画像スタンプ", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
         Text(
-            "PNG/JPEG・2MB以下・2000×2000px以下。透過は白へ合成し、58mm=384dot / 80mm=576dot以内へ縦横比を維持して縮小します。",
+            "PNG/JPEG・2MB以下・2000×2000px以下。透過は白へ合成し、選択中プリンターの実印字幅へ縦横比を維持して縮小します。",
             style = MaterialTheme.typography.bodySmall,
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -718,7 +733,7 @@ fun ReceiptStampSettingsPanelV136() {
             Text("明るさ-100～100、閾値0～255、切抜き0～40%で入力してください", color = MaterialTheme.colorScheme.error)
         }
         if (preview58 != null) {
-            Text("58mm実幅プレビュー（最大384dot）", fontWeight = FontWeight.Bold)
+            Text("58mm実幅プレビュー（最大${preview58Dots}dot）", fontWeight = FontWeight.Bold)
             Image(
                 bitmap = preview58.asImageBitmap(),
                 contentDescription = "58mm画像スタンププレビュー",
@@ -727,7 +742,7 @@ fun ReceiptStampSettingsPanelV136() {
             )
         }
         if (preview80 != null) {
-            Text("80mm実幅プレビュー（最大576dot）", fontWeight = FontWeight.Bold)
+            Text("80mm実幅プレビュー（最大${preview80Dots}dot）", fontWeight = FontWeight.Bold)
             Image(
                 bitmap = preview80.asImageBitmap(),
                 contentDescription = "80mm画像スタンププレビュー",
