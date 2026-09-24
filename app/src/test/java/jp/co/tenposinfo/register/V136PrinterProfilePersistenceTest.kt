@@ -39,10 +39,24 @@ class V136PrinterProfilePersistenceTest {
     }
 
     @Test
-    fun paperAndDotWidthMismatchIsRejected() {
+    fun printerSpecificDotWidthsAreAccepted() {
+        listOf(
+            PrinterConfiguration(paperWidthMm = 58, printableDotWidth = 420),
+            PrinterConfiguration(paperWidthMm = 80, printableDotWidth = 512),
+            PrinterConfiguration(paperWidthMm = 80, printableDotWidth = 640),
+        ).forEach { configuration ->
+            PrinterProfileContractV136.validatePersistedConfiguration(configuration)
+            val snapshot = PrinterProfileContractV136.snapshot(configuration)
+            assertEquals(configuration.printableDotWidth, snapshot.printableDotWidth)
+            assertTrue(PrinterProfileContractV136.isInternallyConsistent(snapshot))
+        }
+    }
+
+    @Test
+    fun nonPositiveDotWidthIsRejected() {
         val invalid = PrinterConfiguration(
             paperWidthMm = 58,
-            printableDotWidth = 576,
+            printableDotWidth = 0,
         )
 
         val result = runCatching { PrinterProfileContractV136.validatePersistedConfiguration(invalid) }
@@ -106,7 +120,7 @@ class V136PrinterProfilePersistenceTest {
         assertTrue(store.contains("printableDotWidth = cursor.getInt(4)"))
         assertTrue(store.contains("feedLines = cursor.getInt(5)"))
         assertTrue(store.contains("SET printable_dot_width = CASE paper_width_mm"))
-        assertTrue(ui.contains("印字可能幅 dot（用紙幅連動）"))
+        assertTrue(ui.contains("印字可能幅 dot"))\n        assertTrue(ui.contains("機種仕様に合わせて変更可"))
         assertTrue(ui.contains("カット前紙送り行数"))
         assertTrue(ui.contains("store.loadPrinterConfiguration()"))
         assertTrue(ui.contains("保存し、再読込を確認しました"))
