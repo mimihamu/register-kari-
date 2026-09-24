@@ -255,7 +255,10 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         require(items.isNotEmpty()) { "Cannot save an empty sale" }
         val taxSettings = TaxInvoiceSettingsStore(applicationContext).load()
         val mixedTaxPolicy = taxSettings.mixedTaxPolicy
-        val printerConfiguration = PrinterPaperSettingPolicy.currentConfiguration(applicationContext)
+        val printerConfiguration = PrinterRoutingV136.resolve(
+            applicationContext,
+            DocumentPrintKindV136.SALE_RECEIPT,
+        )
         val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
         val saleReceiptSetting = DocumentPrintSettingsStoreV136(applicationContext)
             .load(DocumentPrintKindV136.SALE_RECEIPT)
