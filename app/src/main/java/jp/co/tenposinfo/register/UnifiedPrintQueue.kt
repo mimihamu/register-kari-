@@ -78,6 +78,8 @@ data class UnifiedPrintJob(
     val previewText: String,
     val createdAt: Long,
     val updatedAt: Long,
+    val printerId: String = PrinterProfileContractV136.SINGLE_PRINTER_ID,
+    val printableDotWidth: Int = PrinterProfileContractV136.standardPrintableDotWidth(paperWidthMm),
 ) {
     val failureCategory: UnifiedPrintFailureCategory
         get() = UnifiedPrintFailureClassifier.classify(lastError)
@@ -275,7 +277,8 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
         salesDatabase.close()
     }
 
-    fun loadConfiguration(): PrinterConfiguration = settingsStore.loadPrinterConfiguration()
+    fun loadConfiguration(): PrinterConfiguration =
+        PrinterRoutingV136.resolve(applicationContext, DocumentPrintKindV136.SALE_RECEIPT)
 
     fun loadRuntimeSettings(): PrinterRuntimeSettings = monitoringStore.loadSettings()
 
@@ -311,6 +314,8 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
                 previewText = preview,
                 createdAt = job.createdAt,
                 updatedAt = job.updatedAt,
+                printerId = job.printerId,
+                printableDotWidth = job.printableDotWidth,
             )
         }
         val documentJobs = documentStore.listDocumentPrintJobs(limitPerType).map { job ->
@@ -331,6 +336,8 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
                 previewText = job.payloadText,
                 createdAt = job.createdAt,
                 updatedAt = job.updatedAt,
+                printerId = job.printerId,
+                printableDotWidth = job.printableDotWidth,
             )
         }
         return (saleJobs + documentJobs).sortedWith(
@@ -460,7 +467,18 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
             settingsStore.managerNameForPin(managerPin)
                 ?: return Result.failure(IllegalArgumentException("強制印刷には正しい責任者PINが必要です"))
         }
-        val configuration = loadConfiguration()
+        val configuration = PrinterRoutingV136.loadById(applicationContext, job.printerId)
+            ?.copy(
+                paperWidthMm = job.paperWidthMm,
+                printableDotWidth = job.printableDotWidth,
+            )
+            ?: return auditedPrintFailure(
+                job = job,
+                actor = actor,
+                forced = !requireHealthyPrinter,
+                managerName = managerName,
+                error = IllegalStateException("印刷ジョブの出力先プリンターが見つかりません：${job.printerId}"),
+            )
         if (!configuration.usable) {
             return auditedPrintFailure(
                 job = job,
@@ -511,7 +529,7 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
                     UnifiedPrintJobType.SALE_RECEIPT -> {
                         val deliveryGateway = DeliveryConfirmingPrinterGatewayV136(
                             context = applicationContext,
-                            configuration = configuration.copy(paperWidthMm = job.paperWidthMm),
+                            configuration = configuration,
                             kind = PrintDeliveryJobKindV136.SALE_RECEIPT,
                             jobId = job.sourceId,
                             delegate = rawGateway,
@@ -621,7 +639,10 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
                 receipt,
                 documentPrintSettingsStore.load(DocumentPrintKindV136.SALE_RECEIPT),
             ),
-            configuration = configuration.copy(paperWidthMm = claimed.paperWidthMm),
+            configuration = configuration.copy(
+                paperWidthMm = claimed.paperWidthMm,
+                printableDotWidth = claimed.printableDotWidth,
+            ),
         )
         val result = gateway.send(payload)
         result.onSuccess {
