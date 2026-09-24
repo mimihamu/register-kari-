@@ -75,7 +75,7 @@ class V136PrinterProfilePrintabilityTest {
     }
 
     @Test
-    fun existingPrinterTestUsesSelectedProfileSameEncoderAndTcpGateway() {
+    fun existingPrinterTestUsesSelectedProfileSameEncoderAndConfiguredGateway() {
         val source = File("src/main/java/jp/co/tenposinfo/register/AdminSettingsStore.kt").readText()
         assertTrue(source.contains("configuration.profile.displayName"))
         assertTrue(source.contains("configuration.printableDotWidth"))
@@ -83,6 +83,7 @@ class V136PrinterProfilePrintabilityTest {
         assertTrue(source.contains("PrinterPaperWidthTestV136.buildAll"))
         assertTrue(source.contains("PrinterCommandEncoder.encodeText"))
         assertTrue(source.contains("printerGateway(configuration).send(payload)"))
+        assertTrue(source.contains("PrinterGatewayFactoryV136.create(appContext, configuration)"))
         assertTrue(source.contains("PRINTER_TEST_SUCCEEDED"))
         assertTrue(source.contains("PRINTER_TEST_FAILED"))
         assertFalse(source.contains("実機印字確認済み"))
