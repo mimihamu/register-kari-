@@ -427,9 +427,14 @@ class PrintQueueProcessor(
     private val database: RegisterDatabase,
     private val gateway: PrinterGateway,
     private val saleReceiptSetting: DocumentPrintSettingV136 = DocumentPrintSettingV136(footer = ReceiptFooterMessagePolicyV136.DEFAULT_MESSAGE),
+    private val printerConfiguration: PrinterConfiguration? = null,
 ) {
-    fun processNext(): Boolean {
-        val job = database.claimNextPrintableJob() ?: return false
+    fun processNext(): Boolean = processClaimed(database.claimNextPrintableJob())
+
+    fun processJob(jobId: Long): Boolean = processClaimed(database.claimPrintJob(jobId))
+
+    private fun processClaimed(job: PrintJobRecord?): Boolean {
+        job ?: return false
         val detail = database.loadSaleDetail(job.saleId)
         if (detail == null) {
             database.markPrintFailed(job.id, "売上データが見つかりません", permanent = true)
@@ -448,8 +453,12 @@ class PrintQueueProcessor(
         ) ?: run {
             // Legacy rows created before SYN-003 keep the historical rendering fallback.
             val receipt = ReceiptFactory.fromSale(detail, reprint = isReprint)
-            val configuredSnapshot = (PrinterConfigurationRegistry.current() ?: PrinterConfiguration()).copy(
+            val configuredSnapshot = (
+                printerConfiguration ?: PrinterConfigurationRegistry.current() ?: PrinterConfiguration()
+            ).copy(
+                printerId = job.printerId,
                 paperWidthMm = job.paperWidthMm,
+                printableDotWidth = job.printableDotWidth,
             )
             val configuredReceipt = DocumentPrintSettingsPolicyV136.applyToReceipt(receipt, saleReceiptSetting)
             EscPosEncoder.encode(configuredReceipt, configuredSnapshot)
