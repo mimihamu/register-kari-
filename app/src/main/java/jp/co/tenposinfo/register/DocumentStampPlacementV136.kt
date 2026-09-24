@@ -180,14 +180,12 @@ object DocumentStampJobSchemaV136 {
         if (placement == DocumentStampPlacementV136.NONE) return DocumentStampJobSnapshotV136.none()
 
         val appContext = context.applicationContext
-        val settingsStore = AdminSettingsStore(appContext)
-        val configuration = try {
-            settingsStore.loadPrinterConfiguration().copy(
-                paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(paperWidthMm),
-            )
-        } finally {
-            settingsStore.close()
-        }
+        val configuration = PrinterRoutingV136.resolve(
+            appContext,
+            DocumentPrintKindV136.RECEIPT_VOUCHER,
+        ).copy(
+            paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(paperWidthMm),
+        )
         val stamp = ReceiptStampSnapshotV136.capture(appContext, configuration)
         if (stamp.prefixBytes.isEmpty()) return DocumentStampJobSnapshotV136.none()
         return DocumentStampJobSnapshotV136(
