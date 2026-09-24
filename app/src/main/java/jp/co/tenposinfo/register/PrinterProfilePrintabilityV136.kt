@@ -58,8 +58,7 @@ object PrinterProfilePrintabilityV136 {
     }
 
     fun validateSoftwarePreflight(configuration: PrinterConfiguration) {
-        require(configuration.host.isNotBlank()) { "IPアドレスまたはホスト名を入力してください" }
-        require(configuration.port in 1..65535) { "ポート番号は1～65535で入力してください" }
+        PrinterTransportPolicyV136.validate(configuration)
         require(configuration.timeoutMillis in 1_000..30_000) { "タイムアウトは1000～30000msで入力してください" }
         PrinterProfileContractV136.validatePersistedConfiguration(configuration)
         require(Charset.isSupported(configuration.profile.charsetName)) {
