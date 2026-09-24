@@ -52,6 +52,8 @@ data class PrintJobRecord(
     val lastError: String?,
     val createdAt: Long,
     val updatedAt: Long,
+    val printerId: String = PrinterProfileContractV136.SINGLE_PRINTER_ID,
+    val printableDotWidth: Int = PrinterProfileContractV136.standardPrintableDotWidth(paperWidthMm),
 )
 
 data class ReceiptData(
