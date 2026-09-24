@@ -34,8 +34,8 @@ class V136MultiPrinterRoutingTest {
     fun profileStoreDefinesNonDestructiveLegacyMigrationAndPerDocumentRoutes() {
         val source = File("src/main/java/jp/co/tenposinfo/register/PrinterProfileStoreV136.kt").readText()
 
-        assertTrue(source.contains("CREATE TABLE IF NOT EXISTS $PROFILE_TABLE"))
-        assertTrue(source.contains("CREATE TABLE IF NOT EXISTS $ROUTE_TABLE"))
+        assertTrue(source.contains("CREATE TABLE IF NOT EXISTS \$PROFILE_TABLE"))
+        assertTrue(source.contains("CREATE TABLE IF NOT EXISTS \$ROUTE_TABLE"))
         assertTrue(source.contains("seedLegacyProfileIfNeeded()"))
         assertTrue(source.contains("printerId = PrinterProfileContractV136.SINGLE_PRINTER_ID"))
         assertTrue(source.contains("DocumentPrintKindV136.entries.forEach"))
@@ -79,8 +79,8 @@ class V136MultiPrinterRoutingTest {
     fun structuredPrintJournalIncludesPrinterRouteSnapshot() {
         val source = File("src/main/java/jp/co/tenposinfo/register/PrintDocumentSnapshotV136.kt").readText()
 
-        assertTrue(source.contains("\\\"printerId\\\""))
-        assertTrue(source.contains("\\\"printableDotWidth\\\""))
+        assertTrue(source.contains("\"printerId\""))
+        assertTrue(source.contains("\"printableDotWidth\""))
         assertTrue(source.contains("printer_id, printable_dot_width, rendered_text"))
         assertTrue(source.contains("NEW.printer_id, NEW.printable_dot_width"))
     }
