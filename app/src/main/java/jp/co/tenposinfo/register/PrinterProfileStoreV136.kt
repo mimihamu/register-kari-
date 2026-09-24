@@ -100,7 +100,22 @@ class PrinterProfileStoreV136(context: Context) : AutoCloseable {
         require(printerId.matches(PRINTER_ID_PATTERN)) { "プリンターIDが不正です" }
         PrinterProfileContractV136.validatePersistedConfiguration(normalized)
         require(normalized.timeoutMillis in 1_000..30_000) { "タイムアウトは1000～30000msで入力してください" }
+        require(normalized.drawerPort == 0 || normalized.drawerPort == 1) {
+            "ドロアポートはDK1またはDK2です"
+        }
+        require(
+            normalized.drawerOnMillis in
+                CashDrawerSafetyPolicyV136.MIN_OPEN_PULSE_MS..CashDrawerSafetyPolicyV136.MAX_OPEN_PULSE_MS
+        ) {
+            "ドロアON時間は${CashDrawerSafetyPolicyV136.MIN_OPEN_PULSE_MS}～${CashDrawerSafetyPolicyV136.MAX_OPEN_PULSE_MS}msです"
+        }
+        require(normalized.drawerOffMillis in 20..500) { "ドロアOFF時間は20～500msです" }
         if (normalized.enabled) PrinterTransportPolicyV136.validate(normalized)
+        if (normalized.drawerEnabled) {
+            require(normalized.profile.supportsDrawer) {
+                "選択中のプロファイルはドロア制御に対応していません"
+            }
+        }
 
         val now = System.currentTimeMillis()
         val createdAt = db.query(
@@ -192,6 +207,10 @@ class PrinterProfileStoreV136(context: Context) : AutoCloseable {
     fun setDefault(kind: DocumentPrintKindV136, printerId: String, actor: String) {
         val configuration = load(printerId)
             ?: throw IllegalArgumentException("出力先プリンターが見つかりません")
+        require(configuration.enabled) { "無効なプリンターは既定出力先に設定できません" }
+        require(PrinterTransportPolicyV136.isConfigured(configuration)) {
+            "接続先未設定のプリンターは既定出力先に設定できません"
+        }
         val now = System.currentTimeMillis()
         db.insertWithOnConflict(
             ROUTE_TABLE,
