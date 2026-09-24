@@ -20,8 +20,14 @@ internal object PrinterEndpointSendGate {
         port: Int,
         waitMillis: Long,
         block: () -> T,
+    ): T = withPermit(endpointKey(host, port), waitMillis, block)
+
+    fun <T> withPermit(
+        endpoint: String,
+        waitMillis: Long,
+        block: () -> T,
     ): T {
-        val endpoint = endpointKey(host, port)
+        require(endpoint.isNotBlank()) { "プリンター送信先が未設定です" }
         val lock = locks.computeIfAbsent(endpoint) { ReentrantLock(true) }
         val acquired = try {
             lock.tryLock(waitMillis.coerceAtLeast(1L), TimeUnit.MILLISECONDS)
