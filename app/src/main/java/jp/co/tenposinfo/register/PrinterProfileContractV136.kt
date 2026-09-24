@@ -55,13 +55,17 @@ object PrinterProfileContractV136 {
     }
 
     /**
-     * 初版では仕様根拠のある標準幅だけを永続化する。
-     * 機種固有値を追加する場合は、採用機器仕様を確認した上で別途対応する。
+     * v2.5 §16.1 は 384/576dot を標準値としつつ、採用機器の実印字幅
+     * （58mmの420dot、80mmの512/640dot等）を保存できることを要求する。
+     * 紙幅変更時は [standardPrintableDotWidth] を初期値に使い、保存時は
+     * 機器仕様として入力された正のdot幅を保持する。
      */
     fun validatePersistedConfiguration(configuration: PrinterConfiguration) {
-        val expectedDots = standardPrintableDotWidth(configuration.paperWidthMm)
-        require(configuration.printableDotWidth == expectedDots) {
-            "${configuration.paperWidthMm}mmの印字可能幅は初版標準${expectedDots}dotです"
+        require(configuration.paperWidthMm == 58 || configuration.paperWidthMm == 80) {
+            "用紙幅は58mmまたは80mmです"
+        }
+        require(configuration.printableDotWidth > 0) {
+            "印字可能幅は1dot以上で入力してください"
         }
         require(configuration.feedLines in MIN_FEED_LINES..MAX_FEED_LINES) {
             "紙送り行数は${MIN_FEED_LINES}～${MAX_FEED_LINES}行で入力してください"
@@ -91,11 +95,7 @@ object PrinterProfileContractV136 {
     }
 
     fun isInternallyConsistent(snapshot: PrinterProfileSnapshotV136): Boolean {
-        val expectedDots = when (snapshot.paperWidthMm) {
-            58 -> MM58_STANDARD_DOTS
-            80 -> MM80_STANDARD_DOTS
-            else -> return false
-        }
+        if (snapshot.printableDotWidth <= 0) return false
         val expectedColumns = when (snapshot.paperWidthMm) {
             58 -> ReceiptPaper.MM58.charsPerLine
             80 -> ReceiptPaper.MM80.charsPerLine
@@ -103,7 +103,7 @@ object PrinterProfileContractV136 {
         }
         return snapshot.printerId.isNotBlank() &&
             snapshot.name.isNotBlank() &&
-            snapshot.printableDotWidth == expectedDots &&
+            snapshot.printableDotWidth > 0 &&
             snapshot.logicalColumns == expectedColumns &&
             snapshot.encoding.isNotBlank() &&
             snapshot.feedLines in MIN_FEED_LINES..MAX_FEED_LINES &&
