@@ -37,7 +37,7 @@ fun ReceiptTextStampSettingsPanelV136() {
 
     Column(Modifier.fillMaxWidth()) {
         Spacer(Modifier.height(12.dp))
-        Text("文字スタンプ（SCR-720）", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text("文字スタンプ", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
         Text(
             "店舗名・支店名・住所・電話・登録番号を行単位でON/OFF、中央/左、太字、倍率指定します。変更は次回印刷から反映します。",
             style = MaterialTheme.typography.bodySmall,
@@ -93,7 +93,7 @@ fun ReceiptTextStampSettingsPanelV136() {
                 runCatching { store.save(ReceiptTextStampSettingsV136(lines = lines, stampVersion = loaded.stampVersion)) }
                     .onSuccess {
                         revision++
-                        message = "文字スタンプ設定を保存しました（version ${it.stampVersion}）"
+                        message = "文字スタンプ設定を保存しました（版 ${it.stampVersion}）"
                     }
                     .onFailure { message = it.message ?: "文字スタンプ設定を保存できませんでした" }
             },
