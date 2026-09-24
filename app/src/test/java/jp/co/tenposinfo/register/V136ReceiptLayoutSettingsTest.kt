@@ -111,7 +111,7 @@ class V136ReceiptLayoutSettingsTest {
         assertTrue(frozen.contains("receiptLayoutConfigSnapshot"))
         assertTrue(frozen.contains("showProductCode"))
         assertTrue(frozen.contains("layoutSettings = receiptLayoutSettings.copy"))
-        assertTrue(stamp.contains("if (layoutSettings.showLogo) imageStore.printPrefix(paper) else ByteArray(0)"))
+        assertTrue(stamp.contains("imageStore.printPrefix(paper, configuration.printableDotWidth)"))
         assertTrue(stamp.contains("ReceiptTextStampFieldV136.ADDRESS -> layoutSettings.showAddress"))
         assertTrue(stamp.contains("ReceiptTextStampFieldV136.PHONE -> layoutSettings.showPhone"))
     }
