@@ -738,7 +738,18 @@ private fun PrinterSettingsScreen(
     actorName: String,
     onBack: () -> Unit,
 ) {
-    val initial = remember { store.loadPrinterConfiguration() }
+    val context = LocalContext.current
+    val profileStore = remember(context) { PrinterProfileStoreV136(context.applicationContext) }
+    DisposableEffect(profileStore) {
+        onDispose { profileStore.close() }
+    }
+    var profiles by remember { mutableStateOf(profileStore.list()) }
+    var routes by remember { mutableStateOf(profileStore.routes()) }
+    val initial = remember {
+        val defaultId = profileStore.defaultPrinterId(DocumentPrintKindV136.SALE_RECEIPT)
+        defaultId?.let(profileStore::load) ?: profiles.firstOrNull() ?: store.loadPrinterConfiguration()
+    }
+    var selectedPrinterId by remember { mutableStateOf(initial.printerId) }
     var name by remember { mutableStateOf(initial.name) }
     var host by remember { mutableStateOf(initial.host) }
     var port by remember { mutableStateOf(initial.port.toString()) }
@@ -764,7 +775,6 @@ private fun PrinterSettingsScreen(
     var message by remember { mutableStateOf<String?>(null) }
     var testing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
     val usbManager = remember(context) {
         context.applicationContext.getSystemService(Context.USB_SERVICE) as UsbManager
     }
@@ -807,6 +817,7 @@ private fun PrinterSettingsScreen(
     }
 
     fun currentConfiguration() = PrinterConfiguration(
+        printerId = selectedPrinterId,
         name = name,
         host = host,
         port = port.toIntOrNull() ?: 0,
@@ -832,6 +843,37 @@ private fun PrinterSettingsScreen(
         drawerOnMillis = drawerOnMillis.toIntOrNull() ?: 0,
         drawerOffMillis = drawerOffMillis.toIntOrNull() ?: 0,
     )
+
+    fun loadProfile(configuration: PrinterConfiguration) {
+        selectedPrinterId = configuration.printerId
+        name = configuration.name
+        host = configuration.host
+        port = configuration.port.toString()
+        connectionType = configuration.connectionType
+        usbDeviceName = configuration.usbDeviceName
+        bluetoothAddress = configuration.bluetoothAddress
+        paperWidth = configuration.paperWidthMm
+        printableDotWidth = configuration.printableDotWidth.toString()
+        feedLines = configuration.feedLines.toString()
+        timeout = configuration.timeoutMillis.toString()
+        enabled = configuration.enabled
+        receiptAutoPrint = configuration.receiptAutoPrintEnabled
+        profile = configuration.profile
+        cutMode = configuration.cutMode
+        drawerEnabled = configuration.drawerEnabled
+        drawerOpenOnCash = configuration.drawerOpenOnCashSale
+        drawerOpenOnCashRefund = configuration.drawerOpenOnCashRefund
+        drawerOpenOnCashMovement = configuration.drawerOpenOnCashMovement
+        drawerOpenOnExchange = configuration.drawerOpenOnExchange
+        drawerPort = configuration.drawerPort
+        drawerOnMillis = configuration.drawerOnMillis.toString()
+        drawerOffMillis = configuration.drawerOffMillis.toString()
+    }
+
+    fun refreshProfiles() {
+        profiles = profileStore.list()
+        routes = profileStore.routes()
+    }
 
     fun selectPaper(widthMm: Int) {
         paperWidth = widthMm
@@ -866,6 +908,90 @@ private fun PrinterSettingsScreen(
                 Text("接続・機種設定", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AsNavy)
                 Spacer(Modifier.height(8.dp))
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                    Text("登録プリンター", fontWeight = FontWeight.Bold, color = AsNavy)
+                    profiles.forEach { candidate ->
+                        OutlinedButton(
+                            onClick = { loadProfile(candidate) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                if (candidate.printerId == selectedPrinterId) {
+                                    "● ${candidate.name}  ${candidate.paperWidthMm}mm  [${candidate.printerId}]"
+                                } else {
+                                    "${candidate.name}  ${candidate.paperWidthMm}mm  [${candidate.printerId}]"
+                                },
+                            )
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                val draft = profileStore.createDraft()
+                                loadProfile(draft)
+                                message = "新しいプリンター設定を入力し、保存してください"
+                            },
+                            modifier = Modifier.weight(1f),
+                        ) { Text("プリンター追加") }
+                        OutlinedButton(
+                            onClick = {
+                                val target = profiles.firstOrNull { it.printerId == selectedPrinterId }
+                                val result = runCatching {
+                                    require(target != null) { "未保存のプリンターです" }
+                                    profileStore.delete(selectedPrinterId, actorName)
+                                    refreshProfiles()
+                                    val next = profileStore.resolve(DocumentPrintKindV136.SALE_RECEIPT)
+                                        ?: profiles.firstOrNull()
+                                        ?: error("プリンターがありません")
+                                    loadProfile(next)
+                                    PrinterConfigurationRegistry.reload(context.applicationContext)
+                                }
+                                message = result.fold(
+                                    onSuccess = { "プリンターを削除し、既定出力先を再割当しました" },
+                                    onFailure = { it.message ?: "削除できませんでした" },
+                                )
+                            },
+                            enabled = profiles.size > 1 && profiles.any { it.printerId == selectedPrinterId },
+                            modifier = Modifier.weight(1f),
+                        ) { Text("選択プリンター削除") }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("文書別の既定出力先", fontWeight = FontWeight.Bold, color = AsNavy)
+                    Text(
+                        "58mmと80mmを同時登録できます。文書ごとに送信先を選択してください。",
+                        color = Color.Gray,
+                        fontSize = 12.sp,
+                    )
+                    DocumentPrintKindV136.entries.forEach { kind ->
+                        Text(kind.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        profiles.chunked(2).forEach { rowProfiles ->
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                rowProfiles.forEach { candidate ->
+                                    AsChoiceButton(
+                                        candidate.name,
+                                        routes[kind] == candidate.printerId,
+                                        Modifier.weight(1f),
+                                    ) {
+                                        runCatching {
+                                            profileStore.setDefault(kind, candidate.printerId, actorName)
+                                            refreshProfiles()
+                                            if (kind == DocumentPrintKindV136.SALE_RECEIPT) {
+                                                PrinterConfigurationRegistry.reload(context.applicationContext)
+                                            }
+                                        }.onSuccess {
+                                            message = "${kind.displayName}の出力先を${candidate.name}に変更しました"
+                                        }.onFailure {
+                                            message = it.message ?: "出力先を変更できませんでした"
+                                        }
+                                    }
+                                }
+                                if (rowProfiles.size == 1) Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
                     OutlinedTextField(name, { name = it.take(40) }, label = { Text("プリンター名") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(6.dp))
                     Text("接続方式", fontWeight = FontWeight.Bold, color = AsNavy)
@@ -1063,9 +1189,20 @@ private fun PrinterSettingsScreen(
                     Button(
                         onClick = {
                             val config = currentConfiguration()
+                            val duplicateTcpIds = profileStore.duplicateTcpPrinterIds(config)
                             val result = runCatching {
-                                store.savePrinterConfiguration(config, actorName)
-                                val reloaded = store.loadPrinterConfiguration()
+                                val saved = if (
+                                    config.printerId == PrinterProfileContractV136.SINGLE_PRINTER_ID
+                                ) {
+                                    store.savePrinterConfiguration(config, actorName)
+                                    profileStore.load(config.printerId)
+                                        ?: error("保存後のプリンタープロファイルが見つかりません")
+                                } else {
+                                    profileStore.save(config, actorName)
+                                }
+                                refreshProfiles()
+                                val reloaded = profileStore.load(saved.printerId)
+                                    ?: error("プリンタープロファイルの保存後再読込に失敗しました")
                                 require(
                                     reloaded.printableDotWidth == config.printableDotWidth &&
                                         reloaded.feedLines == config.feedLines &&
@@ -1073,16 +1210,19 @@ private fun PrinterSettingsScreen(
                                         reloaded.usbDeviceName == config.usbDeviceName.trim() &&
                                         reloaded.bluetoothAddress == config.bluetoothAddress.trim().uppercase()
                                 ) {
-                                    "プリンター設定の保存後再読込に失敗しました"
+                                    "プリンタープロファイルの保存後再読込に失敗しました"
                                 }
                                 reloaded
                             }
                             message = result.fold(
                                 onSuccess = { reloaded ->
-                                    printableDotWidth = reloaded.printableDotWidth.toString()
-                                    feedLines = reloaded.feedLines.toString()
+                                    loadProfile(reloaded)
                                     PrinterConfigurationRegistry.reload(context.applicationContext)
-                                    "設定を保存し、再読込を確認しました"
+                                    if (duplicateTcpIds.isEmpty()) {
+                                        "設定を保存し、再読込を確認しました"
+                                    } else {
+                                        "設定を保存しました。注意：同じIP/ポートの登録があります（${duplicateTcpIds.joinToString()}）"
+                                    }
                                 },
                                 onFailure = { it.message ?: "保存に失敗しました" },
                             )
@@ -1112,6 +1252,7 @@ private fun PrinterSettingsScreen(
             AsPanel(Modifier.weight(1f).fillMaxHeight()) {
                 Text("適用内容", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AsNavy)
                 Spacer(Modifier.height(14.dp))
+                AsValueRow("プリンターID", selectedPrinterId)
                 AsValueRow("機種", profile.displayName)
                 AsValueRow("接続方式", connectionType.displayName)
                 AsValueRow(
