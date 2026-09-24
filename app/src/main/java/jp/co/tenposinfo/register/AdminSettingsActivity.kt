@@ -398,7 +398,8 @@ private fun AdminMenuScreen(
                     Spacer(Modifier.height(18.dp))
                     AsValueRow("有効担当者", "${operatorCount}名")
                     AsValueRow("プリンター", if (printer.usable) "接続設定済み" else "未設定")
-                    AsValueRow("接続先", if (printer.host.isBlank()) "－" else "${printer.host}:${printer.port}")
+                    AsValueRow("接続方式", printer.connectionType.displayName)
+                    AsValueRow("接続先", PrinterTransportPolicyV136.endpointDisplay(printer).ifBlank { "－" })
                     AsValueRow("機種", printer.profile.displayName)
                     AsValueRow("用紙幅", "${printer.paperWidthMm}mm")
                     AsValueRow("監査ログ", "${auditCount}件")
@@ -1136,7 +1137,7 @@ private fun PrinterSettingsScreen(
                 AsFlowStep("1", "会計・精算・返品をSQLiteへ確定")
                 AsFlowStep("2", "印刷キューへ登録")
                 AsFlowStep("3", "選択プロファイルでESC/POS生成")
-                AsFlowStep("4", "TCP 9100へ送信")
+                AsFlowStep("4", "設定した接続方式でプリンターへ送信")
                 AsFlowStep("5", "送信結果不明時は自動再印刷を停止")
                 Spacer(Modifier.height(12.dp))
                 Text(
