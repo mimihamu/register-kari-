@@ -81,7 +81,7 @@ object PrinterProfileContractV136 {
         val paper = ReceiptPaper.fromWidth(configuration.paperWidthMm)
         val supportsCut = configuration.cutMode != PrinterCutMode.NONE
         return PrinterProfileSnapshotV136(
-            printerId = SINGLE_PRINTER_ID,
+            printerId = configuration.printerId.trim().ifBlank { SINGLE_PRINTER_ID },
             name = configuration.name.trim().ifBlank { "レシートプリンター" },
             connectionType = configuration.connectionType,
             address = PrinterTransportPolicyV136.endpointDisplay(configuration),
