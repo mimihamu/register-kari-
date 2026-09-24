@@ -239,8 +239,7 @@ class PrinterProfileStoreV136(context: Context) : AutoCloseable {
             .filter {
                 it.printerId != configuration.printerId &&
                     it.connectionType == PrinterConnectionTypeV136.TCP_9100 &&
-                    it.host.trim().equals(host, ignoreCase = true) &&
-                    it.port == configuration.port
+                    it.host.trim().equals(host, ignoreCase = true)
             }
             .map { it.printerId }
     }
