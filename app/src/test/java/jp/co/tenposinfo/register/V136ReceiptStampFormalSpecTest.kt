@@ -24,8 +24,42 @@ class V136ReceiptStampFormalSpecTest {
         assertTrue(source.contains("rotationDegrees in setOf(0, 90, 180, 270)"))
         assertTrue(source.contains("cropPercent in 0..ReceiptStampPolicyV136.MAX_CROP_PERCENT"))
         assertTrue(source.contains("ReceiptStampDitherV136.entries"))
-        assertTrue(source.contains("store.previewBitmap(it, ReceiptPaper.MM58)"))
-        assertTrue(source.contains("store.previewBitmap(it, ReceiptPaper.MM80)"))
+        assertTrue(source.contains("store.previewBitmap(it, ReceiptPaper.MM58, preview58Dots)"))
+        assertTrue(source.contains("store.previewBitmap(it, ReceiptPaper.MM80, preview80Dots)"))
+    }
+
+    @Test
+    fun printerSpecificDotWidthControlsRasterWidth() {
+        val image = ArgbImageV136(
+            width = 1_000,
+            height = 100,
+            pixels = IntArray(100_000) { 0xFF000000.toInt() },
+        )
+        val settings = ReceiptStampSettingsV136(enabled = true)
+
+        val mm58 = ReceiptStampRasterizerV136.rasterize(
+            image = image,
+            settings = settings,
+            paper = ReceiptPaper.MM58,
+            printableDotWidth = 420,
+        )
+        val mm80 = ReceiptStampRasterizerV136.rasterize(
+            image = image,
+            settings = settings,
+            paper = ReceiptPaper.MM80,
+            printableDotWidth = 640,
+        )
+
+        assertEquals(420, mm58.widthDots)
+        assertEquals(42, mm58.heightDots)
+        assertEquals(640, mm80.widthDots)
+        assertEquals(64, mm80.heightDots)
+    }
+
+    @Test
+    fun historicalSnapshotUsesConfiguredPrintableDotWidth() {
+        val snapshot = File("src/main/java/jp/co/tenposinfo/register/ReceiptStampSnapshotV136.kt").readText()
+        assertTrue(snapshot.contains("imageStore.printPrefix(paper, configuration.printableDotWidth)"))
     }
 
     @Test
