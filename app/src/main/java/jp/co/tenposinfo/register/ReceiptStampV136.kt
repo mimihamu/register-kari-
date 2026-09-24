@@ -128,12 +128,15 @@ object ReceiptStampPolicyV136 {
         }
     }
 
-    fun fitDimensions(width: Int, height: Int, paper: ReceiptPaper): Pair<Int, Int> {
+    fun fitDimensions(width: Int, height: Int, paper: ReceiptPaper): Pair<Int, Int> =
+        fitDimensions(width, height, maxWidthDots(paper))
+
+    fun fitDimensions(width: Int, height: Int, printableDotWidth: Int): Pair<Int, Int> {
         require(width > 0 && height > 0)
-        val maxWidth = maxWidthDots(paper)
-        if (width <= maxWidth) return width to height
-        val scale = maxWidth.toDouble() / width.toDouble()
-        return maxWidth to (height * scale).roundToInt().coerceAtLeast(1)
+        require(printableDotWidth > 0) { "印字可能幅は1dot以上で指定してください" }
+        if (width <= printableDotWidth) return width to height
+        val scale = printableDotWidth.toDouble() / width.toDouble()
+        return printableDotWidth to (height * scale).roundToInt().coerceAtLeast(1)
     }
 }
 
@@ -200,10 +203,15 @@ object ReceiptStampRasterizerV136 {
         image: ArgbImageV136,
         settings: ReceiptStampSettingsV136,
         paper: ReceiptPaper,
+        printableDotWidth: Int = ReceiptStampPolicyV136.maxWidthDots(paper),
     ): MonochromeRasterV136 {
         val normalized = ReceiptStampPolicyV136.normalize(settings)
         val transformed = ReceiptStampTransformV136.apply(image, normalized)
-        val (targetWidth, targetHeight) = ReceiptStampPolicyV136.fitDimensions(transformed.width, transformed.height, paper)
+        val (targetWidth, targetHeight) = ReceiptStampPolicyV136.fitDimensions(
+            transformed.width,
+            transformed.height,
+            printableDotWidth,
+        )
         val pixels = if (targetWidth == transformed.width && targetHeight == transformed.height) {
             transformed.pixels.copyOf()
         } else {
@@ -435,7 +443,11 @@ class ReceiptStampSettingsStoreV136(context: Context) {
         return next
     }
 
-    fun raster(settings: ReceiptStampSettingsV136, paper: ReceiptPaper): MonochromeRasterV136? {
+    fun raster(
+        settings: ReceiptStampSettingsV136,
+        paper: ReceiptPaper,
+        printableDotWidth: Int = ReceiptStampPolicyV136.maxWidthDots(paper),
+    ): MonochromeRasterV136? {
         if (!settings.enabled || !hasImage()) return null
         val bitmap = BitmapFactory.decodeFile(sourceFile.absolutePath)
             ?: throw IllegalStateException("スタンプ画像をデコードできませんでした")
@@ -446,20 +458,28 @@ class ReceiptStampSettingsStoreV136(context: Context) {
                 ArgbImageV136(bitmap.width, bitmap.height, pixels),
                 settings,
                 paper,
+                printableDotWidth,
             )
         } finally {
             bitmap.recycle()
         }
     }
 
-    fun printPrefix(paper: ReceiptPaper): ByteArray {
+    fun printPrefix(
+        paper: ReceiptPaper,
+        printableDotWidth: Int = ReceiptStampPolicyV136.maxWidthDots(paper),
+    ): ByteArray {
         val settings = load()
-        val raster = raster(settings, paper) ?: return ByteArray(0)
+        val raster = raster(settings, paper, printableDotWidth) ?: return ByteArray(0)
         return ReceiptStampEscPosV136.encodeRaster(raster)
     }
 
-    fun previewBitmap(settings: ReceiptStampSettingsV136, paper: ReceiptPaper): Bitmap? {
-        val raster = raster(settings, paper) ?: return null
+    fun previewBitmap(
+        settings: ReceiptStampSettingsV136,
+        paper: ReceiptPaper,
+        printableDotWidth: Int = ReceiptStampPolicyV136.maxWidthDots(paper),
+    ): Bitmap? {
+        val raster = raster(settings, paper, printableDotWidth) ?: return null
         val pixels = IntArray(raster.widthDots * raster.heightDots) { 0xFFFFFFFF.toInt() }
         for (y in 0 until raster.heightDots) {
             for (x in 0 until raster.widthDots) {
