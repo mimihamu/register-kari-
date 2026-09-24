@@ -163,6 +163,9 @@ class PrinterProfileStoreV136(context: Context) : AutoCloseable {
         val profiles = list()
         require(profiles.any { it.printerId == cleanId }) { "プリンターが見つかりません" }
         require(profiles.size > 1) { "最後のプリンターは削除できません" }
+        require(activeJobReferenceCount(cleanId) == 0L) {
+            "未完了の印刷ジョブが参照しているため削除できません。印刷キューを先に処理してください"
+        }
         val replacement = profiles.first { it.printerId != cleanId }
         val now = System.currentTimeMillis()
 
@@ -222,6 +225,31 @@ class PrinterProfileStoreV136(context: Context) : AutoCloseable {
             }
             .map { it.printerId }
     }
+
+    fun activeJobReferenceCount(printerId: String): Long {
+        val cleanId = printerId.trim()
+        if (cleanId.isBlank()) return 0L
+        val terminalStatuses = arrayOf(PrintJobStatus.COMPLETED.name, PrintJobStatus.DISCARDED.name)
+        var total = 0L
+        if (tableExists("print_jobs")) {
+            total += db.rawQuery(
+                "SELECT COUNT(*) FROM print_jobs WHERE printer_id = ? AND status NOT IN (?, ?)",
+                arrayOf(cleanId, terminalStatuses[0], terminalStatuses[1]),
+            ).use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else 0L }
+        }
+        if (tableExists("document_print_jobs")) {
+            total += db.rawQuery(
+                "SELECT COUNT(*) FROM document_print_jobs WHERE printer_id = ? AND status NOT IN (?, ?)",
+                arrayOf(cleanId, terminalStatuses[0], terminalStatuses[1]),
+            ).use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else 0L }
+        }
+        return total
+    }
+
+    private fun tableExists(name: String): Boolean = db.rawQuery(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+        arrayOf(name),
+    ).use { cursor -> cursor.moveToFirst() && cursor.getLong(0) > 0L }
 
     private fun ensureSchema() {
         OperationAuditSchemaV136.ensure(db)
