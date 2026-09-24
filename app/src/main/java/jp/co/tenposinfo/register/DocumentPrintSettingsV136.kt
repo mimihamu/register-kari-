@@ -285,7 +285,7 @@ fun DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled: Boolean) {
     }
 
     Column(Modifier.fillMaxWidth()) {
-        Text("文書別設定（RCP-016）", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text("文書別設定", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
         Text("文書ごとに自動印刷・部数・ヘッダ・フッタを設定します。", style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(6.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -312,7 +312,7 @@ fun DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled: Boolean) {
             Column {
                 Text("${selected.displayName}を自動印刷")
                 if (selected == DocumentPrintKindV136.SALE_RECEIPT) {
-                    Text("レシート自動印刷は上のRCP-002設定を使用します。", style = MaterialTheme.typography.bodySmall)
+                    Text("レシートの自動発行は左側の基本設定を使用します。", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -380,16 +380,16 @@ fun DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled: Boolean) {
             }
             Text(
                 if (selected == DocumentPrintKindV136.SALE_RECEIPT) {
-                    "初期値: 上端。売上確定時のスタンプsnapshotへ固定します。"
+                    "初期値：上端。売上確定時のスタンプ内容を保存し、再印字でも同じ内容を使用します。"
                 } else {
-                    "初期値: 下端。領収書ジョブ作成時のスタンプsnapshotへ固定します。"
+                    "初期値：下端。領収書作成時のスタンプ内容を保存し、再印字でも同じ内容を使用します。"
                 },
                 style = MaterialTheme.typography.bodySmall,
             )
         }
 
         Spacer(Modifier.height(8.dp))
-        Text("印刷プレビュー（SCR-640・保存前）", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text("印刷プレビュー（保存前）", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
         Text("編集中のヘッダ・フッタを保存せず確認できます。", style = MaterialTheme.typography.bodySmall)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
