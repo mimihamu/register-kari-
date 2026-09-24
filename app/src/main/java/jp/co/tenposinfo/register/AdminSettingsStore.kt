@@ -45,6 +45,9 @@ data class PrinterConfiguration(
     val name: String = "レシートプリンター",
     val host: String = "",
     val port: Int = 9100,
+    val connectionType: PrinterConnectionTypeV136 = PrinterConnectionTypeV136.TCP_9100,
+    val usbDeviceName: String = "",
+    val bluetoothAddress: String = "",
     val paperWidthMm: Int = 80,
     val printableDotWidth: Int = if (paperWidthMm == 58) 384 else 576,
     val feedLines: Int = 5,
@@ -64,7 +67,7 @@ data class PrinterConfiguration(
     val drawerOnMillis: Int = 100,
     val drawerOffMillis: Int = 500,
 ) {
-    val usable: Boolean get() = enabled && host.isNotBlank() && port in 1..65535
+    val usable: Boolean get() = enabled && PrinterTransportPolicyV136.isConfigured(this)
 }
 
 data class AuditLogRecord(
@@ -374,6 +377,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             "drawer_port", "drawer_on_millis", "drawer_off_millis", "receipt_auto_print",
             "drawer_open_on_cash_refund", "drawer_open_on_cash_movement", "drawer_open_on_exchange",
             "drawer_standalone_enabled", "drawer_open_reason_required",
+            "connection_type", "usb_device_name", "bluetooth_address",
         ),
         "id = 1",
         null,
@@ -403,12 +407,17 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             drawerOpenOnExchange = cursor.getInt(18) != 0,
             drawerStandaloneEnabled = cursor.getInt(19) != 0,
             drawerOpenReasonRequired = cursor.getInt(20) != 0,
+            connectionType = enumValueOrDefault(cursor.getString(21), PrinterConnectionTypeV136.TCP_9100),
+            usbDeviceName = cursor.getString(22).orEmpty(),
+            bluetoothAddress = cursor.getString(23).orEmpty(),
         )
     }
 
     fun savePrinterConfiguration(configuration: PrinterConfiguration, actor: String) {
         require(configuration.name.isNotBlank()) { "プリンター名を入力してください" }
-        require(configuration.port in 1..65535) { "ポート番号は1～65535で入力してください" }
+        if (configuration.connectionType == PrinterConnectionTypeV136.TCP_9100) {
+            require(configuration.port in 1..65535) { "ポート番号は1～65535で入力してください" }
+        }
         require(configuration.paperWidthMm == 58 || configuration.paperWidthMm == 80) { "用紙幅は58mmまたは80mmです" }
         PrinterProfileContractV136.validatePersistedConfiguration(configuration)
         require(configuration.timeoutMillis in 1_000..30_000) { "タイムアウトは1000～30000msで入力してください" }
@@ -417,7 +426,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             "ドロアON時間は${CashDrawerSafetyPolicyV136.MIN_OPEN_PULSE_MS}～${CashDrawerSafetyPolicyV136.MAX_OPEN_PULSE_MS}msです"
         }
         require(configuration.drawerOffMillis in 20..500) { "ドロアOFF時間は20～500msです" }
-        if (configuration.enabled) require(configuration.host.isNotBlank()) { "有効にする場合はIPアドレスまたはホスト名が必要です" }
+        if (configuration.enabled) PrinterTransportPolicyV136.validate(configuration)
         if (configuration.drawerEnabled) require(configuration.profile.supportsDrawer) { "選択中のプロファイルはドロア制御に対応していません" }
         val now = System.currentTimeMillis()
         db.inTransaction {
@@ -427,6 +436,9 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
                     put("printer_name", configuration.name.trim())
                     put("host", configuration.host.trim())
                     put("port", configuration.port)
+                    put("connection_type", configuration.connectionType.name)
+                    put("usb_device_name", configuration.usbDeviceName.trim())
+                    put("bluetooth_address", configuration.bluetoothAddress.trim().uppercase())
                     put("paper_width_mm", configuration.paperWidthMm)
                     put("printable_dot_width", configuration.printableDotWidth)
                     put("feed_lines", configuration.feedLines)
@@ -453,7 +465,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             insertAudit(
                 "PRINTER_SETTINGS_UPDATED",
                 1,
-                "${configuration.name} ${configuration.host}:${configuration.port} ${configuration.paperWidthMm}mm/${configuration.printableDotWidth}dot / 紙送り${configuration.feedLines}行 / ${configuration.profile.displayName} / ${configuration.cutMode.displayName} / レシート自動${if (configuration.receiptAutoPrintEnabled) "ON" else "OFF"} / ドロア${if (configuration.drawerEnabled) "有効" else "無効"}",
+                "${configuration.name} ${configuration.connectionType.displayName} ${PrinterTransportPolicyV136.endpointDisplay(configuration)} ${configuration.paperWidthMm}mm/${configuration.printableDotWidth}dot / 紙送り${configuration.feedLines}行 / ${configuration.profile.displayName} / ${configuration.cutMode.displayName} / レシート自動${if (configuration.receiptAutoPrintEnabled) "ON" else "OFF"} / ドロア${if (configuration.drawerEnabled) "有効" else "無効"}",
                 actor,
                 now,
             )
@@ -679,6 +691,9 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
                 drawer_open_on_exchange INTEGER NOT NULL DEFAULT 1,
                 drawer_standalone_enabled INTEGER NOT NULL DEFAULT 0,
                 drawer_open_reason_required INTEGER NOT NULL DEFAULT 1,
+                connection_type TEXT NOT NULL DEFAULT 'TCP_9100',
+                usb_device_name TEXT NOT NULL DEFAULT '',
+                bluetooth_address TEXT NOT NULL DEFAULT '',
                 updated_at INTEGER NOT NULL
             )
             """.trimIndent(),
@@ -698,6 +713,9 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
         ensurePrinterColumn("drawer_open_reason_required", "INTEGER NOT NULL DEFAULT 1")
         ensurePrinterColumn("printable_dot_width", "INTEGER NOT NULL DEFAULT 0")
         ensurePrinterColumn("feed_lines", "INTEGER NOT NULL DEFAULT 5")
+        ensurePrinterColumn("connection_type", "TEXT NOT NULL DEFAULT 'TCP_9100'")
+        ensurePrinterColumn("usb_device_name", "TEXT NOT NULL DEFAULT ''")
+        ensurePrinterColumn("bluetooth_address", "TEXT NOT NULL DEFAULT ''")
         db.execSQL(
             """
             UPDATE printer_settings
