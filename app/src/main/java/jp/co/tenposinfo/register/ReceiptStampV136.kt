@@ -577,7 +577,7 @@ fun ReceiptStampSettingsPanelV136() {
             runCatching { store.importImage(uri) }
                 .onSuccess {
                     revision++
-                    message = "画像スタンプを取込みました（version ${it.stampVersion}）"
+                    message = "画像スタンプを取り込みました（版 ${it.stampVersion}）"
                 }
                 .onFailure { message = it.message ?: "画像を取込めませんでした" }
         }
@@ -613,7 +613,7 @@ fun ReceiptStampSettingsPanelV136() {
 
     Column(Modifier.fillMaxWidth()) {
         Spacer(Modifier.height(12.dp))
-        Text("店名画像スタンプ（SCR-720）", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text("店名画像スタンプ", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
         Text(
             "PNG/JPEG・2MB以下・2000×2000px以下。透過は白へ合成し、58mm=384dot / 80mm=576dot以内へ縦横比を維持して縮小します。",
             style = MaterialTheme.typography.bodySmall,
@@ -633,7 +633,7 @@ fun ReceiptStampSettingsPanelV136() {
             ) { Text("画像を削除") }
         }
         if (loaded.sourceName.isNotBlank()) {
-            Text("画像: ${loaded.sourceName} / stampVersion ${loaded.stampVersion}", style = MaterialTheme.typography.bodySmall)
+            Text("画像：${loaded.sourceName} / 版 ${loaded.stampVersion}", style = MaterialTheme.typography.bodySmall)
         }
         Row(Modifier.fillMaxWidth()) {
             Checkbox(checked = enabled, onCheckedChange = { enabled = it }, enabled = store.hasImage())
@@ -724,7 +724,7 @@ fun ReceiptStampSettingsPanelV136() {
                     runCatching { store.save(candidate) }
                         .onSuccess {
                             revision++
-                            message = "画像スタンプ設定を保存しました（version ${it.stampVersion}）"
+                            message = "画像スタンプ設定を保存しました（版 ${it.stampVersion}）"
                         }
                         .onFailure { message = it.message ?: "画像スタンプ設定を保存できませんでした" }
                 }
