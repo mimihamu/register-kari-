@@ -168,9 +168,10 @@ class AutomaticPrintWorker(
                             candidate,
                             database,
                             operations,
-                        ) ?: throw IllegalStateException(
-                            "印刷ジョブの出力先プリンターが見つかりません",
-                        )
+                        ) ?: run {
+                            pendingAfterBatch = true
+                            return@withPermit null
+                        }
                         require(
                             currentConfiguration.printerId == configuration.printerId &&
                                 currentConfiguration.paperWidthMm == configuration.paperWidthMm &&
