@@ -126,7 +126,11 @@ internal class HeldTicketProvisionalPrintServiceV135(context: Context) : AutoClo
             ?: error("仮締め対象の保留伝票が見つかりません")
         val items = database.loadHeldTicket(ticketId)
         require(items.isNotEmpty()) { "仮締め対象の伝票に明細がありません" }
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
+        val printerConfiguration = PrinterRoutingV136.resolve(
+            appContext,
+            DocumentPrintKindV136.PROVISIONAL_RECEIPT,
+        )
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
         val documentPrintSetting = DocumentPrintSettingsStoreV136(appContext).load(
             DocumentPrintKindV136.PROVISIONAL_RECEIPT,
         )
@@ -150,6 +154,8 @@ internal class HeldTicketProvisionalPrintServiceV135(context: Context) : AutoClo
                                 put("document_type", OperationDocumentType.HELD_TICKET_PROVISIONAL.name)
                                 put("reference_id", ticket.id)
                                 put("paper_width_mm", paperWidthMm)
+                                put("printer_id", printerConfiguration.printerId)
+                                put("printable_dot_width", printerConfiguration.printableDotWidth)
                                 put("status", PrintJobStatus.PENDING.name)
                                 put("attempt_count", 0)
                                 putNull("last_error")
