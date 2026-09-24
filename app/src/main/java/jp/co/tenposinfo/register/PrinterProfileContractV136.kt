@@ -4,12 +4,17 @@ package jp.co.tenposinfo.register
  * Formal v2.5 §16.10 PrinterProfile contract.
  *
  * The existing [PrinterProfile] enum describes ESC/POS command differences, while
- * this snapshot represents the complete effective printer profile required by the
- * formal print data model. v1.36 still supports one configured TCP 9100 printer,
- * so printerId and connectionType are stable values for that persisted endpoint.
+ * this snapshot represents the effective printer profile required by the formal
+ * print data model. TCP 9100 remains the compatibility/default transport while
+ * USB and Bluetooth are additional transports behind the same PrinterGateway.
  */
-enum class PrinterConnectionTypeV136(val wireName: String) {
-    TCP_9100("TCP"),
+enum class PrinterConnectionTypeV136(
+    val wireName: String,
+    val displayName: String,
+) {
+    TCP_9100("TCP", "LAN / TCP 9100"),
+    USB("USB", "USB"),
+    BLUETOOTH("BLUETOOTH", "Bluetooth"),
 }
 
 data class PrinterProfileSnapshotV136(
@@ -78,10 +83,8 @@ object PrinterProfileContractV136 {
         return PrinterProfileSnapshotV136(
             printerId = SINGLE_PRINTER_ID,
             name = configuration.name.trim().ifBlank { "レシートプリンター" },
-            connectionType = PrinterConnectionTypeV136.TCP_9100,
-            address = configuration.host.trim().let { host ->
-                if (host.isBlank()) "" else "$host:${configuration.port}"
-            },
+            connectionType = configuration.connectionType,
+            address = PrinterTransportPolicyV136.endpointDisplay(configuration),
             paperWidthMm = paper.widthMm,
             printableDotWidth = configuration.printableDotWidth,
             logicalColumns = paper.charsPerLine,
