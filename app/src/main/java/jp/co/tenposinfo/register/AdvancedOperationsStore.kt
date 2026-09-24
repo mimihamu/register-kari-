@@ -116,6 +116,8 @@ data class DocumentPrintJobRecord(
     val payloadText: String,
     val createdAt: Long,
     val updatedAt: Long,
+    val printerId: String = PrinterProfileContractV136.SINGLE_PRINTER_ID,
+    val printableDotWidth: Int = PrinterProfileContractV136.standardPrintableDotWidth(paperWidthMm),
 )
 
 class AdvancedOperationsStore(context: Context) {
@@ -370,11 +372,12 @@ class AdvancedOperationsStore(context: Context) {
         val session = activeSession() ?: error("営業中の営業セッションがありません")
         require(session.status == BusinessSessionStatus.OPEN) { "この営業セッションは既に終了しています" }
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
         val documentPrintKind = when (type) {
             SettlementReportType.X_INSPECTION -> DocumentPrintKindV136.INSPECTION
             SettlementReportType.Z_SETTLEMENT -> DocumentPrintKindV136.SETTLEMENT
         }
+        val printerConfiguration = PrinterRoutingV136.resolve(appContext, documentPrintKind)
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
         val documentPrintSetting = DocumentPrintSettingsStoreV136(appContext).load(documentPrintKind)
         val now = System.currentTimeMillis()
         var previewText = ""
@@ -435,7 +438,7 @@ class AdvancedOperationsStore(context: Context) {
                 printJobId = insertDocumentJob(
                     OperationDocumentType.SETTLEMENT_REPORT,
                     id,
-                    paperWidthMm,
+                    printerConfiguration,
                     previewText,
                     now,
                     documentPrintKind,
@@ -569,7 +572,11 @@ class AdvancedOperationsStore(context: Context) {
         require(session.status == BusinessSessionStatus.OPEN) { "Z精算後は返品・取消できません" }
         require(reason.isNotBlank()) { "理由を入力してください" }
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
+        val printerConfiguration = PrinterRoutingV136.resolve(
+            appContext,
+            DocumentPrintKindV136.SALE_RECEIPT,
+        )
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
         val saleTotal = longQuery("SELECT COALESCE(total_amount, -1) FROM sales WHERE id = ?", arrayOf(originalSaleId.toString()))
         require(saleTotal >= 0) { "元売上が見つかりません" }
         val lines = loadReturnableLines(originalSaleId)
@@ -680,7 +687,13 @@ class AdvancedOperationsStore(context: Context) {
                 refundPayments = refundPayments,
             )
             previewText = OperationDocumentRenderer.renderReversal(document, ReceiptPaper.fromWidth(paperWidthMm))
-            printJobId = insertDocumentJob(OperationDocumentType.REVERSAL_RECEIPT, id, paperWidthMm, previewText, now)
+            printJobId = insertDocumentJob(
+                OperationDocumentType.REVERSAL_RECEIPT,
+                id,
+                printerConfiguration,
+                previewText,
+                now,
+            )
             insertAudit(type.name, id, "元売上 No.$originalSaleId / 返金 ${refundTotal}円 / ${reason.trim()}", operatorName, now)
             OutboxDocumentV150.materializeLatest(this, JournalEventType.REVERSAL.name, id.toString())
             id
@@ -894,7 +907,7 @@ class AdvancedOperationsStore(context: Context) {
     private fun SQLiteDatabase.insertDocumentJob(
         type: OperationDocumentType,
         referenceId: Long,
-        paperWidthMm: Int,
+        configuration: PrinterConfiguration,
         payloadText: String,
         now: Long,
         settingsKind: DocumentPrintKindV136? = DocumentPrintSettingsPolicyV136.kindFor(type),
@@ -914,7 +927,12 @@ class AdvancedOperationsStore(context: Context) {
                 ContentValues().apply {
                     put("document_type", type.name)
                     put("reference_id", referenceId)
-                    put("paper_width_mm", if (paperWidthMm >= 80) 80 else 58)
+                    put(
+                        "paper_width_mm",
+                        PrinterPaperSettingPolicy.normalizeWidthMm(configuration.paperWidthMm),
+                    )
+                    put("printer_id", configuration.printerId)
+                    put("printable_dot_width", configuration.printableDotWidth)
                     put("status", PrintJobStatus.PENDING.name)
                     put("attempt_count", 0)
                     putNull("last_error")
@@ -939,6 +957,8 @@ class AdvancedOperationsStore(context: Context) {
         payloadText = getString(7),
         createdAt = getLong(8),
         updatedAt = getLong(9),
+        printerId = getString(10),
+        printableDotWidth = getInt(11),
     )
 
     private fun requireSessionStillOpen(sessionId: Long) {
@@ -1128,6 +1148,8 @@ class AdvancedOperationsStore(context: Context) {
                 document_type TEXT NOT NULL,
                 reference_id INTEGER NOT NULL,
                 paper_width_mm INTEGER NOT NULL,
+                printer_id TEXT NOT NULL DEFAULT 'printer-1',
+                printable_dot_width INTEGER NOT NULL DEFAULT 576,
                 status TEXT NOT NULL,
                 attempt_count INTEGER NOT NULL,
                 last_error TEXT,
@@ -1145,6 +1167,7 @@ class AdvancedOperationsStore(context: Context) {
         BusinessSessionSchema.ensure(db)
         TaxSnapshotSchema.ensureReversalColumns(db)
         PrintDocumentSnapshotSchemaV136.ensureDocument(db)
+        PrinterJobRouteSchemaV136.ensureDocument(db)
     }
 
     companion object {
@@ -1155,6 +1178,7 @@ class AdvancedOperationsStore(context: Context) {
         private val DOCUMENT_JOB_COLUMNS = arrayOf(
             "id", "document_type", "reference_id", "paper_width_mm", "status",
             "attempt_count", "last_error", "payload_text", "created_at", "updated_at",
+            "printer_id", "printable_dot_width",
         )
 
         fun isBusinessOpen(context: Context): Boolean {
