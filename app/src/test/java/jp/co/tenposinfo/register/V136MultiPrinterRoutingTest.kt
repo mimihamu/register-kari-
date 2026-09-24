@@ -96,7 +96,7 @@ class V136MultiPrinterRoutingTest {
         assertTrue(ui.contains("DocumentPrintKindV136.entries.forEach"))
         assertTrue(ui.contains("profileStore.setDefault("))
         assertTrue(ui.contains("duplicateTcpPrinterIds"))
-        assertTrue(ui.contains("注意：同じIP/ポートの登録があります"))
+        assertTrue(ui.contains("注意：同じIPの登録があります"))
     }
 
     @Test
