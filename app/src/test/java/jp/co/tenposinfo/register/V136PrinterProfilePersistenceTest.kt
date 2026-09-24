@@ -120,6 +120,8 @@ class V136PrinterProfilePersistenceTest {
         assertTrue(store.contains("printableDotWidth = cursor.getInt(4)"))
         assertTrue(store.contains("feedLines = cursor.getInt(5)"))
         assertTrue(store.contains("SET printable_dot_width = CASE paper_width_mm"))
+        assertFalse(store.contains("paper_width_mm = 58 AND printable_dot_width !="))
+        assertFalse(store.contains("paper_width_mm = 80 AND printable_dot_width !="))
         assertTrue(ui.contains("印字可能幅 dot"))
         assertTrue(ui.contains("機種仕様に合わせて変更可"))
         assertTrue(ui.contains("カット前紙送り行数"))
