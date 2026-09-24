@@ -42,6 +42,7 @@ data class OperatorRecord(
 )
 
 data class PrinterConfiguration(
+    val printerId: String = PrinterProfileContractV136.SINGLE_PRINTER_ID,
     val name: String = "レシートプリンター",
     val host: String = "",
     val port: Int = 9100,
