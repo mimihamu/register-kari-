@@ -346,6 +346,11 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
         purpose: PrinterStatusCheckPurpose = PrinterStatusCheckPurpose.MANUAL_DIAGNOSTIC,
         experimentalConfirmed: Boolean = false,
     ): Result<PrinterRealtimeStatus> {
+        if (!PrinterTransportPolicyV136.supportsRealtimeStatus(configuration)) {
+            return Result.failure(
+                IllegalStateException("${configuration.connectionType.displayName}ではリアルタイム状態取得を使用しません"),
+            )
+        }
         val result = TcpPrinterStatusClient(configuration).query(
             purpose = purpose,
             experimentalConfirmed = experimentalConfirmed,
@@ -465,7 +470,7 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
                 error = IllegalStateException("有効なプリンター接続設定がありません"),
             )
         }
-        if (requireHealthyPrinter) {
+        if (requireHealthyPrinter && PrinterTransportPolicyV136.supportsRealtimeStatus(configuration)) {
             val status = queryPrinterStatus(
                 configuration = configuration,
                 checkedBy = "安全印刷",
@@ -495,14 +500,12 @@ class UnifiedPrintQueueController(context: Context) : AutoCloseable {
         PrinterConfigurationRegistry.reload(applicationContext)
         val result = runCatching {
             PrinterEndpointSendGate.withPermit(
-                host = configuration.host,
-                port = configuration.port,
+                endpoint = PrinterTransportPolicyV136.endpointKey(configuration),
                 waitMillis = configuration.timeoutMillis.toLong(),
             ) {
-                val rawGateway = TcpEscPosPrinterGateway(
-                    host = configuration.host,
-                    port = configuration.port,
-                    timeoutMillis = configuration.timeoutMillis,
+                val rawGateway = PrinterGatewayFactoryV136.create(
+                    applicationContext,
+                    configuration,
                 )
                 when (job.type) {
                     UnifiedPrintJobType.SALE_RECEIPT -> {
