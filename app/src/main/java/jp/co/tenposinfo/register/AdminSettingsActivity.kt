@@ -1221,7 +1221,7 @@ private fun PrinterSettingsScreen(
                                     if (duplicateTcpIds.isEmpty()) {
                                         "設定を保存し、再読込を確認しました"
                                     } else {
-                                        "設定を保存しました。注意：同じIP/ポートの登録があります（${duplicateTcpIds.joinToString()}）"
+                                        "設定を保存しました。注意：同じIPの登録があります（${duplicateTcpIds.joinToString()}）"
                                     }
                                 },
                                 onFailure = { it.message ?: "保存に失敗しました" },
