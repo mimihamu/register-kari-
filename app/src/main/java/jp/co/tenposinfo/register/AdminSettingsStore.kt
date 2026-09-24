@@ -136,17 +136,24 @@ object PinSecurity {
 object PrinterConfigurationRegistry {
     @Volatile
     private var configuration: PrinterConfiguration? = null
+    @Volatile
+    private var applicationContext: Context? = null
 
     fun current(): PrinterConfiguration? = configuration
 
+    fun currentContext(): Context? = applicationContext
+
     fun reload(context: Context) {
+        val appContext = context.applicationContext
+        applicationContext = appContext
         configuration = runCatching {
-            AdminSettingsStore(context.applicationContext).use { it.loadPrinterConfiguration() }
+            AdminSettingsStore(appContext).use { it.loadPrinterConfiguration() }
         }.getOrNull()
     }
 
     fun clear() {
         configuration = null
+        applicationContext = null
     }
 }
 
@@ -473,14 +480,14 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
     }
 
     fun testPrinter(configuration: PrinterConfiguration): Result<Unit> {
-        require(configuration.host.isNotBlank()) { "IPアドレスまたはホスト名を入力してください" }
+        PrinterTransportPolicyV136.validate(configuration)
         PrinterProfileContractV136.validatePersistedConfiguration(configuration)
         val now = Instant.now().toString()
         val paper = PrinterPaperSettingPolicy.paper(configuration)
         val text = buildString {
             append("つぐレジ プリンターテスト\n")
             append("${configuration.name}\n")
-            append("${configuration.host}:${configuration.port}\n")
+            append("${configuration.connectionType.displayName} / ${PrinterTransportPolicyV136.endpointDisplay(configuration)}\n")
             append("${configuration.profile.displayName}\n")
             append("用紙 ${paper.widthMm}mm / ${configuration.printableDotWidth}dot / 紙送り ${configuration.feedLines}行\n")
             append("${configuration.cutMode.displayName}\n")
@@ -497,7 +504,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
     }
 
     fun testDrawer(configuration: PrinterConfiguration, actor: String): Result<Unit> {
-        require(configuration.host.isNotBlank()) { "IPアドレスまたはホスト名を入力してください" }
+        PrinterTransportPolicyV136.validate(configuration)
         return CashDrawerRuntimeV136.dispatchDiagnostic(appContext, configuration, actor).map { Unit }
     }
 
@@ -506,7 +513,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             insertAudit(
                 eventType = if (success) "PRINTER_TEST_SUCCEEDED" else "PRINTER_TEST_FAILED",
                 referenceId = 1,
-                detail = "${configuration.host}:${configuration.port} / ${message.take(300)}",
+                detail = "${configuration.connectionType.displayName} / ${PrinterTransportPolicyV136.endpointDisplay(configuration)} / ${message.take(300)}",
                 operatorName = actor,
                 createdAt = System.currentTimeMillis(),
             )
@@ -518,7 +525,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             insertAudit(
                 eventType = if (success) "DRAWER_TEST_SUCCEEDED" else "DRAWER_TEST_FAILED",
                 referenceId = 1,
-                detail = "${configuration.host}:${configuration.port} / DK${configuration.drawerPort + 1} / ${message.take(300)}",
+                detail = "${configuration.connectionType.displayName} / ${PrinterTransportPolicyV136.endpointDisplay(configuration)} / DK${configuration.drawerPort + 1} / ${message.take(300)}",
                 operatorName = actor,
                 createdAt = System.currentTimeMillis(),
             )
@@ -577,11 +584,8 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
         }
     }
 
-    private fun printerGateway(configuration: PrinterConfiguration) = TcpEscPosPrinterGateway(
-        host = configuration.host.trim(),
-        port = configuration.port,
-        timeoutMillis = configuration.timeoutMillis,
-    )
+    private fun printerGateway(configuration: PrinterConfiguration): PrinterGateway =
+        PrinterGatewayFactoryV136.create(appContext, configuration)
 
     private fun loadPermissions(operatorId: Long): Set<RegisterPermission> {
         val permissions = linkedSetOf<RegisterPermission>()
