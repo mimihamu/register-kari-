@@ -142,6 +142,8 @@ class AutomaticPrintWorker(
             val runtime = monitoringStore.loadSettings()
             if (!runtime.preflightEnabled) {
                 true
+            } else if (!PrinterTransportPolicyV136.supportsRealtimeStatus(configuration)) {
+                true
             } else if (!AutomaticPrinterPreflightPolicy.mayRunStatusQuery(configuration.profile, enabled = true)) {
                 false
             } else {
@@ -173,8 +175,7 @@ class AutomaticPrintWorker(
             while (!AutomaticPrintQueuePolicy.batchLimitReached(attempted)) {
                 val dispatch = runCatching {
                     PrinterEndpointSendGate.withPermit(
-                        host = configuration.host,
-                        port = configuration.port,
+                        endpoint = PrinterTransportPolicyV136.endpointKey(configuration),
                         waitMillis = configuration.timeoutMillis.toLong(),
                     ) {
                         val candidate = AutomaticPrintQueuePolicy.oldestCandidate(
@@ -182,10 +183,9 @@ class AutomaticPrintWorker(
                             documentJobs = operations.listDocumentPrintJobs(500),
                         ) ?: return@withPermit null
 
-                        val rawGateway = TcpEscPosPrinterGateway(
-                            host = configuration.host,
-                            port = configuration.port,
-                            timeoutMillis = configuration.timeoutMillis,
+                        val rawGateway = PrinterGatewayFactoryV136.create(
+                            applicationContext,
+                            configuration,
                         )
                         val success = when (candidate.source) {
                             AutomaticPrintCandidateSource.SALE_RECEIPT -> {
@@ -260,7 +260,7 @@ object AutomaticPrintScheduler {
 
     fun schedule(context: Context) {
         val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
             .build()
         val periodic = PeriodicWorkRequestBuilder<AutomaticPrintWorker>(15, TimeUnit.MINUTES)
             .setConstraints(constraints)
@@ -277,7 +277,7 @@ object AutomaticPrintScheduler {
         val request = OneTimeWorkRequestBuilder<AutomaticPrintWorker>()
             .setConstraints(
                 Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
                     .build(),
             )
             .build()
