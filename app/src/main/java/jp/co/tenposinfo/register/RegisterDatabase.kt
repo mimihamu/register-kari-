@@ -49,6 +49,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         SaleGuestCountRuntimeV135.ensureSchema(db)
         SaleTaxSnapshotStoreV136.ensureSchema(db)
         PrintDocumentSnapshotSchemaV136.ensureSale(db)
+        PrinterJobRouteSchemaV136.ensureSale(db)
     }
 
     fun loadProducts(): List<Product> {
@@ -349,7 +350,12 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     printerConfiguration.receiptAutoPrintEnabled,
                 )
             ) {
-                insertPrintJob(this, saleId, paperWidthMm, createdAt)
+                insertPrintJob(
+                    this,
+                    saleId,
+                    printerConfiguration.copy(paperWidthMm = paperWidthMm),
+                    createdAt,
+                )
             } else {
                 null
             }
@@ -532,7 +538,11 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
     fun enqueueReprint(saleId: Long, actor: String = "SYSTEM"): Long {
         val detail = loadSaleDetail(saleId) ?: throw IllegalArgumentException("Sale not found")
         val normalizedActor = actor.trim().ifBlank { "SYSTEM" }.take(100)
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(applicationContext)
+        val printerConfiguration = PrinterRoutingV136.resolve(
+            applicationContext,
+            DocumentPrintKindV136.SALE_RECEIPT,
+        )
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
         // RCP-004: 後レシートは自動発行OFFでも可能。初回自動ジョブと区別するため
         // 売上確定時刻より必ず後の作成時刻を持たせ、登録操作を監査記録と同一transactionで確定する。
         val now = maxOf(System.currentTimeMillis(), detail.summary.createdAt + 1L)
@@ -554,6 +564,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 ContentValues().apply {
                     put("sale_id", saleId)
                     put("paper_width_mm", normalizedWidth)
+                    put("printer_id", printerConfiguration.printerId)
+                    put("printable_dot_width", printerConfiguration.printableDotWidth)
                     put("status", PrintJobStatus.PENDING.name)
                     put("attempt_count", 0)
                     putNull("last_error")
@@ -807,6 +819,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         lastError = if (isNull(5)) null else getString(5),
         createdAt = getLong(6),
         updatedAt = getLong(7),
+        printerId = getString(8),
+        printableDotWidth = getInt(9),
     )
 
     private fun Cursor.toCartItem(): CartItem {
@@ -961,6 +975,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 sale_id INTEGER NOT NULL,
                 paper_width_mm INTEGER NOT NULL,
+                printer_id TEXT NOT NULL DEFAULT 'printer-1',
+                printable_dot_width INTEGER NOT NULL DEFAULT 576,
                 status TEXT NOT NULL,
                 attempt_count INTEGER NOT NULL DEFAULT 0,
                 last_error TEXT,
@@ -973,20 +989,26 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_print_jobs_status ON print_jobs(status, created_at)")
     }
 
-    private fun insertPrintJob(db: SQLiteDatabase, saleId: Long, paperWidthMm: Int, now: Long): Long =
-        db.insertOrThrow(
-            "print_jobs",
-            null,
-            ContentValues().apply {
-                put("sale_id", saleId)
-                put("paper_width_mm", if (paperWidthMm >= 80) 80 else 58)
-                put("status", PrintJobStatus.PENDING.name)
-                put("attempt_count", 0)
-                putNull("last_error")
-                put("created_at", now)
-                put("updated_at", now)
-            },
-        )
+    private fun insertPrintJob(
+        db: SQLiteDatabase,
+        saleId: Long,
+        configuration: PrinterConfiguration,
+        now: Long,
+    ): Long = db.insertOrThrow(
+        "print_jobs",
+        null,
+        ContentValues().apply {
+            put("sale_id", saleId)
+            put("paper_width_mm", PrinterPaperSettingPolicy.normalizeWidthMm(configuration.paperWidthMm))
+            put("printer_id", configuration.printerId)
+            put("printable_dot_width", configuration.printableDotWidth)
+            put("status", PrintJobStatus.PENDING.name)
+            put("attempt_count", 0)
+            putNull("last_error")
+            put("created_at", now)
+            put("updated_at", now)
+        },
+    )
 
     private fun migrateCartToLineNumber(db: SQLiteDatabase) {
         db.execSQL("ALTER TABLE cart_items RENAME TO cart_items_v3")
@@ -1059,6 +1081,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             "last_error",
             "created_at",
             "updated_at",
+            "printer_id",
+            "printable_dot_width",
         )
     }
 }
