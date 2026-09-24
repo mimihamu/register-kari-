@@ -407,11 +407,11 @@ class MemoryPrinterGateway : PrinterGateway {
             val executor = Executors.newSingleThreadExecutor()
             try {
                 val future = executor.submit<Unit> {
-                    TcpEscPosPrinterGateway(
-                        host = configuration.host,
-                        port = configuration.port,
-                        timeoutMillis = configuration.timeoutMillis,
-                    ).send(payload).getOrThrow()
+                    val appContext = PrinterConfigurationRegistry.currentContext()
+                        ?: throw IllegalStateException("プリンター送信用のアプリコンテキストがありません")
+                    PrinterGatewayFactoryV136.create(appContext, configuration)
+                        .send(payload)
+                        .getOrThrow()
                 }
                 future.get((configuration.timeoutMillis + 2_000).toLong(), TimeUnit.MILLISECONDS)
             } finally {
