@@ -42,7 +42,6 @@ data class OperatorRecord(
 )
 
 data class PrinterConfiguration(
-    val printerId: String = PrinterProfileContractV136.SINGLE_PRINTER_ID,
     val name: String = "レシートプリンター",
     val host: String = "",
     val port: Int = 9100,
@@ -67,6 +66,7 @@ data class PrinterConfiguration(
     val drawerPort: Int = 0,
     val drawerOnMillis: Int = 100,
     val drawerOffMillis: Int = 500,
+    val printerId: String = PrinterProfileContractV136.SINGLE_PRINTER_ID,
 ) {
     val usable: Boolean get() = enabled && PrinterTransportPolicyV136.isConfigured(this)
 }
