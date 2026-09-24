@@ -707,8 +707,6 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
                 ELSE printable_dot_width
             END
             WHERE printable_dot_width <= 0
-               OR (paper_width_mm = 58 AND printable_dot_width != ${PrinterProfileContractV136.MM58_STANDARD_DOTS})
-               OR (paper_width_mm = 80 AND printable_dot_width != ${PrinterProfileContractV136.MM80_STANDARD_DOTS})
             """.trimIndent(),
         )
         db.execSQL(
