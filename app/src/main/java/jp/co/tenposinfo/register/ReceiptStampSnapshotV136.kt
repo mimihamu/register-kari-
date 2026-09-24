@@ -74,7 +74,11 @@ data class ReceiptStampSnapshotV136(
             val textStore = ReceiptTextStampSettingsStoreV136(appContext)
             val textSettings = textStore.load()
             val paper = ReceiptPaper.fromWidth(configuration.paperWidthMm)
-            val imagePrefix = if (layoutSettings.showLogo) imageStore.printPrefix(paper) else ByteArray(0)
+            val imagePrefix = if (layoutSettings.showLogo) {
+                imageStore.printPrefix(paper, configuration.printableDotWidth)
+            } else {
+                ByteArray(0)
+            }
             val resolvedTextLines = textStore.resolvedLines().filter { line ->
                 when (line.field) {
                     ReceiptTextStampFieldV136.ADDRESS -> layoutSettings.showAddress
