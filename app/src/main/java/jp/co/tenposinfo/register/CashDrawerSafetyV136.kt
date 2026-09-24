@@ -236,11 +236,9 @@ object CashDrawerRuntimeV136 {
         }
 
         val sendResult = runCatching {
-            TcpEscPosPrinterGateway(
-                host = configuration.host.trim(),
-                port = configuration.port,
-                timeoutMillis = configuration.timeoutMillis,
-            ).send(PrinterCommandEncoder.drawerOnly(configuration)).getOrThrow()
+            PrinterGatewayFactoryV136.create(appContext, configuration)
+                .send(PrinterCommandEncoder.drawerOnly(configuration))
+                .getOrThrow()
         }
 
         CashDrawerSafetyStoreV136(appContext).use { store ->
@@ -262,7 +260,8 @@ object CashDrawerRuntimeV136 {
                 append(openContext.displayName)
                 append(" / reason=").append(cleanReason)
                 append(" / event=").append(cleanEventKey)
-                append(" / ").append(configuration.host.trim()).append(':').append(configuration.port)
+                append(" / ").append(configuration.connectionType.displayName)
+                append(" / ").append(PrinterTransportPolicyV136.endpointDisplay(configuration))
                 sendResult.exceptionOrNull()?.let { append(" / ").append(it.message ?: it.javaClass.simpleName) }
             },
             actor = cleanActor,
