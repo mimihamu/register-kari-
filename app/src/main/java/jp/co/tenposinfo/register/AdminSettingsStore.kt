@@ -148,7 +148,7 @@ object PrinterConfigurationRegistry {
         val appContext = context.applicationContext
         applicationContext = appContext
         configuration = runCatching {
-            AdminSettingsStore(appContext).use { it.loadPrinterConfiguration() }
+            PrinterRoutingV136.resolve(appContext, DocumentPrintKindV136.SALE_RECEIPT)
         }.getOrNull()
     }
 
@@ -170,7 +170,7 @@ object PrinterPaperSettingPolicy {
 
     fun currentConfiguration(context: Context): PrinterConfiguration =
         PrinterConfigurationRegistry.current() ?: runCatching {
-            AdminSettingsStore(context.applicationContext).use { it.loadPrinterConfiguration() }
+            PrinterRoutingV136.resolve(context.applicationContext, DocumentPrintKindV136.SALE_RECEIPT)
         }.getOrElse { PrinterConfiguration() }
 
     fun currentWidthMm(context: Context): Int =
