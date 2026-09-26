@@ -27,8 +27,7 @@ object CashDrawerSafetyPolicyV136 {
         hasCashPayment: Boolean = true,
     ): Boolean {
         if (!configuration.drawerEnabled || !configuration.profile.supportsDrawer) return false
-        val endpointAvailable = configuration.host.isNotBlank() && configuration.port in 1..65535
-        if (!endpointAvailable) return false
+        if (!PrinterTransportPolicyV136.isConfigured(configuration)) return false
         if (context != CashDrawerOpenContextV136.DIAGNOSTIC_TEST && !configuration.usable) return false
         return when (context) {
             CashDrawerOpenContextV136.CASH_SALE -> configuration.drawerOpenOnCashSale && hasCashPayment
