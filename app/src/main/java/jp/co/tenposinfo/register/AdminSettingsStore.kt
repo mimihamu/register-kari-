@@ -169,9 +169,11 @@ object PrinterPaperSettingPolicy {
         ReceiptPaper.fromWidth(normalizeWidthMm(configuration.paperWidthMm))
 
     fun currentConfiguration(context: Context): PrinterConfiguration =
-        PrinterConfigurationRegistry.current() ?: runCatching {
+        runCatching {
             PrinterRoutingV136.resolve(context.applicationContext, DocumentPrintKindV136.SALE_RECEIPT)
-        }.getOrElse { PrinterConfiguration() }
+        }.getOrElse {
+            PrinterConfigurationRegistry.current() ?: PrinterConfiguration()
+        }
 
     fun currentWidthMm(context: Context): Int =
         normalizeWidthMm(currentConfiguration(context).paperWidthMm)
