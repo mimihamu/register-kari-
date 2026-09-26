@@ -93,7 +93,11 @@ object PrinterProfileContractV136 {
             cutMode = if (supportsCut) configuration.cutMode else PrinterCutMode.NONE,
             feedLines = configuration.feedLines,
             drawerPort = configuration.drawerPort.takeIf { configuration.drawerEnabled },
-            statusCapability = configuration.profile.statusProtocol,
+            statusCapability = if (PrinterTransportPolicyV136.supportsRealtimeStatus(configuration)) {
+                configuration.profile.statusProtocol
+            } else {
+                PrinterStatusProtocol.NONE
+            },
         )
     }
 
