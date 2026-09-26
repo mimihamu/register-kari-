@@ -1133,6 +1133,13 @@ private fun PrinterSettingsScreen(
                             modifier = Modifier.weight(1f),
                         )
                     }
+                    Text(
+                        "注意：紙幅とプリンター機種が一致しない場合、文字切れやカッター位置ずれが発生することがあります。保存後は4文書テスト印刷で確認してください。",
+                        color = AsDanger,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                    )
+                    Spacer(Modifier.height(4.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         PrinterCutMode.entries.forEach { candidate ->
                             AsChoiceButton(candidate.displayName, cutMode == candidate, Modifier.weight(1f)) { cutMode = candidate }
