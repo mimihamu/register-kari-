@@ -41,13 +41,18 @@ class V136PrinterPaperWidthSelectionTest {
     }
 
     @Test
-    fun salePrintJobSnapshotsWidthAndWorkerUsesSnapshot() {
+    fun salePrintJobSnapshotsPrinterWidthAndWorkerUsesSnapshot() {
         val database = File("src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt").readText()
         val receipt = File("src/main/java/jp/co/tenposinfo/register/Receipt.kt").readText()
 
-        assertTrue(database.contains("insertPrintJob(this, saleId, paperWidthMm, createdAt)"))
-        assertTrue(database.contains("put(\"paper_width_mm\", if (paperWidthMm >= 80) 80 else 58)"))
+        assertTrue(database.contains("PrinterRoutingV136.resolve("))
+        assertTrue(database.contains("printerConfiguration.copy(paperWidthMm = paperWidthMm)"))
+        assertTrue(database.contains("put(\"printer_id\", configuration.printerId)"))
+        assertTrue(database.contains("put(\"paper_width_mm\", PrinterPaperSettingPolicy.normalizeWidthMm(configuration.paperWidthMm))"))
+        assertTrue(database.contains("put(\"printable_dot_width\", configuration.printableDotWidth)"))
+        assertTrue(receipt.contains("printerId = job.printerId"))
         assertTrue(receipt.contains("paperWidthMm = job.paperWidthMm"))
+        assertTrue(receipt.contains("printableDotWidth = job.printableDotWidth"))
         assertTrue(receipt.contains("EscPosEncoder.encode(configuredReceipt, configuredSnapshot)"))
     }
 
