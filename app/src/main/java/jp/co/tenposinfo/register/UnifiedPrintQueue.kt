@@ -21,8 +21,8 @@ enum class UnifiedPrintFailureCategory(
     val operatorGuidance: String,
 ) {
     NONE("なし", "エラーは記録されていません"),
-    CONNECTION("接続不可", "プリンターの電源、LAN、IPアドレス、ポートを確認してください"),
-    TIMEOUT("応答待ち超過", "プリンター状態とネットワーク混雑を確認してください"),
+    CONNECTION("接続不可", "プリンターの電源と接続方式（LAN／USB／Bluetooth）の接続状態を確認してください"),
+    TIMEOUT("応答待ち超過", "プリンター状態と接続経路を確認してください"),
     PAPER("用紙", "用紙切れ、紙詰まり、ロール紙の向きを確認してください"),
     COVER("カバー", "プリンターカバーを閉じてください"),
     CUTTER("カッター", "カッター周辺の紙詰まりを確認してください"),
