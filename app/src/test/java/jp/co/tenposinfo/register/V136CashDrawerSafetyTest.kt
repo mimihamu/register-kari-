@@ -44,6 +44,30 @@ class V136CashDrawerSafetyTest {
     }
 
     @Test
+    fun drawerAvailabilityUsesConfiguredTransportNotTcpHostOnly() {
+        val usb = config().copy(
+            host = "",
+            connectionType = PrinterConnectionTypeV136.USB,
+            usbDeviceName = "/dev/bus/usb/001/002",
+        )
+        val bluetooth = config().copy(
+            host = "",
+            connectionType = PrinterConnectionTypeV136.BLUETOOTH,
+            bluetoothAddress = "AA:BB:CC:DD:EE:FF",
+        )
+
+        assertTrue(CashDrawerSafetyPolicyV136.shouldOpen(CashDrawerOpenContextV136.CASH_SALE, usb, true))
+        assertTrue(CashDrawerSafetyPolicyV136.shouldOpen(CashDrawerOpenContextV136.CASH_SALE, bluetooth, true))
+        assertFalse(
+            CashDrawerSafetyPolicyV136.shouldOpen(
+                CashDrawerOpenContextV136.CASH_SALE,
+                usb.copy(usbDeviceName = ""),
+                true,
+            ),
+        )
+    }
+
+    @Test
     fun pulseMinimumMatchesFormalFiftyMilliseconds() {
         assertTrue(CashDrawerSafetyPolicyV136.MIN_OPEN_PULSE_MS == 50)
         CashDrawerSafetyPolicyV136.validatePulse(config().copy(drawerOnMillis = 50))
