@@ -188,7 +188,7 @@ class PrinterProfileStoreV136(context: Context) : AutoCloseable {
         try {
             db.execSQL(
                 "UPDATE $ROUTE_TABLE SET printer_id = ?, updated_at = ? WHERE printer_id = ?",
-                arrayOf(replacement.printerId, now, cleanId),
+                arrayOf<Any?>(replacement.printerId, now, cleanId),
             )
             db.delete(PROFILE_TABLE, "printer_id = ?", arrayOf(cleanId))
             audit(
