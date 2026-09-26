@@ -57,9 +57,14 @@ class V136PrinterPaperWidthSelectionTest {
     }
 
     @Test
-    fun settingsUiExposesOnly58And80Choices() {
+    fun settingsUiExposesOnly58And80ChoicesAndFormalWarning() {
         val source = File("src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt").readText()
+        val store = File("src/main/java/jp/co/tenposinfo/register/AdminSettingsStore.kt").readText()
         assertTrue(source.contains("AsChoiceButton(\"58mm\""))
         assertTrue(source.contains("AsChoiceButton(\"80mm\""))
+        assertTrue(source.contains("紙幅とプリンター機種が一致しない場合"))
+        assertTrue(source.contains("文字切れやカッター位置ずれ"))
+        assertTrue(source.contains("4文書テスト印刷"))
+        assertTrue(store.contains("PrinterPaperWidthTestV136.buildAll"))
     }
 }
