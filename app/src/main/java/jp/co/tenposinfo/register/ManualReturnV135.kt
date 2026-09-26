@@ -110,7 +110,11 @@ internal class ManualReturnStoreV135(context: Context) : AutoCloseable {
         require(gross > 0) { "返金額が0円です" }
         val signedGross = ManualReturnPolicyV135.signedAmount(gross)
         val now = System.currentTimeMillis()
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
+        val printerConfiguration = PrinterRoutingV136.resolve(
+            appContext,
+            DocumentPrintKindV136.SALE_RECEIPT,
+        )
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
 
         db.beginTransaction()
         try {
@@ -182,6 +186,8 @@ internal class ManualReturnStoreV135(context: Context) : AutoCloseable {
                     put("document_type", OperationDocumentType.REVERSAL_RECEIPT.name)
                     put("reference_id", -id)
                     put("paper_width_mm", if (paperWidthMm >= 80) 80 else 58)
+                    put("printer_id", printerConfiguration.printerId)
+                    put("printable_dot_width", printerConfiguration.printableDotWidth)
                     put("status", PrintJobStatus.PENDING.name)
                     put("attempt_count", 0)
                     putNull("last_error")
@@ -325,6 +331,17 @@ internal class ManualReturnCoordinatorV135(context: Context) : AutoCloseable {
             managerName = managerName,
             requestId = UUID.randomUUID().toString(),
         )
+        if (request.refundMethod == ManualRefundMethodV135.CASH) {
+            CashDrawerRuntimeV136.dispatchAsync(
+                context = appContext,
+                openContext = CashDrawerOpenContextV136.CASH_REFUND,
+                referenceId = result.manualReturnId,
+                eventKey = "MANUAL_RETURN:${result.manualReturnId}",
+                reason = request.reason.trim().ifBlank { "元取引なし現金返品" },
+                actor = operator.name,
+                hasCashPayment = true,
+            )
+        }
         runCatching { AutomaticPrintScheduler.enqueueNow(appContext) }
         return result
     }

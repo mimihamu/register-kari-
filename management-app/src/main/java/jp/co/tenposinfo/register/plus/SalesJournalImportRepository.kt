@@ -79,6 +79,7 @@ class SalesJournalImportRepository(
         var imported = 0
         var duplicate = 0
         var rejected = 0
+        val acknowledgements = mutableListOf<ImportAckV150>()
 
         db.beginTransaction()
         try {
@@ -143,13 +144,31 @@ class SalesJournalImportRepository(
                                 )
                                 if (SalesJournalImportPolicy.isDuplicateInsertResult(rowId)) {
                                     duplicate += 1
+                                    acknowledgements += ImportAckV150(
+                                        parsed.envelope.eventId,
+                                        parsed.envelope.duplicateImportKey,
+                                        ImportAckResultV150.DUPLICATE,
+                                        "既存取込済み",
+                                    )
                                 } else {
                                     imported += 1
+                                    acknowledgements += ImportAckV150(
+                                        parsed.envelope.eventId,
+                                        parsed.envelope.duplicateImportKey,
+                                        ImportAckResultV150.IMPORTED,
+                                        "取込完了",
+                                    )
                                 }
                             }
 
                             SalesJournalReplayDecisionV118.IDENTICAL -> {
                                 duplicate += 1
+                                acknowledgements += ImportAckV150(
+                                    parsed.envelope.eventId,
+                                    parsed.envelope.duplicateImportKey,
+                                    ImportAckResultV150.DUPLICATE,
+                                    "同一document取込済み",
+                                )
                             }
 
                             SalesJournalReplayDecisionV118.CONFLICT -> {
@@ -161,6 +180,12 @@ class SalesJournalImportRepository(
                                     message = "同一duplicateImportKeyの既存データと業務内容が一致しません",
                                 )
                                 rejected += 1
+                                acknowledgements += ImportAckV150(
+                                    parsed.envelope.eventId,
+                                    parsed.envelope.duplicateImportKey,
+                                    ImportAckResultV150.REJECTED,
+                                    "duplicateImportKey内容不一致",
+                                )
                             }
                         }
                     }
@@ -183,6 +208,8 @@ class SalesJournalImportRepository(
                 "id=?",
                 arrayOf(runId.toString()),
             )
+            // SYN-001: ACK bytes are frozen before this import transaction commits.
+            PlusAckOutboxV150.materialize(db, runId, completedAt, acknowledgements)
             beforeCommit(db)
             db.setTransactionSuccessful()
 

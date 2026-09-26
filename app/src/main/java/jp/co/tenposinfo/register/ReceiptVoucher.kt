@@ -137,6 +137,7 @@ internal data class ReceiptVoucherDocumentData(
     val supplementary: Boolean = sequenceCount > 1,
     val reprintedAt: Long? = null,
     val reprintedBy: String? = null,
+    val suppressIssuerHeader: Boolean = false,
 )
 
 internal object ReceiptVoucherRenderer {
@@ -146,9 +147,11 @@ internal object ReceiptVoucherRenderer {
     fun render(data: ReceiptVoucherDocumentData, paper: ReceiptPaper): String {
         val width = paper.charsPerLine
         val lines = mutableListOf<String>()
-        lines += center(data.issuer.storeName, width)
-        if (data.issuer.address.isNotBlank()) lines += center(data.issuer.address, width)
-        if (data.issuer.phone.isNotBlank()) lines += center(data.issuer.phone, width)
+        if (!data.suppressIssuerHeader) {
+            lines += center(data.issuer.storeName, width)
+            if (data.issuer.address.isNotBlank()) lines += center(data.issuer.address, width)
+            if (data.issuer.phone.isNotBlank()) lines += center(data.issuer.phone, width)
+        }
         lines += center("【領収書】", width)
         if (data.reprintedAt != null) lines += center("【再発行】", width)
         if (data.supplementary) lines += center("【$NOT_QUALIFIED_LABEL】", width)
@@ -174,7 +177,7 @@ internal object ReceiptVoucherRenderer {
         }
         lines += fit("元売上レシート No.${data.saleId} と関連する領収書です", width)
         lines += fit("発行担当 ${data.operatorName}", width)
-        if (!data.supplementary && data.issuer.registrationNumber.isNotBlank()) {
+        if (!data.supplementary && !data.suppressIssuerHeader && data.issuer.registrationNumber.isNotBlank()) {
             lines += fit("登録番号 ${data.issuer.registrationNumber}", width)
         }
         return lines.joinToString("\n")
@@ -252,8 +255,24 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
         existingBatchResult(request.requestId.trim())?.let { return it.copy(idempotentReplay = true) }
         val sale = baseDatabase.loadSaleDetail(request.saleId) ?: error("売上No.${request.saleId}が見つかりません")
         val now = System.currentTimeMillis()
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
+        val printerConfiguration = PrinterRoutingV136.resolve(
+            appContext,
+            DocumentPrintKindV136.RECEIPT_VOUCHER,
+        )
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
         val issuer = TaxInvoiceSettingsRegistry.current().issuer
+        val documentPrintSetting = DocumentPrintSettingsStoreV136(appContext).load(
+            DocumentPrintKindV136.RECEIPT_VOUCHER,
+        )
+        val documentStampSnapshot = if (documentPrintSetting.autoPrintEnabled) {
+            DocumentStampJobSchemaV136.capture(
+                context = appContext,
+                paperWidthMm = paperWidthMm,
+                setting = documentPrintSetting,
+            )
+        } else {
+            DocumentStampJobSnapshotV136.none()
+        }
         var result: ReceiptVoucherIssueResult? = null
 
         db.beginTransaction()
@@ -283,6 +302,8 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
                         put("addressee", plan.addressee)
                         put("purpose", plan.purpose)
                         put("operator_name", plan.operatorName)
+                        put("status", "DRAFT")
+                        putNull("committed_at")
                         put("created_at", now)
                     },
                 )
@@ -319,13 +340,54 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
                             issuer = issuer,
                             batchId = batchId,
                             supplementary = plan.copies > 1,
+                            suppressIssuerHeader = documentStampSnapshot.hasStamp,
                         ),
                         ReceiptPaper.fromWidth(paperWidthMm),
                     )
-                    val printJobId = insertDocumentPrintJob(issuanceId, paperWidthMm, payload, now)
                     issuanceIds += issuanceId
-                    printJobIds += printJobId
+                    if (documentPrintSetting.autoPrintEnabled) {
+                        val decoratedPayload = DocumentPrintSettingsPolicyV136.decorateText(
+                            payload,
+                            documentPrintSetting,
+                        )
+                        val copyCount = DocumentPrintSettingsPolicyV136.normalizeCopies(documentPrintSetting.copies)
+                        val offsetBase = printJobIds.size
+                        kotlin.repeat(copyCount) { copyIndex ->
+                            printJobIds += insertDocumentPrintJob(
+                                issuanceId,
+                                printerConfiguration,
+                                decoratedPayload,
+                                now + offsetBase + copyIndex,
+                                documentStampSnapshot,
+                            )
+                        }
+                    }
                 }
+                db.update(
+                    "receipt_voucher_batches",
+                    ContentValues().apply {
+                        put("status", "COMMITTED")
+                        put("committed_at", now)
+                    },
+                    "id = ? AND status = ?",
+                    arrayOf(batchId.toString(), "DRAFT"),
+                ).also { updated ->
+                    check(updated == 1) { "領収書発行グループ RG-$batchId を確定できませんでした" }
+                }
+                db.insertOrThrow(
+                    "operation_audit",
+                    null,
+                    ContentValues().apply {
+                        put("event_type", "RECEIPT_VOUCHER_BATCH_COMMIT")
+                        put("reference_id", batchId)
+                        put(
+                            "detail",
+                            "sale=${plan.saleId} / ${plan.unitAmount}円×${plan.copies}枚 / total=${plan.totalAmount}円",
+                        )
+                        put("operator_name", plan.operatorName)
+                        put("created_at", now)
+                    },
+                )
                 result = ReceiptVoucherIssueResult(
                     batchId = batchId,
                     issuanceIds = issuanceIds,
@@ -340,7 +402,9 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
             db.endTransaction()
         }
         val completed = result ?: error("領収書発行を確定できませんでした")
-        if (!completed.idempotentReplay) AutomaticPrintScheduler.enqueueNow(appContext)
+        if (!completed.idempotentReplay && completed.printJobIds.isNotEmpty()) {
+            AutomaticPrintScheduler.enqueueNow(appContext)
+        }
         return completed
     }
 
@@ -348,7 +412,19 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
         val record = loadIssuance(issuanceId) ?: error("領収書No.R${issuanceId}が見つかりません")
         val actor = ReceiptVoucherPolicy.normalizeRequired(operatorName, "再発行担当者")
         val now = System.currentTimeMillis()
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
+        val printerConfiguration = PrinterRoutingV136.resolve(
+            appContext,
+            DocumentPrintKindV136.RECEIPT_VOUCHER,
+        )
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
+        val documentPrintSetting = DocumentPrintSettingsStoreV136(appContext).load(
+            DocumentPrintKindV136.RECEIPT_VOUCHER,
+        )
+        val documentStampSnapshot = DocumentStampJobSchemaV136.capture(
+            context = appContext,
+            paperWidthMm = paperWidthMm,
+            setting = documentPrintSetting,
+        )
         val payload = ReceiptVoucherRenderer.render(
             ReceiptVoucherDocumentData(
                 issuanceId = record.id,
@@ -365,13 +441,28 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
                 supplementary = record.sequenceCount > 1,
                 reprintedAt = now,
                 reprintedBy = actor,
+                suppressIssuerHeader = documentStampSnapshot.hasStamp,
             ),
             ReceiptPaper.fromWidth(paperWidthMm),
         )
+        val decoratedPayload = DocumentPrintSettingsPolicyV136.decorateText(payload, documentPrintSetting)
         var result: ReceiptVoucherReprintResult? = null
         db.beginTransaction()
         try {
-            val printJobId = insertDocumentPrintJob(record.id, paperWidthMm, payload, now)
+            val printJobIds = buildList {
+                kotlin.repeat(DocumentPrintSettingsPolicyV136.normalizeCopies(documentPrintSetting.copies)) { copyIndex ->
+                    add(
+                        insertDocumentPrintJob(
+                            record.id,
+                            printerConfiguration,
+                            decoratedPayload,
+                            now + copyIndex,
+                            documentStampSnapshot,
+                        ),
+                    )
+                }
+            }
+            val printJobId = printJobIds.first()
             val eventId = db.insertOrThrow(
                 "receipt_voucher_reprints",
                 null,
@@ -455,20 +546,27 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
 
     private fun insertDocumentPrintJob(
         issuanceId: Long,
-        paperWidthMm: Int,
+        configuration: PrinterConfiguration,
         payload: String,
         now: Long,
+        stampSnapshot: DocumentStampJobSnapshotV136,
     ): Long = db.insertOrThrow(
         "document_print_jobs",
         null,
         ContentValues().apply {
             put("document_type", OperationDocumentType.RECEIPT_VOUCHER.name)
             put("reference_id", issuanceId)
-            put("paper_width_mm", if (paperWidthMm >= 80) 80 else 58)
+            put(
+                "paper_width_mm",
+                PrinterPaperSettingPolicy.normalizeWidthMm(configuration.paperWidthMm),
+            )
+            put("printer_id", configuration.printerId)
+            put("printable_dot_width", configuration.printableDotWidth)
             put("status", PrintJobStatus.PENDING.name)
             put("attempt_count", 0)
             putNull("last_error")
             put("payload_text", payload)
+            DocumentStampJobSchemaV136.putInto(this, stampSnapshot)
             put("created_at", now)
             put("updated_at", now)
         },
@@ -486,6 +584,8 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
                 document_type TEXT NOT NULL,
                 reference_id INTEGER NOT NULL,
                 paper_width_mm INTEGER NOT NULL,
+                printer_id TEXT NOT NULL DEFAULT 'printer-1',
+                printable_dot_width INTEGER NOT NULL DEFAULT 576,
                 status TEXT NOT NULL,
                 attempt_count INTEGER NOT NULL,
                 last_error TEXT,
@@ -507,6 +607,8 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
                 addressee TEXT NOT NULL,
                 purpose TEXT NOT NULL,
                 operator_name TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'COMMITTED',
+                committed_at INTEGER,
                 created_at INTEGER NOT NULL
             )
             """.trimIndent(),
@@ -539,9 +641,34 @@ internal class ReceiptVoucherStore(context: Context) : AutoCloseable {
             )
             """.trimIndent(),
         )
+        ensureBatchLifecycleSchema()
+        DocumentStampJobSchemaV136.ensure(db)
+        PrinterJobRouteSchemaV136.ensureDocument(db)
+        OperationAuditSchemaV136.ensure(db)
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_receipt_voucher_sale ON receipt_voucher_issuances(sale_id, created_at)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_receipt_voucher_reprints ON receipt_voucher_reprints(issuance_id, created_at)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_document_jobs_status ON document_print_jobs(status, created_at)")
+    }
+
+    private fun ensureBatchLifecycleSchema() {
+        val columns = db.rawQuery("PRAGMA table_info(receipt_voucher_batches)", null).use { cursor ->
+            buildSet {
+                val nameIndex = cursor.getColumnIndexOrThrow("name")
+                while (cursor.moveToNext()) add(cursor.getString(nameIndex))
+            }
+        }
+        if ("status" !in columns) {
+            db.execSQL("ALTER TABLE receipt_voucher_batches ADD COLUMN status TEXT NOT NULL DEFAULT 'COMMITTED'")
+        }
+        if ("committed_at" !in columns) {
+            db.execSQL("ALTER TABLE receipt_voucher_batches ADD COLUMN committed_at INTEGER")
+        }
+        db.execSQL(
+            "UPDATE receipt_voucher_batches SET status = 'COMMITTED' WHERE status IS NULL OR status = ''",
+        )
+        db.execSQL(
+            "UPDATE receipt_voucher_batches SET committed_at = created_at WHERE status = 'COMMITTED' AND committed_at IS NULL",
+        )
     }
 
     private companion object {

@@ -20,7 +20,10 @@ import android.widget.TextView
 class RegisterApplication : Application(), Application.ActivityLifecycleCallbacks {
     override fun onCreate() {
         super.onCreate()
+        CrashReportRuntimeV138.install(this)
         PrinterConfigurationRegistry.reload(this)
+        PaymentSettingsRegistryV136.reload(this)
+        ReceiptLayoutSettingsRegistryV136.reload(this)
         AutomaticPrintScheduler.schedule(this)
         AutoBackupPeriodicScheduler.apply(this)
         ExternalBackupScheduler.apply(this)

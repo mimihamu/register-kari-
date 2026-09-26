@@ -54,6 +54,7 @@ private val CatalogHubPaleYellowV030 = Color(0xFFFFF4D9)
 
 object CatalogNavigationContractV030 {
     const val EXTRA_INITIAL_SCREEN = "jp.co.tenposinfo.register.extra.CATALOG_INITIAL_SCREEN"
+    const val EXTRA_PREFILL_BARCODE = "jp.co.tenposinfo.register.extra.CATALOG_PREFILL_BARCODE"
     const val PRODUCTS = "PRODUCTS"
     const val DEPARTMENTS = "DEPARTMENTS"
     const val GROUPS = "GROUPS"
@@ -64,9 +65,13 @@ object CatalogNavigationContractV030 {
     fun intent(context: Context, destination: String): Intent =
         Intent(context, CatalogSettingsActivity::class.java)
             .putExtra(EXTRA_INITIAL_SCREEN, destination)
+
+    fun productRegistrationIntent(context: Context, scannedCode: String): Intent =
+        intent(context, PRODUCTS)
+            .putExtra(EXTRA_PREFILL_BARCODE, scannedCode.take(64))
 }
 
-/** SCR-200の商品・分類・税・販売プロファイル用レスポンシブ入口。 */
+/** v2.5 SCR-600 / 610 / 620 / 630A / 631 へのレスポンシブ設定入口。 */
 class CatalogHubActivityV030 : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -145,12 +150,12 @@ private fun CatalogHubScreenV030(
                         groupCount = groupCount,
                         activeProfileName = activeProfileName,
                     )
-                    CatalogHubTileV030("SCR-210", "商品マスター", "商品コード・名称・価格・税区分・所属", CatalogHubPaleBlueV030, onProducts, Modifier.fillMaxWidth())
-                    CatalogHubTileV030("SCR-220", "部門マスター", "商品が所属する部門", CatalogHubPaleGreenV030, onDepartments, Modifier.fillMaxWidth())
-                    CatalogHubTileV030("SCR-230", "グループマスター", "部門配下の分析・表示グループ", CatalogHubPaleYellowV030, onGroups, Modifier.fillMaxWidth())
-                    CatalogHubTileV030("SCR-240", "商品ボタン配置", "最大9ページ・各24ボタン", Color(0xFFE8EAF6), onLayout, Modifier.fillMaxWidth())
-                    CatalogHubTileV030("SCR-250", "税区分マスター", "非課税・標準税率・軽減税率・内外税", Color(0xFFFFE8E8), onTaxes, Modifier.fillMaxWidth())
-                    CatalogHubTileV030("SCR-260", "販売プロファイル", "時間帯別価格・税区分", Color(0xFFEDE7F6), onProfiles, Modifier.fillMaxWidth())
+                    CatalogHubTileV030("SCR-600", "商品マスター", "商品コード・名称・価格・税区分・所属", CatalogHubPaleBlueV030, onProducts, Modifier.fillMaxWidth())
+                    CatalogHubTileV030("SCR-610", "部門マスター", "商品が所属する部門", CatalogHubPaleGreenV030, onDepartments, Modifier.fillMaxWidth())
+                    CatalogHubTileV030("SCR-610", "グループマスター", "部門配下の分析・表示グループ", CatalogHubPaleYellowV030, onGroups, Modifier.fillMaxWidth())
+                    CatalogHubTileV030("SCR-620", "商品ボタン配置", "最大9ページ・各24ボタン", Color(0xFFE8EAF6), onLayout, Modifier.fillMaxWidth())
+                    CatalogHubTileV030("SCR-630A", "税区分マスター", "非課税・標準税率・軽減税率・内外税", Color(0xFFFFE8E8), onTaxes, Modifier.fillMaxWidth())
+                    CatalogHubTileV030("SCR-631", "販売プロファイル", "時間帯別価格・税区分", Color(0xFFEDE7F6), onProfiles, Modifier.fillMaxWidth())
                 } else {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp)) {
                         CatalogHubSummaryV030(
@@ -160,14 +165,14 @@ private fun CatalogHubScreenV030(
                             groupCount = groupCount,
                             activeProfileName = activeProfileName,
                         )
-                        CatalogHubTileV030("SCR-210", "商品マスター", "商品コード・名称・価格・税区分・所属", CatalogHubPaleBlueV030, onProducts, Modifier.weight(1f))
-                        CatalogHubTileV030("SCR-220", "部門マスター", "商品が所属する部門", CatalogHubPaleGreenV030, onDepartments, Modifier.weight(1f))
-                        CatalogHubTileV030("SCR-230", "グループマスター", "部門配下の分析・表示グループ", CatalogHubPaleYellowV030, onGroups, Modifier.weight(1f))
+                        CatalogHubTileV030("SCR-600", "商品マスター", "商品コード・名称・価格・税区分・所属", CatalogHubPaleBlueV030, onProducts, Modifier.weight(1f))
+                        CatalogHubTileV030("SCR-610", "部門マスター", "商品が所属する部門", CatalogHubPaleGreenV030, onDepartments, Modifier.weight(1f))
+                        CatalogHubTileV030("SCR-610", "グループマスター", "部門配下の分析・表示グループ", CatalogHubPaleYellowV030, onGroups, Modifier.weight(1f))
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp)) {
-                        CatalogHubTileV030("SCR-240", "商品ボタン配置", "最大9ページ・各24ボタン", Color(0xFFE8EAF6), onLayout, Modifier.weight(1f))
-                        CatalogHubTileV030("SCR-250", "税区分マスター", "非課税・標準税率・軽減税率・内外税", Color(0xFFFFE8E8), onTaxes, Modifier.weight(1f))
-                        CatalogHubTileV030("SCR-260", "販売プロファイル", "時間帯別価格・税区分", Color(0xFFEDE7F6), onProfiles, Modifier.weight(1f))
+                        CatalogHubTileV030("SCR-620", "商品ボタン配置", "最大9ページ・各24ボタン", Color(0xFFE8EAF6), onLayout, Modifier.weight(1f))
+                        CatalogHubTileV030("SCR-630A", "税区分マスター", "非課税・標準税率・軽減税率・内外税", Color(0xFFFFE8E8), onTaxes, Modifier.weight(1f))
+                        CatalogHubTileV030("SCR-631", "販売プロファイル", "時間帯別価格・税区分", Color(0xFFEDE7F6), onProfiles, Modifier.weight(1f))
                     }
                 }
                 Button(
@@ -259,7 +264,7 @@ private fun CatalogHubHeaderV030(metrics: RegisterResponsiveMetrics) {
     ) {
         Text("つぐレジ", color = Color.White, fontSize = if (metrics.isCompact) 19.sp else 23.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(if (metrics.isCompact) 12.dp else 24.dp))
-        Text("SCR-200  商品・分類・税・販売プロファイル", color = Color.White, fontSize = if (metrics.isCompact) 16.sp else 20.sp, fontWeight = FontWeight.SemiBold)
+        Text("商品・部門・税・販売条件", color = Color.White, fontSize = if (metrics.isCompact) 16.sp else 20.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 

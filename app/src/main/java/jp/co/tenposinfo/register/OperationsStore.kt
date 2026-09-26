@@ -8,6 +8,7 @@ import java.time.LocalDate
 enum class CashMovementType(val displayName: String, val sign: Long) {
     IN("入金", 1),
     OUT("出金", -1),
+    EXCHANGE("両替", 0),
 }
 
 enum class ReversalType(val displayName: String) {
@@ -165,6 +166,7 @@ class OperationsStore(context: Context) {
                 operatorName = operatorName,
                 createdAt = now,
             )
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.BUSINESS_OPEN.name, id.toString())
             id
         }
     }
@@ -367,6 +369,7 @@ class OperationsStore(context: Context) {
                 operatorName = operatorName,
                 createdAt = now,
             )
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.CASH_MOVEMENT.name, id.toString())
             id
         }
     }
@@ -396,6 +399,11 @@ class OperationsStore(context: Context) {
             return result
         }
     }
+
+    fun reversalHasCashRefund(reversalId: Long): Boolean = longQuery(
+        "SELECT COUNT(*) FROM reversal_payments WHERE reversal_id = ? AND payment_method = ?",
+        arrayOf(reversalId.toString(), PaymentMethod.CASH.name),
+    ) > 0
 
     fun loadReturnableLines(saleId: Long): List<ReturnableSaleLine> =
         loadReturnableLines(db, saleId)
@@ -474,7 +482,11 @@ class OperationsStore(context: Context) {
         val now = System.currentTimeMillis()
         val operationKey = OperationsIdempotencyPolicy.reversalRequestKey(type, originalSaleId, requestId)
         val issuer = TaxInvoiceSettingsStore(appContext).load().issuer
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
+        val printerConfiguration = PrinterRoutingV136.resolve(
+            appContext,
+            DocumentPrintKindV136.SALE_RECEIPT,
+        )
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
         var savedResult: PartialReversalResult? = null
 
         db.transaction {
@@ -607,7 +619,7 @@ class OperationsStore(context: Context) {
             val printJobId = insertDocumentJob(
                 OperationDocumentType.REVERSAL_RECEIPT,
                 reversalId,
-                paperWidthMm,
+                printerConfiguration,
                 preview,
                 now,
             )
@@ -618,6 +630,7 @@ class OperationsStore(context: Context) {
                 operatorName = operatorName,
                 createdAt = now,
             )
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.REVERSAL.name, reversalId.toString())
             bindOperationKey(operationKey, reversalId)
             savedResult = PartialReversalResult(reversalId, refundTotal, printJobId, preview)
         }
@@ -704,7 +717,12 @@ class OperationsStore(context: Context) {
         backupFailureAcknowledged: Boolean = false,
     ): Long {
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
+        val documentPrintKind = when (type) {
+            SettlementReportType.X_INSPECTION -> DocumentPrintKindV136.INSPECTION
+            SettlementReportType.Z_SETTLEMENT -> DocumentPrintKindV136.SETTLEMENT
+        }
+        val printerConfiguration = PrinterRoutingV136.resolve(appContext, documentPrintKind)
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
         val now = System.currentTimeMillis()
 
         return db.transaction {
@@ -798,7 +816,7 @@ class OperationsStore(context: Context) {
             val printJobId = insertDocumentJob(
                 OperationDocumentType.SETTLEMENT_REPORT,
                 id,
-                paperWidthMm,
+                printerConfiguration,
                 previewText,
                 now,
             )
@@ -851,6 +869,10 @@ class OperationsStore(context: Context) {
                     createdAt = now,
                 )
             }
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.SETTLEMENT.name, id.toString())
+            if (type == SettlementReportType.Z_SETTLEMENT) {
+                OutboxDocumentV150.materializeLatest(this, JournalEventType.BUSINESS_STATE.name, session.id.toString())
+            }
             if (operationKey != null) bindOperationKey(operationKey, id)
             id
         }
@@ -891,7 +913,11 @@ class OperationsStore(context: Context) {
     fun previewSettlement(reportId: Long): String {
         val record = settlementById(reportId)
             ?: throw IllegalArgumentException("点検・精算履歴No.${reportId}が見つかりません")
-        val paper = PrinterPaperSettingPolicy.currentPaper(appContext)
+        val documentPrintKind = when (record.type) {
+            SettlementReportType.X_INSPECTION -> DocumentPrintKindV136.INSPECTION
+            SettlementReportType.Z_SETTLEMENT -> DocumentPrintKindV136.SETTLEMENT
+        }
+        val paper = PrinterPaperSettingPolicy.paper(PrinterRoutingV136.resolve(appContext, documentPrintKind))
         val document = settlementDocumentData(record)
         if (document != null) return OperationDocumentRenderer.renderSettlement(document, paper)
         return SettlementSnapshotSchemaV027.originalPayload(db, reportId)
@@ -905,11 +931,16 @@ class OperationsStore(context: Context) {
         operatorName: String,
     ): Long {
         require(operatorName.isNotBlank()) { "再印字担当者を入力してください" }
-        val normalizedWidth = PrinterPaperSettingPolicy.currentWidthMm(appContext)
         val now = System.currentTimeMillis()
         return db.transaction {
             val record = settlementById(reportId)
                 ?: throw IllegalArgumentException("点検・精算履歴No.${reportId}が見つかりません")
+            val documentPrintKind = when (record.type) {
+                SettlementReportType.X_INSPECTION -> DocumentPrintKindV136.INSPECTION
+                SettlementReportType.Z_SETTLEMENT -> DocumentPrintKindV136.SETTLEMENT
+            }
+            val printerConfiguration = PrinterRoutingV136.resolve(appContext, documentPrintKind)
+            val normalizedWidth = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
             val document = settlementDocumentData(
                 record = record,
                 reprintedAt = now,
@@ -938,7 +969,7 @@ class OperationsStore(context: Context) {
             val jobId = insertDocumentJob(
                 OperationDocumentType.SETTLEMENT_REPORT,
                 reportId,
-                normalizedWidth,
+                printerConfiguration,
                 payload,
                 now,
             )
@@ -1031,7 +1062,7 @@ class OperationsStore(context: Context) {
     private fun SQLiteDatabase.insertDocumentJob(
         type: OperationDocumentType,
         referenceId: Long,
-        paperWidthMm: Int,
+        configuration: PrinterConfiguration,
         payloadText: String,
         now: Long,
     ): Long = insertOrThrow(
@@ -1040,7 +1071,12 @@ class OperationsStore(context: Context) {
         ContentValues().apply {
             put("document_type", type.name)
             put("reference_id", referenceId)
-            put("paper_width_mm", if (paperWidthMm >= 80) 80 else 58)
+            put(
+                "paper_width_mm",
+                PrinterPaperSettingPolicy.normalizeWidthMm(configuration.paperWidthMm),
+            )
+            put("printer_id", configuration.printerId)
+            put("printable_dot_width", configuration.printableDotWidth)
             put("status", PrintJobStatus.PENDING.name)
             put("attempt_count", 0)
             putNull("last_error")
@@ -1231,6 +1267,8 @@ class OperationsStore(context: Context) {
                 document_type TEXT NOT NULL,
                 reference_id INTEGER NOT NULL,
                 paper_width_mm INTEGER NOT NULL,
+                printer_id TEXT NOT NULL DEFAULT 'printer-1',
+                printable_dot_width INTEGER NOT NULL DEFAULT 576,
                 status TEXT NOT NULL,
                 attempt_count INTEGER NOT NULL,
                 last_error TEXT,
@@ -1288,6 +1326,7 @@ class OperationsStore(context: Context) {
         BusinessSessionSchema.ensure(db)
         TaxSnapshotSchema.ensureReversalColumns(db)
         DocumentPrintSafetySchema.ensure(db)
+        PrinterJobRouteSchemaV136.ensureDocument(db)
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_business_sessions_status ON business_sessions(status, opened_at)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_cash_movements_session ON cash_movements(business_session_id, movement_type)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_reversal_original_sale ON reversal_transactions(original_sale_id)")

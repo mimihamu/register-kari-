@@ -6,6 +6,12 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
 
     <application
         android:name=".RegisterApplication"
@@ -112,6 +118,16 @@
             android:screenOrientation="landscape" />
 
         <activity
+            android:name=".TaxPaymentSettingsHubActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".PaymentSettingsActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
             android:name=".TaxInvoiceSettingsActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
@@ -138,6 +154,11 @@
 
         <activity
             android:name=".AdminSettingsActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".ReceiptSettingsActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
 
@@ -195,6 +216,11 @@
 
         <activity
             android:name=".PrinterToolsHubActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".PerformanceDiagnosticsActivityV136"
             android:exported="false"
             android:screenOrientation="landscape" />
 

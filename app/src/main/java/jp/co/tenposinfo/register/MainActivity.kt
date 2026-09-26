@@ -45,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +65,7 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 private val Navy = Color(0xFF173F6B)
 private val Blue = Color(0xFF1976B9)
@@ -97,8 +99,20 @@ internal object RegisterLayoutPolicy {
 }
 
 class MainActivity : ComponentActivity() {
+    private val scannerGatewayV136 = ScannerGatewayV136()
+
+    override fun onStart() {
+        super.onStart()
+        scannerGatewayV136.start()
+    }
+
+    override fun onStop() {
+        scannerGatewayV136.stop()
+        super.onStop()
+    }
+
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
-        if (BarcodeScannerRuntimeV135.handle(event)) return true
+        if (scannerGatewayV136.handle(event)) return true
         return super.dispatchKeyEvent(event)
     }
 
@@ -218,6 +232,7 @@ private fun RegisterApp() {
     val heldTicketCoordinator = remember { HeldTicketSafetyCoordinator(database) }
     val paymentDraftStore = remember { PaymentDraftStore(database) }
     val saleCommitGuard = remember { SaleCommitGuard() }
+    val checkoutScope = rememberCoroutineScope()
 
     fun replaceCart(items: List<CartItem>) {
         cart.clear()
@@ -387,11 +402,24 @@ private fun RegisterApp() {
                         accessMessage = null
                         val existing = database.listHeldTickets()
                         val name = HeldTicketSafetyPolicy.defaultName(existing.map { it.name })
-                        database.holdCart(name, operatorName, cart.toList())
+                        val heldTicketId = database.holdCart(name, operatorName, cart.toList())
+                        val automaticProvisional = runCatching {
+                            val service = HeldTicketProvisionalPrintServiceV135(context.applicationContext)
+                            try {
+                                service.enqueueIfAutomatic(heldTicketId, operatorName)
+                            } finally {
+                                service.close()
+                            }
+                        }.getOrNull()
                         database.clearCartCorrections()
                         corrections.clear()
                         replaceCart(emptyList())
-                        ticketMessage = "$name として保留しました"
+                        if (automaticProvisional != null) {
+                            runCatching { AutomaticPrintScheduler.enqueueNow(context.applicationContext) }
+                            ticketMessage = "$name として保留し、仮締め票を自動印刷キューへ登録しました"
+                        } else {
+                            ticketMessage = "$name として保留しました"
+                        }
                     }
                 },
                 onPayment = {
@@ -437,6 +465,9 @@ private fun RegisterApp() {
                     ManagementNavigationPolicyV030::canOpenManagement,
                 ) == true,
                 onOpenSettings = { context.startActivity(Intent(context, AdminSettingsActivity::class.java)) },
+                onOpenCatalogSettings = { scannedCode ->
+                    context.startActivity(CatalogNavigationContractV030.productRegistrationIntent(context, scannedCode))
+                },
                 onOpenManagement = { context.startActivity(Intent(context, OperationsHubActivityV030::class.java)) },
                 accessMessage = accessMessage,
                 onLogout = {
@@ -659,6 +690,18 @@ private fun RegisterApp() {
                                 ),
                             )
                         }
+                        val completedPaymentState = paymentState
+                        val completedOperatorName = operatorName
+                        checkoutScope.launch {
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                ReceiptAutoPrintRuntimeV136.dispatchDrawerIfNeeded(
+                                    context = context.applicationContext,
+                                    paymentState = completedPaymentState,
+                                    saleId = saleId,
+                                    actor = completedOperatorName,
+                                )
+                            }
+                        }
                         AutomaticPrintScheduler.enqueueNow(context.applicationContext)
                         DriveOutboxScheduler.enqueueNow(context.applicationContext)
                         lastSaleId = saleId
@@ -741,7 +784,7 @@ private fun RegisterApp() {
                         detail = detail,
                         paper = PrinterPaperSettingPolicy.currentPaper(context.applicationContext),
                         onEnqueue = {
-                            database.enqueueReprint(detail.summary.id)
+                            database.enqueueReprint(detail.summary.id, operatorName)
                             AutomaticPrintScheduler.enqueueNow(context.applicationContext)
                             queueMessage = "再印字をキューへ登録しました"
                         },
@@ -1010,6 +1053,7 @@ private fun SalesScreen(
     canOpenSettings: Boolean,
     canOpenManagement: Boolean,
     onOpenSettings: () -> Unit,
+    onOpenCatalogSettings: (String) -> Unit,
     onOpenManagement: () -> Unit,
     accessMessage: String?,
     onLogout: () -> Unit,
@@ -1019,22 +1063,41 @@ private fun SalesScreen(
     var pendingQuantity by remember { mutableStateOf<Int?>(null) }
     var showProductSearch by remember { mutableStateOf(false) }
     var lookupMessage by remember { mutableStateOf<String?>(null) }
+    var unregisteredBarcode by remember { mutableStateOf<String?>(null) }
+    val barcodeIndex = remember(products) { BarcodeProductIndexV136(products) }
     val responsive = rememberRegisterResponsiveMetrics()
 
-    androidx.compose.runtime.DisposableEffect(products, pendingQuantity, onAddProduct) {
-        val listener: (String) -> Unit = { scanned ->
-            val product = ProductLookupPolicyV135.findExact(products, scanned)
+    androidx.compose.runtime.DisposableEffect(barcodeIndex, pendingQuantity, onAddProduct) {
+        val listener: (BarcodeScannedV136) -> Unit = { event ->
+            val product = barcodeIndex.findExact(event.code)
             if (product == null) {
-                lookupMessage = "商品未登録: ${scanned.take(20)}"
+                unregisteredBarcode = event.code
+                lookupMessage = null
             } else {
                 onAddProduct(product, pendingQuantity ?: 1)
                 pendingQuantity = null
                 numericInput = ""
                 lookupMessage = null
+                unregisteredBarcode = null
             }
         }
-        BarcodeScannerRuntimeV135.setListener(listener)
-        onDispose { BarcodeScannerRuntimeV135.clearListener(listener) }
+        InputRouterV136.setBarcodeListener(listener)
+        onDispose { InputRouterV136.clearBarcodeListener(listener) }
+    }
+
+    unregisteredBarcode?.let { scannedCode ->
+        UnregisteredBarcodeDialogV136(
+            code = scannedCode,
+            canOpenProductSettings = canOpenSettings,
+            onTemporaryProduct = { product ->
+                onAddProduct(product, pendingQuantity ?: 1)
+                pendingQuantity = null
+                numericInput = ""
+                lookupMessage = "仮商品として登録しました"
+            },
+            onOpenProductSettings = { onOpenCatalogSettings(scannedCode) },
+            onDismiss = { unregisteredBarcode = null },
+        )
     }
 
     if (showProductSearch) {
@@ -1088,7 +1151,21 @@ private fun SalesScreen(
             horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
         ) {
             CardPanel(Modifier.weight(responsive.salesListWeight).fillMaxHeight()) {
-                Text("注文一覧", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Navy)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("注文一覧", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Navy)
+                    Spacer(Modifier.weight(1f))
+                    if (selectedIndex != null) {
+                        Surface(color = PaleBlue, shape = RoundedCornerShape(12.dp)) {
+                            Text(
+                                "選択中",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                color = Navy,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                }
                 Spacer(Modifier.height(8.dp))
                 LazyColumn(Modifier.weight(1f)) {
                     itemsIndexed(cart) { index, item ->
@@ -1153,7 +1230,7 @@ private fun SalesScreen(
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text("${cart.sumOf { it.quantity }}点")
                     Spacer(Modifier.weight(1f))
-                    Text("合計 ${yen(summary.grossAmount)}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Navy)
+                    Text("合計 ${yen(summary.grossAmount)}", fontSize = if (responsive.isCompact) 24.sp else 28.sp, fontWeight = FontWeight.Bold, color = Navy)
                 }
             }
 
@@ -2157,6 +2234,10 @@ private fun PaymentScreen(
     val remaining = state.remaining(summary.grossAmount)
     val paymentContext = LocalContext.current
     val mixedPolicy = remember { TaxInvoiceSettingsStore(paymentContext.applicationContext).load().mixedTaxPolicy }
+    val paymentSettings = remember { PaymentSettingsStoreV136(paymentContext.applicationContext).load() }
+    val enabledNonCashMethods = remember(paymentSettings) {
+        paymentSettings.enabledMethods().filter { it != PaymentMethod.CASH }
+    }
     var input by remember { mutableStateOf("") }
     var operationMessage by remember { mutableStateOf<String?>(null) }
     var acknowledgedMixedTax by remember { mutableStateOf(false) }
@@ -2168,7 +2249,19 @@ private fun PaymentScreen(
     fun add(method: PaymentMethod) {
         val amount = input.toLongOrNull()
         if (completing) return
-        runCatching { PaymentEngine.addPayment(state, summary.grossAmount, method, amount) }
+        if (method !in paymentSettings.enabledMethods()) {
+            operationMessage = "この支払方法は設定で無効です"
+            return
+        }
+        runCatching {
+            PaymentEngine.addPayment(
+                state,
+                summary.grossAmount,
+                method,
+                amount,
+                paymentSettings.tenderPolicyFor(method),
+            )
+        }
             .onSuccess {
                 onStateChange(it)
                 input = ""
@@ -2245,7 +2338,7 @@ private fun PaymentScreen(
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val keypad = RegisterResponsiveLayoutPolicy.keypadMetrics(
                         availableHeightDp = maxHeight.value.toInt(),
-                        functionRows = 1,
+                        functionRows = ((enabledNonCashMethods.size + 2) / 3).coerceAtLeast(1),
                         reservedTopDp = if (responsive.isCompact) 104 else 126,
                     )
                     val keypadScroll = rememberScrollState()
@@ -2262,7 +2355,7 @@ private fun PaymentScreen(
                                 PaymentAmountRow("支払済", yen(state.paidAmount))
                             }
                             Column(Modifier.weight(1f)) {
-                                PaymentAmountRow("残額", yen(remaining), emphasized = true)
+                                PaymentAmountRow(if (remaining == 0L) "残額（支払完了）" else "残額", yen(remaining), emphasized = true)
                                 PaymentAmountRow("お釣り", yen(state.changeAmount))
                             }
                         }
@@ -2295,6 +2388,12 @@ private fun PaymentScreen(
                                 maxLines = 2,
                             )
                         }
+                        Text(
+                            if (input.isBlank()) "金額指定なし：支払方法を押すと残額全額を充当" else "指定金額",
+                            color = Color.Gray,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                        )
                         ValueBox(
                             if (input.isBlank()) "残額全額" else input,
                             compact = true,
@@ -2312,25 +2411,25 @@ private fun PaymentScreen(
                         )
                         Spacer(Modifier.height(keypad.gapDp.dp))
                         CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(keypad.gapDp.dp),
-                            ) {
-                                OutlinedButton(
-                                    onClick = { add(PaymentMethod.CARD) },
-                                    enabled = remaining > 0 && !completing,
-                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
-                                ) { Text("カード", fontSize = 13.sp, maxLines = 1) }
-                                OutlinedButton(
-                                    onClick = { add(PaymentMethod.GIFT_CERTIFICATE) },
-                                    enabled = remaining > 0 && !completing,
-                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
-                                ) { Text("商品券", fontSize = 13.sp, maxLines = 1) }
-                                OutlinedButton(
-                                    onClick = { add(PaymentMethod.ACCOUNT_RECEIVABLE) },
-                                    enabled = remaining > 0 && !completing,
-                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
-                                ) { Text("掛売", fontSize = 13.sp, maxLines = 1) }
+                            enabledNonCashMethods.chunked(3).forEachIndexed { rowIndex, methods ->
+                                if (rowIndex > 0) Spacer(Modifier.height(keypad.gapDp.dp))
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(keypad.gapDp.dp),
+                                ) {
+                                    methods.forEach { method ->
+                                        OutlinedButton(
+                                            onClick = { add(method) },
+                                            enabled = remaining > 0 && !completing,
+                                            modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                        ) {
+                                            Text(method.displayName, fontSize = 12.sp, maxLines = 1)
+                                        }
+                                    }
+                                    repeat(3 - methods.size) {
+                                        Spacer(Modifier.weight(1f))
+                                    }
+                                }
                             }
                         }
                     }
@@ -2387,7 +2486,14 @@ private fun CompleteScreen(
             ) {
                 AmountRow("売上番号", detail?.summary?.id?.toString() ?: "-")
                 AmountRow("合計", yen(detail?.summary?.totalAmount ?: 0), emphasized = true)
-                AmountRow("お釣り", yen(detail?.summary?.changeAmount ?: 0), emphasized = true)
+                Text(
+                    "お釣り  ${yen(detail?.summary?.changeAmount ?: 0)}",
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Navy,
+                    fontSize = if (responsive.isCompact) 28.sp else 36.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.End,
+                )
                 Text(
                     "売上・支払・印刷キューを同一トランザクションで保存済み",
                     color = Color(0xFF2E7D32),
@@ -2959,7 +3065,8 @@ private fun statusColor(status: PrintJobStatus): Color = when (status) {
     PrintJobStatus.COMPLETED -> Color(0xFF2E7D32)
     PrintJobStatus.FAILED -> Danger
     PrintJobStatus.RETRY -> Color(0xFFEF6C00)
-    PrintJobStatus.PRINTING -> Blue
+    PrintJobStatus.SENDING -> Color(0xFFEF6C00)
+    PrintJobStatus.PRINTING -> Color(0xFFEF6C00)
     PrintJobStatus.PENDING -> Navy
     PrintJobStatus.DISCARDED -> Color.Gray
 }

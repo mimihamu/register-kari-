@@ -9,6 +9,7 @@ import java.util.UUID
 data class SalesJournalIdentity(
     val storeId: String,
     val terminalId: String,
+    val generation: Long = 1L,
 )
 
 /**
@@ -59,6 +60,7 @@ object SalesJournalJsonContract {
             append("\"eventType\":\"").append(eventType).append("\",")
             append("\"storeId\":\"").append(escape(identity.storeId)).append("\",")
             append("\"terminalId\":\"").append(escape(identity.terminalId)).append("\",")
+            append("\"terminalGeneration\":").append(identity.generation).append(',')
             append("\"businessDate\":\"").append(escape(record.businessDate)).append("\",")
             append("\"aggregateId\":\"").append(escape(record.aggregateId)).append("\",")
             append("\"occurredAt\":").append(record.createdAt).append(',')
@@ -136,22 +138,32 @@ object SalesJournalJsonContract {
 object SalesJournalIdentityStore {
     private const val STORE_ID_KEY = "sales_journal_store_id"
     private const val TERMINAL_ID_KEY = "sales_journal_terminal_id"
+    private const val GENERATION_KEY = "sales_journal_terminal_generation"
     private const val DEFAULT_STORE_ID = "STORE-UNCONFIGURED"
 
     fun resolve(db: SQLiteDatabase): SalesJournalIdentity {
         ensureSettingsTable(db)
         putIfMissing(db, STORE_ID_KEY, DEFAULT_STORE_ID)
         putIfMissing(db, TERMINAL_ID_KEY, "TERMINAL-${UUID.randomUUID().toString().uppercase(Locale.ROOT)}")
+        putIfMissing(db, GENERATION_KEY, "1")
         return SalesJournalIdentity(
             storeId = read(db, STORE_ID_KEY) ?: DEFAULT_STORE_ID,
             terminalId = read(db, TERMINAL_ID_KEY) ?: error("terminal id was not persisted"),
+            generation = read(db, GENERATION_KEY)?.toLongOrNull()?.coerceAtLeast(1L) ?: 1L,
         )
     }
 
     fun update(db: SQLiteDatabase, storeId: String, terminalId: String) {
+        val generation = resolve(db).generation
+        updateForRestore(db, storeId, terminalId, generation)
+    }
+
+    fun updateForRestore(db: SQLiteDatabase, storeId: String, terminalId: String, generation: Long) {
+        require(generation >= 1L) { "generation must be >= 1" }
         ensureSettingsTable(db)
         put(db, STORE_ID_KEY, normalize(storeId, "storeId"))
         put(db, TERMINAL_ID_KEY, normalize(terminalId, "terminalId"))
+        put(db, GENERATION_KEY, generation.toString())
     }
 
     private fun normalize(value: String, label: String): String {

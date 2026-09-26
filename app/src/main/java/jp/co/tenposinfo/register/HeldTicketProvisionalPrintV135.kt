@@ -113,6 +113,12 @@ internal class HeldTicketProvisionalPrintServiceV135(context: Context) : AutoClo
         schemaStore.close()
     }
 
+    fun enqueueIfAutomatic(ticketId: Long, actor: String): HeldTicketProvisionalPrintResultV135? {
+        val setting = DocumentPrintSettingsStoreV136(appContext).load(DocumentPrintKindV136.PROVISIONAL_RECEIPT)
+        if (!setting.autoPrintEnabled) return null
+        return enqueue(ticketId, actor)
+    }
+
     fun enqueue(ticketId: Long, actor: String): HeldTicketProvisionalPrintResultV135 {
         require(ticketId > 0L) { "保留伝票No.が不正です" }
         require(actor.isNotBlank()) { "担当者が必要です" }
@@ -120,7 +126,14 @@ internal class HeldTicketProvisionalPrintServiceV135(context: Context) : AutoClo
             ?: error("仮締め対象の保留伝票が見つかりません")
         val items = database.loadHeldTicket(ticketId)
         require(items.isNotEmpty()) { "仮締め対象の伝票に明細がありません" }
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
+        val printerConfiguration = PrinterRoutingV136.resolve(
+            appContext,
+            DocumentPrintKindV136.PROVISIONAL_RECEIPT,
+        )
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
+        val documentPrintSetting = DocumentPrintSettingsStoreV136(appContext).load(
+            DocumentPrintKindV136.PROVISIONAL_RECEIPT,
+        )
         val now = System.currentTimeMillis()
         val payload = HeldTicketProvisionalReceiptRendererV135.render(
             ticket = ticket,
@@ -128,23 +141,33 @@ internal class HeldTicketProvisionalPrintServiceV135(context: Context) : AutoClo
             paper = ReceiptPaper.fromWidth(paperWidthMm),
         )
 
+        val decoratedPayload = DocumentPrintSettingsPolicyV136.decorateText(payload, documentPrintSetting)
         db.beginTransaction()
         val jobId = try {
-            val id = db.insertOrThrow(
-                "document_print_jobs",
-                null,
-                ContentValues().apply {
-                    put("document_type", OperationDocumentType.HELD_TICKET_PROVISIONAL.name)
-                    put("reference_id", ticket.id)
-                    put("paper_width_mm", paperWidthMm)
-                    put("status", PrintJobStatus.PENDING.name)
-                    put("attempt_count", 0)
-                    putNull("last_error")
-                    put("payload_text", payload)
-                    put("created_at", now)
-                    put("updated_at", now)
-                },
-            )
+            val jobIds = buildList {
+                kotlin.repeat(DocumentPrintSettingsPolicyV136.normalizeCopies(documentPrintSetting.copies)) { copyIndex ->
+                    add(
+                        db.insertOrThrow(
+                            "document_print_jobs",
+                            null,
+                            ContentValues().apply {
+                                put("document_type", OperationDocumentType.HELD_TICKET_PROVISIONAL.name)
+                                put("reference_id", ticket.id)
+                                put("paper_width_mm", paperWidthMm)
+                                put("printer_id", printerConfiguration.printerId)
+                                put("printable_dot_width", printerConfiguration.printableDotWidth)
+                                put("status", PrintJobStatus.PENDING.name)
+                                put("attempt_count", 0)
+                                putNull("last_error")
+                                put("payload_text", decoratedPayload)
+                                put("created_at", now + copyIndex)
+                                put("updated_at", now + copyIndex)
+                            },
+                        ),
+                    )
+                }
+            }
+            val id = jobIds.first()
             db.insertOrThrow(
                 "operation_audit",
                 null,
@@ -161,6 +184,6 @@ internal class HeldTicketProvisionalPrintServiceV135(context: Context) : AutoClo
         } finally {
             db.endTransaction()
         }
-        return HeldTicketProvisionalPrintResultV135(jobId, ticket.id, payload)
+        return HeldTicketProvisionalPrintResultV135(jobId, ticket.id, decoratedPayload)
     }
 }

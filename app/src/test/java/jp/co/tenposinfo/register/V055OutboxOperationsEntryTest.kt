@@ -17,7 +17,7 @@ class V055OutboxOperationsEntryTest {
         assertTrue(build.contains("applicationId = \"jp.co.tenposinfo.register\""))
         assertTrue(build.contains("compileSdk = 36"))
         assertTrue(settings.contains("送信運用・個別再試行"))
-        assertTrue(settings.contains("互換用フォルダ送信設定"))
+        assertTrue(settings.contains("送信運用・個別再試行の詳細"))
         assertTrue(settings.contains("OutboxDeliverySettingsActivity::class.java"))
         assertTrue(operations.contains("fun retryItem"))
         assertTrue(operations.contains("OutboxItemRetryPolicy.canRetry"))

@@ -71,6 +71,10 @@ internal fun PaymentScreen(
     val remaining = state.remaining(summary.grossAmount)
     val context = LocalContext.current
     val mixedPolicy = remember { TaxInvoiceSettingsStore(context.applicationContext).load().mixedTaxPolicy }
+    val paymentSettings = remember { PaymentSettingsStoreV136(context.applicationContext).load() }
+    val enabledNonCashMethods = remember(paymentSettings) {
+        paymentSettings.enabledMethods().filter { it != PaymentMethod.CASH }
+    }
     var input by remember { mutableStateOf("") }
     var operationMessage by remember { mutableStateOf<String?>(null) }
     var acknowledgedMixedTax by remember { mutableStateOf(false) }
@@ -81,7 +85,19 @@ internal fun PaymentScreen(
     fun add(method: PaymentMethod) {
         if (completing) return
         val amount = input.toLongOrNull()
-        runCatching { PaymentEngine.addPayment(state, summary.grossAmount, method, amount) }
+        if (method !in paymentSettings.enabledMethods()) {
+            operationMessage = "この支払方法は設定で無効です"
+            return
+        }
+        runCatching {
+            PaymentEngine.addPayment(
+                state,
+                summary.grossAmount,
+                method,
+                amount,
+                paymentSettings.tenderPolicyFor(method),
+            )
+        }
             .onSuccess {
                 onStateChange(it)
                 input = ""
@@ -204,18 +220,21 @@ internal fun PaymentScreen(
                     enabled = remaining > 0 && !completing,
                 )
                 Spacer(Modifier.height(6.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Uc08TenderButton("クレジット", remaining > 0 && !completing, Modifier.weight(1f)) {
-                        add(PaymentMethod.CARD)
-                    }
-                    Uc08TenderButton("商品券", remaining > 0 && !completing, Modifier.weight(1f)) {
-                        add(PaymentMethod.GIFT_CERTIFICATE)
-                    }
-                    Uc08TenderButton("掛売", remaining > 0 && !completing, Modifier.weight(1f)) {
-                        add(PaymentMethod.ACCOUNT_RECEIVABLE)
-                    }
-                    Uc08TenderButton("その他", remaining > 0 && !completing, Modifier.weight(1f)) {
-                        add(PaymentMethod.OTHER)
+                enabledNonCashMethods.chunked(3).forEachIndexed { rowIndex, methods ->
+                    if (rowIndex > 0) Spacer(Modifier.height(5.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        methods.forEach { method ->
+                            Uc08TenderButton(
+                                method.displayName,
+                                remaining > 0 && !completing,
+                                Modifier.weight(1f),
+                            ) {
+                                add(method)
+                            }
+                        }
+                        repeat(3 - methods.size) {
+                            Spacer(Modifier.weight(1f))
+                        }
                     }
                 }
             }

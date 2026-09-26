@@ -474,7 +474,7 @@ jobs:
           ! grep -q 'android:screenOrientation="landscape"' management-app/src/main/AndroidManifest.xml
 
       - name: Run cumulative unit tests
-        run: gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest :management-app:testDebugUnitTest
+        run: gradle --no-daemon clean :app:testDebugUnitTest :customer-display:testDebugUnitTest :management-app:testDebugUnitTest
 
       - name: Compile Kotlin
         run: gradle --no-daemon :app:compileDebugKotlin :customer-display:compileDebugKotlin :management-app:compileDebugKotlin

@@ -88,6 +88,12 @@ private fun CatalogSettingsApp(onClose: () -> Unit) {
     val context = LocalContext.current
     val store = remember { CatalogMasterStore(context.applicationContext) }
     val actor = remember { OperatorSessionRegistry.current(context.applicationContext)?.name ?: "責任者" }
+    val initialBarcode = remember {
+        (context as? ComponentActivity)?.intent
+            ?.getStringExtra(CatalogNavigationContractV030.EXTRA_PREFILL_BARCODE)
+            ?.let { runCatching { CatalogValidation.normalizeBarcode(it) }.getOrNull() }
+            .orEmpty()
+    }
     val initialScreen = remember {
     when ((context as? ComponentActivity)?.intent?.getStringExtra(CatalogNavigationContractV030.EXTRA_INITIAL_SCREEN)) {
         CatalogNavigationContractV030.PRODUCTS -> CatalogScreen.PRODUCTS
@@ -132,6 +138,7 @@ var screen by remember { mutableStateOf(initialScreen) }
                 store = store,
                 refresh = refresh,
                 actor = actor,
+                initialBarcode = initialBarcode,
                 onSaved = { saved("商品マスターを保存しました") },
                 onBack = { screen = CatalogScreen.MENU },
             )
@@ -198,7 +205,7 @@ private fun CatalogMenuScreen(
     val groups = remember(refresh) { store.listGroups() }
     val activeProfile = remember(refresh) { store.activeProfile() }
     Column(Modifier.fillMaxSize()) {
-        CatalogHeader("SCR-200", "商品・分類・税・販売プロファイル", onClose)
+        CatalogHeader("", "商品・部門・税・販売条件", onClose)
         Column(Modifier.fillMaxSize().padding(24.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 SummaryCard("商品", "${products.count { it.enabled }}件", Modifier.weight(1f))
@@ -219,15 +226,15 @@ private fun CatalogMenuScreen(
             }
             Spacer(Modifier.height(18.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                MenuTile("SCR-210", "商品マスター", "商品コード・名称・価格・税区分・所属", onProducts, Modifier.weight(1f))
-                MenuTile("SCR-220", "部門マスター", "商品が所属する部門", onDepartments, Modifier.weight(1f))
-                MenuTile("SCR-230", "グループマスター", "部門配下の分析・表示グループ", onGroups, Modifier.weight(1f))
+                MenuTile("SCR-600", "商品マスター", "商品コード・名称・価格・税区分・所属", onProducts, Modifier.weight(1f))
+                MenuTile("SCR-610", "部門マスター", "商品が所属する部門", onDepartments, Modifier.weight(1f))
+                MenuTile("SCR-610", "グループマスター", "部門配下の分析・表示グループ", onGroups, Modifier.weight(1f))
             }
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                MenuTile("SCR-240", "商品ボタン配置", "最大9ページ・各24ボタン", onLayout, Modifier.weight(1f))
-                MenuTile("SCR-250", "税区分マスター", "非課税・10%内外税・8%内外税", onTaxes, Modifier.weight(1f))
-                MenuTile("SCR-260", "販売プロファイル", "時間帯別価格・税区分", onProfiles, Modifier.weight(1f))
+                MenuTile("SCR-620", "商品ボタン配置", "最大9ページ・各24ボタン", onLayout, Modifier.weight(1f))
+                MenuTile("SCR-630A", "税区分マスター", "非課税・10%内外税・8%内外税", onTaxes, Modifier.weight(1f))
+                MenuTile("SCR-631", "販売プロファイル", "時間帯別価格・税区分", onProfiles, Modifier.weight(1f))
             }
             Spacer(Modifier.height(16.dp))
             Text(
@@ -262,7 +269,7 @@ private fun DepartmentMasterScreen(
         error = null
     }
 
-    MasterSplitScreen("SCR-220", "部門マスター", onBack, left = {
+    MasterSplitScreen("SCR-610", "部門マスター", onBack, left = {
         MasterListHeader("部門一覧", onNew = { selected = null })
         LazyColumn(Modifier.fillMaxSize()) {
             items(rows, key = { it.id }) { row ->
@@ -320,7 +327,7 @@ private fun GroupMasterScreen(
         error = null
     }
 
-    MasterSplitScreen("SCR-230", "グループマスター", onBack, left = {
+    MasterSplitScreen("SCR-610", "グループマスター", onBack, left = {
         MasterListHeader("グループ一覧", onNew = { selected = null })
         LazyColumn(Modifier.fillMaxSize()) {
             items(rows, key = { it.id }) { row ->
@@ -360,6 +367,7 @@ private fun ProductMasterScreen(
     store: CatalogMasterStore,
     refresh: Int,
     actor: String,
+    initialBarcode: String,
     onSaved: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -370,7 +378,7 @@ private fun ProductMasterScreen(
     var productId by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     var kana by remember { mutableStateOf("") }
-    var barcode by remember { mutableStateOf("") }
+    var barcode by remember(initialBarcode) { mutableStateOf(initialBarcode) }
     var price by remember { mutableStateOf("0") }
     var tax by remember { mutableStateOf(TaxCategory.INCLUDED_10) }
     var departmentId by remember { mutableStateOf<Long?>(null) }
@@ -385,7 +393,7 @@ private fun ProductMasterScreen(
         productId = selected?.productId.orEmpty()
         name = selected?.name.orEmpty()
         kana = selected?.kana.orEmpty()
-        barcode = selected?.barcode.orEmpty()
+        barcode = selected?.barcode ?: initialBarcode
         price = selected?.basePrice?.toString() ?: "0"
         tax = selected?.baseTaxCategory ?: TaxCategory.INCLUDED_10
         departmentId = selected?.departmentId ?: departments.firstOrNull()?.id
@@ -397,7 +405,7 @@ private fun ProductMasterScreen(
         error = null
     }
 
-    MasterSplitScreen("SCR-210", "商品マスター", onBack, leftWeight = 0.44f, left = {
+    MasterSplitScreen("SCR-600", "商品マスター", onBack, leftWeight = 0.44f, left = {
         MasterListHeader("商品一覧 ${products.size}件", onNew = { selected = null })
         LazyColumn(Modifier.fillMaxSize()) {
             items(products, key = { it.productId }) { row ->
@@ -483,7 +491,7 @@ private fun ButtonLayoutScreen(
     val selected = products.firstOrNull { it.productId == selectedId }
 
     Column(Modifier.fillMaxSize()) {
-        CatalogHeader("SCR-240", "商品ボタン配置", onBack)
+        CatalogHeader("SCR-620", "商品ボタン配置", onBack)
         Row(Modifier.fillMaxSize().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             CatalogPanel(Modifier.width(330.dp).fillMaxHeight()) {
                 Text("移動する商品", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = CmNavy)
@@ -573,7 +581,7 @@ private fun TaxMasterScreen(
         error = null
     }
 
-    MasterSplitScreen("SCR-250", "税区分マスター", onBack, left = {
+    MasterSplitScreen("SCR-630A", "税区分マスター", onBack, left = {
         Text("税区分一覧", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = CmNavy)
         Spacer(Modifier.height(8.dp))
         LazyColumn(Modifier.fillMaxSize()) {
@@ -649,7 +657,7 @@ private fun SalesProfileScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        CatalogHeader("SCR-260", "販売プロファイル", onBack)
+        CatalogHeader("SCR-631", "販売プロファイル", onBack)
         Row(Modifier.fillMaxSize().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             CatalogPanel(Modifier.width(330.dp).fillMaxHeight()) {
                 MasterListHeader("プロファイル一覧", onNew = { selected = null })
@@ -775,7 +783,7 @@ private fun CatalogHeader(screenId: String, title: String, onBack: () -> Unit) {
     ) {
         Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(18.dp))
-        Text("$screenId  $title", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        Text(if (screenId.isBlank()) title else "$screenId  $title", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.weight(1f))
         OutlinedButton(onClick = onBack, border = BorderStroke(1.dp, Color.White)) {
             Text("戻る", color = Color.White)
