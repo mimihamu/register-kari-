@@ -128,5 +128,52 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      # TEMPORARY LOCAL BOOTSTRAP: remove after ChatGPT-side toolchain is seeded.
+      - name: Prepare ChatGPT local build bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p local-bootstrap
+
+          gradle_bin="$(readlink -f "$(command -v gradle)")"
+          gradle_root="$(cd "$(dirname "$gradle_bin")/.." && pwd)"
+          sdk="$ANDROID_HOME"
+
+          echo "GRADLE_BIN=$gradle_bin"
+          echo "GRADLE_ROOT=$gradle_root"
+          echo "ANDROID_HOME=$sdk"
+          du -sh "$gradle_root" "$HOME/.gradle/caches" "$sdk/platforms/android-36" "$sdk/build-tools/36.0.0" || true
+
+          tar -C "$(dirname "$gradle_root")" -czf local-bootstrap/gradle-9.5.0.tar.gz "$(basename "$gradle_root")"
+          tar -C "$sdk" -czf local-bootstrap/android-sdk-api36-buildtools36.tar.gz             platforms/android-36             build-tools/36.0.0             platform-tools
+
+          tar             --exclude='caches/build-cache-*'             --exclude='caches/*/fileHashes'             --exclude='caches/*/fileContent'             -C "$HOME/.gradle"             -czf local-bootstrap/gradle-user-home-cache.tar.gz             caches
+
+          git archive --format=tar.gz -o local-bootstrap/tsuguregi-source.tar.gz HEAD
+
+          {
+            echo "HEAD=$(git rev-parse HEAD)"
+            echo "JAVA=$(java -version 2>&1 | head -n 1)"
+            echo "GRADLE=$(gradle --version | awk '/^Gradle / {print $2; exit}')"
+            echo "ANDROID_HOME=$sdk"
+            echo "PLATFORM=android-36"
+            echo "BUILD_TOOLS=36.0.0"
+            sha256sum local-bootstrap/*.tar.gz
+          } | tee local-bootstrap/bootstrap-manifest.txt
+
+          ls -lh local-bootstrap/
+
+      - name: Upload ChatGPT local build bootstrap
+        id: upload_local_bootstrap
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSUGUREGI-v1.36-chatgpt-local-build-bootstrap
+          path: local-bootstrap/
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+
       - name: Report artifact ID
-        run: echo "ARTIFACT_ID=${{ steps.upload.outputs.artifact-id }}"
+        run: |
+          echo "ARTIFACT_ID=${{ steps.upload.outputs.artifact-id }}"
+          echo "LOCAL_BOOTSTRAP_ARTIFACT_ID=${{ steps.upload_local_bootstrap.outputs.artifact-id }}"
