@@ -32,14 +32,8 @@ ok "Gradle: $GRADLE_BIN"
 [[ -x "$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/apksigner" ]] || fail "apksigner $BUILD_TOOLS_VERSION missing"
 [[ -x "$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/zipalign" ]] || fail "zipalign $BUILD_TOOLS_VERSION missing"
 
-APK_ANALYZER="$(command -v apkanalyzer || true)"
-if [[ -z "$APK_ANALYZER" ]]; then
-    APK_ANALYZER="$(find "$ANDROID_HOME/cmdline-tools" -type f -path '*/bin/apkanalyzer' -perm -u+x -print 2>/dev/null | head -n 1)"
-fi
-[[ -n "$APK_ANALYZER" && -x "$APK_ANALYZER" ]] || fail "apkanalyzer missing"
-
 [[ -s "ci/tsuguregi-development.jks.b64" ]] || fail "fixed development signing key source missing"
-[[ -x "ci/verify-apk-release-integrity.sh" || -f "ci/verify-apk-release-integrity.sh" ]] || fail "APK integrity gate missing"
+[[ -f "ci/local/verify-apks.sh" ]] || fail "local APK integrity gate missing"
 
 ok "Android API 36 / Build Tools $BUILD_TOOLS_VERSION"
 ok "fixed signing source present"
