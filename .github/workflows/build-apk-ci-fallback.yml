@@ -163,12 +163,44 @@ jobs:
 
           ls -lh local-bootstrap/
 
-      - name: Upload ChatGPT local build bootstrap
-        id: upload_local_bootstrap
+      - name: Upload local bootstrap Android SDK
+        id: upload_local_sdk
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v1.36-chatgpt-local-build-bootstrap
-          path: local-bootstrap/
+          name: TSUGUREGI-local-bootstrap-android-sdk
+          path: |
+            local-bootstrap/android-sdk-api36-buildtools36.tar.gz
+            local-bootstrap/bootstrap-manifest.txt
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+
+      - name: Upload local bootstrap Gradle
+        id: upload_local_gradle
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSUGUREGI-local-bootstrap-gradle
+          path: local-bootstrap/gradle-9.5.0.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+
+      - name: Upload local bootstrap Gradle cache
+        id: upload_local_cache
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSUGUREGI-local-bootstrap-gradle-cache
+          path: local-bootstrap/gradle-user-home-cache.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+
+      - name: Upload local bootstrap source
+        id: upload_local_source
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSUGUREGI-local-bootstrap-source
+          path: local-bootstrap/tsuguregi-source.tar.gz
           if-no-files-found: error
           retention-days: 3
           compression-level: 0
@@ -176,4 +208,7 @@ jobs:
       - name: Report artifact ID
         run: |
           echo "ARTIFACT_ID=${{ steps.upload.outputs.artifact-id }}"
-          echo "LOCAL_BOOTSTRAP_ARTIFACT_ID=${{ steps.upload_local_bootstrap.outputs.artifact-id }}"
+          echo "LOCAL_BOOTSTRAP_SDK_ARTIFACT_ID=${{ steps.upload_local_sdk.outputs.artifact-id }}"
+          echo "LOCAL_BOOTSTRAP_GRADLE_ARTIFACT_ID=${{ steps.upload_local_gradle.outputs.artifact-id }}"
+          echo "LOCAL_BOOTSTRAP_CACHE_ARTIFACT_ID=${{ steps.upload_local_cache.outputs.artifact-id }}"
+          echo "LOCAL_BOOTSTRAP_SOURCE_ARTIFACT_ID=${{ steps.upload_local_source.outputs.artifact-id }}"
