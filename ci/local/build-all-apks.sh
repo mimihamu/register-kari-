@@ -42,17 +42,17 @@ CD_VERSION_NAME="$(read_gradle_scalar customer-display/build.gradle.kts versionN
 [[ -n "$CD_VERSION_CODE" && -n "$CD_VERSION_NAME" ]] || { echo "version read failed for customer-display" >&2; exit 1; }
 
 echo "=== cumulative unit tests ==="
-"$GRADLE_BIN" --no-daemon clean     :app:testDebugUnitTest     :customer-display:testDebugUnitTest     :management-app:testDebugUnitTest
+"$GRADLE_BIN" --offline --no-daemon clean     :app:testDebugUnitTest     :customer-display:testDebugUnitTest     :management-app:testDebugUnitTest
 
 echo "=== Kotlin compile ==="
-"$GRADLE_BIN" --no-daemon     :app:compileDebugKotlin     :customer-display:compileDebugKotlin     :management-app:compileDebugKotlin
+"$GRADLE_BIN" --offline --no-daemon     :app:compileDebugKotlin     :customer-display:compileDebugKotlin     :management-app:compileDebugKotlin
 
 echo "=== 3 APK build ==="
-"$GRADLE_BIN" --no-daemon     :app:assembleDebug     :customer-display:assembleDebug     :management-app:assembleDebug
+"$GRADLE_BIN" --offline --no-daemon     :app:assembleDebug     :customer-display:assembleDebug     :management-app:assembleDebug
 
-export POS_VERSION_CODE POS_VERSION_NAME PLUS_VERSION_CODE PLUS_VERSION_NAME BUILD_TOOLS_VERSION
+export POS_VERSION_CODE POS_VERSION_NAME PLUS_VERSION_CODE PLUS_VERSION_NAME CD_VERSION_CODE CD_VERSION_NAME BUILD_TOOLS_VERSION
 export APK_INTEGRITY_OUTPUT_DIR="$OUTPUT_DIR"
-bash ci/verify-apk-release-integrity.sh
+bash ci/local/verify-apks.sh
 
 HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || echo local)"
 HEAD_SHORT="$(printf '%s' "$HEAD_SHA" | cut -c1-8)"
