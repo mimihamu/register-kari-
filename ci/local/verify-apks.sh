@@ -13,7 +13,7 @@ fail(){ echo "LOCAL_APK_INTEGRITY_NG: $*" >&2; exit 1; }
 normalize_sha(){ tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]'; }
 attr(){
   local text="$1" key="$2"
-  sed -n "s/.*$key='\([^']*\)'.*/\1/p" <<<"$text" | head -n 1
+  sed -n "s/.*[[:space:]]$key='\([^']*\)'.*/\1/p" <<<"$text" | head -n 1
 }
 sdk_value(){
   local text="$1" key="$2"
@@ -37,7 +37,7 @@ verify_one(){
   actual_pkg="$(attr "$package_line" name)"
   actual_code="$(attr "$package_line" versionCode)"
   actual_name="$(attr "$package_line" versionName)"
-  min_sdk="$(sdk_value "$badging" sdkVersion)"
+  min_sdk="$(sdk_value "$badging" minSdkVersion)"
   target_sdk="$(sdk_value "$badging" targetSdkVersion)"
   launcher_count="$(grep -c '^launchable-activity:' <<<"$badging" || true)"
   launcher="$(sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" <<<"$badging" | head -n 1)"
