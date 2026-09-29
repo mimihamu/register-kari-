@@ -256,7 +256,9 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
 
         testJob = scope.launch {
             val configuration = withContext(Dispatchers.IO) {
-                AdminSettingsStore(context.applicationContext).use { it.loadPrinterConfiguration() }
+                PrinterProfileStoreV136(context.applicationContext).use {
+                    it.resolve(DocumentPrintKindV136.SALE_RECEIPT)
+                } ?: PrinterConfiguration(enabled = false)
             }
             if (!configuration.usable) {
                 running = false
@@ -284,7 +286,7 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
                 resultStore.start(plan, configuration, actor, startedAt)
             }
             recentRuns = withContext(Dispatchers.IO) { resultStore.listRecent(5) }
-            addLog("開始 ID=$activeRunId ${configuration.name} ${configuration.host}:${configuration.port}")
+            addLog("開始 ID=$activeRunId ${configuration.name} ${PrinterTransportPolicyV136.endpointDisplay(configuration)}")
 
             for (sequence in 1..plan.totalPrints) {
                 if (!isActive) return@launch
@@ -351,11 +353,12 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
                 )
                 val sentAt = System.currentTimeMillis()
                 val sendResult = withContext(Dispatchers.IO) {
-                    TcpEscPosPrinterGateway(
-                        host = configuration.host,
-                        port = configuration.port,
-                        timeoutMillis = configuration.timeoutMillis,
-                    ).send(payload)
+                    runCatching {
+                        PrinterGatewayFactoryV136.create(context.applicationContext, configuration)
+                    }.fold(
+                        onSuccess = { gateway -> gateway.send(payload) },
+                        onFailure = { error -> Result.failure(error) },
+                    )
                 }
                 if (sendResult.isFailure) {
                     val error = sendResult.exceptionOrNull() ?: IllegalStateException("印刷送信失敗")
