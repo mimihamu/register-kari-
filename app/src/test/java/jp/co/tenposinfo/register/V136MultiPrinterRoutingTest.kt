@@ -122,4 +122,40 @@ class V136MultiPrinterRoutingTest {
         assertTrue(schema.contains("ensureColumn(db, \"document_print_jobs\", \"printable_dot_width\""))
         assertFalse(schema.contains("DROP TABLE"))
     }
+
+    @Test
+    fun healthAndSoakUseReceiptRouteAndTransportAwareGateway() {
+        val health = File("src/main/java/jp/co/tenposinfo/register/PrinterHealthMonitor.kt").readText()
+        val soak = File("src/main/java/jp/co/tenposinfo/register/PrinterSoakTestActivity.kt").readText()
+        assertTrue(health.contains("it.resolve(DocumentPrintKindV136.SALE_RECEIPT)"))
+        assertTrue(health.contains("PrinterTransportPolicyV136.isConfigured(configuration)"))
+        assertTrue(health.contains("PrinterTransportPolicyV136.supportsRealtimeStatus(configuration)"))
+        assertFalse(health.contains("loadPrinterConfiguration()"))
+        assertTrue(soak.contains("it.resolve(DocumentPrintKindV136.SALE_RECEIPT)"))
+        assertTrue(soak.contains("PrinterGatewayFactoryV136.create(context.applicationContext, configuration)"))
+        assertFalse(soak.contains("TcpEscPosPrinterGateway("))
+        assertFalse(soak.contains("loadPrinterConfiguration()"))
+    }
+
+    @Test
+    fun tcpStatusToolsUseReceiptRouteAndRejectNonTcpRealtimeProbe() {
+        listOf("PrinterStatusActivity.kt", "PrinterStatusLabActivity.kt", "PrinterStatusProbeActivity.kt").forEach { fileName ->
+            val source = File("src/main/java/jp/co/tenposinfo/register/$fileName").readText()
+            assertTrue(source.contains("PrinterProfileStoreV136(context.applicationContext)"), fileName)
+            assertTrue(source.contains("profileStore.resolve(DocumentPrintKindV136.SALE_RECEIPT)"), fileName)
+            assertTrue(source.contains("PrinterTransportPolicyV136.supportsRealtimeStatus(configuration)"), fileName)
+            assertTrue(source.contains("PrinterTransportPolicyV136.isConfigured(configuration)"), fileName)
+            assertFalse(source.contains("loadPrinterConfiguration()"), fileName)
+        }
+    }
+
+    @Test
+    fun unifiedQueueStatusPanelIsTransportAware() {
+        val source = File("src/main/java/jp/co/tenposinfo/register/UnifiedPrintQueueActivity.kt").readText()
+        assertTrue(source.contains("PrinterTransportPolicyV136.endpointDisplay(configuration)"))
+        assertTrue(source.contains("PrinterTransportPolicyV136.isConfigured(configuration)"))
+        assertTrue(source.contains("PrinterTransportPolicyV136.supportsRealtimeStatus(configuration)"))
+        assertFalse(source.contains("enabled = !working && configuration.host.isNotBlank()"))
+    }
+
 }
