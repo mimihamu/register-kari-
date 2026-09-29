@@ -62,7 +62,7 @@ object OperationDocumentRenderer {
         lines += fit("理由 ${data.reason}", width)
         lines += separator(width, '-')
         data.items.forEach { item ->
-            lines += fit("${item.product.name} [${item.product.taxSymbol}]", width)
+            lines.addAll(ReceiptLineWrapV136.wrap("${item.product.name} [${item.product.taxSymbol}]", width))
             lines += amountLine("-${item.quantity} × ${yen(item.unitPrice)}", "-${yen(item.baseAmount)}", width)
             if (item.discountAmount > 0) lines += amountLine("  元値引配賦", yen(item.discountAmount), width)
         }
@@ -185,8 +185,12 @@ object OperationDocumentRenderer {
 
     private fun amountLine(label: String, amount: String, width: Int): String {
         val amountWidth = displayWidth(amount)
-        val labelWidth = (width - amountWidth - 1).coerceAtLeast(1)
-        return padRight(fit(label, labelWidth), labelWidth) + " " + amount
+        require(amountWidth <= width) { "金額が印字幅を超えています: $amount" }
+        if (displayWidth(label) + 1 + amountWidth > width) {
+            return ReceiptLineWrapV136.wrap(label, width).joinToString("\n") +
+                "\n" + " ".repeat((width - amountWidth).coerceAtLeast(0)) + amount
+        }
+        return padRight(label, width - amountWidth - 1) + " " + amount
     }
 
     private fun center(value: String, width: Int): String {
@@ -195,21 +199,11 @@ object OperationDocumentRenderer {
         return " ".repeat(left) + fitted
     }
 
-    private fun fit(value: String, width: Int): String {
-        val result = StringBuilder()
-        var used = 0
-        value.forEach { char ->
-            val charWidth = if (char.code <= 0xFF) 1 else 2
-            if (used + charWidth <= width) {
-                result.append(char)
-                used += charWidth
-            }
-        }
-        return result.toString()
-    }
+    private fun fit(value: String, width: Int): String =
+        ReceiptLineWrapV136.wrap(value, width).firstOrNull().orEmpty()
 
     private fun padRight(value: String, width: Int): String = value + " ".repeat((width - displayWidth(value)).coerceAtLeast(0))
-    private fun displayWidth(value: String): Int = value.sumOf { if (it.code <= 0xFF) 1 else 2 }
+    private fun displayWidth(value: String): Int = ReceiptLineWrapV136.displayWidth(value)
 }
 
 object TextEscPosEncoder {
