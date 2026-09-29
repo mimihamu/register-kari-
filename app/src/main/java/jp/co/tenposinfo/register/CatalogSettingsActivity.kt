@@ -378,6 +378,7 @@ private fun ProductMasterScreen(
     var productId by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     var kana by remember { mutableStateOf("") }
+    var receiptShortName by remember { mutableStateOf("") }
     var barcode by remember(initialBarcode) { mutableStateOf(initialBarcode) }
     var price by remember { mutableStateOf("0") }
     var tax by remember { mutableStateOf(TaxCategory.INCLUDED_10) }
@@ -393,6 +394,7 @@ private fun ProductMasterScreen(
         productId = selected?.productId.orEmpty()
         name = selected?.name.orEmpty()
         kana = selected?.kana.orEmpty()
+        receiptShortName = selected?.receiptShortName.orEmpty()
         barcode = selected?.barcode ?: initialBarcode
         price = selected?.basePrice?.toString() ?: "0"
         tax = selected?.baseTaxCategory ?: TaxCategory.INCLUDED_10
@@ -425,6 +427,7 @@ private fun ProductMasterScreen(
             Spacer(Modifier.height(10.dp))
             MasterField(productId, { productId = it }, "商品コード", enabled = selected == null)
             MasterField(name, { name = it }, "商品名")
+            MasterField(receiptShortName, { receiptShortName = it.take(60) }, "レシート用短縮名（任意）")
             MasterField(kana, { kana = it.take(60) }, "かな（検索用・任意）")
             MasterField(barcode, { barcode = it.filterNot(Char::isWhitespace).take(64) }, "バーコード（任意・一意）")
             MasterField(price, { price = it.filter(Char::isDigit).take(8) }, "基準価格（円）", KeyboardType.Number)
@@ -466,6 +469,7 @@ private fun ProductMasterScreen(
                         actor = actor,
                         kana = kana,
                         barcode = barcode,
+                        receiptShortName = receiptShortName,
                     )
                     onSaved()
                     selected = null
