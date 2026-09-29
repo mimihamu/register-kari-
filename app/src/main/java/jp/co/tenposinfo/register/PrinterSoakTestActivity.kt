@@ -268,6 +268,14 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
                 addLog(statusMessage)
                 return@launch
             }
+            if (!PrinterTransportPolicyV136.supportsRealtimeStatus(configuration)) {
+                running = false
+                testJob = null
+                statusMessage = "連続印刷試験はTCP/LAN接続の状態取得対応プリンターで実行してください"
+                statusColor = StRed
+                addLog("開始拒否：$statusMessage / ${configuration.connectionType.displayName}")
+                return@launch
+            }
             val capabilityDecision = PrinterSoakTestCapabilityPolicy.evaluate(
                 profile = configuration.profile,
                 statusProtocol = configuration.profile.statusProtocol,
