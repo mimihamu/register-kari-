@@ -192,8 +192,12 @@ internal object ReceiptVoucherRenderer {
 
     private fun amountLine(label: String, amount: String, width: Int): String {
         val amountWidth = displayWidth(amount)
-        val labelWidth = (width - amountWidth - 1).coerceAtLeast(1)
-        return padRight(fit(label, labelWidth), labelWidth) + " " + amount
+        require(amountWidth <= width) { "金額が印字幅を超えています: $amount" }
+        if (displayWidth(label) + 1 + amountWidth > width) {
+            return ReceiptLineWrapV136.wrap(label, width).joinToString("\n") +
+                "\n" + " ".repeat((width - amountWidth).coerceAtLeast(0)) + amount
+        }
+        return padRight(label, width - amountWidth - 1) + " " + amount
     }
 
     private fun center(value: String, width: Int): String {
