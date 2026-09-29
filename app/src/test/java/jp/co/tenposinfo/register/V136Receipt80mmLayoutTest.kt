@@ -24,7 +24,7 @@ class V136Receipt80mmLayoutTest {
         val amountLine = rendered.lineSequence().first { it.contains("29,629,629") }
 
         assertEquals(48, ReceiptPaper.MM80.charsPerLine)
-        assertTrue(compact.contains("$name [外※]"))
+        assertTrue(compact.contains(name))\n        assertTrue(rendered.lineSequence().any { it.trimEnd().endsWith("外※") })
         assertTrue(amountLine.trimEnd().endsWith("29,629,629"))
         rendered.lineSequence().forEach { line ->
             assertTrue("80mm line exceeds 48 columns: $line", ReceiptLineWrapV136.displayWidth(line) <= 48)
@@ -81,7 +81,7 @@ class V136Receipt80mmLayoutTest {
             assertTrue("80mm missing $token", compact80.contains(token))
         }
 
-        text58.lineSequence().forEach { assertTrue(ReceiptLineWrapV136.displayWidth(it) <= 32) }
+        assertTrue(text80.lineSequence().any { it.trimEnd().endsWith("内") })\n        assertTrue(text80.lineSequence().any { it.trimEnd().endsWith("外※") })\n        text58.lineSequence().forEach { assertTrue(ReceiptLineWrapV136.displayWidth(it) <= 32) }
         text80.lineSequence().forEach { assertTrue(ReceiptLineWrapV136.displayWidth(it) <= 48) }
     }
 
