@@ -109,4 +109,43 @@ class V136Receipt58mmLayoutTest {
         }
     }
 
+
+    @Test
+    fun receiptShortNameIsUsedOnlyWhenFullNameExceedsTwoLines() {
+        val longName = "超特大北海道産海鮮ぜいたく盛り合わせ本まぐろ中とろうにいくらかに帆立入り宴会限定商品"
+        val shortName = "海鮮ぜいたく盛り"
+        val product = Product(
+            id = "SHORT-001",
+            name = longName,
+            unitPrice = 1_000L,
+            taxCategory = TaxCategory.INCLUDED_10,
+            displayOrder = 1,
+            receiptShortName = shortName,
+        )
+        val rendered = ReceiptRenderer.render(receiptData(CartItem(product = product, quantity = 1)), ReceiptPaper.MM58)
+
+        assertTrue(rendered.contains("$shortName [内]"))
+        assertTrue(!rendered.contains(longName))
+        assertTrue(rendered.contains("1 ×"))
+        assertTrue(rendered.contains("1,000"))
+    }
+
+    @Test
+    fun longNameWithoutShortNameMayUseThreeOrMoreLinesWithoutLoss() {
+        val name = "超特大北海道産海鮮ぜいたく盛り合わせ本まぐろ中とろうにいくらかに帆立入り宴会限定商品"
+        val product = Product(
+            id = "LONG-003",
+            name = name,
+            unitPrice = 1_000L,
+            taxCategory = TaxCategory.INCLUDED_10,
+            displayOrder = 1,
+        )
+        val rendered = ReceiptRenderer.render(receiptData(CartItem(product = product, quantity = 1)), ReceiptPaper.MM58)
+        val compact = rendered.replace("\n", "")
+
+        assertTrue(compact.contains("$name [内]"))
+        assertTrue(rendered.contains("1 ×"))
+        assertTrue(rendered.contains("1,000"))
+    }
+
 }
