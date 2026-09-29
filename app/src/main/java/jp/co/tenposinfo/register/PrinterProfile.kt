@@ -74,6 +74,7 @@ object PrinterCommandEncoder {
         configuration: PrinterConfiguration,
         openDrawer: Boolean = false,
         appendCut: Boolean = true,
+        trustedEmbeddedCommands: Boolean = false,
     ): ByteArray {
         val output = ByteArrayOutputStream()
         output.write(beginDocument(configuration))
@@ -86,7 +87,7 @@ object PrinterCommandEncoder {
                 ),
             )
         }
-        val encodedText = if (containsInternalEscPosCommands(text)) {
+        val encodedText = if (trustedEmbeddedCommands) {
             // Diagnostic/QR/raster documents contain app-generated binary ESC/POS commands.
             // Never run those bytes through user-text control filtering.
             text
@@ -123,9 +124,6 @@ object PrinterCommandEncoder {
         output.write(byteArrayOf(0x1B, 0x61, 0x00))
         return output.toByteArray()
     }
-
-    private fun containsInternalEscPosCommands(text: String): Boolean =
-        text.indexOf('\u001B') >= 0 || text.indexOf('\u001D') >= 0 || text.indexOf('\u001C') >= 0
 
     fun drawerOnly(configuration: PrinterConfiguration): ByteArray {
         require(configuration.drawerEnabled) { "ドロア設定が無効です" }
