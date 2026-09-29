@@ -337,7 +337,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     },
                 )
             }
-            ReceiptProductNameSnapshotV136.save(this, saleId, items)\n            paymentState.allocations.forEachIndexed { index, payment ->
+            ReceiptProductNameSnapshotV136.save(this, saleId, items)
+            paymentState.allocations.forEachIndexed { index, payment ->
                 insertOrThrow(
                     "sale_payments",
                     null,
