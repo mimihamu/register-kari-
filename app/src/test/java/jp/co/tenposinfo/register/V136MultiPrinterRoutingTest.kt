@@ -133,6 +133,8 @@ class V136MultiPrinterRoutingTest {
         assertFalse(health.contains("loadPrinterConfiguration()"))
         assertTrue(soak.contains("it.resolve(DocumentPrintKindV136.SALE_RECEIPT)"))
         assertTrue(soak.contains("PrinterGatewayFactoryV136.create(context.applicationContext, configuration)"))
+        assertTrue(soak.contains("PrinterTransportPolicyV136.supportsRealtimeStatus(configuration)"))
+        assertTrue(soak.contains("連続印刷試験はTCP/LAN接続の状態取得対応プリンターで実行してください"))
         assertFalse(soak.contains("TcpEscPosPrinterGateway("))
         assertFalse(soak.contains("loadPrinterConfiguration()"))
     }
