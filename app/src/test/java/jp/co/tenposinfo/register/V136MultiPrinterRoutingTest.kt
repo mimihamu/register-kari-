@@ -195,4 +195,15 @@ class V136MultiPrinterRoutingTest {
         assertTrue(activity.contains("store.testFourDocuments(it)"))
         assertTrue(activity.contains("4文書テスト"))
     }
+
+    @Test
+    fun documentQueueListingPreservesFrozenPrinterRoute() {
+        val source = File("src/main/java/jp/co/tenposinfo/register/AdvancedOperationsStore.kt").readText()
+        val listBody = source.substringAfter("fun listDocumentPrintJobs").substringBefore("fun loadDocumentPrintJob")
+        assertTrue(listBody.contains("result += cursor.toDocumentPrintJob()"))
+        assertFalse(listBody.contains("DocumentPrintJobRecord("))
+        assertTrue(source.contains("printerId = getString(10)"))
+        assertTrue(source.contains("printableDotWidth = getInt(11)"))
+    }
+
 }
