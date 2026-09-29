@@ -39,7 +39,7 @@ class V136Scr720PrinterTest {
             append('\n')
             append(PrinterProfilePrintabilityV136.diagnosticText())
         }
-        val payload = PrinterCommandEncoder.encodeText(controlText, configuration, appendCut = true)
+        val payload = PrinterCommandEncoder.encodeText(controlText, configuration, appendCut = true, trustedEmbeddedCommands = true)
 
         val raster = byteArrayOf(0x1D, 0x76, 0x30, 0x00)
         val qr = byteArrayOf(0x1D, 0x28, 0x6B)
