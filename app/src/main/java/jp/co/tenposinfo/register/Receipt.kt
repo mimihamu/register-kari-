@@ -245,8 +245,14 @@ object ReceiptRenderer {
 
     private fun amountLine(label: String, amount: String, width: Int): String {
         val amountWidth = displayWidth(amount)
-        val labelWidth = (width - amountWidth - 1).coerceAtLeast(1)
-        return padRight(fit(label, labelWidth), labelWidth) + " " + amount
+        require(amountWidth <= width) { "金額が印字幅を超えています: $amount" }
+        if (displayWidth(label) + 1 + amountWidth > width) {
+            // Formal v2.5 §16.3: never truncate the label to make room for an amount.
+            // On narrow paper, preserve both by placing the right-aligned amount on the next line.
+            return ReceiptLineWrapV136.wrap(label, width).joinToString("\n") +
+                "\n" + " ".repeat((width - amountWidth).coerceAtLeast(0)) + amount
+        }
+        return padRight(label, width - amountWidth - 1) + " " + amount
     }
 
     private fun separator(width: Int, char: Char): String = char.toString().repeat(width)
