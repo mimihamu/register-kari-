@@ -59,6 +59,32 @@ class V136PrintDeliveryResultTest {
     }
 
     @Test
+    fun usbAndBluetoothEpsonAreAcceptedWithoutTcpStatusQuery() {
+        listOf(
+            PrinterConnectionType.USB to PrinterConfiguration(
+                enabled = true,
+                profile = PrinterProfile.EPSON_TM_JAPAN,
+                connectionType = PrinterConnectionType.USB,
+                usbDeviceName = "usb-epson",
+            ),
+            PrinterConnectionType.BLUETOOTH to PrinterConfiguration(
+                enabled = true,
+                profile = PrinterProfile.EPSON_TM_JAPAN,
+                connectionType = PrinterConnectionType.BLUETOOTH,
+                bluetoothAddress = "00:11:22:33:44:55",
+            ),
+        ).forEach { (type, configuration) ->
+            var queried = false
+            val result = PrintDeliveryConfirmationPolicyV136.confirm(configuration) {
+                queried = true
+                Result.success(healthyStatus())
+            }
+            assertFalse(type.displayName, queried)
+            assertEquals(type.displayName, PrintDeliveryResultV136.ACCEPTED, result.getOrThrow())
+        }
+    }
+
+    @Test
     fun blockingPostSendStatusRequiresManualConfirmationInsteadOfRetry() {
         val result = PrintDeliveryConfirmationPolicyV136.confirm(enabled(PrinterProfile.EPSON_TM_JAPAN)) {
             Result.success(healthyStatus().copy(paperOut = true))
