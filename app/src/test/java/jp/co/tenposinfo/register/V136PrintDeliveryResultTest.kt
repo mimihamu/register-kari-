@@ -61,16 +61,16 @@ class V136PrintDeliveryResultTest {
     @Test
     fun usbAndBluetoothEpsonAreAcceptedWithoutTcpStatusQuery() {
         listOf(
-            PrinterConnectionType.USB to PrinterConfiguration(
+            PrinterConnectionTypeV136.USB to PrinterConfiguration(
                 enabled = true,
                 profile = PrinterProfile.EPSON_TM_JAPAN,
-                connectionType = PrinterConnectionType.USB,
+                connectionType = PrinterConnectionTypeV136.USB,
                 usbDeviceName = "usb-epson",
             ),
-            PrinterConnectionType.BLUETOOTH to PrinterConfiguration(
+            PrinterConnectionTypeV136.BLUETOOTH to PrinterConfiguration(
                 enabled = true,
                 profile = PrinterProfile.EPSON_TM_JAPAN,
-                connectionType = PrinterConnectionType.BLUETOOTH,
+                connectionType = PrinterConnectionTypeV136.BLUETOOTH,
                 bluetoothAddress = "00:11:22:33:44:55",
             ),
         ).forEach { (type, configuration) ->
