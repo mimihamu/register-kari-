@@ -97,4 +97,14 @@ class V136DocumentPrintPreviewTest {
         assertTrue(source.contains("previewPaper = ReceiptPaper.MM80"))
         assertTrue(source.contains("DocumentPrintPreviewV136.render(selected, draftSetting, previewPaper)"))
     }
+
+    @Test
+    fun operationPreviewsUseProductionRenderersNotPrinterTestSamples() {
+        val source = File("src/main/java/jp/co/tenposinfo/register/DocumentPrintPreviewV136.kt").readText()
+        assertTrue(source.contains("ReceiptVoucherRenderer.render("))
+        assertTrue(source.contains("HeldTicketProvisionalReceiptRendererV135.render("))
+        assertTrue(source.contains("OperationDocumentRenderer.renderSettlement("))
+        assertTrue(!source.contains("PrinterPaperWidthTestV136.buildDocument("))
+    }
+
 }
