@@ -94,6 +94,7 @@ object PrinterCommandEncoder {
                 "PrinterTextSafety",
                 "unsupported/replaced printer text original=${substitution.original} replacement=${substitution.replacement} charset=${configuration.profile.charsetName}",
             )
+            PrinterTextAuditV136.record(substitution, configuration.profile.charsetName)
         }
         output.write(safeText.text.toByteArray(Charset.forName(configuration.profile.charsetName)))
         if (appendCut) {
