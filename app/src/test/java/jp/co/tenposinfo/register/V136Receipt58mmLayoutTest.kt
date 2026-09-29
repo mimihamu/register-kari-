@@ -70,4 +70,19 @@ class V136Receipt58mmLayoutTest {
         payments = emptyList(),
         changeAmount = 0L,
     )
+
+    @Test
+    fun wrappingDoesNotSplitSurrogatePairsOrCombiningGraphemes() {
+        val source = "商品😀e\u0301テスト商品😀e\u0301テスト"
+        val lines = ReceiptLineWrapV136.wrap(source, 10)
+
+        assertEquals(source, lines.joinToString(""))
+        lines.forEach { line ->
+            assertTrue("line exceeds width: $line", ReceiptLineWrapV136.displayWidth(line) <= 10)
+            assertTrue("line starts with combining mark: $line", line.firstOrNull() != '\u0301')
+            assertTrue("line ends with high surrogate: $line", line.lastOrNull()?.isHighSurrogate() != true)
+            assertTrue("line starts with low surrogate: $line", line.firstOrNull()?.isLowSurrogate() != true)
+        }
+    }
+
 }
