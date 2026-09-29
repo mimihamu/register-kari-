@@ -78,22 +78,13 @@ internal object HeldTicketProvisionalReceiptRendererV135 {
         return " ".repeat(left) + fitted
     }
 
-    private fun fit(value: String, width: Int): String {
-        val out = StringBuilder()
-        var used = 0
-        for (char in value) {
-            val charWidth = if (char.code <= 0xFF) 1 else 2
-            if (used + charWidth > width) break
-            out.append(char)
-            used += charWidth
-        }
-        return out.toString()
-    }
+    private fun fit(value: String, width: Int): String =
+        ReceiptLineWrapV136.wrap(value, width).firstOrNull().orEmpty()
 
     private fun padRight(value: String, width: Int): String =
         value + " ".repeat((width - displayWidth(value)).coerceAtLeast(0))
 
-    private fun displayWidth(value: String): Int = value.sumOf { if (it.code <= 0xFF) 1 else 2 }
+    private fun displayWidth(value: String): Int = ReceiptLineWrapV136.displayWidth(value)
 
     private fun yen(amount: Long): String = NumberFormat.getCurrencyInstance(Locale.JAPAN).format(amount)
 }
