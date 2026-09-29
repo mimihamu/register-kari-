@@ -44,4 +44,18 @@ class V136UnicodeDocumentRendererTest {
         assertFalse(renderer.contains("padRight(fit(label, labelWidth), labelWidth)"))
     }
 
+
+    @Test
+    fun reversalAndSettlementUseSharedUnicodeWidthAndNonTruncatingAmounts() {
+        val source = File("src/main/java/jp/co/tenposinfo/register/OperationDocuments.kt").readText()
+        val renderer = source.substringAfter("object OperationDocumentRenderer").substringBefore("object TextEscPosEncoder")
+        assertTrue(renderer.contains("ReceiptLineWrapV136.wrap(value, width)"))
+        assertTrue(renderer.contains("ReceiptLineWrapV136.displayWidth(value)"))
+        assertTrue(renderer.contains("ReceiptLineWrapV136.wrap(label, width).joinToString"))
+        assertTrue(renderer.contains("lines.addAll(ReceiptLineWrapV136.wrap("))
+        assertFalse(renderer.contains("value.forEach { char"))
+        assertFalse(renderer.contains("value.sumOf { if (it.code <= 0xFF)"))
+        assertFalse(renderer.contains("padRight(fit(label, labelWidth), labelWidth)"))
+    }
+
 }
