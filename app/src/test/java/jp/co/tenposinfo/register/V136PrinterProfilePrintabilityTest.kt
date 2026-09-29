@@ -35,7 +35,7 @@ class V136PrinterProfilePrintabilityTest {
             cutMode = PrinterCutMode.PARTIAL,
         )
         val text = PrinterPaperWidthTestV136.buildAll(ReceiptPaper.MM80, "2026-08-23T00:00:00Z")
-        val payload = PrinterCommandEncoder.encodeText(text, configuration, appendCut = true)
+        val payload = PrinterCommandEncoder.encodeText(text, configuration, appendCut = true, trustedEmbeddedCommands = true)
 
         val qrStorePrefix = byteArrayOf(0x1D, 0x28, 0x6B, 0x19, 0x00, 0x31, 0x50, 0x30)
         val qrPrint = byteArrayOf(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30)
