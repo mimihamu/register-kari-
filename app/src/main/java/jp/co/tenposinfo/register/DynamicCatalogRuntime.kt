@@ -596,6 +596,7 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
                         buttonColor = snapshot.buttonColor,
                         pageNo = snapshot.pageNo,
                         slotNo = snapshot.slotNo,
+                        receiptShortName = metadata[snapshot.productId]?.receiptShortName.orEmpty(),
                     ).withLegacyTaxCategory(snapshot.legacyTaxCategory)
                     TaxSnapshot(
                         snapshot.taxKey, snapshot.taxLabel, snapshot.taxRatePercent, snapshot.taxIncluded,
