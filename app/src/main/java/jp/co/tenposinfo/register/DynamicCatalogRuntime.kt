@@ -614,6 +614,7 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
                 buttonColor = meta.buttonColor,
                 pageNo = meta.pageNo,
                 slotNo = meta.slotNo,
+                receiptShortName = meta.receiptShortName,
             )
             val key = assignments[product.id] ?: product.taxKey
             rules[key]?.takeIf { it.isEffective(date) }?.applyTo(positioned) ?: positioned
