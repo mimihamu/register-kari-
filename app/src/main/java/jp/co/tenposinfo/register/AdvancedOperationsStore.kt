@@ -738,18 +738,9 @@ class AdvancedOperationsStore(context: Context) {
     ).use { cursor ->
         val result = mutableListOf<DocumentPrintJobRecord>()
         while (cursor.moveToNext()) {
-            result += DocumentPrintJobRecord(
-                id = cursor.getLong(0),
-                documentType = OperationDocumentType.valueOf(cursor.getString(1)),
-                referenceId = cursor.getLong(2),
-                paperWidthMm = cursor.getInt(3),
-                status = PrintJobStatus.valueOf(cursor.getString(4)),
-                attemptCount = cursor.getInt(5),
-                lastError = if (cursor.isNull(6)) null else cursor.getString(6),
-                payloadText = cursor.getString(7),
-                createdAt = cursor.getLong(8),
-                updatedAt = cursor.getLong(9),
-            )
+            // Keep the frozen printer route when listing jobs for the unified queue.
+            // Reconstructing only the legacy columns silently falls back to printer-1/standard dot width.
+            result += cursor.toDocumentPrintJob()
         }
         result
     }
