@@ -50,6 +50,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         SaleTaxSnapshotStoreV136.ensureSchema(db)
         PrintDocumentSnapshotSchemaV136.ensureSale(db)
         PrinterJobRouteSchemaV136.ensureSale(db)
+        ReceiptProductNameSnapshotV136.ensureSchema(db)
     }
 
     fun loadProducts(): List<Product> {
@@ -336,7 +337,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     },
                 )
             }
-            paymentState.allocations.forEachIndexed { index, payment ->
+            ReceiptProductNameSnapshotV136.save(this, saleId, items)\n            paymentState.allocations.forEachIndexed { index, payment ->
                 insertOrThrow(
                     "sale_payments",
                     null,
@@ -525,7 +526,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             }
             result
         }
-        val snapshotItems = LineTaxSnapshotStore.apply(readableDatabase, LineTaxSnapshotStore.SCOPE_SALE, saleId, items)
+        val taxSnapshotItems = LineTaxSnapshotStore.apply(readableDatabase, LineTaxSnapshotStore.SCOPE_SALE, saleId, items)
+        val snapshotItems = ReceiptProductNameSnapshotV136.apply(readableDatabase, saleId, taxSnapshotItems)
         val saleTaxSnapshot = SaleTaxSnapshotStoreV136.load(readableDatabase, saleId)
         return SaleDetailRecord(
             summary = summary,
