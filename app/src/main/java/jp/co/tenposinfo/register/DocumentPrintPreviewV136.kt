@@ -59,10 +59,9 @@ object DocumentPrintPreviewPolicyV136 {
 /**
  * Formal v2.5 SCR-640 / §16.2 print preview.
  *
- * Sale-receipt preview deliberately uses the production ReceiptRenderer so that
- * the screen does not maintain a second receipt-layout implementation. Other
- * operation documents use the same 58/80 logical-width policy and the existing
- * four-document printer-test samples until their dedicated renderers are selected.
+ * Preview uses the same production renderer as the corresponding printed document
+ * wherever a dedicated renderer exists. This prevents screen-only templates from
+ * drifting from the 58/80mm production layout.
  */
 object DocumentPrintPreviewV136 {
     private const val PREVIEW_CREATED_AT = 1_767_225_600_000L // 2026-01-01T00:00:00Z; deterministic preview
@@ -78,25 +77,10 @@ object DocumentPrintPreviewV136 {
         }
         val document = when (kind) {
             DocumentPrintKindV136.SALE_RECEIPT -> renderSaleReceipt(setting, paper)
-            DocumentPrintKindV136.RECEIPT_VOUCHER -> renderOperationDocument(
-                kind,
-                PrinterPaperTestDocumentV136.RECEIPT_VOUCHER,
-                setting,
-                paper,
-            )
-            DocumentPrintKindV136.PROVISIONAL_RECEIPT -> renderOperationDocument(
-                kind,
-                PrinterPaperTestDocumentV136.PROVISIONAL_RECEIPT,
-                setting,
-                paper,
-            )
-            DocumentPrintKindV136.SETTLEMENT -> renderOperationDocument(
-                kind,
-                PrinterPaperTestDocumentV136.SETTLEMENT,
-                setting,
-                paper,
-            )
-            DocumentPrintKindV136.INSPECTION -> renderInspection(setting, paper)
+            DocumentPrintKindV136.RECEIPT_VOUCHER -> renderReceiptVoucher(setting, paper)
+            DocumentPrintKindV136.PROVISIONAL_RECEIPT -> renderProvisionalReceipt(setting, paper)
+            DocumentPrintKindV136.SETTLEMENT -> renderSettlement(setting, paper, SettlementReportType.Z_SETTLEMENT)
+            DocumentPrintKindV136.INSPECTION -> renderSettlement(setting, paper, SettlementReportType.X_INSPECTION)
         }
         return (DocumentPrintPreviewPolicyV136.statusLines(state, paper) + document.lines())
             .joinToString("\n")
@@ -151,31 +135,92 @@ object DocumentPrintPreviewV136 {
         return ReceiptRenderer.render(data, paper)
     }
 
-    private fun renderOperationDocument(
-        kind: DocumentPrintKindV136,
-        sample: PrinterPaperTestDocumentV136,
+    private fun renderReceiptVoucher(
         setting: DocumentPrintSettingV136,
         paper: ReceiptPaper,
     ): String {
-        val body = PrinterPaperWidthTestV136.buildDocument(sample, paper).trimEnd()
+        val body = ReceiptVoucherRenderer.render(
+            ReceiptVoucherDocumentData(
+                issuanceId = 123L,
+                saleId = 100L,
+                sequenceNo = 1,
+                sequenceCount = 1,
+                amount = 12_345L,
+                addressee = "サンプル株式会社",
+                purpose = "お食事代",
+                operatorName = "担当者",
+                issuedAt = PREVIEW_CREATED_AT,
+                issuer = previewIssuer(),
+            ),
+            paper,
+        )
+        return decorateAndWrap(DocumentPrintKindV136.RECEIPT_VOUCHER, body, setting, paper)
+    }
+
+    private fun renderProvisionalReceipt(
+        setting: DocumentPrintSettingV136,
+        paper: ReceiptPaper,
+    ): String {
+        val ticket = HeldTicket(
+            id = 123L,
+            name = "テーブル1",
+            createdAt = PREVIEW_CREATED_AT,
+            operatorName = "担当者",
+            guestCount = 2,
+        )
+        val items = listOf(
+            CartItem(
+                product = Product("PREVIEW-10", "通常商品サンプル", 1_100L, TaxCategory.INCLUDED_10, 1),
+                quantity = 2,
+            ),
+        )
+        val body = HeldTicketProvisionalReceiptRendererV135.render(ticket, items, paper)
+        return decorateAndWrap(DocumentPrintKindV136.PROVISIONAL_RECEIPT, body, setting, paper)
+    }
+
+    private fun renderSettlement(
+        setting: DocumentPrintSettingV136,
+        paper: ReceiptPaper,
+        type: SettlementReportType,
+    ): String {
+        val body = OperationDocumentRenderer.renderSettlement(
+            SettlementDocumentData(
+                reportId = 0L,
+                businessDate = "2026-01-01",
+                type = type,
+                createdAt = PREVIEW_CREATED_AT,
+                operatorName = "担当者",
+                salesGross = 12_345L,
+                reversalGross = 0L,
+                netSales = 12_345L,
+                openingCash = 10_000L,
+                cashIn = 0L,
+                cashOut = 0L,
+                expectedCash = 22_345L,
+                actualCash = 22_345L,
+                variance = 0L,
+                transactionCount = 3,
+                reversalCount = 0,
+                pendingPrints = 0,
+                heldTickets = 0,
+                paymentTotals = listOf(PaymentTotal(PaymentMethod.CASH.name, 12_345L)),
+            ),
+            paper,
+        )
+        val kind = if (type == SettlementReportType.Z_SETTLEMENT) {
+            DocumentPrintKindV136.SETTLEMENT
+        } else {
+            DocumentPrintKindV136.INSPECTION
+        }
         return decorateAndWrap(kind, body, setting, paper)
     }
 
-    private fun renderInspection(
-        setting: DocumentPrintSettingV136,
-        paper: ReceiptPaper,
-    ): String {
-        val separator = "-".repeat(paper.charsPerLine)
-        val body = buildString {
-            append("[点検票] ${paper.widthMm}mm / ${paper.charsPerLine}桁\n")
-            append(separator).append('\n')
-            append("点検売上  ¥12,345\n")
-            append("現金       ¥6,789\n")
-            append("点検は締め処理を行いません\n")
-            append(separator)
-        }
-        return decorateAndWrap(DocumentPrintKindV136.INSPECTION, body, setting, paper)
-    }
+    private fun previewIssuer(): InvoiceIssuerProfile = InvoiceIssuerProfile(
+        storeName = "つぐレジ プレビュー店",
+        address = "埼玉県越谷市サンプル1-2-3",
+        phone = "048-000-0000",
+        registrationNumber = "T1234567890123",
+    )
 
     private fun decorateAndWrap(
         kind: DocumentPrintKindV136,
