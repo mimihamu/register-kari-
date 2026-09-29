@@ -189,7 +189,7 @@ class V136MultiPrinterRoutingTest {
         val activity = File("src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt").readText()
         assertTrue(store.contains("fun testFourDocuments(configuration: PrinterConfiguration)"))
         listOf("販売レシート", "領収書", "仮締め票", "精算票").forEach {
-            assertTrue(it, store.contains("\\\"$it\\\""))
+            assertTrue(it, store.contains("\"$it\""))
         }
         assertTrue(store.contains("PrinterPaperWidthTestV136.buildAll(paper, now)"))
         assertTrue(activity.contains("store.testFourDocuments(it)"))
