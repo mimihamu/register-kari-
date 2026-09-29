@@ -182,4 +182,17 @@ class V136MultiPrinterRoutingTest {
         assertTrue(source.contains("put(\"printable_dot_width\", row[5] as Int)"))
     }
 
+
+    @Test
+    fun printerSettingsExposeFormalFourDocumentPaperWidthTest() {
+        val store = File("src/main/java/jp/co/tenposinfo/register/AdminSettingsStore.kt").readText()
+        val activity = File("src/main/java/jp/co/tenposinfo/register/AdminSettingsActivity.kt").readText()
+        assertTrue(store.contains("fun testFourDocuments(configuration: PrinterConfiguration)"))
+        listOf("販売レシート", "領収書", "仮締め票", "精算票").forEach {
+            assertTrue(it, store.contains("\\\"$it\\\""))
+        }
+        assertTrue(store.contains("PrinterPaperWidthTestV136.buildAll(paper, now)"))
+        assertTrue(activity.contains("store.testFourDocuments(it)"))
+        assertTrue(activity.contains("4文書テスト"))
+    }
 }
