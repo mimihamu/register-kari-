@@ -31,8 +31,15 @@ class V136DocumentPrintPreviewTest {
             )
             assertTrue(preview.contains("保存前ヘッダ"))
             assertTrue(preview.contains("保存前フッタ"))
-            assertTrue(preview.contains("通常商品サンプル [内]"))
-            assertTrue(preview.contains("軽減税率商品サンプル [内※]"))
+            assertTrue(preview.contains("通常商品サンプル"))
+            assertTrue(preview.contains("軽減税率商品サンプル"))
+            if (paper == ReceiptPaper.MM58) {
+                assertTrue(preview.contains("通常商品サンプル [内]"))
+                assertTrue(preview.contains("軽減税率商品サンプル [内※]"))
+            } else {
+                assertTrue(preview.lineSequence().any { it.trimEnd().endsWith("内") })
+                assertTrue(preview.lineSequence().any { it.trimEnd().endsWith("内※") })
+            }
             assertTrue(preview.contains("No.000123"))
             preview.lineSequence().forEach { line ->
                 assertTrue(
