@@ -143,11 +143,11 @@ class V136MultiPrinterRoutingTest {
     fun tcpStatusToolsUseReceiptRouteAndRejectNonTcpRealtimeProbe() {
         listOf("PrinterStatusActivity.kt", "PrinterStatusLabActivity.kt", "PrinterStatusProbeActivity.kt").forEach { fileName ->
             val source = File("src/main/java/jp/co/tenposinfo/register/$fileName").readText()
-            assertTrue(source.contains("PrinterProfileStoreV136(context.applicationContext)"), fileName)
-            assertTrue(source.contains("profileStore.resolve(DocumentPrintKindV136.SALE_RECEIPT)"), fileName)
-            assertTrue(source.contains("PrinterTransportPolicyV136.supportsRealtimeStatus(configuration)"), fileName)
-            assertTrue(source.contains("PrinterTransportPolicyV136.isConfigured(configuration)"), fileName)
-            assertFalse(source.contains("loadPrinterConfiguration()"), fileName)
+            assertTrue(fileName, source.contains("PrinterProfileStoreV136(context.applicationContext)"))
+            assertTrue(fileName, source.contains("profileStore.resolve(DocumentPrintKindV136.SALE_RECEIPT)"))
+            assertTrue(fileName, source.contains("PrinterTransportPolicyV136.supportsRealtimeStatus(configuration)"))
+            assertTrue(fileName, source.contains("PrinterTransportPolicyV136.isConfigured(configuration)"))
+            assertFalse(fileName, source.contains("loadPrinterConfiguration()"))
         }
     }
 
