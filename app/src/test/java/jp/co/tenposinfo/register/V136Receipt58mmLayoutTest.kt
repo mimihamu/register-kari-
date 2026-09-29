@@ -85,4 +85,28 @@ class V136Receipt58mmLayoutTest {
         }
     }
 
+
+    @Test
+    fun wideAmountMovesToNextLineWithoutDroppingLabelOn58mm() {
+        val product = Product(
+            id = "MAX-001",
+            name = "最大金額確認商品",
+            unitPrice = 9_999_999_999L,
+            taxCategory = TaxCategory.EXCLUDED_10,
+            displayOrder = 1,
+        )
+        val rendered = ReceiptRenderer.render(
+            receiptData(CartItem(product = product, quantity = 1)),
+            ReceiptPaper.MM58,
+        )
+        val lines = rendered.lines()
+
+        assertTrue(rendered.contains("9,999,999,999"))
+        assertTrue(rendered.contains("10%対象額（税込）"))
+        assertTrue(lines.any { it.trim().endsWith("9,999,999,999") })
+        lines.forEach { line ->
+            assertTrue("58mm line exceeds 32 columns: $line", ReceiptLineWrapV136.displayWidth(line) <= 32)
+        }
+    }
+
 }
