@@ -35,12 +35,12 @@ internal object HeldTicketProvisionalReceiptRendererV135 {
         lines += separator(width, '-')
 
         items.forEach { item ->
-            lines += fit("${item.product.name} [${item.product.taxSymbol}]", width)
+            lines.addAll(ReceiptLineWrapV136.wrap("${item.product.name} [${item.product.taxSymbol}]", width))
             lines += amountLine("${item.quantity} × ${yen(item.unitPrice)}", yen(item.amountBeforeDiscount), width)
             if (item.discountAmount > 0) {
                 lines += amountLine("  値引", "-${yen(item.discountAmount)}", width)
             }
-            if (item.note.isNotBlank()) lines += fit("  ※${item.note}", width)
+            if (item.note.isNotBlank()) lines.addAll(ReceiptLineWrapV136.wrap("  ※${item.note}", width))
         }
 
         lines += separator(width, '-')
@@ -66,8 +66,12 @@ internal object HeldTicketProvisionalReceiptRendererV135 {
 
     private fun amountLine(label: String, amount: String, width: Int): String {
         val amountWidth = displayWidth(amount)
-        val labelWidth = (width - amountWidth - 1).coerceAtLeast(1)
-        return padRight(fit(label, labelWidth), labelWidth) + " " + amount
+        require(amountWidth <= width) { "金額が印字幅を超えています: $amount" }
+        if (displayWidth(label) + 1 + amountWidth > width) {
+            return ReceiptLineWrapV136.wrap(label, width).joinToString("\n") +
+                "\n" + " ".repeat((width - amountWidth).coerceAtLeast(0)) + amount
+        }
+        return padRight(label, width - amountWidth - 1) + " " + amount
     }
 
     private fun separator(width: Int, char: Char): String = char.toString().repeat(width)
