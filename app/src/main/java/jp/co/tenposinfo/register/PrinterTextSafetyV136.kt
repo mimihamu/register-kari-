@@ -45,7 +45,7 @@ data class PrinterTextSafetyResultV136(
 
 object PrinterTextSafetyV136 {
     private val replacements = mapOf(
-        "〜" to "～",
+        "〜" to "~",
         "−" to "-",
         "—" to "-",
         "―" to "-",
