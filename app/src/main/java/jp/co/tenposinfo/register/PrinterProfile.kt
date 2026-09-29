@@ -86,7 +86,8 @@ object PrinterCommandEncoder {
                 ),
             )
         }
-        output.write(text.toByteArray(Charset.forName(configuration.profile.charsetName)))
+        val safeText = PrinterTextSafetyV136.sanitize(text, configuration.profile.charsetName)
+        output.write(safeText.text.toByteArray(Charset.forName(configuration.profile.charsetName)))
         if (appendCut) {
             require(configuration.feedLines in PrinterProfileContractV136.MIN_FEED_LINES..PrinterProfileContractV136.MAX_FEED_LINES) {
                 "紙送り行数は${PrinterProfileContractV136.MIN_FEED_LINES}～${PrinterProfileContractV136.MAX_FEED_LINES}行で指定してください"
