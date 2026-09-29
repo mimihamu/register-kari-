@@ -1,7 +1,5 @@
 package jp.co.tenposinfo.register
 
-import android.util.Log
-
 import java.io.ByteArrayOutputStream
 import java.nio.charset.Charset
 
@@ -88,15 +86,18 @@ object PrinterCommandEncoder {
                 ),
             )
         }
-        val safeText = PrinterTextSafetyV136.sanitize(text, configuration.profile.charsetName)
-        safeText.substitutions.forEach { substitution ->
-            Log.w(
-                "PrinterTextSafety",
-                "unsupported/replaced printer text original=${substitution.original} replacement=${substitution.replacement} charset=${configuration.profile.charsetName}",
-            )
-            PrinterTextAuditV136.record(substitution, configuration.profile.charsetName)
+        val encodedText = if (containsInternalEscPosCommands(text)) {
+            // Diagnostic/QR/raster documents contain app-generated binary ESC/POS commands.
+            // Never run those bytes through user-text control filtering.
+            text
+        } else {
+            val safeText = PrinterTextSafetyV136.sanitize(text, configuration.profile.charsetName)
+            safeText.substitutions.forEach { substitution ->
+                PrinterTextAuditV136.record(substitution, configuration.profile.charsetName)
+            }
+            safeText.text
         }
-        output.write(safeText.text.toByteArray(Charset.forName(configuration.profile.charsetName)))
+        output.write(encodedText.toByteArray(Charset.forName(configuration.profile.charsetName)))
         if (appendCut) {
             require(configuration.feedLines in PrinterProfileContractV136.MIN_FEED_LINES..PrinterProfileContractV136.MAX_FEED_LINES) {
                 "紙送り行数は${PrinterProfileContractV136.MIN_FEED_LINES}～${PrinterProfileContractV136.MAX_FEED_LINES}行で指定してください"
@@ -122,6 +123,9 @@ object PrinterCommandEncoder {
         output.write(byteArrayOf(0x1B, 0x61, 0x00))
         return output.toByteArray()
     }
+
+    private fun containsInternalEscPosCommands(text: String): Boolean =
+        text.indexOf('\u001B') >= 0 || text.indexOf('\u001D') >= 0 || text.indexOf('\u001C') >= 0
 
     fun drawerOnly(configuration: PrinterConfiguration): ByteArray {
         require(configuration.drawerEnabled) { "ドロア設定が無効です" }
