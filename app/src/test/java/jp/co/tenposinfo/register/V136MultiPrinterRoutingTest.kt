@@ -99,7 +99,20 @@ class V136MultiPrinterRoutingTest {
         assertTrue(ui.contains("注意：同じIPの登録があります"))
     }
 
+
     @Test
+    fun maintenanceHubUsesReceiptRouteAndTransportAwareEndpoint() {
+        val source = File("src/main/java/jp/co/tenposinfo/register/PrinterToolsHubActivity.kt").readText()
+
+        assertTrue(source.contains("PrinterProfileStoreV136(context.applicationContext)"))
+        assertTrue(source.contains("profileStore.resolve(DocumentPrintKindV136.SALE_RECEIPT)"))
+        assertTrue(source.contains("PrinterHubValue(\"対象\", \"レシート既定出力先\")"))
+        assertTrue(source.contains("PrinterHubValue(\"接続方式\", printer.connectionType.displayName)"))
+        assertTrue(source.contains("PrinterTransportPolicyV136.endpointDisplay(printer)"))
+        assertFalse(source.contains("settingsStore.loadPrinterConfiguration()"))
+    }
+
+@Test
     fun formalPrintJobSnapshotColumnsAreMigratedWithoutDestructiveReset() {
         val schema = File("src/main/java/jp/co/tenposinfo/register/PrinterJobRouteSchemaV136.kt").readText()
 
