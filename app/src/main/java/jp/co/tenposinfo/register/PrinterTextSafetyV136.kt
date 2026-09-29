@@ -3,6 +3,8 @@ package jp.co.tenposinfo.register
 import java.nio.CharBuffer
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
+import java.text.BreakIterator
+import java.util.Locale
 
 /**
  * Formal v2.5 §16.3 text safety shared by every ESC/POS document.
@@ -106,12 +108,16 @@ object PrinterTextSafetyV136 {
     }
 
     private fun graphemeLikeUnits(value: String): List<String> {
+        if (value.isEmpty()) return emptyList()
+        val iterator = BreakIterator.getCharacterInstance(Locale.ROOT)
+        iterator.setText(value)
         val units = mutableListOf<String>()
-        var offset = 0
-        while (offset < value.length) {
-            val codePoint = value.codePointAt(offset)
-            units += String(Character.toChars(codePoint))
-            offset += Character.charCount(codePoint)
+        var start = iterator.first()
+        var end = iterator.next()
+        while (end != BreakIterator.DONE) {
+            units += value.substring(start, end)
+            start = end
+            end = iterator.next()
         }
         return units
     }
