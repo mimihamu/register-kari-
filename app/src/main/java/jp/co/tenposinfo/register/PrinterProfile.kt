@@ -1,5 +1,7 @@
 package jp.co.tenposinfo.register
 
+import android.util.Log
+
 import java.io.ByteArrayOutputStream
 import java.nio.charset.Charset
 
@@ -87,6 +89,12 @@ object PrinterCommandEncoder {
             )
         }
         val safeText = PrinterTextSafetyV136.sanitize(text, configuration.profile.charsetName)
+        safeText.substitutions.forEach { substitution ->
+            Log.w(
+                "PrinterTextSafety",
+                "unsupported/replaced printer text original=${substitution.original} replacement=${substitution.replacement} charset=${configuration.profile.charsetName}",
+            )
+        }
         output.write(safeText.text.toByteArray(Charset.forName(configuration.profile.charsetName)))
         if (appendCut) {
             require(configuration.feedLines in PrinterProfileContractV136.MIN_FEED_LINES..PrinterProfileContractV136.MAX_FEED_LINES) {
