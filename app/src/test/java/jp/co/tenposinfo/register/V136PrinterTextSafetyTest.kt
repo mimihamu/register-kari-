@@ -8,9 +8,9 @@ class V136PrinterTextSafetyTest {
     @Test
     fun unsupportedCharactersAreReplacedAndReported() {
         val result = PrinterTextSafetyV136.sanitize("商品😀〜", "Shift_JIS")
-        assertEquals("商品□～", result.text)
+        assertEquals("商品□~", result.text)
         assertTrue(result.substitutions.any { it.original == "😀" && it.replacement == "□" })
-        assertTrue(result.substitutions.any { it.original == "〜" && it.replacement == "～" })
+        assertTrue(result.substitutions.any { it.original == "〜" && it.replacement == "~" })
     }
 
     @Test
