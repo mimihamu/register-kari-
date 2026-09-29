@@ -1244,6 +1244,12 @@ private fun PrinterSettingsScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = AsGreen),
                     ) { Text("テスト印刷", fontWeight = FontWeight.Bold) }
                     Button(
+                        onClick = { executeTest("4文書テスト印刷") { store.testFourDocuments(it) } },
+                        enabled = !testing,
+                        modifier = Modifier.weight(1f).height(54.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AsGreen),
+                    ) { Text("4文書テスト", fontWeight = FontWeight.Bold) }
+                    Button(
                         onClick = { executeTest("ドロアテスト") { store.testDrawer(it, actorName) } },
                         enabled = !testing && drawerEnabled,
                         modifier = Modifier.weight(1f).height(54.dp),
