@@ -170,4 +170,16 @@ class V136MultiPrinterRoutingTest {
         assertFalse(source.contains("PrinterPaperSettingPolicy.currentPaper(appContext)"))
     }
 
+
+    @Test
+    fun uncertainReprintPreservesFrozenPrinterRoute() {
+        val source = File("src/main/java/jp/co/tenposinfo/register/PrintJobUncertainSafetyV136.kt").readText()
+        assertTrue(source.contains("arrayOf(\"sale_id\", \"paper_width_mm\", \"printer_id\", \"printable_dot_width\")"))
+        assertTrue(source.contains("arrayOf(\"document_type\", \"reference_id\", \"paper_width_mm\", \"payload_text\", \"printer_id\", \"printable_dot_width\")"))
+        assertTrue(source.contains("put(\"printer_id\", row[2] as String)"))
+        assertTrue(source.contains("put(\"printable_dot_width\", row[3] as Int)"))
+        assertTrue(source.contains("put(\"printer_id\", row[4] as String)"))
+        assertTrue(source.contains("put(\"printable_dot_width\", row[5] as Int)"))
+    }
+
 }
