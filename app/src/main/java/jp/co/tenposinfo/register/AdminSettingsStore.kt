@@ -512,6 +512,39 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
         return printerGateway(configuration).send(payload)
     }
 
+    /** Formal v2.5 §16.2: paper-width validation across the four mandatory document families. */
+    fun testFourDocuments(configuration: PrinterConfiguration): Result<Unit> = runCatching {
+        PrinterTransportPolicyV136.validate(configuration)
+        PrinterProfileContractV136.validatePersistedConfiguration(configuration)
+        val paper = PrinterPaperSettingPolicy.paper(configuration)
+        val now = Instant.now().toString()
+        val documents = listOf(
+            "販売レシート" to "商品A  1 x 1,100\\n10%対象 1,100\\n合計 1,100",
+            "領収書" to "領収金額 ¥1,100\\n但し お品代として\\n10%対象 1,100",
+            "仮締め票" to "取引件数 12件\\n現金 8,800\\nその他 4,400",
+            "精算票" to "総売上 13,200\\n10%対象 11,000\\n8%対象 2,200",
+        )
+        val gateway = printerGateway(configuration)
+        documents.forEachIndexed { index, (title, body) ->
+            val text = buildString {
+                append("つぐレジ 4文書テスト ${index + 1}/4\\n")
+                append("$title\\n")
+                append("用紙 ${paper.widthMm}mm / ${configuration.printableDotWidth}dot\\n")
+                append("$now\\n")
+                append(body)
+                append("\\n\\n")
+                append(PrinterPaperWidthTestV136.buildAll(paper, now))
+            }
+            val payload = PrinterCommandEncoder.encodeText(
+                text = text,
+                configuration = configuration.copy(paperWidthMm = paper.widthMm),
+                openDrawer = false,
+                appendCut = true,
+            )
+            gateway.send(payload).getOrThrow()
+        }
+    }
+
     fun testDrawer(configuration: PrinterConfiguration, actor: String): Result<Unit> {
         PrinterTransportPolicyV136.validate(configuration)
         return CashDrawerRuntimeV136.dispatchDiagnostic(appContext, configuration, actor).map { Unit }
