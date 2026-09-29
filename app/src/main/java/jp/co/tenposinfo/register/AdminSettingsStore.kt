@@ -508,6 +508,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             configuration = configuration.copy(paperWidthMm = paper.widthMm),
             openDrawer = false,
             appendCut = true,
+            trustedEmbeddedCommands = true,
         )
         return printerGateway(configuration).send(payload)
     }
