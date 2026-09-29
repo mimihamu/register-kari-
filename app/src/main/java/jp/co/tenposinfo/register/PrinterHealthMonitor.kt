@@ -39,7 +39,9 @@ data class PrinterHealthSnapshot(
 object PrinterHealthMonitor {
     fun check(context: Context): PrinterHealthSnapshot {
         val appContext = context.applicationContext
-        val configuration = AdminSettingsStore(appContext).use { it.loadPrinterConfiguration() }
+        val configuration = PrinterProfileStoreV136(appContext).use {
+            it.resolve(DocumentPrintKindV136.SALE_RECEIPT)
+        } ?: PrinterConfiguration(enabled = false)
         val runtime = PrinterMonitoringStore(appContext).use { it.loadSettings() }
         val now = System.currentTimeMillis()
         val capability = PrinterStatusCapabilityRegistry.forProfile(configuration.profile)
@@ -53,10 +55,18 @@ object PrinterHealthMonitor {
                 printerName = configuration.name,
             )
 
-            configuration.host.isBlank() || configuration.port !in 1..65535 -> PrinterHealthSnapshot(
+            !PrinterTransportPolicyV136.isConfigured(configuration) -> PrinterHealthSnapshot(
                 level = PrinterHealthLevel.UNCONFIGURED,
                 title = "プリンター接続先が未設定です",
-                detail = "各種設定でIPアドレスとポートを登録してください",
+                detail = "各種設定で接続先を登録してください",
+                checkedAt = now,
+                printerName = configuration.name,
+            )
+
+            !PrinterTransportPolicyV136.supportsRealtimeStatus(configuration) -> PrinterHealthSnapshot(
+                level = PrinterHealthLevel.WARNING,
+                title = "状態自動監視はTCP接続時のみ利用できます",
+                detail = "${configuration.connectionType.displayName} / 印刷送信は利用可能 / 接続確認は周辺機器設定から実施",
                 checkedAt = now,
                 printerName = configuration.name,
             )
@@ -83,7 +93,7 @@ object PrinterHealthMonitor {
                             -> PrinterHealthLevel.ERROR
                         },
                         title = status.summary,
-                        detail = "${configuration.host}:${configuration.port} / ${status.elapsedMillis}ms / $suffix",
+                        detail = "${PrinterTransportPolicyV136.endpointDisplay(configuration)} / ${status.elapsedMillis}ms / $suffix",
                         checkedAt = status.checkedAt,
                         printerName = configuration.name,
                     )
@@ -92,7 +102,7 @@ object PrinterHealthMonitor {
                     PrinterHealthSnapshot(
                         level = PrinterHealthLevel.ERROR,
                         title = "プリンターから応答がありません",
-                        detail = "${configuration.host}:${configuration.port} / ${error.message ?: error.javaClass.simpleName}",
+                        detail = "${PrinterTransportPolicyV136.endpointDisplay(configuration)} / ${error.message ?: error.javaClass.simpleName}",
                         checkedAt = now,
                         printerName = configuration.name,
                     )
