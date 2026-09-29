@@ -16,6 +16,28 @@ data class PrinterTextSubstitutionV136(
     val replacement: String,
 )
 
+
+data class PrinterTextAuditEntryV136(
+    val original: String,
+    val replacement: String,
+    val charsetName: String,
+)
+
+object PrinterTextAuditV136 {
+    @Volatile
+    var sink: ((PrinterTextAuditEntryV136) -> Unit)? = null
+
+    fun record(substitution: PrinterTextSubstitutionV136, charsetName: String) {
+        sink?.invoke(
+            PrinterTextAuditEntryV136(
+                original = substitution.original,
+                replacement = substitution.replacement,
+                charsetName = charsetName,
+            ),
+        )
+    }
+}
+
 data class PrinterTextSafetyResultV136(
     val text: String,
     val substitutions: List<PrinterTextSubstitutionV136>,
