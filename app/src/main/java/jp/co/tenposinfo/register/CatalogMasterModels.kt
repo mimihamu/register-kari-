@@ -33,6 +33,7 @@ data class ProductMasterRecord(
     val displayOrder: Int,
     val kana: String = "",
     val barcode: String = "",
+    val receiptShortName: String = "",
 )
 
 data class TaxMasterRecord(
@@ -122,7 +123,7 @@ object CatalogValidation {
         return kana
     }
 
-    fun normalizeBarcode(value: String): String {
+    fun normalizeReceiptShortName(value: String): String {\n        val name = value.trim()\n        require(name.length <= 60) { "レシート用短縮名は60文字以内です" }\n        return name\n    }\n\n    fun normalizeBarcode(value: String): String {
         val barcode = value.trim()
         require(barcode.length <= 64) { "バーコードは64文字以内です" }
         require(barcode.none { it.isWhitespace() || it.code < 0x20 || it.code == 0x7f }) {
