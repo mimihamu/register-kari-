@@ -376,7 +376,7 @@ private fun PrinterSummaryPanel(
         Text("プリンターと件数", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = UqNavy)
         Spacer(Modifier.height(10.dp))
         QueueValue("プリンター", configuration.name)
-        QueueValue("接続先", if (configuration.host.isBlank()) "未設定" else "${configuration.host}:${configuration.port}")
+        QueueValue("接続先", PrinterTransportPolicyV136.endpointDisplay(configuration).ifBlank { "未設定" })
         QueueValue("機種", configuration.profile.displayName)
         QueueValue("用紙設定", "${configuration.paperWidthMm}mm（印刷時指定なし）")
         QueueValue("実印刷", if (configuration.usable) "使用可能" else "未設定")
@@ -406,7 +406,7 @@ private fun PrinterSummaryPanel(
         Spacer(Modifier.weight(1f))
         Button(
             onClick = onStatusCheck,
-            enabled = !working && configuration.host.isNotBlank(),
+            enabled = !working && PrinterTransportPolicyV136.isConfigured(configuration) && PrinterTransportPolicyV136.supportsRealtimeStatus(configuration),
             modifier = Modifier.fillMaxWidth().height(52.dp),
             colors = ButtonDefaults.buttonColors(containerColor = UqGreen),
         ) { Text("プリンター状態確認", fontWeight = FontWeight.Bold) }
