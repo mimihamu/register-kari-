@@ -120,7 +120,7 @@ jobs:
           GENERATED_AT_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           EOF
 
-          tar -C "$RUNNER_TEMP" -I 'zstd -19 -T0' -cf tsuguregi-local-build-kit.tar.zst tsuguregi-local-kit
+          tar -C "$RUNNER_TEMP" -I 'zstd -3 -T0' -cf "$RUNNER_TEMP/tsuguregi-local-build-kit.tar.zst" tsuguregi-local-kit
           sha256sum "$RUNNER_TEMP/tsuguregi-local-build-kit.tar.zst" > "$RUNNER_TEMP/tsuguregi-local-build-kit.tar.zst.sha256"
           ls -lh "$RUNNER_TEMP/tsuguregi-local-build-kit.tar.zst"
           cat "$RUNNER_TEMP/tsuguregi-local-build-kit.tar.zst.sha256"
