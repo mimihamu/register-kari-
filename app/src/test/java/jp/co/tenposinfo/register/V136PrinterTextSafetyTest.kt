@@ -33,4 +33,14 @@ class V136PrinterTextSafetyTest {
         }
     }
 
+
+    @Test
+    fun unsupportedCombiningGraphemeIsReplacedAsOneAuditableUnit() {
+        val result = PrinterTextSafetyV136.sanitize("A\u0301", "US-ASCII")
+        assertEquals("□", result.text)
+        assertEquals(1, result.substitutions.size)
+        assertEquals("A\u0301", result.substitutions.single().original)
+        assertEquals("□", result.substitutions.single().replacement)
+    }
+
 }
