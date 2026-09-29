@@ -69,20 +69,22 @@ class PrintJobUncertainSafetyStoreV136(context: Context) : AutoCloseable {
   val newJobId = if (job.type == UnifiedPrintJobType.SALE_RECEIPT) {
       val row = query(
           "print_jobs",
-          arrayOf("sale_id", "paper_width_mm"),
+          arrayOf("sale_id", "paper_width_mm", "printer_id", "printable_dot_width"),
           "id = ?",
           arrayOf(job.sourceId.toString()),
           null, null, null, "1",
       ).use { cursor ->
           check(cursor.moveToFirst()) { "元の売上印刷ジョブが見つかりません" }
-          cursor.getLong(0) to cursor.getInt(1)
+          arrayOf(cursor.getLong(0), cursor.getInt(1), cursor.getString(2), cursor.getInt(3))
       }
       insertOrThrow(
           "print_jobs",
           null,
           ContentValues().apply {
-              put("sale_id", row.first)
-              put("paper_width_mm", row.second)
+              put("sale_id", row[0] as Long)
+              put("paper_width_mm", row[1] as Int)
+              put("printer_id", row[2] as String)
+              put("printable_dot_width", row[3] as Int)
               put("status", PrintJobStatus.PENDING.name)
               put("attempt_count", 0)
               putNull("last_error")
@@ -96,13 +98,13 @@ class PrintJobUncertainSafetyStoreV136(context: Context) : AutoCloseable {
   } else {
       val row = query(
           "document_print_jobs",
-          arrayOf("document_type", "reference_id", "paper_width_mm", "payload_text"),
+          arrayOf("document_type", "reference_id", "paper_width_mm", "payload_text", "printer_id", "printable_dot_width"),
           "id = ?",
           arrayOf(job.sourceId.toString()),
           null, null, null, "1",
       ).use { cursor ->
           check(cursor.moveToFirst()) { "元の業務帳票印刷ジョブが見つかりません" }
-          arrayOf(cursor.getString(0), cursor.getLong(1), cursor.getInt(2), cursor.getString(3))
+          arrayOf(cursor.getString(0), cursor.getLong(1), cursor.getInt(2), cursor.getString(3), cursor.getString(4), cursor.getInt(5))
       }
       insertOrThrow(
           "document_print_jobs",
@@ -115,6 +117,8 @@ class PrintJobUncertainSafetyStoreV136(context: Context) : AutoCloseable {
               put("attempt_count", 0)
               putNull("last_error")
               put("payload_text", row[3] as String)
+              put("printer_id", row[4] as String)
+              put("printable_dot_width", row[5] as Int)
               put("created_at", now)
               put("updated_at", now)
               put("source_job_id", job.sourceId)
