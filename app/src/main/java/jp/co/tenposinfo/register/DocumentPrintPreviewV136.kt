@@ -164,8 +164,10 @@ object DocumentPrintPreviewV136 {
         val ticket = HeldTicket(
             id = 123L,
             name = "テーブル1",
-            createdAt = PREVIEW_CREATED_AT,
             operatorName = "担当者",
+            createdAt = PREVIEW_CREATED_AT,
+            itemCount = 2,
+            totalAmount = 2_200L,
             guestCount = 2,
         )
         val items = listOf(
