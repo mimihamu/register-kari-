@@ -25,4 +25,23 @@ class V136UnicodeDocumentRendererTest {
         assertFalse(renderer.contains("for (char in value)"))
         assertFalse(renderer.contains("value.sumOf { if (it.code <= 0xFF)"))
     }
+
+    @Test
+    fun provisionalReceiptWrapsProductNamesAndNotesWithoutDroppingTail() {
+        val source = File("src/main/java/jp/co/tenposinfo/register/HeldTicketProvisionalPrintV135.kt").readText()
+        val renderer = source.substringAfter("internal object HeldTicketProvisionalReceiptRendererV135").substringBefore("internal class HeldTicketProvisionalPrintServiceV135")
+        assertTrue(renderer.contains("lines.addAll(ReceiptLineWrapV136.wrap("))
+        assertTrue(renderer.contains("item.product.name"))
+        assertTrue(renderer.contains("item.note"))
+        assertTrue(renderer.contains("ReceiptLineWrapV136.wrap(label, width).joinToString"))
+    }
+
+    @Test
+    fun voucherAmountLinePreservesLabelInsteadOfTruncatingIt() {
+        val source = File("src/main/java/jp/co/tenposinfo/register/ReceiptVoucher.kt").readText()
+        val renderer = source.substringAfter("internal object ReceiptVoucherRenderer").substringBefore("internal class ReceiptVoucherStore")
+        assertTrue(renderer.contains("ReceiptLineWrapV136.wrap(label, width).joinToString"))
+        assertFalse(renderer.contains("padRight(fit(label, labelWidth), labelWidth)"))
+    }
+
 }
