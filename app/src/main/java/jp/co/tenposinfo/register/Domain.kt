@@ -34,6 +34,7 @@ data class Product(
     val slotNo: Int = ((displayOrder.coerceAtLeast(1) - 1) % 24) + 1,
     val kana: String = "",
     val barcode: String = "",
+    val receiptShortName: String = "",
 ) {
     fun withLegacyTaxCategory(category: TaxCategory): Product = copy(
         taxCategory = category,
