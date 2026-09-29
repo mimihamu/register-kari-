@@ -188,16 +188,7 @@ object ReceiptRenderer {
 
         data.items.forEach { item ->
             val symbol = ReceiptTaxSymbolV136.fromProduct(item.product)
-            val fullReceiptName = "${item.product.name} [$symbol]"
-            val fullNameLines = ReceiptLineWrapV136.wrap(fullReceiptName, width)
-            val receiptName = if (fullNameLines.size > 2 && item.product.receiptShortName.isNotBlank()) {
-                "${item.product.receiptShortName} [$symbol]"
-            } else {
-                fullReceiptName
-            }
-            // Formal v2.5 §16.3: prefer two-line full name; if it exceeds two lines,
-            // use the optional receipt short name. Never ellipsize; short names may also wrap to 3+ lines.
-            lines.addAll(ReceiptLineWrapV136.wrap(receiptName, width))
+            lines.addAll(productNameLines(item.product, symbol, paper, width))
             if (data.layoutSettings.showProductCode) {
                 lines.addAll(ReceiptLineWrapV136.wrap("  商品コード ${item.product.id}", width))
             }
@@ -246,6 +237,34 @@ object ReceiptRenderer {
         lines.addAll(ReceiptFooterMessagePolicyV136.renderLines(data.documentFooter, paper))
         if (data.reprint) lines += center("【再発行】", width)
         return lines.joinToString("\n")
+    }
+
+    private fun productNameLines(product: Product, symbol: String, paper: ReceiptPaper, width: Int): List<String> {
+        if (paper == ReceiptPaper.MM80) {
+            // Formal v2.5 §16.3: 80mm uses a dedicated tax column where width permits.
+            val taxColumnWidth = 5
+            val nameWidth = width - taxColumnWidth
+            val fullLines = ReceiptLineWrapV136.wrap(product.name, nameWidth)
+            val chosenName = if (fullLines.size > 2 && product.receiptShortName.isNotBlank()) {
+                product.receiptShortName
+            } else {
+                product.name
+            }
+            val nameLines = ReceiptLineWrapV136.wrap(chosenName, nameWidth).toMutableList()
+            if (nameLines.isEmpty()) nameLines += ""
+            val last = nameLines.lastIndex
+            nameLines[last] = padRight(nameLines[last], nameWidth) + padRight(symbol, taxColumnWidth)
+            return nameLines
+        }
+
+        val fullReceiptName = "${product.name} [$symbol]"
+        val fullNameLines = ReceiptLineWrapV136.wrap(fullReceiptName, width)
+        val receiptName = if (fullNameLines.size > 2 && product.receiptShortName.isNotBlank()) {
+            "${product.receiptShortName} [$symbol]"
+        } else {
+            fullReceiptName
+        }
+        return ReceiptLineWrapV136.wrap(receiptName, width)
     }
 
     private fun formatDate(epochMillis: Long): String = Instant.ofEpochMilli(epochMillis)
