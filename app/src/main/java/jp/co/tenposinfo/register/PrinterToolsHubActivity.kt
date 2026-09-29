@@ -99,6 +99,7 @@ private fun PrinterToolsHubScreen(
 ) {
     val context = LocalContext.current
     val settingsStore = remember { AdminSettingsStore(context.applicationContext) }
+    val profileStore = remember { PrinterProfileStoreV136(context.applicationContext) }
     val resultStore = remember { PrinterSoakTestResultStore(context.applicationContext) }
     val maintenance = remember { PrinterSoakTestMaintenance(context.applicationContext) }
     var unlocked by remember { mutableStateOf(false) }
@@ -111,6 +112,7 @@ private fun PrinterToolsHubScreen(
         onDispose {
             maintenance.close()
             resultStore.close()
+            profileStore.close()
             settingsStore.close()
         }
     }
@@ -161,7 +163,10 @@ private fun PrinterToolsHubScreen(
                 }
             }
         } else {
-            val printer = remember(revision) { settingsStore.loadPrinterConfiguration() }
+            val printer = remember(revision) {
+                profileStore.resolve(DocumentPrintKindV136.SALE_RECEIPT)
+                    ?: PrinterConfiguration(enabled = false)
+            }
             val capability = remember(revision) { PrinterStatusCapabilityRegistry.forProfile(printer.profile) }
             val notification = remember(revision) { PrinterNotificationPermissionStatus.read(context) }
             val recent = remember(revision) { resultStore.listRecent(10) }
@@ -174,8 +179,10 @@ private fun PrinterToolsHubScreen(
                     PrinterHubPanel(Modifier.width(390.dp).fillMaxHeight()) {
                         Text("現在の設定", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = PhNavy)
                         Spacer(Modifier.height(12.dp))
+                        PrinterHubValue("対象", "レシート既定出力先")
                         PrinterHubValue("プリンター", printer.name)
-                        PrinterHubValue("接続先", if (printer.host.isBlank()) "未設定" else "${printer.host}:${printer.port}")
+                        PrinterHubValue("接続方式", printer.connectionType.displayName)
+                        PrinterHubValue("接続先", PrinterTransportPolicyV136.endpointDisplay(printer))
                         PrinterHubValue("機種", printer.profile.displayName)
                         PrinterHubValue("用紙", "${printer.paperWidthMm}mm")
                         PrinterHubValue("状態方式", capability.implementationName)
