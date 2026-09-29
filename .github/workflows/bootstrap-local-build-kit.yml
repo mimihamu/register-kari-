@@ -56,7 +56,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gradle --offline --no-daemon clean             :app:testDebugUnitTest             :customer-display:testDebugUnitTest             :management-app:testDebugUnitTest             :app:compileDebugKotlin             :customer-display:compileDebugKotlin             :management-app:compileDebugKotlin             :app:assembleDebug             :customer-display:assembleDebug             :management-app:assembleDebug
+          # Keep clean/test separate from assemble. The build scripts materialize
+          # the fixed development keystore under each module build/ directory at
+          # configuration time; a same-invocation clean would delete it before
+          # validateSigningDebug.
+          gradle --offline --no-daemon clean             :app:testDebugUnitTest             :customer-display:testDebugUnitTest             :management-app:testDebugUnitTest
+          gradle --offline --no-daemon             :app:compileDebugKotlin             :customer-display:compileDebugKotlin             :management-app:compileDebugKotlin
+          gradle --offline --no-daemon             :app:assembleDebug             :customer-display:assembleDebug             :management-app:assembleDebug
 
       - name: Build local development kit
         shell: bash
