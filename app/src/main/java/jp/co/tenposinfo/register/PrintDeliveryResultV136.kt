@@ -27,6 +27,9 @@ class PrinterDeliveryConfirmationExceptionV136(
 object PrintDeliveryConfirmationPolicyV136 {
     fun requiresVerifiedStatusQuery(configuration: PrinterConfiguration): Boolean {
         if (!configuration.usable) return false
+        // Realtime post-send verification is currently implemented only for TCP/LAN.
+        // USB/Bluetooth successful transport sends are recorded as ACCEPTED per formal v2.5 §16.9.
+        if (!PrinterTransportPolicyV136.supportsRealtimeStatus(configuration)) return false
         val capability = PrinterStatusCapabilityRegistry.forProfile(configuration.profile)
         return configuration.profile.statusProtocol == PrinterStatusProtocol.EPSON_DLE_EOT &&
             capability.verification == PrinterStatusVerification.VENDOR_DOCUMENTED &&
