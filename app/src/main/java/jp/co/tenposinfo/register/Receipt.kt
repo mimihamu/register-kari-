@@ -188,7 +188,16 @@ object ReceiptRenderer {
 
         data.items.forEach { item ->
             val symbol = ReceiptTaxSymbolV136.fromProduct(item.product)
-            lines.addAll(ReceiptLineWrapV136.wrap("${item.product.name} [$symbol]", width))
+            val fullReceiptName = "${item.product.name} [$symbol]"
+            val fullNameLines = ReceiptLineWrapV136.wrap(fullReceiptName, width)
+            val receiptName = if (fullNameLines.size > 2 && item.product.receiptShortName.isNotBlank()) {
+                "${item.product.receiptShortName} [$symbol]"
+            } else {
+                fullReceiptName
+            }
+            // Formal v2.5 §16.3: prefer two-line full name; if it exceeds two lines,
+            // use the optional receipt short name. Never ellipsize; short names may also wrap to 3+ lines.
+            lines.addAll(ReceiptLineWrapV136.wrap(receiptName, width))
             if (data.layoutSettings.showProductCode) {
                 lines.addAll(ReceiptLineWrapV136.wrap("  商品コード ${item.product.id}", width))
             }
