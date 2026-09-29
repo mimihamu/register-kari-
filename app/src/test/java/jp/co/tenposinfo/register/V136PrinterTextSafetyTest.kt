@@ -19,4 +19,18 @@ class V136PrinterTextSafetyTest {
         assertEquals("A\n\nB\n\n\n\nC", result.text)
         assertTrue(!result.text.contains('\u0000'))
     }
+
+    @Test
+    fun auditSinkReceivesOriginalAndReplacement() {
+        val captured = mutableListOf<PrinterTextAuditEntryV136>()
+        PrinterTextAuditV136.sink = { captured += it }
+        try {
+            val configuration = PrinterConfiguration(profile = PrinterProfile.EPSON_TM_JAPAN)
+            PrinterCommandEncoder.encodeText("😀", configuration, appendCut = false)
+            assertTrue(captured.any { it.original == "😀" && it.replacement == "□" && it.charsetName == "Shift_JIS" })
+        } finally {
+            PrinterTextAuditV136.sink = null
+        }
+    }
+
 }
