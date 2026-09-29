@@ -27,7 +27,7 @@ object ReceiptProductNameSnapshotV136 {
         items.forEachIndexed { index, item ->
             db.execSQL(
                 "INSERT INTO sale_receipt_name_snapshots(sale_id,line_no,product_id,receipt_short_name) VALUES(?,?,?,?)",
-                arrayOf(saleId, index + 1, item.product.id, item.product.receiptShortName),
+                arrayOf<Any>(saleId, index + 1, item.product.id, item.product.receiptShortName),
             )
         }
     }
