@@ -160,4 +160,14 @@ class V136MultiPrinterRoutingTest {
         assertFalse(source.contains("enabled = !working && configuration.host.isNotBlank()"))
     }
 
+
+    @Test
+    fun saleReceiptReprintFreezesCurrentReceiptRoute() {
+        val source = File("src/main/java/jp/co/tenposinfo/register/SaleReceiptReprintAudit.kt").readText()
+        assertTrue(source.contains("DocumentPrintKindV136.SALE_RECEIPT"))
+        assertTrue(source.contains("put(\"printer_id\", printerConfiguration.printerId)"))
+        assertTrue(source.contains("put(\"printable_dot_width\", printerConfiguration.printableDotWidth)"))
+        assertFalse(source.contains("PrinterPaperSettingPolicy.currentPaper(appContext)"))
+    }
+
 }
