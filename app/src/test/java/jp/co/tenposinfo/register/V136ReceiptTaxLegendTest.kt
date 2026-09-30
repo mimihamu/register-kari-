@@ -18,7 +18,7 @@ class V136ReceiptTaxLegendTest {
         assertTrue(reducedText.contains("※は軽減税率対象商品です"))
         assertTrue(reducedText.contains("内/外は内税・外税区分です"))
 
-        val exempt = item("E", TaxCategory.EXEMPT)
+        val exempt = item("E", TaxCategory.NON_TAXABLE)
         val exemptText = ReceiptRenderer.render(data(listOf(exempt)), ReceiptPaper.MM58)
         assertTrue(exemptText.contains("非は非課税商品です"))
         assertFalse(exemptText.contains("※は軽減税率対象商品です"))
@@ -32,6 +32,7 @@ class V136ReceiptTaxLegendTest {
 
     private fun data(items: List<CartItem>) = ReceiptData(
         storeName = "店",
+        registrationNumber = "",
         saleId = 1L,
         createdAt = 0L,
         operatorName = "担当",
