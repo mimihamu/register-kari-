@@ -24,6 +24,7 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         PrinterConfigurationRegistry.reload(this)
         PaymentSettingsRegistryV136.reload(this)
         ReceiptLayoutSettingsRegistryV136.reload(this)
+        PrinterTextAuditV136.installPersistentSink(this)
         AutomaticPrintScheduler.schedule(this)
         AutoBackupPeriodicScheduler.apply(this)
         ExternalBackupScheduler.apply(this)
