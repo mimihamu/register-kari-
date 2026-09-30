@@ -232,8 +232,16 @@ object ReceiptRenderer {
         if (data.registrationNumber.isNotBlank()) {
             lines += fit("登録番号 ${data.registrationNumber}", width)
         }
-        lines += "※は軽減税率対象商品です"
-        lines += "内/外は内税・外税区分です"
+        val usedTaxSymbols = data.items.map { ReceiptTaxSymbolV136.fromProduct(it.product) }.toSet()
+        if (usedTaxSymbols.any { it.contains("※") }) {
+            lines += "※は軽減税率対象商品です"
+        }
+        if (usedTaxSymbols.any { it.startsWith("内") || it.startsWith("外") }) {
+            lines += "内/外は内税・外税区分です"
+        }
+        if ("非" in usedTaxSymbols) {
+            lines += "非は非課税商品です"
+        }
         lines.addAll(ReceiptFooterMessagePolicyV136.renderLines(data.documentFooter, paper))
         if (data.reprint) lines += center("【再発行】", width)
         return lines.joinToString("\n")
