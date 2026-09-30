@@ -1,5 +1,7 @@
 package jp.co.tenposinfo.register
 
+import android.content.ContentValues
+import android.content.Context
 import java.nio.CharBuffer
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
@@ -28,6 +30,32 @@ data class PrinterTextAuditEntryV136(
 object PrinterTextAuditV136 {
     @Volatile
     var sink: ((PrinterTextAuditEntryV136) -> Unit)? = null
+
+    fun installPersistentSink(context: Context) {
+        val appContext = context.applicationContext
+        sink = { entry ->
+            runCatching {
+                RegisterDatabase(appContext).use { database ->
+                    val db = database.writableDatabase
+                    OperationAuditSchemaV136.ensure(db)
+                    db.insertOrThrow(
+                        "operation_audit",
+                        null,
+                        ContentValues().apply {
+                            put("event_type", "PRINTER_TEXT_SUBSTITUTION")
+                            put("reference_id", 0L)
+                            put(
+                                "detail",
+                                "original=${entry.original}; replacement=${entry.replacement}; charset=${entry.charsetName}",
+                            )
+                            put("operator_name", OperatorSessionRegistry.lastKnownName().orEmpty().ifBlank { "SYSTEM" })
+                            put("created_at", System.currentTimeMillis())
+                        },
+                    )
+                }
+            }
+        }
+    }
 
     fun record(substitution: PrinterTextSubstitutionV136, charsetName: String) {
         sink?.invoke(
