@@ -43,4 +43,17 @@ class V136PrinterTextSafetyTest {
         assertEquals("□", result.substitutions.single().replacement)
     }
 
+
+    @Test
+    fun applicationInstallsDurablePrinterTextAuditSink() {
+        val appSource = java.io.File("src/main/java/jp/co/tenposinfo/register/RegisterApplication.kt").readText()
+        val safetySource = java.io.File("src/main/java/jp/co/tenposinfo/register/PrinterTextSafetyV136.kt").readText()
+        assertTrue(appSource.contains("PrinterTextAuditV136.installPersistentSink(this)"))
+        assertTrue(safetySource.contains("\"PRINTER_TEXT_SUBSTITUTION\""))
+        assertTrue(safetySource.contains("\"operation_audit\""))
+        assertTrue(safetySource.contains("entry.original"))
+        assertTrue(safetySource.contains("entry.replacement"))
+        assertTrue(safetySource.contains("entry.charsetName"))
+    }
+
 }
