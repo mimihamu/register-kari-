@@ -141,7 +141,10 @@ object PrinterCommandEncoder {
         text.lineSequence().forEach { line ->
             val safe = PrinterTextSafetyV136.sanitize(line, configuration.profile.charsetName)
             safe.substitutions.forEach { PrinterTextAuditV136.record(it, configuration.profile.charsetName) }
-            val emphasized = ReceiptPrintEmphasisV136.shouldEmphasize(line)
+            val emphasized = ReceiptPrintEmphasisV136.shouldEmphasize(
+                line,
+                PrinterPaperSettingPolicy.paper(configuration),
+            )
             if (emphasized) output.write(byteArrayOf(0x1B, 0x45, 0x01))
             output.write(safe.text.toByteArray(Charset.forName(configuration.profile.charsetName)))
             if (emphasized) output.write(byteArrayOf(0x1B, 0x45, 0x00))
