@@ -11,7 +11,13 @@ object ReceiptPrintEmphasisV136 {
         val value = line.trim()
         return value == "領収書／レシート" ||
             value == "【再発行】" ||
+            value == "【再印字】" ||
+            value == "【取消レシート】" ||
+            value == "【返品レシート】" ||
+            value == "【Z精算票】" ||
+            value == "【X点検票】" ||
             value.startsWith("合計 ") ||
-            value.startsWith("お釣り ")
+            value.startsWith("お釣り ") ||
+            value.startsWith("返金合計")
     }
 }
