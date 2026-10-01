@@ -129,6 +129,12 @@ object PrinterCommandEncoder {
         text: String,
         configuration: PrinterConfiguration,
         appendCut: Boolean = true,
+    ): ByteArray = encodeStyledText(text, configuration, appendCut)
+
+    fun encodeStyledText(
+        text: String,
+        configuration: PrinterConfiguration,
+        appendCut: Boolean = true,
     ): ByteArray {
         val output = ByteArrayOutputStream()
         output.write(beginDocument(configuration))
