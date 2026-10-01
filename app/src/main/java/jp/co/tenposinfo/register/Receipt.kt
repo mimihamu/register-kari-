@@ -326,7 +326,6 @@ object EscPosEncoder {
                     copyTotal = copies,
                 ),
                 configuration = configuration,
-                openDrawer = false,
                 appendCut = true,
             )
         }
