@@ -7,7 +7,8 @@ package jp.co.tenposinfo.register
  * printable text, so user-entered text can never inject printer control codes.
  */
 object ReceiptPrintEmphasisV136 {
-    fun shouldEmphasize(line: String): Boolean {
+    fun shouldEmphasize(line: String, paper: ReceiptPaper? = null): Boolean {
+        if (paper != null && ReceiptLineWrapV136.displayWidth(line) > paper.charsPerLine) return false
         val value = line.trim()
         return value == "領収書／レシート" ||
             value == "【再発行】" ||
