@@ -125,6 +125,30 @@ object PrinterCommandEncoder {
         return output.toByteArray()
     }
 
+    fun encodeReceiptText(
+        text: String,
+        configuration: PrinterConfiguration,
+        appendCut: Boolean = true,
+    ): ByteArray {
+        val output = ByteArrayOutputStream()
+        output.write(beginDocument(configuration))
+        text.lineSequence().forEach { line ->
+            val safe = PrinterTextSafetyV136.sanitize(line, configuration.profile.charsetName)
+            safe.substitutions.forEach { PrinterTextAuditV136.record(it, configuration.profile.charsetName) }
+            val emphasized = ReceiptPrintEmphasisV136.shouldEmphasize(line)
+            if (emphasized) output.write(byteArrayOf(0x1B, 0x45, 0x01))
+            output.write(safe.text.toByteArray(Charset.forName(configuration.profile.charsetName)))
+            if (emphasized) output.write(byteArrayOf(0x1B, 0x45, 0x00))
+            output.write(0x0A)
+        }
+        if (appendCut) {
+            require(configuration.feedLines in PrinterProfileContractV136.MIN_FEED_LINES..PrinterProfileContractV136.MAX_FEED_LINES)
+            kotlin.repeat(configuration.feedLines) { output.write(0x0A) }
+            output.write(cutCommand(configuration.cutMode))
+        }
+        return output.toByteArray()
+    }
+
     fun drawerOnly(configuration: PrinterConfiguration): ByteArray {
         require(configuration.drawerEnabled) { "ドロア設定が無効です" }
         require(configuration.profile.supportsDrawer) { "選択中のプロファイルはドロア制御に対応していません" }
