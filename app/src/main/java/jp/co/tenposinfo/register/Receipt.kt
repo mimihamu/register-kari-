@@ -318,7 +318,7 @@ object EscPosEncoder {
         // CSH-004: physical drawer opening is a committed business event, never a print side effect.
         val copies = DocumentPrintSettingsPolicyV136.normalizeCopies(data.documentCopies)
         return (0 until copies).fold(ByteArray(0)) { payload, copyIndex ->
-            payload + PrinterCommandEncoder.encodeText(
+            payload + PrinterCommandEncoder.encodeReceiptText(
                 text = ReceiptRenderer.render(
                     data = data,
                     paper = PrinterPaperSettingPolicy.paper(configuration),
