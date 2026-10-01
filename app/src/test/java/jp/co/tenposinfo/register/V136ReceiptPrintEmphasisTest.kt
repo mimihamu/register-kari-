@@ -55,4 +55,16 @@ class V136ReceiptPrintEmphasisTest {
         assertTrue(payload.containsSequence(byteArrayOf(0x1B, 0x45, 0x00)))
     }
 
+
+    @Test
+    fun emphasisFallsBackWhenLineExceedsPaperWidth() {
+        assertTrue(ReceiptPrintEmphasisV136.shouldEmphasize("合計 ￥1,100", ReceiptPaper.MM58))
+        assertFalse(
+            ReceiptPrintEmphasisV136.shouldEmphasize(
+                "合計 " + "X".repeat(40),
+                ReceiptPaper.MM58,
+            ),
+        )
+    }
+
 }
