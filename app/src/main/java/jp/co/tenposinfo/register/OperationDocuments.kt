@@ -210,10 +210,9 @@ object TextEscPosEncoder {
     fun encode(
         text: String,
         configuration: PrinterConfiguration = PrinterConfigurationRegistry.current() ?: PrinterConfiguration(),
-    ): ByteArray = PrinterCommandEncoder.encodeText(
+    ): ByteArray = PrinterCommandEncoder.encodeStyledText(
         text = text,
         configuration = configuration,
-        openDrawer = false,
         appendCut = true,
     )
 }
