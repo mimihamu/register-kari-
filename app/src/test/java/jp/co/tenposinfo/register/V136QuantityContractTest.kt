@@ -1,5 +1,6 @@
 package jp.co.tenposinfo.register
 
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -23,6 +24,18 @@ class V136QuantityContractTest {
     fun unitPriceMeansPricePerOnePointZeroZero() {
         assertEquals(375L, QuantityV136.parse("1.5").multiplyYen(250L))
         assertEquals(62L, QuantityV136.parse("0.25").multiplyYen(250L))
+    }
+
+    @Test
+    fun exactQuantityIsPersistedAcrossCartHeldAndSalePaths() {
+        val database = File("src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt").readText()
+        val held = File("src/main/java/jp/co/tenposinfo/register/HeldTicketSafety.kt").readText()
+
+        assertEquals(true, database.contains("put(\"quantity_hundredths\", item.quantityHundredths)"))
+        assertEquals(true, database.contains("quantityHundredths = cursor.getLong(7)"))
+        assertEquals(true, database.contains("quantityHundredths = getLong(9)"))
+        assertEquals(true, database.contains("put(\"quantity_hundredths\", quantityHundredths)"))
+        assertEquals(true, held.contains("put(\"quantity_hundredths\", quantityHundredths)"))
     }
 
     @Test
