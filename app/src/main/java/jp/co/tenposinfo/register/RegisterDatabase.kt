@@ -51,6 +51,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         PrintDocumentSnapshotSchemaV136.ensureSale(db)
         PrinterJobRouteSchemaV136.ensureSale(db)
         ReceiptProductNameSnapshotV136.ensureSchema(db)
+        QuantitySchemaV136.ensure(db)
     }
 
     fun loadProducts(): List<Product> {
