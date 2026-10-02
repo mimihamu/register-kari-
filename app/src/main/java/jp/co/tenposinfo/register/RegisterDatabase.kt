@@ -333,6 +333,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                         put("unit_price", item.unitPrice)
                         put("tax_category", item.product.taxCategory.name)
                         put("quantity", item.quantity)
+                        put("quantity_hundredths", item.quantityHundredths)
                         put("discount_amount", item.discountAmount)
                         put("note", item.note)
                     },
@@ -481,6 +482,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 "quantity",
                 "discount_amount",
                 "note",
+                "quantity_hundredths",
             ),
             "sale_id = ?",
             arrayOf(saleId.toString()),
@@ -504,6 +506,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     unitPrice = cursor.getLong(2),
                     discountAmount = cursor.getLong(5),
                     note = cursor.getString(6),
+                    quantityHundredths = cursor.getLong(7),
                 )
             }
             result
@@ -845,6 +848,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             discountAmount = getLong(6),
             note = getString(7),
             lineId = getString(8),
+            quantityHundredths = getLong(9),
         )
     }
 
@@ -855,6 +859,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         put("tax_category", product.taxCategory.name)
         put("display_order", product.displayOrder)
         put("quantity", quantity)
+        put("quantity_hundredths", quantityHundredths)
         put("discount_amount", discountAmount)
         put("note", note)
         put("line_id", lineId)
@@ -1077,6 +1082,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             "discount_amount",
             "note",
             "line_id",
+            "quantity_hundredths",
         )
 
         private val PRINT_JOB_COLUMNS = arrayOf(
