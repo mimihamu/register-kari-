@@ -193,7 +193,7 @@ object ReceiptRenderer {
                 lines.addAll(ReceiptLineWrapV136.wrap("  商品コード ${item.product.id}", width))
             }
             val amount = item.baseAmount
-            lines += amountLine("${item.quantity} × ${yen(item.unitPrice)}", yen(amount), width)
+            lines += amountLine("${item.quantityText} × ${yen(item.unitPrice)}", yen(amount), width)
             if (item.discountAmount > 0) {
                 lines += amountLine("  値引", "-${yen(item.discountAmount)}", width)
             }
