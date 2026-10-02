@@ -57,9 +57,18 @@ object CartCorrectionPolicyV135 {
             target.discountAmount * cancelQuantity / target.quantity
         }
         val remainingQuantity = target.quantity - cancelQuantity
+        val cancelledQuantityHundredths = if (cancelQuantity == target.quantity) {
+            target.quantityHundredths
+        } else {
+            java.math.BigInteger.valueOf(target.quantityHundredths)
+                .multiply(java.math.BigInteger.valueOf(cancelQuantity.toLong()))
+                .divide(java.math.BigInteger.valueOf(target.quantity.toLong()))
+                .longValueExact()
+        }
+        val remainingQuantityHundredths = target.quantityHundredths - cancelledQuantityHundredths
         val remainingDiscount = target.discountAmount - cancelledDiscount
         val cancelledAmount = Math.subtractExact(
-            Math.multiplyExact(target.unitPrice, cancelQuantity.toLong()),
+            QuantityV136.fromHundredths(cancelledQuantityHundredths).multiplyYen(target.unitPrice),
             cancelledDiscount,
         )
 
@@ -69,6 +78,7 @@ object CartCorrectionPolicyV135 {
         } else {
             updatedItems[targetIndex] = target.copy(
                 quantity = remainingQuantity,
+                quantityHundredths = remainingQuantityHundredths,
                 discountAmount = remainingDiscount,
             )
         }
