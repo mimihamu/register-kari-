@@ -141,11 +141,16 @@ object PrinterCommandEncoder {
         text.lineSequence().forEach { line ->
             val safe = PrinterTextSafetyV136.sanitize(line, configuration.profile.charsetName)
             safe.substitutions.forEach { PrinterTextAuditV136.record(it, configuration.profile.charsetName) }
-            val emphasized = ReceiptPrintEmphasisV136.shouldEmphasize(
+            val emphasisStyle = ReceiptPrintEmphasisV136.styleFor(
                 line,
                 PrinterPaperSettingPolicy.paper(configuration),
             )
+            val emphasized = emphasisStyle != ReceiptEmphasisStyleV136.NONE
             if (emphasized) output.write(byteArrayOf(0x1B, 0x45, 0x01))
+            if (emphasisStyle == ReceiptEmphasisStyleV136.BOLD_DOUBLE_HEIGHT) {
+                // GS ! 0x01 = double height only; width remains normal to preserve the laid-out columns.
+                output.write(byteArrayOf(0x1D, 0x21, 0x01))
+            }
             PrinterTextSafetyV136.units(line, configuration.profile.charsetName).forEach { unit ->
                 val printable = unit.printableText
                 if (printable != null) {
@@ -158,6 +163,9 @@ object PrinterCommandEncoder {
                         output.write("□".toByteArray(Charset.forName(configuration.profile.charsetName)))
                     }
                 }
+            }
+            if (emphasisStyle == ReceiptEmphasisStyleV136.BOLD_DOUBLE_HEIGHT) {
+                output.write(byteArrayOf(0x1D, 0x21, 0x00))
             }
             if (emphasized) output.write(byteArrayOf(0x1B, 0x45, 0x00))
             output.write(0x0A)
