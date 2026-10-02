@@ -24,4 +24,32 @@ class V136QuantityContractTest {
         assertEquals(375L, QuantityV136.parse("1.5").multiplyYen(250L))
         assertEquals(62L, QuantityV136.parse("0.25").multiplyYen(250L))
     }
+
+    @Test
+    fun cartLineUsesExactQuantityForAmountAndReceiptText() {
+        val product = Product("P1", "量り売り", 250L, TaxCategory.INCLUDED_10, 1)
+        val item = CartItem(
+            product = product,
+            quantity = 1,
+            quantityHundredths = 150L,
+        )
+        assertEquals("1.5", item.quantityText)
+        assertEquals(375L, item.amountBeforeDiscount)
+        val rendered = ReceiptRenderer.render(
+            ReceiptData(
+                storeName = "店",
+                registrationNumber = "",
+                saleId = 1L,
+                createdAt = 0L,
+                operatorName = "担当",
+                items = listOf(item),
+                taxSummary = TaxEngine.calculate(listOf(item)),
+                payments = emptyList(),
+                changeAmount = 0L,
+            ),
+            ReceiptPaper.MM58,
+        )
+        assertEquals(true, rendered.contains("1.5 ×"))
+    }
 }
+
