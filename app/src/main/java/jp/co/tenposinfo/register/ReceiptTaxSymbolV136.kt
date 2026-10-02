@@ -26,4 +26,16 @@ object ReceiptTaxSymbolV136 {
             else -> "外"
         }
     }
+
+    /**
+     * 80mmは税記号専用列を標準とする。プリンターの論理桁設定が狭く、
+     * 商品名・数量・単価・金額を維持できる余地がない場合は商品名末尾方式へ戻す。
+     */
+    fun canUseDedicatedColumn(
+        lineWidth: Int,
+        taxColumnWidth: Int = 5,
+        minimumNameWidth: Int = 16,
+    ): Boolean = taxColumnWidth > 0 &&
+        minimumNameWidth > 0 &&
+        lineWidth - taxColumnWidth >= minimumNameWidth
 }
