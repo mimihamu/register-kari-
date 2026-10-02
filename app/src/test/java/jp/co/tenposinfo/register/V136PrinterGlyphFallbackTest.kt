@@ -35,4 +35,11 @@ class V136PrinterGlyphFallbackTest {
         val payload = PrinterCommandEncoder.encodeStyledText("😀", configuration, appendCut = false)
         assertTrue(payload.toString(Charset.forName("Shift_JIS")).contains("□"))
     }
+
+    @Test
+    fun applicationInstallsAndroidGlyphRasterizer() {
+        val source = java.io.File("src/main/java/jp/co/tenposinfo/register/RegisterApplication.kt").readText()
+        assertTrue(source.contains("PrinterGlyphFallbackV136.installAndroidRasterizer()"))
+    }
 }
+
