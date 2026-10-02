@@ -73,6 +73,11 @@ data class PrinterTextSafetyResultV136(
     val substitutions: List<PrinterTextSubstitutionV136>,
 )
 
+data class PrinterTextUnitV136(
+    val original: String,
+    val printableText: String?,
+)
+
 object PrinterTextSafetyV136 {
     private val replacements = mapOf(
         "〜" to "~",
@@ -83,6 +88,19 @@ object PrinterTextSafetyV136 {
         "“" to "\"",
         "”" to "\"",
     )
+
+    fun units(text: String, charsetName: String): List<PrinterTextUnitV136> {
+        val charset = Charset.forName(charsetName)
+        val normalized = normalizeLineBreaksAndControls(text)
+        return graphemeLikeUnits(normalized).map { unit ->
+            if (unit == "\n") {
+                PrinterTextUnitV136(unit, unit)
+            } else {
+                val registered = replacements[unit] ?: unit
+                PrinterTextUnitV136(unit, registered.takeIf { canEncode(charset, it) })
+            }
+        }
+    }
 
     fun sanitize(text: String, charsetName: String): PrinterTextSafetyResultV136 {
         val charset = Charset.forName(charsetName)
