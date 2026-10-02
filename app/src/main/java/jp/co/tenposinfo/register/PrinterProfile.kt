@@ -146,7 +146,19 @@ object PrinterCommandEncoder {
                 PrinterPaperSettingPolicy.paper(configuration),
             )
             if (emphasized) output.write(byteArrayOf(0x1B, 0x45, 0x01))
-            output.write(safe.text.toByteArray(Charset.forName(configuration.profile.charsetName)))
+            PrinterTextSafetyV136.units(line, configuration.profile.charsetName).forEach { unit ->
+                val printable = unit.printableText
+                if (printable != null) {
+                    output.write(printable.toByteArray(Charset.forName(configuration.profile.charsetName)))
+                } else {
+                    val raster = PrinterGlyphFallbackV136.encodeOrNull(unit.original, configuration)
+                    if (raster != null) {
+                        output.write(raster)
+                    } else {
+                        output.write("□".toByteArray(Charset.forName(configuration.profile.charsetName)))
+                    }
+                }
+            }
             if (emphasized) output.write(byteArrayOf(0x1B, 0x45, 0x00))
             output.write(0x0A)
         }
