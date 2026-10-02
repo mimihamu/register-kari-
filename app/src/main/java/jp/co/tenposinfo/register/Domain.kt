@@ -55,15 +55,18 @@ data class CartItem(
     val discountAmount: Long = 0,
     val note: String = "",
     val lineId: String = "",
+    val quantityHundredths: Long = Math.multiplyExact(quantity.toLong(), QuantityV136.SCALE),
 ) {
     init {
         require(quantity > 0) { "quantity must be greater than zero" }
+        require(quantityHundredths > 0) { "quantityHundredths must be greater than zero" }
         require(unitPrice >= 0) { "unitPrice must not be negative" }
         require(discountAmount >= 0) { "discountAmount must not be negative" }
-        require(discountAmount <= unitPrice * quantity) { "discount exceeds line amount" }
+        require(discountAmount <= amountBeforeDiscount) { "discount exceeds line amount" }
     }
 
-    val amountBeforeDiscount: Long get() = unitPrice * quantity
+    val quantityText: String get() = QuantityV136.fromHundredths(quantityHundredths).format()
+    val amountBeforeDiscount: Long get() = QuantityV136.fromHundredths(quantityHundredths).multiplyYen(unitPrice)
     val baseAmount: Long get() = amountBeforeDiscount - discountAmount
 }
 
