@@ -25,6 +25,7 @@ class RegisterApplication : Application(), Application.ActivityLifecycleCallback
         PaymentSettingsRegistryV136.reload(this)
         ReceiptLayoutSettingsRegistryV136.reload(this)
         PrinterTextAuditV136.installPersistentSink(this)
+        PrinterGlyphFallbackV136.installAndroidRasterizer()
         AutomaticPrintScheduler.schedule(this)
         AutoBackupPeriodicScheduler.apply(this)
         ExternalBackupScheduler.apply(this)
