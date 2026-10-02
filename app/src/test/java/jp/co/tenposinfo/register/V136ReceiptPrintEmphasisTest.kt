@@ -9,6 +9,10 @@ class V136ReceiptPrintEmphasisTest {
     fun formalReceiptLinesAreEmphasizedButArbitraryProductTextIsNotPolicyInput() {
         assertTrue(ReceiptPrintEmphasisV136.shouldEmphasize("領収書／レシート"))
         assertTrue(ReceiptPrintEmphasisV136.shouldEmphasize("合計       ￥1,100"))
+        assertTrue(
+            ReceiptPrintEmphasisV136.styleFor("合計       ￥1,100") ==
+                ReceiptEmphasisStyleV136.BOLD_DOUBLE_HEIGHT,
+        )
         assertTrue(ReceiptPrintEmphasisV136.shouldEmphasize("お釣り       ￥100"))
         assertTrue(ReceiptPrintEmphasisV136.shouldEmphasize("【再発行】"))
         assertTrue(ReceiptPrintEmphasisV136.shouldEmphasize("【返品レシート】"))
@@ -39,6 +43,8 @@ class V136ReceiptPrintEmphasisTest {
         val boldOff = byteArrayOf(0x1B, 0x45, 0x00)
         assertTrue(payload.containsSequence(boldOn))
         assertTrue(payload.containsSequence(boldOff))
+        assertTrue(payload.containsSequence(byteArrayOf(0x1D, 0x21, 0x01)))
+        assertTrue(payload.containsSequence(byteArrayOf(0x1D, 0x21, 0x00)))
     }
 
     private fun ByteArray.containsSequence(target: ByteArray): Boolean =
