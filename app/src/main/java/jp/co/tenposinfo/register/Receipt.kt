@@ -249,8 +249,18 @@ object ReceiptRenderer {
 
     private fun productNameLines(product: Product, symbol: String, paper: ReceiptPaper, width: Int): List<String> {
         if (paper == ReceiptPaper.MM80) {
-            // Formal v2.5 §16.3: 80mm uses a dedicated tax column where width permits.
+            // Formal v2.5 §16.3: 80mm uses a dedicated tax column only where width permits.
             val taxColumnWidth = 5
+            if (!ReceiptTaxSymbolV136.canUseDedicatedColumn(width, taxColumnWidth)) {
+                val inlineName = "${product.name} [$symbol]"
+                val inlineLines = ReceiptLineWrapV136.wrap(inlineName, width)
+                val chosenInlineName = if (inlineLines.size > 2 && product.receiptShortName.isNotBlank()) {
+                    "${product.receiptShortName} [$symbol]"
+                } else {
+                    inlineName
+                }
+                return ReceiptLineWrapV136.wrap(chosenInlineName, width)
+            }
             val nameWidth = width - taxColumnWidth
             val fullLines = ReceiptLineWrapV136.wrap(product.name, nameWidth)
             val chosenName = if (fullLines.size > 2 && product.receiptShortName.isNotBlank()) {
