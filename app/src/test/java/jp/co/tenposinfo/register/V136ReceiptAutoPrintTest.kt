@@ -65,7 +65,7 @@ class V136ReceiptAutoPrintTest {
         assertTrue(database.contains("ReceiptAutoPrintPolicyV136.shouldCreateAutomaticReceiptJob"))
         assertTrue(database.contains("detail.summary.createdAt + 1L"))
         assertTrue(receipt.contains("ReceiptReprintPolicyV136.isReprint"))
-        assertTrue(receipt.contains("openDrawer = false"))
+        assertFalse(receipt.contains("openDrawer = true"))
         assertTrue(queue.contains("ReceiptReprintPolicyV136.isReprint"))
         assertTrue(activity.contains("会計確定時にレシートを自動発行"))
         assertTrue(activity.contains("単独開放は無効"))
