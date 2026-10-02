@@ -337,7 +337,11 @@ private fun RegisterApp() {
                             it.note.isEmpty()
                     } else -1
                     if (index >= 0) {
-                        val updated = cart[index].copy(quantity = cart[index].quantity + quantity)
+                        val updatedQuantity = cart[index].quantity + quantity
+                        val updated = cart[index].copy(
+                            quantity = updatedQuantity,
+                            quantityHundredths = Math.multiplyExact(updatedQuantity.toLong(), QuantityV136.SCALE),
+                        )
                         cart.removeAt(index)
                         cart += updated
                     } else {
@@ -361,7 +365,13 @@ private fun RegisterApp() {
                                 CartCorrectionTypeV135.SELECTED_LINE,
                             )
                         } else {
-                            updateCartItem(index, current.copy(quantity = quantity))
+                            updateCartItem(
+                                index,
+                                current.copy(
+                                    quantity = quantity,
+                                    quantityHundredths = Math.multiplyExact(quantity.toLong(), QuantityV136.SCALE),
+                                ),
+                            )
                         }
                     }
                 },
