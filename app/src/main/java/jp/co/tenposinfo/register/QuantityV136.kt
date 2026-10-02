@@ -26,6 +26,7 @@ value class QuantityV136 private constructor(val hundredths: Long) {
     companion object {
         const val SCALE = 100L
         fun ofWhole(value: Int): QuantityV136 = QuantityV136(Math.multiplyExact(value.toLong(), SCALE))
+        fun fromHundredths(value: Long): QuantityV136 = QuantityV136(value)
         fun parse(value: String): QuantityV136 {
             val normalized = value.trim()
             require(Regex("\\d+(?:\\.\\d{1,2})?").matches(normalized)) {
