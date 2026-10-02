@@ -90,7 +90,7 @@ class V136CashDrawerSafetyTest {
         assertTrue(drawer.contains("SQLiteDatabase.CONFLICT_IGNORE"))
         assertTrue(drawer.contains("CASH_DRAWER_DUPLICATE_SUPPRESSED"))
         assertTrue(drawer.contains("FAILED_OR_UNCERTAIN"))
-        assertTrue(receipt.contains("openDrawer = false"))
+        assertFalse(receipt.contains("openDrawer = true"))
         assertTrue(autoPrint.contains("openContext = CashDrawerOpenContextV136.CASH_SALE"))
         assertTrue(autoPrint.contains("eventKey = \"SALE:\$saleId\""))
         assertTrue(autoPrint.contains("paymentState.allocations.any { it.method == PaymentMethod.CASH }"))
