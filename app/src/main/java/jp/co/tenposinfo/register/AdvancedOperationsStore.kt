@@ -55,12 +55,16 @@ data class ReturnLineRecord(
     val reduced: Boolean = taxCategory.symbol.contains("※"),
     val taxSymbol: String = taxCategory.symbol,
     val originalQuantity: Int,
+    val originalQuantityHundredths: Long = Math.multiplyExact(originalQuantity.toLong(), QuantityV136.SCALE),
     val originalDiscount: Long,
     val note: String,
     val returnedQuantity: Int,
+    val returnedQuantityHundredths: Long = Math.multiplyExact(returnedQuantity.toLong(), QuantityV136.SCALE),
     val refundedDiscount: Long,
 ) {
     val remainingQuantity: Int get() = (originalQuantity - returnedQuantity).coerceAtLeast(0)
+    val remainingQuantityHundredths: Long
+        get() = (originalQuantityHundredths - returnedQuantityHundredths).coerceAtLeast(0L)
     val remainingDiscount: Long get() = (originalDiscount - refundedDiscount).coerceAtLeast(0)
 
     fun toReturnItem(quantity: Int): CartItem {
@@ -1014,6 +1018,30 @@ class AdvancedOperationsStore(context: Context) {
         )
     }
 
+    private fun ensureFractionalReversalQuantityColumns() {
+        if (!hasColumn("reversal_items", "original_quantity_hundredths")) {
+            db.execSQL("ALTER TABLE reversal_items ADD COLUMN original_quantity_hundredths INTEGER")
+        }
+        if (!hasColumn("reversal_items", "return_quantity_hundredths")) {
+            db.execSQL("ALTER TABLE reversal_items ADD COLUMN return_quantity_hundredths INTEGER")
+        }
+        db.execSQL(
+            "UPDATE reversal_items SET original_quantity_hundredths = original_quantity * 100 WHERE original_quantity_hundredths IS NULL",
+        )
+        db.execSQL(
+            "UPDATE reversal_items SET return_quantity_hundredths = return_quantity * 100 WHERE return_quantity_hundredths IS NULL",
+        )
+    }
+
+    private fun hasColumn(table: String, column: String): Boolean =
+        db.rawQuery("PRAGMA table_info($table)", null).use { cursor ->
+            val nameIndex = cursor.getColumnIndexOrThrow("name")
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameIndex) == column) return@use true
+            }
+            false
+        }
+
     private fun ensureSchema() {
         db.execSQL(
             """
@@ -1082,6 +1110,7 @@ class AdvancedOperationsStore(context: Context) {
             )
             """.trimIndent(),
         )
+        ensureFractionalReversalQuantityColumns()
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS settlement_reports (
