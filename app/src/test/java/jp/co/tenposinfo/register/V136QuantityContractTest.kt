@@ -63,6 +63,13 @@ class V136QuantityContractTest {
     }
 
     @Test
+    fun reversalReceiptUsesExactQuantityText() {
+        val source = File("src/main/java/jp/co/tenposinfo/register/OperationDocuments.kt").readText()
+        assertEquals(true, source.contains("item.quantityText"))
+        assertEquals(false, source.contains("-\${item.quantity} ×"))
+    }
+
+    @Test
     fun cartLineUsesExactQuantityForAmountAndReceiptText() {
         val product = Product("P1", "量り売り", 250L, TaxCategory.INCLUDED_10, 1)
         val item = CartItem(
