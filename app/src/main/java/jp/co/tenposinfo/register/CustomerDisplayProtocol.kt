@@ -19,6 +19,8 @@ data class CustomerDisplayOrderItem(
     val productId: String,
     val name: String,
     val quantity: Int,
+    val quantityHundredths: Long = Math.multiplyExact(quantity.toLong(), QuantityV136.SCALE),
+    val quantityText: String = QuantityV136.fromHundredths(quantityHundredths).format(),
     val unitPrice: Long,
     val amount: Long,
     val latest: Boolean = false,
@@ -68,6 +70,8 @@ data class CustomerDisplaySnapshot(
                     put("productId", item.productId)
                     put("name", item.name)
                     put("quantity", item.quantity)
+                    put("quantityHundredths", item.quantityHundredths)
+                    put("quantityText", item.quantityText)
                     put("unitPrice", item.unitPrice)
                     put("amount", item.amount)
                     put("latest", item.latest)
@@ -189,6 +193,8 @@ object CustomerDisplaySnapshotFactory {
             productId = item.product.id,
             name = item.product.name,
             quantity = item.quantity,
+            quantityHundredths = item.quantityHundredths,
+            quantityText = item.quantityText,
             unitPrice = item.unitPrice,
             amount = item.baseAmount,
             latest = item.product.id == latestProductId,
