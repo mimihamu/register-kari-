@@ -522,8 +522,9 @@ class AdvancedOperationsStore(context: Context) {
                COALESCE(lts.taxable, CASE WHEN si.tax_category = 'NON_TAXABLE' THEN 0 ELSE 1 END),
                COALESCE(lts.reduced, CASE WHEN si.tax_category IN ('INCLUDED_8','EXCLUDED_8') THEN 1 ELSE 0 END),
                COALESCE(lts.tax_symbol, CASE si.tax_category WHEN 'INCLUDED_10' THEN '内' WHEN 'EXCLUDED_10' THEN '外' WHEN 'INCLUDED_8' THEN '内※' WHEN 'EXCLUDED_8' THEN '外※' ELSE '非' END),
-               si.quantity, si.discount_amount, si.note,
+               si.quantity, COALESCE(si.quantity_hundredths, si.quantity * 100), si.discount_amount, si.note,
                COALESCE(SUM(ri.return_quantity), 0) AS returned_quantity,
+               COALESCE(SUM(ri.return_quantity_hundredths), COALESCE(SUM(ri.return_quantity), 0) * 100) AS returned_quantity_hundredths,
                COALESCE(SUM(ri.discount_amount), 0) AS refunded_discount
         FROM sale_items si
         LEFT JOIN line_tax_snapshots lts
@@ -534,7 +535,7 @@ class AdvancedOperationsStore(context: Context) {
         WHERE si.sale_id = ?
         GROUP BY si.id, si.product_id, si.product_name, si.unit_price, si.tax_category,
                  lts.tax_key, lts.tax_label, lts.rate_percent, lts.tax_included, lts.taxable, lts.reduced, lts.tax_symbol,
-                 si.quantity, si.discount_amount, si.note
+                 si.quantity, si.quantity_hundredths, si.discount_amount, si.note
         ORDER BY si.id ASC
         """.trimIndent(),
         arrayOf(saleId.toString()),
@@ -556,10 +557,12 @@ class AdvancedOperationsStore(context: Context) {
                 reduced = cursor.getInt(10) != 0,
                 taxSymbol = cursor.getString(11),
                 originalQuantity = cursor.getInt(12),
-                originalDiscount = cursor.getLong(13),
-                note = cursor.getString(14),
-                returnedQuantity = cursor.getInt(15),
-                refundedDiscount = cursor.getLong(16),
+                originalQuantityHundredths = cursor.getLong(13),
+                originalDiscount = cursor.getLong(14),
+                note = cursor.getString(15),
+                returnedQuantity = cursor.getInt(16),
+                returnedQuantityHundredths = cursor.getLong(17),
+                refundedDiscount = cursor.getLong(18),
             )
         }
         result
