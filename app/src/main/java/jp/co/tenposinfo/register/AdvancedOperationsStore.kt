@@ -55,12 +55,12 @@ data class ReturnLineRecord(
     val reduced: Boolean = taxCategory.symbol.contains("※"),
     val taxSymbol: String = taxCategory.symbol,
     val originalQuantity: Int,
-    val originalQuantityHundredths: Long = Math.multiplyExact(originalQuantity.toLong(), QuantityV136.SCALE),
     val originalDiscount: Long,
     val note: String,
     val returnedQuantity: Int,
-    val returnedQuantityHundredths: Long = Math.multiplyExact(returnedQuantity.toLong(), QuantityV136.SCALE),
     val refundedDiscount: Long,
+    val originalQuantityHundredths: Long = Math.multiplyExact(originalQuantity.toLong(), QuantityV136.SCALE),
+    val returnedQuantityHundredths: Long = Math.multiplyExact(returnedQuantity.toLong(), QuantityV136.SCALE),
 ) {
     val remainingQuantity: Int get() = (originalQuantity - returnedQuantity).coerceAtLeast(0)
     val remainingQuantityHundredths: Long
