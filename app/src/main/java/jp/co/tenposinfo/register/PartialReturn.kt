@@ -20,8 +20,15 @@ data class ReturnableSaleLine(
     val note: String,
     val returnedQuantity: Int,
     val refundedDiscount: Long,
+    val originalQuantityHundredths: Long = Math.multiplyExact(originalQuantity.toLong(), QuantityV136.SCALE),
+    val returnedQuantityHundredths: Long = Math.multiplyExact(returnedQuantity.toLong(), QuantityV136.SCALE),
 ) {
     val remainingQuantity: Int get() = (originalQuantity - returnedQuantity).coerceAtLeast(0)
+    val remainingQuantityHundredths: Long
+        get() = (originalQuantityHundredths - returnedQuantityHundredths).coerceAtLeast(0L)
+    val originalQuantityText: String get() = QuantityV136.fromHundredths(originalQuantityHundredths).format()
+    val returnedQuantityText: String get() = if (returnedQuantityHundredths == 0L) "0" else QuantityV136.fromHundredths(returnedQuantityHundredths).format()
+    val remainingQuantityText: String get() = if (remainingQuantityHundredths == 0L) "0" else QuantityV136.fromHundredths(remainingQuantityHundredths).format()
     val remainingDiscount: Long get() = (originalDiscount - refundedDiscount).coerceAtLeast(0)
 
     fun toReturnItem(quantity: Int): CartItem {
