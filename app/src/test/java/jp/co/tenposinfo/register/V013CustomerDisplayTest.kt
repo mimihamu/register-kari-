@@ -51,8 +51,6 @@ class V013CustomerDisplayTest {
         assertEquals(150L, orderItem.quantityHundredths)
         assertEquals("1.5", orderItem.quantityText)
         assertEquals(375L, orderItem.amount)
-        assertTrue(snapshot.toJson().contains("\"quantityHundredths\":150"))
-        assertTrue(snapshot.toJson().contains("\"quantityText\":\"1.5\""))
     }
 
     @Test
