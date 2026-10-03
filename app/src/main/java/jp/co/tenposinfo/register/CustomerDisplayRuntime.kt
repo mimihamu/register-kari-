@@ -207,7 +207,7 @@ internal class CustomerDisplayPoller(
         val beforeById = before.associateBy { it.product.id }
         return after.lastOrNull { current ->
             val old = beforeById[current.product.id]
-            old == null || old.quantity != current.quantity || old.unitPrice != current.unitPrice || old.discountAmount != current.discountAmount
+            old == null || old.quantityHundredths != current.quantityHundredths || old.unitPrice != current.unitPrice || old.discountAmount != current.discountAmount
         }?.product?.id
     }
 
@@ -216,6 +216,7 @@ internal class CustomerDisplayPoller(
             item.product.id,
             item.product.name,
             item.quantity,
+            item.quantityHundredths,
             item.unitPrice,
             item.discountAmount,
             item.note,

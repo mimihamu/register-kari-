@@ -101,7 +101,65 @@ class V135Uc10CancelAuditTest {
 
         assertTrue(source.contains("【取消レシート】"))
         assertTrue(source.contains("元売上No.${'$'}{data.originalSaleId}"))
-        assertTrue(source.contains("\"-${'$'}{item.quantity} × ${'$'}{yen(item.unitPrice)}\""))
+        assertTrue(source.contains("\"-${'
+        assertTrue(source.contains("\"-${'$'}{yen(item.baseAmount)}\""))
+        assertTrue(source.contains("返金合計"))
+    }
+
+    @Test
+    fun cancelRequiresReversalPermissionManagerPinReasonAndOpenBusinessSession() {
+        val coordinator = File("src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt").readText()
+        val store = File("src/main/java/jp/co/tenposinfo/register/OperationsStore.kt").readText()
+
+        assertTrue(coordinator.contains("requireOperator(OperationsAction.REVERSAL)"))
+        assertTrue(coordinator.contains("requireManagerName(managerPin)"))
+        assertTrue(store.contains("require(reason.isNotBlank())"))
+        assertTrue(store.contains("queryActiveSession(this) ?: error(\"営業開始後に返品・取消を実行してください\")"))
+        assertTrue(store.contains("check(BusinessSessionTransitionPolicy.mayOperate(session.status))"))
+    }
+
+    @Test
+    fun cancellationFeedsNetSalesTenderTotalsCashAndDownstreamQueues() {
+        val store = File("src/main/java/jp/co/tenposinfo/register/OperationsStore.kt").readText()
+        val activity = File("src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt").readText()
+
+        assertTrue(store.contains("netSales = salesGross - reversalGross"))
+        assertTrue(store.contains("paymentMap[method] = (paymentMap[method] ?: 0L) - cursor.getLong(1)"))
+        assertTrue(store.contains("cashSalesAfterRefunds = paymentMap[PaymentMethod.CASH.name] ?: 0L"))
+        assertTrue(activity.contains("AutomaticPrintScheduler.enqueueNow(appContext)"))
+        assertTrue(activity.contains("DriveOutboxScheduler.enqueueNow(appContext)"))
+    }
+}
+}{item.quantityText} × ${'
+        assertTrue(source.contains("\"-${'$'}{yen(item.baseAmount)}\""))
+        assertTrue(source.contains("返金合計"))
+    }
+
+    @Test
+    fun cancelRequiresReversalPermissionManagerPinReasonAndOpenBusinessSession() {
+        val coordinator = File("src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt").readText()
+        val store = File("src/main/java/jp/co/tenposinfo/register/OperationsStore.kt").readText()
+
+        assertTrue(coordinator.contains("requireOperator(OperationsAction.REVERSAL)"))
+        assertTrue(coordinator.contains("requireManagerName(managerPin)"))
+        assertTrue(store.contains("require(reason.isNotBlank())"))
+        assertTrue(store.contains("queryActiveSession(this) ?: error(\"営業開始後に返品・取消を実行してください\")"))
+        assertTrue(store.contains("check(BusinessSessionTransitionPolicy.mayOperate(session.status))"))
+    }
+
+    @Test
+    fun cancellationFeedsNetSalesTenderTotalsCashAndDownstreamQueues() {
+        val store = File("src/main/java/jp/co/tenposinfo/register/OperationsStore.kt").readText()
+        val activity = File("src/main/java/jp/co/tenposinfo/register/OperationsActivity.kt").readText()
+
+        assertTrue(store.contains("netSales = salesGross - reversalGross"))
+        assertTrue(store.contains("paymentMap[method] = (paymentMap[method] ?: 0L) - cursor.getLong(1)"))
+        assertTrue(store.contains("cashSalesAfterRefunds = paymentMap[PaymentMethod.CASH.name] ?: 0L"))
+        assertTrue(activity.contains("AutomaticPrintScheduler.enqueueNow(appContext)"))
+        assertTrue(activity.contains("DriveOutboxScheduler.enqueueNow(appContext)"))
+    }
+}
+}{yen(item.unitPrice)}\""))
         assertTrue(source.contains("\"-${'$'}{yen(item.baseAmount)}\""))
         assertTrue(source.contains("返金合計"))
     }

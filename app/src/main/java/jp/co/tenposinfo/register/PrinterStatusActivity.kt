@@ -77,10 +77,10 @@ class PrinterStatusActivity : ComponentActivity() {
 @Composable
 private fun PrinterStatusApp(onClose: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val settingsStore = remember { AdminSettingsStore(context.applicationContext) }
+    val profileStore = remember { PrinterProfileStoreV136(context.applicationContext) }
     val monitoringStore = remember { PrinterMonitoringStore(context.applicationContext) }
     val actor = remember { OperatorSessionRegistry.lastKnownName() ?: "プリンター診断" }
-    var configuration by remember { mutableStateOf(settingsStore.loadPrinterConfiguration()) }
+    var configuration by remember { mutableStateOf(profileStore.resolve(DocumentPrintKindV136.SALE_RECEIPT) ?: PrinterConfiguration(enabled = false)) }
     var runtimeSettings by remember { mutableStateOf(monitoringStore.loadSettings()) }
     var retentionText by remember { mutableStateOf(runtimeSettings.historyRetentionDays.toString()) }
     var status by remember { mutableStateOf<PrinterRealtimeStatus?>(null) }
@@ -96,7 +96,7 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
     DisposableEffect(Unit) {
         onDispose {
             monitoringStore.close()
-            settingsStore.close()
+            profileStore.close()
         }
     }
 
@@ -164,7 +164,7 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
                         StatusValue("機種", configuration.profile.displayName)
                         StatusValue("状態方式", capability.implementationName)
                         StatusValue("検証区分", capability.verification.displayName)
-                        StatusValue("接続先", if (configuration.host.isBlank()) "未設定" else "${configuration.host}:${configuration.port}")
+                        StatusValue("接続先", PrinterTransportPolicyV136.endpointDisplay(configuration).ifBlank { "未設定" })
                         StatusValue("タイムアウト", "${configuration.timeoutMillis}ms")
                         StatusValue("履歴上限", "${PrinterHistoryRetentionPolicy.MAX_ROWS}件")
                         Spacer(Modifier.height(8.dp))
@@ -273,7 +273,7 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
                         Spacer(Modifier.height(8.dp))
                         OutlinedButton(
                             onClick = {
-                                configuration = settingsStore.loadPrinterConfiguration()
+                                configuration = profileStore.resolve(DocumentPrintKindV136.SALE_RECEIPT) ?: PrinterConfiguration(enabled = false)
                                 runtimeSettings = monitoringStore.loadSettings()
                                 retentionText = runtimeSettings.historyRetentionDays.toString()
                                 status = null
@@ -288,7 +288,7 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
                             Checkbox(
                                 checked = autoMonitor,
                                 onCheckedChange = { autoMonitor = it },
-                                enabled = configuration.host.isNotBlank() && capability.automaticQueryAllowed,
+                                enabled = PrinterTransportPolicyV136.supportsRealtimeStatus(configuration) && PrinterTransportPolicyV136.isConfigured(configuration) && capability.automaticQueryAllowed,
                             )
                             Text("5秒ごとに自動確認")
                         }
@@ -299,7 +299,8 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
                                 }
                             },
                             enabled = !checking &&
-                                configuration.host.isNotBlank() &&
+                                PrinterTransportPolicyV136.supportsRealtimeStatus(configuration) &&
+                                PrinterTransportPolicyV136.isConfigured(configuration) &&
                                 (capability.verification != PrinterStatusVerification.EXPERIMENTAL_COMPATIBILITY || experimentalConfirmed),
                             modifier = Modifier.fillMaxWidth().height(56.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = PsGreen),

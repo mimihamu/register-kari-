@@ -373,6 +373,29 @@ private fun ReceiptVoucherOperationsScreen(
                                     if ((calculation?.copies ?: 0) > 1) {
                                         Text("複数枚は補助領収書として発行し、各票に『${ReceiptVoucherRenderer.NOT_QUALIFIED_LABEL}』を印字します。", fontSize = 12.sp)
                                     }
+                                    calculation?.let { calc ->
+                                        Spacer(Modifier.height(8.dp))
+                                        Text("代表票プレビュー（全票は描画しません）", fontWeight = FontWeight.Bold, color = VoucherNavy)
+                                        ReceiptVoucherBatchPreviewPolicyV136.representatives(calc.copies).forEach { representative ->
+                                            Card(
+                                                modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
+                                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                                border = BorderStroke(1.dp, VoucherBorder),
+                                            ) {
+                                                Row(
+                                                    Modifier.fillMaxWidth().padding(8.dp),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                ) {
+                                                    Column {
+                                                        Text("${representative.label}  ${representative.sequenceNo}/${calc.copies}", fontWeight = FontWeight.Bold)
+                                                        Text("${addressee.ifBlank { "宛名空欄" }} / $purpose", fontSize = 12.sp, color = Color.DarkGray)
+                                                    }
+                                                    Text(voucherYen(calc.unitAmount), fontWeight = FontWeight.Bold, color = VoucherNavy)
+                                                }
+                                            }
+                                        }
+                                    }
                                     Spacer(Modifier.height(8.dp))
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         OutlinedButton(onClick = { issueConfirmation = false; message = null }, modifier = Modifier.weight(1f)) {

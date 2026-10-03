@@ -54,7 +54,22 @@ class SecureOperationsCoordinator(
 
     fun recordCashMovement(type: CashMovementType, amount: Long, reason: String): Long {
         val operator = requireOperator(OperationsAction.CASH_MOVEMENT)
-        return store.recordCashMovement(type, amount, reason, OperationsActorFormatter.direct(operator))
+        val actor = OperationsActorFormatter.direct(operator)
+        val movementId = store.recordCashMovement(type, amount, reason, actor)
+        val openContext = when (type) {
+            CashMovementType.IN -> CashDrawerOpenContextV136.CASH_IN
+            CashMovementType.OUT -> CashDrawerOpenContextV136.CASH_OUT
+            CashMovementType.EXCHANGE -> CashDrawerOpenContextV136.EXCHANGE
+        }
+        CashDrawerRuntimeV136.dispatchAsync(
+            context = appContext,
+            openContext = openContext,
+            referenceId = movementId,
+            eventKey = "CASH_MOVEMENT:$movementId",
+            reason = reason,
+            actor = actor,
+        )
+        return movementId
     }
 
     fun recordSettlement(
@@ -190,6 +205,15 @@ class SecureOperationsCoordinator(
                 )
             }
             ManualRefundFallbackRuntimeV135.complete(appContext, refundContext, result.refundAmount)
+            CashDrawerRuntimeV136.dispatchAsync(
+                context = appContext,
+                openContext = CashDrawerOpenContextV136.CASH_REFUND,
+                referenceId = result.reversalId,
+                eventKey = "REVERSAL:${result.reversalId}",
+                reason = reason,
+                actor = actor,
+                hasCashPayment = store.reversalHasCashRefund(result.reversalId),
+            )
             result
         }
     }

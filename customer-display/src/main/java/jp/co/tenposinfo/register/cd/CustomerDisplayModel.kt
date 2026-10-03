@@ -19,6 +19,8 @@ data class CustomerDisplayOrderItem(
     val productId: String,
     val name: String,
     val quantity: Int,
+    val quantityHundredths: Long = quantity.toLong() * 100L,
+    val quantityText: String = quantity.toString(),
     val unitPrice: Long,
     val amount: Long,
     val latest: Boolean,
@@ -68,6 +70,8 @@ data class CustomerDisplaySnapshot(
                     put("productId", item.productId)
                     put("name", item.name)
                     put("quantity", item.quantity)
+                    put("quantityHundredths", item.quantityHundredths)
+                    put("quantityText", item.quantityText)
                     put("unitPrice", item.unitPrice)
                     put("amount", item.amount)
                     put("latest", item.latest)
@@ -95,6 +99,14 @@ data class CustomerDisplaySnapshot(
                                 productId = item.optString("productId"),
                                 name = item.optString("name"),
                                 quantity = item.optInt("quantity"),
+                                quantityHundredths = if (item.has("quantityHundredths")) {
+                                    item.optLong("quantityHundredths")
+                                } else {
+                                    item.optInt("quantity").toLong() * 100L
+                                },
+                                quantityText = item.optString("quantityText").ifBlank {
+                                    item.optInt("quantity").toString()
+                                },
                                 unitPrice = item.optLong("unitPrice"),
                                 amount = item.optLong("amount"),
                                 latest = item.optBoolean("latest"),
