@@ -418,12 +418,19 @@ class OperationsStore(context: Context) {
                COALESCE(lts.taxable, CASE WHEN si.tax_category = 'NON_TAXABLE' THEN 0 ELSE 1 END),
                COALESCE(lts.reduced, CASE WHEN si.tax_category IN ('INCLUDED_8','EXCLUDED_8') THEN 1 ELSE 0 END),
                COALESCE(lts.tax_symbol, CASE si.tax_category WHEN 'INCLUDED_10' THEN '内' WHEN 'EXCLUDED_10' THEN '外' WHEN 'INCLUDED_8' THEN '内※' WHEN 'EXCLUDED_8' THEN '外※' ELSE '非' END),
-               si.quantity, si.discount_amount, si.note,
+               si.quantity, COALESCE(si.quantity_hundredths, si.quantity * 100), si.discount_amount, si.note,
                CASE WHEN EXISTS (
                    SELECT 1 FROM reversal_transactions legacy
                    WHERE legacy.original_sale_id = si.sale_id
                      AND NOT EXISTS (SELECT 1 FROM reversal_items legacy_item WHERE legacy_item.reversal_id = legacy.id)
                ) THEN si.quantity ELSE COALESCE(SUM(ri.return_quantity), 0) END AS returned_quantity,
+               CASE WHEN EXISTS (
+                   SELECT 1 FROM reversal_transactions legacy
+                   WHERE legacy.original_sale_id = si.sale_id
+                     AND NOT EXISTS (SELECT 1 FROM reversal_items legacy_item WHERE legacy_item.reversal_id = legacy.id)
+               ) THEN COALESCE(si.quantity_hundredths, si.quantity * 100)
+                 ELSE COALESCE(SUM(ri.return_quantity_hundredths), COALESCE(SUM(ri.return_quantity), 0) * 100)
+               END AS returned_quantity_hundredths,
                CASE WHEN EXISTS (
                    SELECT 1 FROM reversal_transactions legacy
                    WHERE legacy.original_sale_id = si.sale_id
@@ -438,7 +445,7 @@ class OperationsStore(context: Context) {
         WHERE si.sale_id = ?
         GROUP BY si.id, si.product_id, si.product_name, si.unit_price, si.tax_category,
                  lts.tax_key, lts.tax_label, lts.rate_percent, lts.tax_included, lts.taxable, lts.reduced, lts.tax_symbol,
-                 si.quantity, si.discount_amount, si.note
+                 si.quantity, si.quantity_hundredths, si.discount_amount, si.note
         ORDER BY si.id ASC
         """.trimIndent(),
         arrayOf(saleId.toString()),
@@ -460,10 +467,12 @@ class OperationsStore(context: Context) {
                 reduced = cursor.getInt(10) != 0,
                 taxSymbol = cursor.getString(11),
                 originalQuantity = cursor.getInt(12),
-                originalDiscount = cursor.getLong(13),
-                note = cursor.getString(14),
-                returnedQuantity = cursor.getInt(15),
-                refundedDiscount = cursor.getLong(16),
+                originalQuantityHundredths = cursor.getLong(13),
+                originalDiscount = cursor.getLong(14),
+                note = cursor.getString(15),
+                returnedQuantity = cursor.getInt(16),
+                returnedQuantityHundredths = cursor.getLong(17),
+                refundedDiscount = cursor.getLong(18),
             )
         }
         result
@@ -586,7 +595,9 @@ class OperationsStore(context: Context) {
                         put("reduced", if (line.reduced) 1 else 0)
                         put("tax_symbol", line.taxSymbol)
                         put("original_quantity", line.originalQuantity)
+                        put("original_quantity_hundredths", line.originalQuantityHundredths)
                         put("return_quantity", item.quantity)
+                        put("return_quantity_hundredths", item.quantityHundredths)
                         put("discount_amount", item.discountAmount)
                         put("gross_amount", item.baseAmount)
                     },
