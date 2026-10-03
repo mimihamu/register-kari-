@@ -662,7 +662,9 @@ class AdvancedOperationsStore(context: Context) {
                         put("reduced", if (line.reduced) 1 else 0)
                         put("tax_symbol", line.taxSymbol)
                         put("original_quantity", line.originalQuantity)
+                        put("original_quantity_hundredths", line.originalQuantityHundredths)
                         put("return_quantity", item.quantity)
+                        put("return_quantity_hundredths", item.quantityHundredths)
                         put("discount_amount", item.discountAmount)
                         put("gross_amount", item.baseAmount)
                     },
