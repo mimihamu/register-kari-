@@ -70,6 +70,15 @@ class V136QuantityContractTest {
     }
 
     @Test
+    fun productionReversalStoreLoadsAndWritesExactQuantity() {
+        val source = File("src/main/java/jp/co/tenposinfo/register/OperationsStore.kt").readText()
+        assertEquals(true, source.contains("COALESCE(si.quantity_hundredths, si.quantity * 100)"))
+        assertEquals(true, source.contains("returnedQuantityHundredths = cursor.getLong(17)"))
+        assertEquals(true, source.contains("put(\"original_quantity_hundredths\", line.originalQuantityHundredths)"))
+        assertEquals(true, source.contains("put(\"return_quantity_hundredths\", item.quantityHundredths)"))
+    }
+
+    @Test
     fun cartLineUsesExactQuantityForAmountAndReceiptText() {
         val product = Product("P1", "量り売り", 250L, TaxCategory.INCLUDED_10, 1)
         val item = CartItem(
