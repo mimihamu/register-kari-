@@ -63,7 +63,7 @@ object OperationDocumentRenderer {
         lines += separator(width, '-')
         data.items.forEach { item ->
             lines.addAll(ReceiptLineWrapV136.wrap("${item.product.name} [${item.product.taxSymbol}]", width))
-            lines += amountLine("-${item.quantity} × ${yen(item.unitPrice)}", "-${yen(item.baseAmount)}", width)
+            lines += amountLine("-${item.quantityText} × ${yen(item.unitPrice)}", "-${yen(item.baseAmount)}", width)
             if (item.discountAmount > 0) lines += amountLine("  元値引配賦", yen(item.discountAmount), width)
         }
         lines += separator(width, '-')
