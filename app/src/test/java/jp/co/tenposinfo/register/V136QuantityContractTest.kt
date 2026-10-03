@@ -46,6 +46,13 @@ class V136QuantityContractTest {
     }
 
     @Test
+    fun customerDisplayJsonContractCarriesExactQuantityFields() {
+        val source = File("src/main/java/jp/co/tenposinfo/register/CustomerDisplayProtocol.kt").readText()
+        assertEquals(true, source.contains("put(\"quantityHundredths\", item.quantityHundredths)"))
+        assertEquals(true, source.contains("put(\"quantityText\", item.quantityText)"))
+    }
+
+    @Test
     fun cartLineUsesExactQuantityForAmountAndReceiptText() {
         val product = Product("P1", "量り売り", 250L, TaxCategory.INCLUDED_10, 1)
         val item = CartItem(
