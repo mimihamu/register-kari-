@@ -115,6 +115,8 @@ internal object DatabaseStartupSchemaBootstrapV085 {
             "taxable",
             "reduced",
             "tax_symbol",
+            "original_quantity_hundredths",
+            "return_quantity_hundredths",
         ),
         "settlement_reports" to setOf("opening_cash", "cash_in", "cash_out", "snapshot_version"),
     )
