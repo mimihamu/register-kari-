@@ -1356,7 +1356,7 @@ private fun ReversalScreen(
                                     Column(Modifier.weight(1f)) {
                                         Text("${line.productName} [${line.taxSymbol}]", fontWeight = FontWeight.Bold)
                                         Text(
-                                            "${opYen(line.unitPrice)} / 販売 ${line.originalQuantity}・返品済 ${line.returnedQuantity}・残 ${line.remainingQuantity}",
+                                            "${opYen(line.unitPrice)} / 販売 ${line.originalQuantityText}・返品済 ${line.returnedQuantityText}・残 ${line.remainingQuantityText}",
                                             color = Color.Gray,
                                             fontSize = 12.sp,
                                         )
