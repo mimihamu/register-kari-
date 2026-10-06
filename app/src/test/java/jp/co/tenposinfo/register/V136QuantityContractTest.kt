@@ -39,10 +39,12 @@ class V136QuantityContractTest {
     }
 
     @Test
-    fun integerCartEditsResetExactQuantityToWholeUnits() {
+    fun salesCartEditsUseExactQuantityWithoutResettingToWholeUnits() {
         val main = File("src/main/java/jp/co/tenposinfo/register/MainActivity.kt").readText()
-        assertEquals(true, main.contains("quantityHundredths = Math.multiplyExact(updatedQuantity.toLong(), QuantityV136.SCALE)"))
-        assertEquals(true, main.contains("quantityHundredths = Math.multiplyExact(quantity.toLong(), QuantityV136.SCALE)"))
+        assertEquals(true, main.contains("combinedQuantityHundredths"))
+        assertEquals(true, main.contains("applyCartCorrectionHundredths("))
+        assertEquals(true, main.contains("quantityHundredths = quantityHundredths"))
+        assertEquals(true, main.contains("item.quantityText"))
     }
 
     @Test

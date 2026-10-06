@@ -272,6 +272,28 @@ private fun RegisterApp() {
         }
     }
 
+    fun applyCartCorrectionHundredths(index: Int, quantityHundredths: Long, type: CartCorrectionTypeV135) {
+        if (index !in cart.indices) return
+        runCatching {
+            database.applyCartCorrectionHundredths(
+                targetIndex = index,
+                cancelQuantityHundredths = quantityHundredths,
+                correctionType = type,
+                operatorName = operatorName,
+            )
+        }.onSuccess { result ->
+            cart.clear()
+            cart.addAll(result.items)
+            corrections.clear()
+            corrections.addAll(database.loadCartCorrections())
+            selectedIndex = null
+            paymentDraftStore.clear()
+            paymentCommitKey = null
+        }.onFailure { error ->
+            accessMessage = error.message ?: "訂正できませんでした"
+        }
+    }
+
     fun openUnifiedPrintQueue() {
         context.startActivity(Intent(context, UnifiedPrintQueueActivity::class.java))
     }
@@ -327,8 +349,8 @@ private fun RegisterApp() {
                     selectedIndex = it
                     screen = AppScreen.LINE_EDIT
                 },
-                onAddProduct = { product, quantity ->
-                    require(quantity > 0) { "数量は1以上で指定してください" }
+                onAddProduct = { product, quantityHundredths ->
+                    product.quantityMode.requireAllowed(quantityHundredths)
                     val mergeSameItem = initialReleaseSettingsStore.loadSales().mergeSameItem
                     val index = if (mergeSameItem) cart.indexOfFirst {
                         it.product.id == product.id &&
@@ -337,39 +359,42 @@ private fun RegisterApp() {
                             it.note.isEmpty()
                     } else -1
                     if (index >= 0) {
-                        val updatedQuantity = cart[index].quantity + quantity
+                        val combinedQuantityHundredths = Math.addExact(cart[index].quantityHundredths, quantityHundredths)
+                        cart[index].product.quantityMode.requireAllowed(combinedQuantityHundredths)
                         val updated = cart[index].copy(
-                            quantity = updatedQuantity,
-                            quantityHundredths = Math.multiplyExact(updatedQuantity.toLong(), QuantityV136.SCALE),
+                            quantity = QuantityCompatibilityV136.legacyPositiveInt(combinedQuantityHundredths),
+                            quantityHundredths = combinedQuantityHundredths,
                         )
                         cart.removeAt(index)
                         cart += updated
                     } else {
                         cart += CartItem(
                             product = product,
-                            quantity = quantity,
+                            quantity = QuantityCompatibilityV136.legacyPositiveInt(quantityHundredths),
+                            quantityHundredths = quantityHundredths,
                             lineId = CartLineIdentityV135.newId(),
                         )
                     }
                     selectedIndex = null
                     database.saveCart(cart.toList())
                 },
-                onChangeQuantity = { quantity ->
+                onChangeQuantity = { quantityHundredths ->
                     val index = selectedIndex
-                    if (index != null && index in cart.indices && quantity > 0) {
+                    if (index != null && index in cart.indices && quantityHundredths > 0L) {
                         val current = cart[index]
-                        if (quantity < current.quantity) {
-                            applyCartCorrection(
+                        current.product.quantityMode.requireAllowed(quantityHundredths)
+                        if (quantityHundredths < current.quantityHundredths) {
+                            applyCartCorrectionHundredths(
                                 index,
-                                current.quantity - quantity,
+                                current.quantityHundredths - quantityHundredths,
                                 CartCorrectionTypeV135.SELECTED_LINE,
                             )
                         } else {
                             updateCartItem(
                                 index,
                                 current.copy(
-                                    quantity = quantity,
-                                    quantityHundredths = Math.multiplyExact(quantity.toLong(), QuantityV136.SCALE),
+                                    quantity = QuantityCompatibilityV136.legacyPositiveInt(quantityHundredths),
+                                    quantityHundredths = quantityHundredths,
                                 ),
                             )
                         }
@@ -378,17 +403,17 @@ private fun RegisterApp() {
                 onRemove = {
                     val index = cart.lastIndex
                     if (index in cart.indices) {
-                        applyCartCorrection(
+                        applyCartCorrectionHundredths(
                             index,
-                            cart[index].quantity,
+                            cart[index].quantityHundredths,
                             CartCorrectionTypeV135.LAST_LINE,
                         )
                     }
                 },
-                onCancelSelected = { quantity ->
+                onCancelSelected = { quantityHundredths ->
                     val index = selectedIndex
                     if (index != null && index in cart.indices) {
-                        applyCartCorrection(index, quantity, CartCorrectionTypeV135.SELECTED_LINE)
+                        applyCartCorrectionHundredths(index, quantityHundredths, CartCorrectionTypeV135.SELECTED_LINE)
                     }
                 },
                 onCancelTransaction = {
@@ -499,10 +524,10 @@ private fun RegisterApp() {
                         item = item,
                         onSave = { edited ->
                             val original = cart.getOrNull(index)
-                            if (original != null && edited.quantity < original.quantity) {
-                                applyCartCorrection(
+                            if (original != null && edited.quantityHundredths < original.quantityHundredths) {
+                                applyCartCorrectionHundredths(
                                     index,
-                                    original.quantity - edited.quantity,
+                                    original.quantityHundredths - edited.quantityHundredths,
                                     CartCorrectionTypeV135.SELECTED_LINE,
                                 )
                                 val remainingIndex = cart.indexOfFirst { it.lineId == original.lineId }
@@ -510,7 +535,7 @@ private fun RegisterApp() {
                                     updateCartItem(
                                         remainingIndex,
                                         edited.copy(
-                                            quantity = edited.quantity,
+                                            quantity = QuantityCompatibilityV136.legacyPositiveInt(edited.quantityHundredths),
                                             lineId = original.lineId,
                                         ),
                                     )
@@ -1048,10 +1073,10 @@ private fun SalesScreen(
     printerHealth: PrinterHealthSnapshot,
     onSelect: (Int) -> Unit,
     onEdit: (Int) -> Unit,
-    onAddProduct: (Product, Int) -> Unit,
-    onChangeQuantity: (Int) -> Unit,
+    onAddProduct: (Product, Long) -> Unit,
+    onChangeQuantity: (Long) -> Unit,
     onRemove: () -> Unit,
-    onCancelSelected: (Int) -> Unit,
+    onCancelSelected: (Long) -> Unit,
     onCancelTransaction: () -> Unit,
     onDiscount: () -> Unit,
     onTickets: () -> Unit,
@@ -1070,25 +1095,48 @@ private fun SalesScreen(
 ) {
     val summary = TaxEngine.calculate(cart)
     var numericInput by remember { mutableStateOf("") }
-    var pendingQuantity by remember { mutableStateOf<Int?>(null) }
+    var pendingQuantityHundredths by remember { mutableStateOf<Long?>(null) }
     var showProductSearch by remember { mutableStateOf(false) }
     var lookupMessage by remember { mutableStateOf<String?>(null) }
     var unregisteredBarcode by remember { mutableStateOf<String?>(null) }
     val barcodeIndex = remember(products) { BarcodeProductIndexV136(products) }
     val responsive = rememberRegisterResponsiveMetrics()
 
-    androidx.compose.runtime.DisposableEffect(barcodeIndex, pendingQuantity, onAddProduct) {
+    fun registerProduct(product: Product): Boolean {
+        val requested = pendingQuantityHundredths ?: QuantityV136.SCALE
+        val existing = cart.firstOrNull {
+            it.product.id == product.id &&
+                it.unitPrice == product.unitPrice &&
+                it.discountAmount == 0L &&
+                it.note.isEmpty()
+        }
+        val combined = runCatching {
+            if (existing == null) requested else Math.addExact(existing.quantityHundredths, requested)
+        }.getOrElse {
+            lookupMessage = "数量が上限を超えています"
+            return false
+        }
+        val error = runCatching { product.quantityMode.requireAllowed(combined) }.exceptionOrNull()
+        if (error != null) {
+            lookupMessage = error.message ?: "数量を確認してください"
+            return false
+        }
+        onAddProduct(product, requested)
+        pendingQuantityHundredths = null
+        numericInput = ""
+        lookupMessage = null
+        unregisteredBarcode = null
+        return true
+    }
+
+    androidx.compose.runtime.DisposableEffect(barcodeIndex, pendingQuantityHundredths, onAddProduct) {
         val listener: (BarcodeScannedV136) -> Unit = { event ->
             val product = barcodeIndex.findExact(event.code)
             if (product == null) {
                 unregisteredBarcode = event.code
                 lookupMessage = null
             } else {
-                onAddProduct(product, pendingQuantity ?: 1)
-                pendingQuantity = null
-                numericInput = ""
-                lookupMessage = null
-                unregisteredBarcode = null
+                registerProduct(product)
             }
         }
         InputRouterV136.setBarcodeListener(listener)
@@ -1100,10 +1148,9 @@ private fun SalesScreen(
             code = scannedCode,
             canOpenProductSettings = canOpenSettings,
             onTemporaryProduct = { product ->
-                onAddProduct(product, pendingQuantity ?: 1)
-                pendingQuantity = null
-                numericInput = ""
-                lookupMessage = "仮商品として登録しました"
+                if (registerProduct(product)) {
+                    lookupMessage = "仮商品として登録しました"
+                }
             },
             onOpenProductSettings = { onOpenCatalogSettings(scannedCode) },
             onDismiss = { unregisteredBarcode = null },
@@ -1115,11 +1162,9 @@ private fun SalesScreen(
             products = products,
             onDismiss = { showProductSearch = false },
             onRegister = { product ->
-                onAddProduct(product, pendingQuantity ?: 1)
-                pendingQuantity = null
-                numericInput = ""
-                lookupMessage = null
-                showProductSearch = false
+                if (registerProduct(product)) {
+                    showProductSearch = false
+                }
             },
         )
     }
@@ -1200,7 +1245,7 @@ private fun SalesScreen(
                                 }
                                 Text(item.product.name, fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    "${item.quantity} × ${yen(item.unitPrice)}  ${item.product.taxSymbol}",
+                                    "${item.quantityText} × ${yen(item.unitPrice)}  ${item.product.taxSymbol}",
                                     fontSize = 13.sp,
                                     color = Color.Gray,
                                 )
@@ -1227,7 +1272,7 @@ private fun SalesScreen(
                                 Column(Modifier.weight(1f)) {
                                     Text("取消 ${correction.productName}", color = Danger, fontWeight = FontWeight.SemiBold)
                                     Text(
-                                        "${correction.cancelledQuantity} × ${yen(correction.unitPrice)} / 元行 ${correction.lineId.takeLast(8)}",
+                                        "${correction.cancelledQuantityText} × ${yen(correction.unitPrice)} / 元行 ${correction.lineId.takeLast(8)}",
                                         fontSize = 12.sp,
                                         color = Color.Gray,
                                     )
@@ -1238,7 +1283,8 @@ private fun SalesScreen(
                     }
                 }
                 Row(verticalAlignment = Alignment.Bottom) {
-                    Text("${cart.sumOf { it.quantity }}点")
+                    val totalQuantityHundredths = cart.sumOf { it.quantityHundredths }
+                    Text("${QuantityCompatibilityV136.textOrZero(totalQuantityHundredths)}点")
                     Spacer(Modifier.weight(1f))
                     Text("合計 ${yen(summary.grossAmount)}", fontSize = if (responsive.isCompact) 24.sp else 28.sp, fontWeight = FontWeight.Bold, color = Navy)
                 }
@@ -1263,7 +1309,9 @@ private fun SalesScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                lookupMessage ?: pendingQuantity?.let { "次商品 ${it}点" } ?: "置数・機能",
+                                lookupMessage ?: pendingQuantityHundredths?.let {
+                                    "次商品 ${QuantityCompatibilityV136.textOrZero(it)}点"
+                                } ?: "置数・機能",
                                 fontSize = if (responsive.isCompact) 16.sp else 18.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Navy,
@@ -1279,17 +1327,40 @@ private fun SalesScreen(
                         }
                         Spacer(Modifier.height(keypad.gapDp.dp))
                         NumberPad(
-                            onDigit = { if (numericInput.length < 5) numericInput += it },
+                            onDigit = { digit ->
+                                if (numericInput.length < 7) numericInput += digit
+                            },
                             onClear = { numericInput = "" },
                             bottomActionLabel = "数量",
                             onBottomAction = {
-                                ProductQuantityKeyPolicyV135.decide(numericInput, selectedIndex != null)?.let { decision ->
-                                    decision.selectedLineQuantity?.let(onChangeQuantity)
-                                    decision.pendingProductQuantity?.let { pendingQuantity = it }
-                                    lookupMessage = null
+                                val selected = selectedIndex?.let { cart.getOrNull(it) }
+                                val parsed = runCatching { QuantityV136.parse(numericInput).hundredths }.getOrNull()
+                                when {
+                                    parsed == null || parsed > 999_999L -> {
+                                        lookupMessage = "数量は0.01～9,999.99で入力してください"
+                                    }
+                                    selected != null -> {
+                                        val error = runCatching { selected.product.quantityMode.requireAllowed(parsed) }.exceptionOrNull()
+                                        if (error != null) {
+                                            lookupMessage = error.message ?: "数量を確認してください"
+                                        } else {
+                                            onChangeQuantity(parsed)
+                                            lookupMessage = null
+                                        }
+                                    }
+                                    else -> {
+                                        pendingQuantityHundredths = parsed
+                                        lookupMessage = null
+                                    }
                                 }
                                 numericInput = ""
                             },
+                            onDecimal = {
+                                if ("." !in numericInput && numericInput.length < 6) {
+                                    numericInput = if (numericInput.isBlank()) "0." else "$numericInput."
+                                }
+                            },
+                            decimalEnabled = selectedIndex?.let { cart.getOrNull(it)?.product?.quantityMode } != QuantityMode.INTEGER,
                             compact = true,
                             buttonHeightDp = keypad.keyHeightDp,
                             rowGapDp = keypad.gapDp,
@@ -1314,9 +1385,28 @@ private fun SalesScreen(
                                     onClick = {
                                         val selected = selectedIndex?.let { cart.getOrNull(it) }
                                         if (selected != null) {
-                                            val quantity = numericInput.toIntOrNull() ?: selected.quantity
-                                            onCancelSelected(quantity)
-                                            numericInput = ""
+                                            val quantityHundredths = if (numericInput.isBlank()) {
+                                                selected.quantityHundredths
+                                            } else {
+                                                runCatching { QuantityV136.parse(numericInput).hundredths }.getOrNull()
+                                            }
+                                            if (quantityHundredths == null) {
+                                                lookupMessage = "取消数量は0.01～9,999.99で入力してください"
+                                            } else {
+                                                val error = runCatching {
+                                                    selected.product.quantityMode.requireAllowed(quantityHundredths)
+                                                    require(quantityHundredths <= selected.quantityHundredths) {
+                                                        "取消数量が現在数量を超えています"
+                                                    }
+                                                }.exceptionOrNull()
+                                                if (error != null) {
+                                                    lookupMessage = error.message ?: "取消数量を確認してください"
+                                                } else {
+                                                    onCancelSelected(quantityHundredths)
+                                                    numericInput = ""
+                                                    lookupMessage = null
+                                                }
+                                            }
                                         }
                                     },
                                     enabled = selectedIndex != null,
@@ -1388,12 +1478,7 @@ private fun SalesScreen(
                                     Spacer(Modifier.weight(1f).height(72.dp))
                                 } else {
                                     Button(
-                                        onClick = {
-                                            onAddProduct(product, pendingQuantity ?: 1)
-                                            pendingQuantity = null
-                                            numericInput = ""
-                                            lookupMessage = null
-                                        },
+                                        onClick = { registerProduct(product) },
                                         modifier = Modifier.weight(1f).height(72.dp),
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = ProductButtonPalette.background(product.buttonColor),
@@ -1447,14 +1532,17 @@ private fun LineEditScreen(
     onDiscount: () -> Unit,
     onBack: () -> Unit,
 ) {
-    var quantity by remember { mutableStateOf(item.quantity.toString()) }
+    var quantity by remember { mutableStateOf(item.quantityText) }
     var unitPrice by remember { mutableStateOf(item.unitPrice.toString()) }
     var discount by remember { mutableStateOf(item.discountAmount.toString()) }
     var note by remember { mutableStateOf(item.note) }
     var category by remember { mutableStateOf(item.product.taxCategory) }
-    val parsedQuantity = quantity.toIntOrNull()?.coerceAtLeast(1) ?: 1
+    val parsedQuantityHundredths = runCatching {
+        QuantityV136.parse(quantity).hundredths.also { item.product.quantityMode.requireAllowed(it) }
+    }.getOrNull()
+    val effectiveQuantityHundredths = parsedQuantityHundredths ?: item.quantityHundredths
     val parsedUnitPrice = unitPrice.toLongOrNull()?.coerceAtLeast(0) ?: 0
-    val maxDiscount = parsedUnitPrice * parsedQuantity
+    val maxDiscount = QuantityV136.fromHundredths(effectiveQuantityHundredths).multiplyYen(parsedUnitPrice)
     val parsedDiscount = discount.toLongOrNull()?.coerceIn(0, maxDiscount) ?: 0
     val responsive = rememberRegisterResponsiveMetrics()
     val editScroll = rememberScrollState()
@@ -1483,7 +1571,13 @@ private fun LineEditScreen(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(if (responsive.isCompact) 8.dp else 14.dp),
                     ) {
-                        NumericField("数量", quantity, { quantity = it }, Modifier.weight(1f))
+                        NumericField(
+                            "数量",
+                            quantity,
+                            { quantity = it },
+                            Modifier.weight(1f),
+                            allowDecimal = item.product.quantityMode == QuantityMode.DECIMAL,
+                        )
                         NumericField("単価", unitPrice, { unitPrice = it }, Modifier.weight(1f))
                         NumericField("行値引", discount, { discount = it }, Modifier.weight(1f))
                     }
@@ -1541,7 +1635,10 @@ private fun LineEditScreen(
                         color = Navy,
                     )
                     Spacer(Modifier.height(if (responsive.isCompact) 8.dp else 18.dp))
-                    AmountRow("数量", "${parsedQuantity}点")
+                    AmountRow(
+                        "数量",
+                        parsedQuantityHundredths?.let { "${QuantityCompatibilityV136.textOrZero(it)}点" } ?: "入力エラー",
+                    )
                     AmountRow("単価", yen(parsedUnitPrice))
                     AmountRow("値引", "-${yen(parsedDiscount)}")
                     AmountRow("金額", yen(maxDiscount - parsedDiscount), emphasized = true)
@@ -1560,13 +1657,15 @@ private fun LineEditScreen(
                 onSave(
                     item.copy(
                         product = item.product.withLegacyTaxCategory(category),
-                        quantity = parsedQuantity,
+                        quantity = QuantityCompatibilityV136.legacyPositiveInt(effectiveQuantityHundredths),
+                        quantityHundredths = effectiveQuantityHundredths,
                         unitPrice = parsedUnitPrice,
                         discountAmount = parsedDiscount,
                         note = note.trim(),
                     ),
                 )
             },
+            confirmEnabled = parsedQuantityHundredths != null,
         )
     }
 }
@@ -3082,13 +3181,26 @@ private fun statusColor(status: PrintJobStatus): Color = when (status) {
 }
 
 @Composable
-private fun NumericField(label: String, value: String, onValueChange: (String) -> Unit, modifier: Modifier) {
+private fun NumericField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier,
+    allowDecimal: Boolean = false,
+) {
     OutlinedTextField(
         value = value,
-        onValueChange = { text -> if (text.all { it.isDigit() } && text.length <= 10) onValueChange(text) },
+        onValueChange = { text ->
+            val valid = if (allowDecimal) {
+                Regex("\\d{0,4}(?:\\.\\d{0,2})?").matches(text)
+            } else {
+                text.all { it.isDigit() } && text.length <= 10
+            }
+            if (valid) onValueChange(text)
+        },
         label = { Text(label) },
         modifier = modifier,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        keyboardOptions = KeyboardOptions(keyboardType = if (allowDecimal) KeyboardType.Decimal else KeyboardType.Number),
         singleLine = true,
     )
 }
@@ -3099,6 +3211,8 @@ private fun NumberPad(
     onClear: () -> Unit,
     bottomActionLabel: String,
     onBottomAction: () -> Unit,
+    onDecimal: (() -> Unit)? = null,
+    decimalEnabled: Boolean = true,
     compact: Boolean = false,
     buttonHeightDp: Int? = null,
     rowGapDp: Int? = null,
@@ -3136,6 +3250,15 @@ private fun NumberPad(
             }
             OutlinedButton(onClick = { onDigit("0") }, modifier = Modifier.weight(1f).height(buttonHeight)) {
                 Text("0", fontSize = digitFontSize)
+            }
+            if (onDecimal != null) {
+                OutlinedButton(
+                    onClick = onDecimal,
+                    enabled = decimalEnabled,
+                    modifier = Modifier.weight(1f).height(buttonHeight),
+                ) {
+                    Text(".", fontSize = digitFontSize)
+                }
             }
             BlueButton(bottomActionLabel, onBottomAction, Modifier.weight(1f).height(buttonHeight))
         }

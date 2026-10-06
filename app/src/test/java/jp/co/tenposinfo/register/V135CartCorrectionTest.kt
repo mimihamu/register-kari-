@@ -105,12 +105,12 @@ class V135CartCorrectionTest {
 
         assertTrue(salesScreen.contains("if (NumericCorrectionPolicyV135.shouldClearInput(numericInput))"))
         assertTrue(salesScreen.contains("onRemove()"))
-        assertTrue(salesScreen.contains("onCancelSelected(quantity)"))
+        assertTrue(salesScreen.contains("onCancelSelected(quantityHundredths)"))
         assertTrue(salesScreen.contains("Text(\"行取消\""))
         assertTrue(salesScreen.contains("訂正履歴"))
 
         val registerApp = source.substringBefore("@Composable\nprivate fun Header(")
-        assertTrue(registerApp.contains("edited.quantity < original.quantity"))
+        assertTrue(registerApp.contains("edited.quantityHundredths < original.quantityHundredths"))
         assertTrue(registerApp.contains("CartCorrectionTypeV135.SELECTED_LINE"))
     }
 
