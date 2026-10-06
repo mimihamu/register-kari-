@@ -59,7 +59,7 @@ class V136QuantityContractTest {
         assertEquals(true, source.contains("return_quantity_hundredths"))
         assertEquals(true, source.contains("put(\"original_quantity_hundredths\", line.originalQuantityHundredths)"))
         assertEquals(true, source.contains("put(\"return_quantity_hundredths\", item.quantityHundredths)"))
-        assertEquals(true, source.contains("returnedQuantityHundredths = cursor.getLong(17)"))
+        assertEquals(true, source.contains("returnedQuantityHundredths = cursor.getLong(18)"))
     }
 
     @Test
