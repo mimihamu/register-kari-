@@ -179,6 +179,24 @@ class SecureOperationsCoordinator(
         reason: String,
         managerPin: String,
         requestId: String,
+    ): PartialReversalResult = createReversalHundredths(
+        originalSaleId = originalSaleId,
+        type = type,
+        requestedQuantityHundredths = requestedQuantities.mapValues { (_, quantity) ->
+            Math.multiplyExact(quantity.toLong(), QuantityV136.SCALE)
+        },
+        reason = reason,
+        managerPin = managerPin,
+        requestId = requestId,
+    )
+
+    fun createReversalHundredths(
+        originalSaleId: Long,
+        type: ReversalType,
+        requestedQuantityHundredths: Map<Long, Long>,
+        reason: String,
+        managerPin: String,
+        requestId: String,
     ): PartialReversalResult {
         val executionKey = OperationsIdempotencyPolicy.reversalKey(originalSaleId)
         return executionGuard.runExclusive(executionKey, "返品・取消を処理中です") {
@@ -195,10 +213,10 @@ class SecureOperationsCoordinator(
                 context = appContext,
                 approvedContext = refundContext,
             ) {
-                store.createReversal(
+                store.createReversalHundredths(
                     originalSaleId = originalSaleId,
                     type = type,
-                    requestedQuantities = requestedQuantities,
+                    requestedQuantityHundredths = requestedQuantityHundredths,
                     reason = reason,
                     operatorName = actor,
                     requestId = requestId,
@@ -223,11 +241,11 @@ class SecureOperationsCoordinator(
         type: ReversalType,
         reason: String,
         managerPin: String,
-    ): Long = createReversal(
+    ): Long = createReversalHundredths(
         originalSaleId = originalSaleId,
         type = type,
-        requestedQuantities = if (type == ReversalType.RETURN) {
-            store.loadReturnableLines(originalSaleId).associate { it.saleItemId to it.remainingQuantity }
+        requestedQuantityHundredths = if (type == ReversalType.RETURN) {
+            store.loadReturnableLines(originalSaleId).associate { it.saleItemId to it.remainingQuantityHundredths }
         } else emptyMap(),
         reason = reason,
         managerPin = managerPin,

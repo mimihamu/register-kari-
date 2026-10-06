@@ -32,8 +32,8 @@ class V135Uc09ReturnAuditTest {
     @Test fun originalSaleReturnReReadsRemainingQuantityInsideWriteTransaction() {
         val source = File("src/main/java/jp/co/tenposinfo/register/OperationsStore.kt").readText()
         assertTrue(source.contains("val lines = loadReturnableLines(this, originalSaleId)"))
-        assertTrue(source.contains("PartialReturnPolicy.select(type, lines, requestedQuantities)"))
-        assertTrue(source.contains("COALESCE(SUM(ri.return_quantity), 0)"))
+        assertTrue(source.contains("PartialReturnPolicy.selectHundredths(type, lines, requestedQuantityHundredths)"))
+        assertTrue(source.contains("COALESCE(ri.return_quantity_hundredths, ri.return_quantity * 100)"))
         assertTrue(source.contains("claimOperationKey("))
         assertTrue(source.contains("bindOperationKey(operationKey, reversalId)"))
     }

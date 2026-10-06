@@ -485,6 +485,24 @@ class OperationsStore(context: Context) {
         reason: String,
         operatorName: String,
         requestId: String,
+    ): PartialReversalResult = createReversalHundredths(
+        originalSaleId = originalSaleId,
+        type = type,
+        requestedQuantityHundredths = requestedQuantities.mapValues { (_, quantity) ->
+            Math.multiplyExact(quantity.toLong(), QuantityV136.SCALE)
+        },
+        reason = reason,
+        operatorName = operatorName,
+        requestId = requestId,
+    )
+
+    fun createReversalHundredths(
+        originalSaleId: Long,
+        type: ReversalType,
+        requestedQuantityHundredths: Map<Long, Long>,
+        reason: String,
+        operatorName: String,
+        requestId: String,
     ): PartialReversalResult {
         require(reason.isNotBlank()) { "理由を入力してください" }
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
@@ -520,7 +538,7 @@ class OperationsStore(context: Context) {
             } ?: throw IllegalArgumentException("元売上が見つかりません")
 
             val lines = loadReturnableLines(this, originalSaleId)
-            val selected = PartialReturnPolicy.select(type, lines, requestedQuantities)
+            val selected = PartialReturnPolicy.selectHundredths(type, lines, requestedQuantityHundredths)
             val items = selected.map { it.second }
             val taxSummary = TaxEngine.calculate(items)
             val refundTotal = taxSummary.grossAmount
@@ -655,14 +673,14 @@ class OperationsStore(context: Context) {
         operatorName: String,
     ): Long {
         val requested = if (type == ReversalType.RETURN) {
-            loadReturnableLines(originalSaleId).associate { it.saleItemId to it.remainingQuantity }
+            loadReturnableLines(originalSaleId).associate { it.saleItemId to it.remainingQuantityHundredths }
         } else {
             emptyMap()
         }
-        return createReversal(
+        return createReversalHundredths(
             originalSaleId = originalSaleId,
             type = type,
-            requestedQuantities = requested,
+            requestedQuantityHundredths = requested,
             reason = reason,
             operatorName = operatorName,
             requestId = "FULL-${type.name}",
@@ -676,11 +694,20 @@ class OperationsStore(context: Context) {
 
     fun reversedSaleIds(): Set<Long> = db.rawQuery(
         """
-        SELECT si.sale_id
-        FROM sale_items si
-        LEFT JOIN reversal_items ri ON ri.sale_item_id = si.id
-        GROUP BY si.sale_id
-        HAVING SUM(si.quantity) <= COALESCE(SUM(ri.return_quantity), 0)
+        SELECT sale_id
+        FROM (
+            SELECT si.sale_id AS sale_id,
+                   SUM(COALESCE(si.quantity_hundredths, si.quantity * 100)) AS original_quantity_hundredths,
+                   (
+                       SELECT COALESCE(SUM(COALESCE(ri.return_quantity_hundredths, ri.return_quantity * 100)), 0)
+                       FROM reversal_items ri
+                       INNER JOIN sale_items source_item ON source_item.id = ri.sale_item_id
+                       WHERE source_item.sale_id = si.sale_id
+                   ) AS returned_quantity_hundredths
+            FROM sale_items si
+            GROUP BY si.sale_id
+        )
+        WHERE original_quantity_hundredths <= returned_quantity_hundredths
         UNION
         SELECT rt.original_sale_id
         FROM reversal_transactions rt
