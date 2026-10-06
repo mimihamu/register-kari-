@@ -360,7 +360,13 @@ private fun RegisterApp() {
                     } else -1
                     if (index >= 0) {
                         val combinedQuantityHundredths = Math.addExact(cart[index].quantityHundredths, quantityHundredths)
-                        cart[index].product.quantityMode.requireAllowed(combinedQuantityHundredths)
+                        val quantityError = runCatching {
+                            cart[index].product.quantityMode.requireAllowed(combinedQuantityHundredths)
+                        }.exceptionOrNull()
+                        if (quantityError != null) {
+                            accessMessage = quantityError.message ?: "数量を確認してください"
+                            return@SalesScreen
+                        }
                         val updated = cart[index].copy(
                             quantity = QuantityCompatibilityV136.legacyPositiveInt(combinedQuantityHundredths),
                             quantityHundredths = combinedQuantityHundredths,
@@ -1104,19 +1110,7 @@ private fun SalesScreen(
 
     fun registerProduct(product: Product): Boolean {
         val requested = pendingQuantityHundredths ?: QuantityV136.SCALE
-        val existing = cart.firstOrNull {
-            it.product.id == product.id &&
-                it.unitPrice == product.unitPrice &&
-                it.discountAmount == 0L &&
-                it.note.isEmpty()
-        }
-        val combined = runCatching {
-            if (existing == null) requested else Math.addExact(existing.quantityHundredths, requested)
-        }.getOrElse {
-            lookupMessage = "数量が上限を超えています"
-            return false
-        }
-        val error = runCatching { product.quantityMode.requireAllowed(combined) }.exceptionOrNull()
+        val error = runCatching { product.quantityMode.requireAllowed(requested) }.exceptionOrNull()
         if (error != null) {
             lookupMessage = error.message ?: "数量を確認してください"
             return false
