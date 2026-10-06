@@ -1119,7 +1119,11 @@ private fun ReversalScreen(
     val hasQuantityInputError = type == ReversalType.RETURN && lines.any { line ->
         val raw = quantityInputs[line.saleItemId].orEmpty()
         val parsed = reversalQuantityInputHundredths(raw)
-        raw.isNotBlank() && (parsed == null || parsed > line.remainingQuantityHundredths)
+        raw.isNotBlank() && (
+            parsed == null ||
+                parsed > line.remainingQuantityHundredths ||
+                (line.quantityMode == QuantityMode.INTEGER && parsed % QuantityV136.SCALE != 0L)
+            )
     }
     val selectedItems = runCatching {
         PartialReturnPolicy.selectHundredths(type, lines, quantityHundredths)
@@ -1371,6 +1375,8 @@ private fun ReversalScreen(
                                 type != ReversalType.RETURN || inputText.isBlank() -> null
                                 parsedRequested == null -> "数量は整数または小数2桁までで入力してください"
                                 parsedRequested > line.remainingQuantityHundredths -> "残数 ${line.remainingQuantityText} を超えています"
+                                line.quantityMode == QuantityMode.INTEGER &&
+                                    parsedRequested % QuantityV136.SCALE != 0L -> "通常商品は整数数量で入力してください"
                                 else -> null
                             }
                             Card(

@@ -22,6 +22,7 @@ data class ReturnableSaleLine(
     val refundedDiscount: Long,
     val originalQuantityHundredths: Long = Math.multiplyExact(originalQuantity.toLong(), QuantityV136.SCALE),
     val returnedQuantityHundredths: Long = Math.multiplyExact(returnedQuantity.toLong(), QuantityV136.SCALE),
+    val quantityMode: QuantityMode = if (originalQuantityHundredths % QuantityV136.SCALE == 0L) QuantityMode.INTEGER else QuantityMode.DECIMAL,
 ) {
     val remainingQuantity: Int get() = (originalQuantity - returnedQuantity).coerceAtLeast(0)
     val remainingQuantityHundredths: Long
@@ -38,6 +39,7 @@ data class ReturnableSaleLine(
 
     fun toReturnItemHundredths(quantityHundredths: Long): CartItem {
         require(quantityHundredths in 1..remainingQuantityHundredths) { "返品数量が残数を超えています" }
+        quantityMode.requireAllowed(quantityHundredths)
         require(originalQuantityHundredths > 0L) { "元売上数量が不正です" }
         val allocatedDiscount = if (quantityHundredths == remainingQuantityHundredths) {
             remainingDiscount
@@ -56,7 +58,16 @@ data class ReturnableSaleLine(
             taxable = taxable,
             reduced = reduced,
             symbol = taxSymbol,
-        ).applyTo(Product(productId, productName, unitPrice, taxCategory, saleItemId.toInt()))
+        ).applyTo(
+            Product(
+                productId,
+                productName,
+                unitPrice,
+                taxCategory,
+                saleItemId.toInt(),
+                quantityMode = quantityMode,
+            ),
+        )
         val legacyQuantity = (quantityHundredths / QuantityV136.SCALE)
             .coerceAtLeast(1L)
             .coerceAtMost(Int.MAX_VALUE.toLong())

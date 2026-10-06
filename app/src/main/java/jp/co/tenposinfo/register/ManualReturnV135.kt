@@ -12,7 +12,10 @@ import java.util.UUID
 internal data class ManualReturnLineRequestV135(
     val product: Product,
     val quantity: Int,
-)
+    val quantityHundredths: Long = Math.multiplyExact(quantity.toLong(), QuantityV136.SCALE),
+) {
+    val quantityText: String get() = QuantityV136.fromHundredths(quantityHundredths).format()
+}
 
 internal data class ManualReturnRequestV135(
     val lines: List<ManualReturnLineRequestV135>,
@@ -41,12 +44,18 @@ internal object ManualReturnPolicyV135 {
         require(request.lines.isNotEmpty()) { "返品商品を1件以上追加してください" }
         if (reasonRequired) require(request.reason.isNotBlank()) { "返品理由を入力してください" }
         return request.lines.map { line ->
-            require(line.quantity > 0) { "返品数量は1以上で入力してください" }
+            require(line.quantityHundredths > 0L) { "返品数量は0.01以上で入力してください" }
+            line.product.quantityMode.requireAllowed(line.quantityHundredths)
             require(line.product.unitPrice >= 0) { "商品単価が不正です" }
+            val legacyQuantity = ((line.quantityHundredths + QuantityV136.SCALE - 1L) / QuantityV136.SCALE)
+                .coerceAtLeast(1L)
+                .coerceAtMost(Int.MAX_VALUE.toLong())
+                .toInt()
             CartItem(
                 product = line.product,
-                quantity = line.quantity,
+                quantity = legacyQuantity,
                 unitPrice = line.product.unitPrice,
+                quantityHundredths = line.quantityHundredths,
             )
         }
     }
@@ -54,6 +63,11 @@ internal object ManualReturnPolicyV135 {
     fun signedQuantity(quantity: Int): Int {
         require(quantity > 0)
         return -quantity
+    }
+
+    fun signedQuantityHundredths(quantityHundredths: Long): Long {
+        require(quantityHundredths > 0L)
+        return -quantityHundredths
     }
 
     fun signedAmount(amount: Long): Long {
@@ -89,7 +103,7 @@ internal class ManualReturnStoreV135(context: Context) : AutoCloseable {
         ensureSchema()
     }
 
-    fun products(): List<Product> = database.loadProducts()
+    fun products(): List<Product> = V11CatalogRuntime.visibleProducts(appContext, database.loadProducts())
 
     fun reasonRequired(): Boolean = settings.isReasonRequired()
 
@@ -146,6 +160,8 @@ internal class ManualReturnStoreV135(context: Context) : AutoCloseable {
                         put("product_name", item.product.name)
                         put("unit_price", item.unitPrice)
                         put("quantity", ManualReturnPolicyV135.signedQuantity(item.quantity))
+                        put("quantity_hundredths", ManualReturnPolicyV135.signedQuantityHundredths(item.quantityHundredths))
+                        put("quantity_mode", item.product.quantityMode.name)
                         put("line_amount", -item.baseAmount)
                         put("tax_category", item.product.taxCategory.name)
                         put("tax_key", item.product.taxKey)
@@ -281,6 +297,8 @@ internal class ManualReturnStoreV135(context: Context) : AutoCloseable {
                 product_name TEXT NOT NULL,
                 unit_price INTEGER NOT NULL,
                 quantity INTEGER NOT NULL CHECK(quantity < 0),
+                quantity_hundredths INTEGER,
+                quantity_mode TEXT,
                 line_amount INTEGER NOT NULL CHECK(line_amount <= 0),
                 tax_category TEXT NOT NULL,
                 tax_key TEXT NOT NULL,
@@ -294,6 +312,8 @@ internal class ManualReturnStoreV135(context: Context) : AutoCloseable {
             )
             """.trimIndent(),
         )
+        ensureColumn("manual_return_items", "quantity_hundredths", "INTEGER")
+        ensureColumn("manual_return_items", "quantity_mode", "TEXT")
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS manual_return_payments (
@@ -308,6 +328,25 @@ internal class ManualReturnStoreV135(context: Context) : AutoCloseable {
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_manual_return_session ON manual_return_transactions(business_session_id, created_at)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_manual_return_items_return ON manual_return_items(manual_return_id, line_no)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_manual_return_payments_return ON manual_return_payments(manual_return_id)")
+    }
+
+    private fun ensureColumn(table: String, column: String, definition: String) {
+        val exists = db.rawQuery("PRAGMA table_info($table)", null).use { cursor ->
+            val nameIndex = cursor.getColumnIndexOrThrow("name")
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameIndex) == column) return@use true
+            }
+            false
+        }
+        if (!exists) db.execSQL("ALTER TABLE $table ADD COLUMN $column $definition")
+        if (column == "quantity_hundredths") {
+            db.execSQL("UPDATE $table SET quantity_hundredths = quantity * 100 WHERE quantity_hundredths IS NULL")
+        } else if (column == "quantity_mode") {
+            db.execSQL(
+                "UPDATE $table SET quantity_mode = CASE WHEN ABS(COALESCE(quantity_hundredths, quantity * 100)) % 100 <> 0 THEN 'DECIMAL' ELSE 'INTEGER' END " +
+                    "WHERE quantity_mode IS NULL OR quantity_mode NOT IN ('INTEGER','DECIMAL')",
+            )
+        }
     }
 }
 
@@ -413,7 +452,7 @@ internal object ManualReturnDocumentRendererV135 {
             appendLine("--------------------------------")
             items.forEach { item ->
                 appendLine("${item.product.name} ${item.product.taxSymbol}")
-                appendLine("  -${item.quantity} × ${yen.format(item.unitPrice)}   -${yen.format(item.baseAmount)}")
+                appendLine("  -${item.quantityText} × ${yen.format(item.unitPrice)}   -${yen.format(item.baseAmount)}")
             }
             appendLine("--------------------------------")
             taxSummary.buckets.forEach { bucket ->

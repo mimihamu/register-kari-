@@ -419,6 +419,10 @@ class OperationsStore(context: Context) {
                COALESCE(lts.reduced, CASE WHEN si.tax_category IN ('INCLUDED_8','EXCLUDED_8') THEN 1 ELSE 0 END),
                COALESCE(lts.tax_symbol, CASE si.tax_category WHEN 'INCLUDED_10' THEN '内' WHEN 'EXCLUDED_10' THEN '外' WHEN 'INCLUDED_8' THEN '内※' WHEN 'EXCLUDED_8' THEN '外※' ELSE '非' END),
                si.quantity, COALESCE(si.quantity_hundredths, si.quantity * 100), si.discount_amount, si.note,
+               COALESCE(
+                   si.quantity_mode,
+                   CASE WHEN COALESCE(si.quantity_hundredths, si.quantity * 100) % 100 <> 0 THEN 'DECIMAL' ELSE 'INTEGER' END
+               ) AS quantity_mode,
                CASE WHEN EXISTS (
                    SELECT 1 FROM reversal_transactions legacy
                    WHERE legacy.original_sale_id = si.sale_id
@@ -445,7 +449,7 @@ class OperationsStore(context: Context) {
         WHERE si.sale_id = ?
         GROUP BY si.id, si.product_id, si.product_name, si.unit_price, si.tax_category,
                  lts.tax_key, lts.tax_label, lts.rate_percent, lts.tax_included, lts.taxable, lts.reduced, lts.tax_symbol,
-                 si.quantity, si.quantity_hundredths, si.discount_amount, si.note
+                 si.quantity, si.quantity_hundredths, si.discount_amount, si.note, si.quantity_mode
         ORDER BY si.id ASC
         """.trimIndent(),
         arrayOf(saleId.toString()),
@@ -470,9 +474,10 @@ class OperationsStore(context: Context) {
                 originalQuantityHundredths = cursor.getLong(13),
                 originalDiscount = cursor.getLong(14),
                 note = cursor.getString(15),
-                returnedQuantity = cursor.getInt(16),
-                returnedQuantityHundredths = cursor.getLong(17),
-                refundedDiscount = cursor.getLong(18),
+                quantityMode = runCatching { QuantityMode.valueOf(cursor.getString(16)) }.getOrDefault(QuantityMode.INTEGER),
+                returnedQuantity = cursor.getInt(17),
+                returnedQuantityHundredths = cursor.getLong(18),
+                refundedDiscount = cursor.getLong(19),
             )
         }
         result
