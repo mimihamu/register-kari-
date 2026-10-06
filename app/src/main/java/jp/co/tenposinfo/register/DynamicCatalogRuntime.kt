@@ -597,6 +597,7 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
                         pageNo = snapshot.pageNo,
                         slotNo = snapshot.slotNo,
                         receiptShortName = metadata[snapshot.productId]?.receiptShortName.orEmpty(),
+                        quantityMode = metadata[snapshot.productId]?.quantityMode ?: fallback.quantityMode,
                     ).withLegacyTaxCategory(snapshot.legacyTaxCategory)
                     TaxSnapshot(
                         snapshot.taxKey, snapshot.taxLabel, snapshot.taxRatePercent, snapshot.taxIncluded,
@@ -616,6 +617,7 @@ class DynamicCatalogStore(context: Context) : AutoCloseable {
                 pageNo = meta.pageNo,
                 slotNo = meta.slotNo,
                 receiptShortName = meta.receiptShortName,
+                quantityMode = meta.quantityMode,
             )
             val key = assignments[product.id] ?: product.taxKey
             rules[key]?.takeIf { it.isEffective(date) }?.applyTo(positioned) ?: positioned

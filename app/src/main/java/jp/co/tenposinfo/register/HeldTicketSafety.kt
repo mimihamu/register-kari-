@@ -359,6 +359,7 @@ internal class HeldTicketSafetyCoordinator(
         put("display_order", product.displayOrder)
         put("quantity", quantity)
         put("quantity_hundredths", quantityHundredths)
+        put("quantity_mode", product.quantityMode.name)
         put("discount_amount", discountAmount)
         put("note", note)
     }
