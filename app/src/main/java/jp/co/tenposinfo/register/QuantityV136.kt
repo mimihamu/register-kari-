@@ -38,3 +38,16 @@ value class QuantityV136 private constructor(val hundredths: Long) {
         }
     }
 }
+
+
+internal object QuantityCompatibilityV136 {
+    fun legacyPositiveInt(quantityHundredths: Long): Int {
+        require(quantityHundredths > 0L)
+        return ((quantityHundredths + QuantityV136.SCALE - 1L) / QuantityV136.SCALE)
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
+    }
+
+    fun textOrZero(quantityHundredths: Long): String =
+        if (quantityHundredths <= 0L) "0" else QuantityV136.fromHundredths(quantityHundredths).format()
+}

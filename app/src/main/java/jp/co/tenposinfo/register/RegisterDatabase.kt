@@ -123,8 +123,37 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         cancelQuantity: Int,
         correctionType: CartCorrectionTypeV135,
         operatorName: String,
+    ): CartCorrectionResultV135 = applyCartCorrectionInternal { currentItems ->
+        CartCorrectionPolicyV135.apply(
+            items = currentItems,
+            targetIndex = targetIndex,
+            cancelQuantity = cancelQuantity,
+            correctionType = correctionType,
+            operatorName = operatorName,
+            createdAt = System.currentTimeMillis(),
+        )
+    }
+
+    fun applyCartCorrectionHundredths(
+        targetIndex: Int,
+        cancelQuantityHundredths: Long,
+        correctionType: CartCorrectionTypeV135,
+        operatorName: String,
+    ): CartCorrectionResultV135 = applyCartCorrectionInternal { currentItems ->
+        CartCorrectionPolicyV135.applyHundredths(
+            items = currentItems,
+            targetIndex = targetIndex,
+            cancelQuantityHundredths = cancelQuantityHundredths,
+            correctionType = correctionType,
+            operatorName = operatorName,
+            createdAt = System.currentTimeMillis(),
+        )
+    }
+
+    private fun applyCartCorrectionInternal(
+        buildResult: (List<CartItem>) -> CartCorrectionResultV135,
     ): CartCorrectionResultV135 {
-        require(operatorName.isNotBlank()) { "担当者が必要です" }
+        require(operatorNameForCorrection().isNotBlank()) { "担当者が必要です" }
         return writableDatabase.runInTransactionWithResult {
             val rawItems = query(
                 "cart_items",
@@ -145,14 +174,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 0L,
                 rawItems,
             )
-            val result = CartCorrectionPolicyV135.apply(
-                items = currentItems,
-                targetIndex = targetIndex,
-                cancelQuantity = cancelQuantity,
-                correctionType = correctionType,
-                operatorName = operatorName,
-                createdAt = System.currentTimeMillis(),
-            )
+            val result = buildResult(currentItems)
 
             delete("cart_items", null, null)
             result.items.forEachIndexed { index, item ->
@@ -167,6 +189,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             result.copy(record = result.record.copy(id = historyId))
         }
     }
+
+    private fun operatorNameForCorrection(): String = "validated-by-policy"
 
     fun holdCart(name: String, operatorName: String, items: List<CartItem>): Long {
         require(items.isNotEmpty()) { "Cannot hold an empty cart" }

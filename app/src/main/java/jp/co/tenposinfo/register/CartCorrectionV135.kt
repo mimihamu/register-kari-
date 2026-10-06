@@ -19,11 +19,18 @@ data class CartCorrectionRecordV135(
     val cancelledQuantity: Int,
     val quantityBefore: Int,
     val quantityAfter: Int,
+    val cancelledQuantityHundredths: Long = Math.multiplyExact(cancelledQuantity.toLong(), QuantityV136.SCALE),
+    val quantityBeforeHundredths: Long = Math.multiplyExact(quantityBefore.toLong(), QuantityV136.SCALE),
+    val quantityAfterHundredths: Long = Math.multiplyExact(quantityAfter.toLong(), QuantityV136.SCALE),
     val cancelledDiscountAmount: Long,
     val cancelledAmount: Long,
     val operatorName: String,
     val createdAt: Long,
-)
+) {
+    val cancelledQuantityText: String get() = QuantityCompatibilityV136.textOrZero(cancelledQuantityHundredths)
+    val quantityBeforeText: String get() = QuantityCompatibilityV136.textOrZero(quantityBeforeHundredths)
+    val quantityAfterText: String get() = QuantityCompatibilityV136.textOrZero(quantityAfterHundredths)
+}
 
 data class CartCorrectionResultV135(
     val items: List<CartItem>,
@@ -45,43 +52,77 @@ object CartCorrectionPolicyV135 {
     ): CartCorrectionResultV135 {
         require(targetIndex in items.indices) { "取消対象行がありません" }
         require(cancelQuantity > 0) { "取消数量は1以上で指定してください" }
+        val target = items[targetIndex]
+        require(cancelQuantity <= target.quantity) { "取消数量が現在数量を超えています" }
+        val cancelHundredths = if (cancelQuantity == target.quantity) {
+            target.quantityHundredths
+        } else {
+            BigInteger.valueOf(target.quantityHundredths)
+                .multiply(BigInteger.valueOf(cancelQuantity.toLong()))
+                .divide(BigInteger.valueOf(target.quantity.toLong()))
+                .longValueExact()
+        }
+        return applyHundredths(
+            items = items,
+            targetIndex = targetIndex,
+            cancelQuantityHundredths = cancelHundredths,
+            correctionType = correctionType,
+            operatorName = operatorName,
+            createdAt = createdAt,
+            legacyCancelledQuantity = cancelQuantity,
+        )
+    }
+
+    fun applyHundredths(
+        items: List<CartItem>,
+        targetIndex: Int,
+        cancelQuantityHundredths: Long,
+        correctionType: CartCorrectionTypeV135,
+        operatorName: String,
+        createdAt: Long,
+        legacyCancelledQuantity: Int? = null,
+    ): CartCorrectionResultV135 {
+        require(targetIndex in items.indices) { "取消対象行がありません" }
+        require(cancelQuantityHundredths > 0L) { "取消数量は0.01以上で指定してください" }
         require(operatorName.isNotBlank()) { "担当者が必要です" }
 
         val target = items[targetIndex]
         require(target.lineId.isNotBlank()) { "取消対象行の識別子がありません" }
-        require(cancelQuantity <= target.quantity) { "取消数量が現在数量を超えています" }
+        require(cancelQuantityHundredths <= target.quantityHundredths) { "取消数量が現在数量を超えています" }
 
-        val cancelledDiscount = if (cancelQuantity == target.quantity) {
+        val cancelledDiscount = if (cancelQuantityHundredths == target.quantityHundredths) {
             target.discountAmount
         } else {
-            target.discountAmount * cancelQuantity / target.quantity
-        }
-        val remainingQuantity = target.quantity - cancelQuantity
-        val cancelledQuantityHundredths = if (cancelQuantity == target.quantity) {
-            target.quantityHundredths
-        } else {
-            java.math.BigInteger.valueOf(target.quantityHundredths)
-                .multiply(java.math.BigInteger.valueOf(cancelQuantity.toLong()))
-                .divide(java.math.BigInteger.valueOf(target.quantity.toLong()))
+            BigInteger.valueOf(target.discountAmount)
+                .multiply(BigInteger.valueOf(cancelQuantityHundredths))
+                .divide(BigInteger.valueOf(target.quantityHundredths))
                 .longValueExact()
         }
-        val remainingQuantityHundredths = target.quantityHundredths - cancelledQuantityHundredths
+        val remainingQuantityHundredths = target.quantityHundredths - cancelQuantityHundredths
         val remainingDiscount = target.discountAmount - cancelledDiscount
         val cancelledAmount = Math.subtractExact(
-            QuantityV136.fromHundredths(cancelledQuantityHundredths).multiplyYen(target.unitPrice),
+            QuantityV136.fromHundredths(cancelQuantityHundredths).multiplyYen(target.unitPrice),
             cancelledDiscount,
         )
 
         val updatedItems = items.toMutableList()
-        if (remainingQuantity == 0) {
+        val remainingLegacyQuantity = if (remainingQuantityHundredths == 0L) {
+            0
+        } else {
+            QuantityCompatibilityV136.legacyPositiveInt(remainingQuantityHundredths)
+        }
+        if (remainingQuantityHundredths == 0L) {
             updatedItems.removeAt(targetIndex)
         } else {
             updatedItems[targetIndex] = target.copy(
-                quantity = remainingQuantity,
+                quantity = remainingLegacyQuantity,
                 quantityHundredths = remainingQuantityHundredths,
                 discountAmount = remainingDiscount,
             )
         }
+
+        val cancelledLegacyQuantity = legacyCancelledQuantity
+            ?: QuantityCompatibilityV136.legacyPositiveInt(cancelQuantityHundredths)
 
         return CartCorrectionResultV135(
             items = updatedItems,
@@ -91,9 +132,12 @@ object CartCorrectionPolicyV135 {
                 productId = target.product.id,
                 productName = target.product.name,
                 unitPrice = target.unitPrice,
-                cancelledQuantity = cancelQuantity,
+                cancelledQuantity = cancelledLegacyQuantity,
                 quantityBefore = target.quantity,
-                quantityAfter = remainingQuantity,
+                quantityAfter = remainingLegacyQuantity,
+                cancelledQuantityHundredths = cancelQuantityHundredths,
+                quantityBeforeHundredths = target.quantityHundredths,
+                quantityAfterHundredths = remainingQuantityHundredths,
                 cancelledDiscountAmount = cancelledDiscount,
                 cancelledAmount = cancelledAmount,
                 operatorName = operatorName.trim(),
@@ -121,12 +165,25 @@ object CartCorrectionSchemaV135 {
                 cancelled_quantity INTEGER NOT NULL,
                 quantity_before INTEGER NOT NULL,
                 quantity_after INTEGER NOT NULL,
+                cancelled_quantity_hundredths INTEGER,
+                quantity_before_hundredths INTEGER,
+                quantity_after_hundredths INTEGER,
                 cancelled_discount_amount INTEGER NOT NULL,
                 cancelled_amount INTEGER NOT NULL,
                 operator_name TEXT NOT NULL,
                 created_at INTEGER NOT NULL
             )
             """.trimIndent(),
+        )
+        ensureColumn(db, "cancelled_quantity_hundredths", "INTEGER")
+        ensureColumn(db, "quantity_before_hundredths", "INTEGER")
+        ensureColumn(db, "quantity_after_hundredths", "INTEGER")
+        db.execSQL(
+            "UPDATE $TABLE SET " +
+                "cancelled_quantity_hundredths = cancelled_quantity * 100, " +
+                "quantity_before_hundredths = quantity_before * 100, " +
+                "quantity_after_hundredths = quantity_after * 100 " +
+                "WHERE cancelled_quantity_hundredths IS NULL OR quantity_before_hundredths IS NULL OR quantity_after_hundredths IS NULL",
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_cart_correction_line ON $TABLE(line_id, id)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_cart_correction_created ON $TABLE(created_at, id)")
@@ -139,6 +196,17 @@ object CartCorrectionSchemaV135 {
         db.execSQL(
             "UPDATE held_ticket_items SET line_id = 'held-' || ticket_id || '-' || id || '-' || product_id WHERE line_id = ''",
         )
+    }
+
+    private fun ensureColumn(db: SQLiteDatabase, column: String, definition: String) {
+        val exists = db.rawQuery("PRAGMA table_info($TABLE)", null).use { cursor ->
+            val nameIndex = cursor.getColumnIndexOrThrow("name")
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameIndex) == column) return@use true
+            }
+            false
+        }
+        if (!exists) db.execSQL("ALTER TABLE $TABLE ADD COLUMN $column $definition")
     }
 
     private fun ensureLineIdColumn(db: SQLiteDatabase, table: String) {
@@ -170,6 +238,9 @@ object CartCorrectionSchemaV135 {
             put("cancelled_quantity", record.cancelledQuantity)
             put("quantity_before", record.quantityBefore)
             put("quantity_after", record.quantityAfter)
+            put("cancelled_quantity_hundredths", record.cancelledQuantityHundredths)
+            put("quantity_before_hundredths", record.quantityBeforeHundredths)
+            put("quantity_after_hundredths", record.quantityAfterHundredths)
             put("cancelled_discount_amount", record.cancelledDiscountAmount)
             put("cancelled_amount", record.cancelledAmount)
             put("operator_name", record.operatorName)
@@ -189,6 +260,9 @@ object CartCorrectionSchemaV135 {
             "cancelled_quantity",
             "quantity_before",
             "quantity_after",
+            "cancelled_quantity_hundredths",
+            "quantity_before_hundredths",
+            "quantity_after_hundredths",
             "cancelled_discount_amount",
             "cancelled_amount",
             "operator_name",
@@ -213,10 +287,13 @@ object CartCorrectionSchemaV135 {
                         cancelledQuantity = cursor.getInt(6),
                         quantityBefore = cursor.getInt(7),
                         quantityAfter = cursor.getInt(8),
-                        cancelledDiscountAmount = cursor.getLong(9),
-                        cancelledAmount = cursor.getLong(10),
-                        operatorName = cursor.getString(11),
-                        createdAt = cursor.getLong(12),
+                        cancelledQuantityHundredths = cursor.getLong(9),
+                        quantityBeforeHundredths = cursor.getLong(10),
+                        quantityAfterHundredths = cursor.getLong(11),
+                        cancelledDiscountAmount = cursor.getLong(12),
+                        cancelledAmount = cursor.getLong(13),
+                        operatorName = cursor.getString(14),
+                        createdAt = cursor.getLong(15),
                     ),
                 )
             }
