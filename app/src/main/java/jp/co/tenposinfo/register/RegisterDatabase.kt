@@ -153,7 +153,6 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
     private fun applyCartCorrectionInternal(
         buildResult: (List<CartItem>) -> CartCorrectionResultV135,
     ): CartCorrectionResultV135 {
-        require(operatorNameForCorrection().isNotBlank()) { "担当者が必要です" }
         return writableDatabase.runInTransactionWithResult {
             val rawItems = query(
                 "cart_items",
@@ -189,8 +188,6 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             result.copy(record = result.record.copy(id = historyId))
         }
     }
-
-    private fun operatorNameForCorrection(): String = "validated-by-policy"
 
     fun holdCart(name: String, operatorName: String, items: List<CartItem>): Long {
         require(items.isNotEmpty()) { "Cannot hold an empty cart" }
