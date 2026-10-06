@@ -34,6 +34,7 @@ data class ProductMasterRecord(
     val kana: String = "",
     val barcode: String = "",
     val receiptShortName: String = "",
+    val quantityMode: QuantityMode = QuantityMode.INTEGER,
 )
 
 data class TaxMasterRecord(

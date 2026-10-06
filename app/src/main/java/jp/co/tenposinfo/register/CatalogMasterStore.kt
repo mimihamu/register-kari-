@@ -141,7 +141,8 @@ class CatalogMasterStore(context: Context) : AutoCloseable {
                    m.department_id, m.group_id, COALESCE(m.enabled, 1),
                    COALESCE(m.button_color, 'BLUE'), COALESCE(m.page_no, 1),
                    COALESCE(m.slot_no, p.display_order), p.display_order,
-                   COALESCE(m.kana, ''), COALESCE(m.barcode, ''), COALESCE(m.receipt_short_name, '')
+                   COALESCE(m.kana, ''), COALESCE(m.barcode, ''), COALESCE(m.receipt_short_name, ''),
+                   COALESCE(m.quantity_mode, 'INTEGER')
             FROM products p
             INNER JOIN catalog_product_base b ON b.product_id = p.id
             LEFT JOIN product_meta m ON m.product_id = p.id
@@ -166,6 +167,7 @@ class CatalogMasterStore(context: Context) : AutoCloseable {
                     kana = cursor.getString(11),
                     barcode = cursor.getString(12),
                     receiptShortName = cursor.getString(13),
+                    quantityMode = runCatching { QuantityMode.valueOf(cursor.getString(14)) }.getOrDefault(QuantityMode.INTEGER),
                 )
             }
         }
@@ -188,6 +190,7 @@ class CatalogMasterStore(context: Context) : AutoCloseable {
         kana: String = "",
         barcode: String = "",
         receiptShortName: String = "",
+        quantityMode: QuantityMode = QuantityMode.INTEGER,
     ) {
         val cleanId = CatalogValidation.requireCode(productId, "商品コード")
         val cleanName = CatalogValidation.requireName(name, "商品名")
@@ -265,6 +268,7 @@ class CatalogMasterStore(context: Context) : AutoCloseable {
                 put("kana", cleanKana)
                 put("barcode", cleanBarcode)
                 put("receipt_short_name", cleanReceiptShortName)
+                put("quantity_mode", quantityMode.name)
                 put("updated_at", System.currentTimeMillis())
             }
             val updatedMeta = update("product_meta", metaValues, "product_id = ?", arrayOf(cleanId))
@@ -575,6 +579,7 @@ object CatalogSchema {
                 kana TEXT NOT NULL DEFAULT '',
                 barcode TEXT NOT NULL DEFAULT '',
                 receipt_short_name TEXT NOT NULL DEFAULT '',
+                quantity_mode TEXT NOT NULL DEFAULT 'INTEGER',
                 updated_at INTEGER NOT NULL
             )
             """.trimIndent(),
@@ -582,6 +587,7 @@ object CatalogSchema {
         ensureColumn(db, "product_meta", "kana", "TEXT NOT NULL DEFAULT ''")
         ensureColumn(db, "product_meta", "barcode", "TEXT NOT NULL DEFAULT ''")
         ensureColumn(db, "product_meta", "receipt_short_name", "TEXT NOT NULL DEFAULT ''")
+        ensureColumn(db, "product_meta", "quantity_mode", "TEXT NOT NULL DEFAULT 'INTEGER'")
         db.execSQL(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_product_meta_barcode_unique " +
                 "ON product_meta(barcode) WHERE barcode <> ''",

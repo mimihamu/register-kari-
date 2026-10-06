@@ -382,6 +382,7 @@ private fun ProductMasterScreen(
     var barcode by remember(initialBarcode) { mutableStateOf(initialBarcode) }
     var price by remember { mutableStateOf("0") }
     var tax by remember { mutableStateOf(TaxCategory.INCLUDED_10) }
+    var quantityMode by remember { mutableStateOf(QuantityMode.INTEGER) }
     var departmentId by remember { mutableStateOf<Long?>(null) }
     var groupId by remember { mutableStateOf<Long?>(null) }
     var enabled by remember { mutableStateOf(true) }
@@ -398,6 +399,7 @@ private fun ProductMasterScreen(
         barcode = selected?.barcode ?: initialBarcode
         price = selected?.basePrice?.toString() ?: "0"
         tax = selected?.baseTaxCategory ?: TaxCategory.INCLUDED_10
+        quantityMode = selected?.quantityMode ?: QuantityMode.INTEGER
         departmentId = selected?.departmentId ?: departments.firstOrNull()?.id
         groupId = selected?.groupId
         enabled = selected?.enabled ?: true
@@ -414,7 +416,7 @@ private fun ProductMasterScreen(
                 val dept = departments.firstOrNull { it.id == row.departmentId }?.name ?: "未分類"
                 MasterListRow(
                     title = "${row.productId}  ${row.name}",
-                    subtitle = "${row.basePrice}円 / ${row.baseTaxCategory.displayName} / $dept / ${row.pageNo}P-${row.slotNo}",
+                    subtitle = "${row.basePrice}円 / ${row.baseTaxCategory.displayName} / ${row.quantityMode.displayName} / $dept / ${row.pageNo}P-${row.slotNo}",
                     selected = selected?.productId == row.productId,
                     disabled = !row.enabled,
                     onClick = { selected = row },
@@ -432,6 +434,10 @@ private fun ProductMasterScreen(
             MasterField(barcode, { barcode = it.filterNot(Char::isWhitespace).take(64) }, "バーコード（任意・一意）")
             MasterField(price, { price = it.filter(Char::isDigit).take(8) }, "基準価格（円）", KeyboardType.Number)
             CycleButton("税区分", tax.displayName) { tax = TaxCategory.entries[(tax.ordinal + 1) % TaxCategory.entries.size] }
+            CycleButton("数量方式", quantityMode.displayName) {
+                quantityMode = if (quantityMode == QuantityMode.INTEGER) QuantityMode.DECIMAL else QuantityMode.INTEGER
+            }
+            Text("整数＝通常商品、量り売り＝0.01単位の小数数量を許可します。", color = Color.DarkGray, fontSize = 12.sp)
             CycleButton("部門", departments.firstOrNull { it.id == departmentId }?.name ?: "未設定") {
                 departmentId = nextId(departments.map { it.id }, departmentId)
                 val validGroups = groups.filter { it.departmentId == departmentId }
@@ -470,6 +476,7 @@ private fun ProductMasterScreen(
                         kana = kana,
                         barcode = barcode,
                         receiptShortName = receiptShortName,
+                        quantityMode = quantityMode,
                     )
                     onSaved()
                     selected = null

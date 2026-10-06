@@ -15,7 +15,12 @@ object V11CatalogRuntime {
         }
         val searchableProducts = products.map { product ->
             metadata[product.id]?.let { meta ->
-                product.copy(kana = meta.kana, barcode = meta.barcode)
+                product.copy(
+                    kana = meta.kana,
+                    barcode = meta.barcode,
+                    receiptShortName = meta.receiptShortName,
+                    quantityMode = meta.quantityMode,
+                )
             } ?: product
         }
         DynamicCatalogStore(appContext).use { store ->

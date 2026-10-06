@@ -52,6 +52,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         PrinterJobRouteSchemaV136.ensureSale(db)
         ReceiptProductNameSnapshotV136.ensureSchema(db)
         QuantitySchemaV136.ensure(db)
+        QuantityModeSchemaV136.ensure(db)
     }
 
     fun loadProducts(): List<Product> {
@@ -334,6 +335,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                         put("tax_category", item.product.taxCategory.name)
                         put("quantity", item.quantity)
                         put("quantity_hundredths", item.quantityHundredths)
+                        put("quantity_mode", item.product.quantityMode.name)
                         put("discount_amount", item.discountAmount)
                         put("note", item.note)
                     },
@@ -840,6 +842,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             unitPrice = getLong(2),
             taxCategory = TaxCategory.valueOf(getString(3)),
             displayOrder = getInt(4),
+            quantityMode = runCatching { QuantityMode.valueOf(getString(10)) }.getOrDefault(QuantityMode.INTEGER),
         )
         return CartItem(
             product = product,
@@ -863,6 +866,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         put("discount_amount", discountAmount)
         put("note", note)
         put("line_id", lineId)
+        put("quantity_mode", product.quantityMode.name)
     }
 
     private fun createProductsTable(db: SQLiteDatabase) {
@@ -892,7 +896,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 quantity INTEGER NOT NULL,
                 discount_amount INTEGER NOT NULL DEFAULT 0,
                 note TEXT NOT NULL DEFAULT '',
-                line_id TEXT NOT NULL DEFAULT ''
+                line_id TEXT NOT NULL DEFAULT '',
+                quantity_mode TEXT
             )
             """.trimIndent(),
         )
@@ -923,6 +928,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 discount_amount INTEGER NOT NULL DEFAULT 0,
                 note TEXT NOT NULL DEFAULT '',
                 line_id TEXT NOT NULL DEFAULT '',
+                quantity_mode TEXT,
                 FOREIGN KEY(ticket_id) REFERENCES held_tickets(id) ON DELETE CASCADE
             )
             """.trimIndent(),
@@ -958,6 +964,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 quantity INTEGER NOT NULL,
                 discount_amount INTEGER NOT NULL DEFAULT 0,
                 note TEXT NOT NULL DEFAULT '',
+                quantity_mode TEXT,
                 FOREIGN KEY(sale_id) REFERENCES sales(id) ON DELETE CASCADE
             )
             """.trimIndent(),
@@ -1083,6 +1090,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             "note",
             "line_id",
             "quantity_hundredths",
+            "quantity_mode",
         )
 
         private val PRINT_JOB_COLUMNS = arrayOf(

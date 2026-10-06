@@ -16,6 +16,20 @@ enum class TaxCategory(
     EXCLUDED_8("8%外税", "外※", 8, false, true),
 }
 
+enum class QuantityMode(val displayName: String) {
+    INTEGER("整数"),
+    DECIMAL("量り売り"),
+
+    ;
+
+    fun requireAllowed(quantityHundredths: Long) {
+        require(quantityHundredths in 1L..999_999L) { "数量は0.01～9,999.99で入力してください" }
+        if (this == INTEGER) {
+            require(quantityHundredths % QuantityV136.SCALE == 0L) { "通常商品は整数数量で入力してください" }
+        }
+    }
+}
+
 data class Product(
     val id: String,
     val name: String,
@@ -35,6 +49,7 @@ data class Product(
     val kana: String = "",
     val barcode: String = "",
     val receiptShortName: String = "",
+    val quantityMode: QuantityMode = QuantityMode.INTEGER,
 ) {
     fun withLegacyTaxCategory(category: TaxCategory): Product = copy(
         taxCategory = category,
