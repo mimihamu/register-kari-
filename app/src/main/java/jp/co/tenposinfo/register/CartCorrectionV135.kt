@@ -1,5 +1,7 @@
 package jp.co.tenposinfo.register
 
+import java.math.BigInteger
+
 import android.content.ContentValues
 import android.database.sqlite.SQLiteDatabase
 import java.util.UUID
