@@ -75,7 +75,7 @@ class V136QuantityContractTest {
     fun productionReversalStoreLoadsAndWritesExactQuantity() {
         val source = File("src/main/java/jp/co/tenposinfo/register/OperationsStore.kt").readText()
         assertEquals(true, source.contains("COALESCE(si.quantity_hundredths, si.quantity * 100)"))
-        assertEquals(true, source.contains("returnedQuantityHundredths = cursor.getLong(19)"))
+        assertEquals(true, source.contains("returnedQuantityHundredths = cursor.getLong(18)"))
         assertEquals(true, source.contains("put(\"original_quantity_hundredths\", line.originalQuantityHundredths)"))
         assertEquals(true, source.contains("put(\"return_quantity_hundredths\", item.quantityHundredths)"))
     }
