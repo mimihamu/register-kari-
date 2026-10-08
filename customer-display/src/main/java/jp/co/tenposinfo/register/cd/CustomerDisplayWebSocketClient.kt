@@ -170,8 +170,10 @@ private class SharedCustomerDisplaySession(
             delayedStop?.cancel(false)
             delayedStop = null
             listeners[id] = listener
-            replaySnapshot = latestSnapshot
-            replayAsConnected = visibility.shouldPresentAsConnected()
+            // Do not replay cached money to a newly created screen while the
+            // underlying socket is lost or still awaiting the first live snapshot.
+            replaySnapshot = if (visibility.transportConnected) latestSnapshot else null
+            replayAsConnected = visibility.transportConnected && replaySnapshot != null
             replayReason = if (visibility.visibleDisconnected) visibility.latestDisconnectReason else null
         }
         startWorker()
@@ -383,6 +385,9 @@ private class SharedCustomerDisplaySession(
 
     private fun notifyConnected() {
         val currentListeners = synchronized(listenerLock) {
+            // A new WebSocket transport is not proof that the saved snapshot is current.
+            // The server always sends its latest full snapshot after handshake.
+            latestSnapshot = null
             visibility.onConnected()
             everEstablishedConnection = true
             pendingVisibleDisconnect?.cancel(false)

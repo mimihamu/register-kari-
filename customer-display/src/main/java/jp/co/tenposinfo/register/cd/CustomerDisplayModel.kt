@@ -202,8 +202,10 @@ data class CustomerDisplayUiState(
 
 object CustomerDisplayStateReducer {
     fun connected(current: CustomerDisplayUiState): CustomerDisplayUiState = current.copy(
-        connected = true,
-        statusMessage = "接続中",
+        // Transport 101 handshake is not a verified business snapshot.
+        // The old on-disk / previous-session amount stays hidden until received().
+        connected = false,
+        statusMessage = "最新の表示データを受信中",
         lastError = null,
     )
 
@@ -218,7 +220,13 @@ object CustomerDisplayStateReducer {
         val incomingInstance = incoming.serverInstanceId
         val incomingIdentifiedServer = !incomingInstance.isNullOrBlank()
         val serverInstanceChanged = incomingIdentifiedServer && incomingInstance != currentInstance
-        if (!serverInstanceChanged && incoming.sequence <= current.snapshot.sequence) {
+        // Equal sequence is a fresh full snapshot on reconnect. It is authoritative
+        // even when an identical sequence was persisted before the transport failed.
+        // Strictly older data from the same server must never resurrect old totals.
+        if (!serverInstanceChanged && incoming.sequence < current.snapshot.sequence) {
+            return current
+        }
+        if (!serverInstanceChanged && incoming.sequence == current.snapshot.sequence && current.connected) {
             return current
         }
         return current.copy(
