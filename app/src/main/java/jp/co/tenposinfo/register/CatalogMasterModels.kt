@@ -33,6 +33,8 @@ data class ProductMasterRecord(
     val displayOrder: Int,
     val kana: String = "",
     val barcode: String = "",
+    val receiptShortName: String = "",
+    val quantityMode: QuantityMode = QuantityMode.INTEGER,
 )
 
 data class TaxMasterRecord(
@@ -120,6 +122,12 @@ object CatalogValidation {
         val kana = value.trim()
         require(kana.length <= 60) { "かなは60文字以内です" }
         return kana
+    }
+
+    fun normalizeReceiptShortName(value: String): String {
+        val name = value.trim()
+        require(name.length <= 60) { "レシート用短縮名は60文字以内です" }
+        return name
     }
 
     fun normalizeBarcode(value: String): String {

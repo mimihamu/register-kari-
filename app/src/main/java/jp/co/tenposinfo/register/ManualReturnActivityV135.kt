@@ -74,7 +74,7 @@ class ManualReturnActivityV135 : ComponentActivity() {
         productRow.addView(productSpinner, LinearLayout.LayoutParams(0, dp(54), 4f))
         quantityInput = EditText(this).apply {
             hint = "数量"
-            inputType = InputType.TYPE_CLASS_NUMBER
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             setText("1")
             gravity = Gravity.CENTER
         }
@@ -171,15 +171,37 @@ class ManualReturnActivityV135 : ComponentActivity() {
 
     private fun addLine() {
         if (products.isEmpty()) return showError("返品対象の商品が登録されていません")
-        val quantity = quantityInput.text.toString().trim().toIntOrNull()
-            ?: return showError("数量を数字で入力してください")
-        if (quantity <= 0) return showError("数量は1以上で入力してください")
+        val rawQuantity = quantityInput.text.toString().trim()
+        val quantityHundredths = runCatching { QuantityV136.parse(rawQuantity).hundredths }
+            .getOrElse { return showError(it.message ?: "数量を入力してください") }
         val product = products[productSpinner.selectedItemPosition.coerceIn(products.indices)]
+        runCatching { product.quantityMode.requireAllowed(quantityHundredths) }
+            .exceptionOrNull()
+            ?.let { return showError(it.message ?: "数量を確認してください") }
         val existing = lines.indexOfFirst { it.product.id == product.id }
-        if (existing >= 0) {
-            lines[existing] = lines[existing].copy(quantity = lines[existing].quantity + quantity)
+        val combinedHundredths = if (existing >= 0) {
+            Math.addExact(lines[existing].quantityHundredths, quantityHundredths)
         } else {
-            lines += ManualReturnLineRequestV135(product, quantity)
+            quantityHundredths
+        }
+        runCatching { product.quantityMode.requireAllowed(combinedHundredths) }
+            .exceptionOrNull()
+            ?.let { return showError(it.message ?: "数量を確認してください") }
+        val legacyQuantity = ((combinedHundredths + QuantityV136.SCALE - 1L) / QuantityV136.SCALE)
+            .coerceAtLeast(1L)
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
+        if (existing >= 0) {
+            lines[existing] = lines[existing].copy(
+                quantity = legacyQuantity,
+                quantityHundredths = combinedHundredths,
+            )
+        } else {
+            lines += ManualReturnLineRequestV135(
+                product = product,
+                quantity = legacyQuantity,
+                quantityHundredths = quantityHundredths,
+            )
         }
         quantityInput.setText("1")
         refreshLines()
@@ -192,9 +214,15 @@ class ManualReturnActivityV135 : ComponentActivity() {
             return
         }
         linesText.text = lines.joinToString("\n") { line ->
-            "${line.product.name} ${line.product.taxSymbol}   -${line.quantity} × ${yen(line.product.unitPrice)}"
+            "${line.product.name} ${line.product.taxSymbol}   -${line.quantityText} × ${yen(line.product.unitPrice)}"
         }
-        val items = lines.map { CartItem(it.product, it.quantity) }
+        val items = lines.map {
+            CartItem(
+                product = it.product,
+                quantity = it.quantity,
+                quantityHundredths = it.quantityHundredths,
+            )
+        }
         val total = TaxEngine.calculate(items).grossAmount
         totalText.text = "返金合計  -${yen(total)}"
     }

@@ -36,9 +36,15 @@ object CustomerDisplayRuntime {
             if (existing == config && ((config.enabled && server != null) || (!config.enabled && server == null))) return
             stopLocked()
             currentConfig = config
-            latestSnapshot = latestSnapshot.copy(
-                storeName = config.storeName,
-                presentation = config.presentation,
+            // Never reopen a newly configured socket with the prior cash/payment
+            // screen before this process has polled the current register database.
+            latestSnapshot = CustomerDisplaySnapshotFactory.standby(
+                config.storeName,
+                config.presentation,
+            ).copy(
+                sequence = sequence.incrementAndGet(),
+                serverInstanceId = serverInstanceId,
+                sentAtMillis = System.currentTimeMillis(),
             )
             lastError = null
             connectedClients = 0
@@ -65,13 +71,17 @@ object CustomerDisplayRuntime {
     }
 
     fun publish(snapshot: CustomerDisplaySnapshot) {
-        val normalized = snapshot.copy(
-            sequence = sequence.incrementAndGet(),
-            serverInstanceId = serverInstanceId,
-            sentAtMillis = System.currentTimeMillis(),
-        )
-        latestSnapshot = normalized
-        server?.broadcast(normalized.toJson())
+        synchronized(lock) {
+            // Calls arrive from both the cart poller and checkout UI.
+            // Assign sequence, replace latest, and enqueue delivery in one order.
+            val normalized = snapshot.copy(
+                sequence = sequence.incrementAndGet(),
+                serverInstanceId = serverInstanceId,
+                sentAtMillis = System.currentTimeMillis(),
+            )
+            latestSnapshot = normalized
+            server?.broadcast(normalized.toJson())
+        }
     }
 
     fun stop() {
@@ -207,7 +217,7 @@ internal class CustomerDisplayPoller(
         val beforeById = before.associateBy { it.product.id }
         return after.lastOrNull { current ->
             val old = beforeById[current.product.id]
-            old == null || old.quantity != current.quantity || old.unitPrice != current.unitPrice || old.discountAmount != current.discountAmount
+            old == null || old.quantityHundredths != current.quantityHundredths || old.unitPrice != current.unitPrice || old.discountAmount != current.discountAmount
         }?.product?.id
     }
 
@@ -216,6 +226,7 @@ internal class CustomerDisplayPoller(
             item.product.id,
             item.product.name,
             item.quantity,
+            item.quantityHundredths,
             item.unitPrice,
             item.discountAmount,
             item.note,

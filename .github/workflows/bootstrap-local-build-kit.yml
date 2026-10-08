@@ -1,0 +1,137 @@
+name: Bootstrap ChatGPT local Android build kit
+
+on:
+  push:
+    branches:
+      - develop/v1.36
+    paths:
+      - ".github/workflows/bootstrap-local-build-kit.yml"
+      - "ci/local/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap-local-build-kit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Use runner Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          test -f "$SDK/platforms/android-36/android.jar"
+          test -x "$SDK/build-tools/36.0.0/aapt2"
+          test -x "$SDK/build-tools/36.0.0/apksigner"
+          test -x "$SDK/build-tools/36.0.0/zipalign"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+
+      - name: Set up Gradle 9.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Warm all required dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon             :app:testDebugUnitTest             :customer-display:testDebugUnitTest             :management-app:testDebugUnitTest             :app:compileDebugKotlin             :customer-display:compileDebugKotlin             :management-app:compileDebugKotlin             :app:assembleDebug             :customer-display:assembleDebug             :management-app:assembleDebug
+
+      - name: Prove offline rebuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Keep clean/test separate from assemble. The build scripts materialize
+          # the fixed development keystore under each module build/ directory at
+          # configuration time; a same-invocation clean would delete it before
+          # validateSigningDebug.
+          gradle --offline --no-daemon clean             :app:testDebugUnitTest             :customer-display:testDebugUnitTest             :management-app:testDebugUnitTest
+          gradle --offline --no-daemon             :app:compileDebugKotlin             :customer-display:compileDebugKotlin             :management-app:compileDebugKotlin
+          gradle --offline --no-daemon             :app:assembleDebug             :customer-display:assembleDebug             :management-app:assembleDebug
+
+      - name: Build local development kit
+        shell: bash
+        run: |
+          set -euo pipefail
+          KIT="$RUNNER_TEMP/tsuguregi-local-kit"
+          mkdir -p "$KIT/source" "$KIT/toolchain/android-sdk" "$KIT/toolchain" "$KIT/gradle-home"
+
+          rsync -a --delete             --exclude '.git'             --exclude '**/build'             --exclude '.gradle'             ./ "$KIT/source/"
+
+          GRADLE_BIN="$(readlink -f "$(command -v gradle)")"
+          GRADLE_ROOT="$(cd "$(dirname "$GRADLE_BIN")/.." && pwd)"
+          test -x "$GRADLE_ROOT/bin/gradle"
+          cp -a "$GRADLE_ROOT" "$KIT/toolchain/gradle-9.5.0"
+
+          cp -a "$ANDROID_HOME/platforms/android-36" "$KIT/toolchain/android-sdk/platforms-android-36"
+          cp -a "$ANDROID_HOME/build-tools/36.0.0" "$KIT/toolchain/android-sdk/build-tools-36.0.0"
+
+          APKANALYZER="$(command -v apkanalyzer || true)"
+          if [[ -z "$APKANALYZER" ]]; then
+            APKANALYZER="$(find "$ANDROID_HOME/cmdline-tools" -type f -path '*/bin/apkanalyzer' -perm -u+x -print | head -n 1)"
+          fi
+          test -x "$APKANALYZER"
+          CMDLINE_ROOT="$(cd "$(dirname "$APKANALYZER")/.." && pwd)"
+          cp -a "$CMDLINE_ROOT" "$KIT/toolchain/android-sdk/cmdline-tools"
+
+          rsync -a "$HOME/.gradle/caches/" "$KIT/gradle-home/caches/"
+          if [[ -d "$HOME/.gradle/native" ]]; then
+            rsync -a "$HOME/.gradle/native/" "$KIT/gradle-home/native/"
+          fi
+
+          cat > "$KIT/activate.sh" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          KIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          export ANDROID_HOME="$KIT_ROOT/toolchain/android-sdk-root"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          export GRADLE_USER_HOME="$KIT_ROOT/gradle-home"
+          export PATH="$KIT_ROOT/toolchain/gradle-9.5.0/bin:$ANDROID_HOME/build-tools/36.0.0:$ANDROID_HOME/cmdline-tools/bin:$PATH"
+          EOF
+          chmod +x "$KIT/activate.sh"
+
+          mkdir -p "$KIT/toolchain/android-sdk-root/platforms"                    "$KIT/toolchain/android-sdk-root/build-tools"                    "$KIT/toolchain/android-sdk-root/cmdline-tools"
+          mv "$KIT/toolchain/android-sdk/platforms-android-36" "$KIT/toolchain/android-sdk-root/platforms/android-36"
+          mv "$KIT/toolchain/android-sdk/build-tools-36.0.0" "$KIT/toolchain/android-sdk-root/build-tools/36.0.0"
+          mv "$KIT/toolchain/android-sdk/cmdline-tools" "$KIT/toolchain/android-sdk-root/cmdline-tools/local"
+          rmdir "$KIT/toolchain/android-sdk"
+
+          cat > "$KIT/LOCAL_KIT_INFO.txt" <<EOF
+          HEAD=$(git rev-parse HEAD)
+          GRADLE_VERSION=$(gradle --version | awk '/^Gradle / {print $2; exit}')
+          ANDROID_PLATFORM=36
+          BUILD_TOOLS=36.0.0
+          OFFLINE_REBUILD=passed
+          GENERATED_AT_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
+
+          tar -C "$RUNNER_TEMP" -I 'zstd -3 -T0' -cf "$RUNNER_TEMP/tsuguregi-local-build-kit.tar.zst" tsuguregi-local-kit
+          sha256sum "$RUNNER_TEMP/tsuguregi-local-build-kit.tar.zst" > "$RUNNER_TEMP/tsuguregi-local-build-kit.tar.zst.sha256"
+          ls -lh "$RUNNER_TEMP/tsuguregi-local-build-kit.tar.zst"
+          cat "$RUNNER_TEMP/tsuguregi-local-build-kit.tar.zst.sha256"
+
+      - name: Upload local development kit
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSUGUREGI-v1.36-chatgpt-local-build-kit
+          path: |
+            ${{ runner.temp }}/tsuguregi-local-build-kit.tar.zst
+            ${{ runner.temp }}/tsuguregi-local-build-kit.tar.zst.sha256
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0

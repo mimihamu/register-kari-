@@ -62,6 +62,8 @@ internal enum class ManualRefundMethodV135(
 ) {
     CASH(PaymentMethod.CASH.name, "現金"),
     CARD(PaymentMethod.CARD.name, "カード（端末返金）"),
+    ELECTRONIC_MONEY(PaymentMethod.ELECTRONIC_MONEY.name, "電子マネー（端末返金）"),
+    QR(PaymentMethod.QR.name, "QR（端末返金）"),
     GIFT_CERTIFICATE(PaymentMethod.GIFT_CERTIFICATE.name, "商品券"),
     ACCOUNT_RECEIVABLE(PaymentMethod.ACCOUNT_RECEIVABLE.name, "掛売"),
     OTHER("OTHER", "その他"),

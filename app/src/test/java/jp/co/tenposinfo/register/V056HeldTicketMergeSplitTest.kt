@@ -62,6 +62,24 @@ class V056HeldTicketMergeSplitTest {
     }
 
     @Test
+    fun splitPreservesFractionalQuantityHundredths() {
+        val original = item(id = "F", quantity = 3, unitPrice = 1_000L, discountAmount = 101L)
+            .copy(quantityHundredths = 150L)
+
+        val plan = HeldTicketMergeSplitPolicy.splitItems(
+            items = listOf(original, item(id = "KEEP", quantity = 1)),
+            movedQuantities = mapOf(0 to 1),
+        )
+
+        val moved = plan.movedItems.first { it.product.id == "F" }
+        val remaining = plan.remainingItems.first { it.product.id == "F" }
+        assertEquals(50L, moved.quantityHundredths)
+        assertEquals(100L, remaining.quantityHundredths)
+        assertEquals(original.quantityHundredths, moved.quantityHundredths + remaining.quantityHundredths)
+        assertEquals(original.baseAmount, moved.baseAmount + remaining.baseAmount)
+    }
+
+    @Test
     fun splitKeepsTaxSnapshotFieldsOnBothSides() {
         val dynamic = item(
             id = "DYNAMIC",

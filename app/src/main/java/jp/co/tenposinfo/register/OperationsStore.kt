@@ -8,6 +8,7 @@ import java.time.LocalDate
 enum class CashMovementType(val displayName: String, val sign: Long) {
     IN("入金", 1),
     OUT("出金", -1),
+    EXCHANGE("両替", 0),
 }
 
 enum class ReversalType(val displayName: String) {
@@ -165,6 +166,7 @@ class OperationsStore(context: Context) {
                 operatorName = operatorName,
                 createdAt = now,
             )
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.BUSINESS_OPEN.name, id.toString())
             id
         }
     }
@@ -367,6 +369,7 @@ class OperationsStore(context: Context) {
                 operatorName = operatorName,
                 createdAt = now,
             )
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.CASH_MOVEMENT.name, id.toString())
             id
         }
     }
@@ -397,6 +400,11 @@ class OperationsStore(context: Context) {
         }
     }
 
+    fun reversalHasCashRefund(reversalId: Long): Boolean = longQuery(
+        "SELECT COUNT(*) FROM reversal_payments WHERE reversal_id = ? AND payment_method = ?",
+        arrayOf(reversalId.toString(), PaymentMethod.CASH.name),
+    ) > 0
+
     fun loadReturnableLines(saleId: Long): List<ReturnableSaleLine> =
         loadReturnableLines(db, saleId)
 
@@ -410,12 +418,23 @@ class OperationsStore(context: Context) {
                COALESCE(lts.taxable, CASE WHEN si.tax_category = 'NON_TAXABLE' THEN 0 ELSE 1 END),
                COALESCE(lts.reduced, CASE WHEN si.tax_category IN ('INCLUDED_8','EXCLUDED_8') THEN 1 ELSE 0 END),
                COALESCE(lts.tax_symbol, CASE si.tax_category WHEN 'INCLUDED_10' THEN '内' WHEN 'EXCLUDED_10' THEN '外' WHEN 'INCLUDED_8' THEN '内※' WHEN 'EXCLUDED_8' THEN '外※' ELSE '非' END),
-               si.quantity, si.discount_amount, si.note,
+               si.quantity, COALESCE(si.quantity_hundredths, si.quantity * 100), si.discount_amount, si.note,
+               COALESCE(
+                   si.quantity_mode,
+                   CASE WHEN COALESCE(si.quantity_hundredths, si.quantity * 100) % 100 <> 0 THEN 'DECIMAL' ELSE 'INTEGER' END
+               ) AS quantity_mode,
                CASE WHEN EXISTS (
                    SELECT 1 FROM reversal_transactions legacy
                    WHERE legacy.original_sale_id = si.sale_id
                      AND NOT EXISTS (SELECT 1 FROM reversal_items legacy_item WHERE legacy_item.reversal_id = legacy.id)
                ) THEN si.quantity ELSE COALESCE(SUM(ri.return_quantity), 0) END AS returned_quantity,
+               CASE WHEN EXISTS (
+                   SELECT 1 FROM reversal_transactions legacy
+                   WHERE legacy.original_sale_id = si.sale_id
+                     AND NOT EXISTS (SELECT 1 FROM reversal_items legacy_item WHERE legacy_item.reversal_id = legacy.id)
+               ) THEN COALESCE(si.quantity_hundredths, si.quantity * 100)
+                 ELSE COALESCE(SUM(ri.return_quantity_hundredths), COALESCE(SUM(ri.return_quantity), 0) * 100)
+               END AS returned_quantity_hundredths,
                CASE WHEN EXISTS (
                    SELECT 1 FROM reversal_transactions legacy
                    WHERE legacy.original_sale_id = si.sale_id
@@ -430,7 +449,7 @@ class OperationsStore(context: Context) {
         WHERE si.sale_id = ?
         GROUP BY si.id, si.product_id, si.product_name, si.unit_price, si.tax_category,
                  lts.tax_key, lts.tax_label, lts.rate_percent, lts.tax_included, lts.taxable, lts.reduced, lts.tax_symbol,
-                 si.quantity, si.discount_amount, si.note
+                 si.quantity, si.quantity_hundredths, si.discount_amount, si.note, si.quantity_mode
         ORDER BY si.id ASC
         """.trimIndent(),
         arrayOf(saleId.toString()),
@@ -452,10 +471,13 @@ class OperationsStore(context: Context) {
                 reduced = cursor.getInt(10) != 0,
                 taxSymbol = cursor.getString(11),
                 originalQuantity = cursor.getInt(12),
-                originalDiscount = cursor.getLong(13),
-                note = cursor.getString(14),
-                returnedQuantity = cursor.getInt(15),
-                refundedDiscount = cursor.getLong(16),
+                originalQuantityHundredths = cursor.getLong(13),
+                originalDiscount = cursor.getLong(14),
+                note = cursor.getString(15),
+                quantityMode = runCatching { QuantityMode.valueOf(cursor.getString(16)) }.getOrDefault(QuantityMode.INTEGER),
+                returnedQuantity = cursor.getInt(17),
+                returnedQuantityHundredths = cursor.getLong(18),
+                refundedDiscount = cursor.getLong(19),
             )
         }
         result
@@ -468,13 +490,35 @@ class OperationsStore(context: Context) {
         reason: String,
         operatorName: String,
         requestId: String,
+    ): PartialReversalResult = createReversalHundredths(
+        originalSaleId = originalSaleId,
+        type = type,
+        requestedQuantityHundredths = requestedQuantities.mapValues { (_, quantity) ->
+            Math.multiplyExact(quantity.toLong(), QuantityV136.SCALE)
+        },
+        reason = reason,
+        operatorName = operatorName,
+        requestId = requestId,
+    )
+
+    fun createReversalHundredths(
+        originalSaleId: Long,
+        type: ReversalType,
+        requestedQuantityHundredths: Map<Long, Long>,
+        reason: String,
+        operatorName: String,
+        requestId: String,
     ): PartialReversalResult {
         require(reason.isNotBlank()) { "理由を入力してください" }
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
         val now = System.currentTimeMillis()
         val operationKey = OperationsIdempotencyPolicy.reversalRequestKey(type, originalSaleId, requestId)
         val issuer = TaxInvoiceSettingsStore(appContext).load().issuer
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
+        val printerConfiguration = PrinterRoutingV136.resolve(
+            appContext,
+            DocumentPrintKindV136.SALE_RECEIPT,
+        )
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
         var savedResult: PartialReversalResult? = null
 
         db.transaction {
@@ -499,7 +543,7 @@ class OperationsStore(context: Context) {
             } ?: throw IllegalArgumentException("元売上が見つかりません")
 
             val lines = loadReturnableLines(this, originalSaleId)
-            val selected = PartialReturnPolicy.select(type, lines, requestedQuantities)
+            val selected = PartialReturnPolicy.selectHundredths(type, lines, requestedQuantityHundredths)
             val items = selected.map { it.second }
             val taxSummary = TaxEngine.calculate(items)
             val refundTotal = taxSummary.grossAmount
@@ -574,7 +618,9 @@ class OperationsStore(context: Context) {
                         put("reduced", if (line.reduced) 1 else 0)
                         put("tax_symbol", line.taxSymbol)
                         put("original_quantity", line.originalQuantity)
+                        put("original_quantity_hundredths", line.originalQuantityHundredths)
                         put("return_quantity", item.quantity)
+                        put("return_quantity_hundredths", item.quantityHundredths)
                         put("discount_amount", item.discountAmount)
                         put("gross_amount", item.baseAmount)
                     },
@@ -607,7 +653,7 @@ class OperationsStore(context: Context) {
             val printJobId = insertDocumentJob(
                 OperationDocumentType.REVERSAL_RECEIPT,
                 reversalId,
-                paperWidthMm,
+                printerConfiguration,
                 preview,
                 now,
             )
@@ -618,6 +664,7 @@ class OperationsStore(context: Context) {
                 operatorName = operatorName,
                 createdAt = now,
             )
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.REVERSAL.name, reversalId.toString())
             bindOperationKey(operationKey, reversalId)
             savedResult = PartialReversalResult(reversalId, refundTotal, printJobId, preview)
         }
@@ -631,14 +678,14 @@ class OperationsStore(context: Context) {
         operatorName: String,
     ): Long {
         val requested = if (type == ReversalType.RETURN) {
-            loadReturnableLines(originalSaleId).associate { it.saleItemId to it.remainingQuantity }
+            loadReturnableLines(originalSaleId).associate { it.saleItemId to it.remainingQuantityHundredths }
         } else {
             emptyMap()
         }
-        return createReversal(
+        return createReversalHundredths(
             originalSaleId = originalSaleId,
             type = type,
-            requestedQuantities = requested,
+            requestedQuantityHundredths = requested,
             reason = reason,
             operatorName = operatorName,
             requestId = "FULL-${type.name}",
@@ -652,11 +699,20 @@ class OperationsStore(context: Context) {
 
     fun reversedSaleIds(): Set<Long> = db.rawQuery(
         """
-        SELECT si.sale_id
-        FROM sale_items si
-        LEFT JOIN reversal_items ri ON ri.sale_item_id = si.id
-        GROUP BY si.sale_id
-        HAVING SUM(si.quantity) <= COALESCE(SUM(ri.return_quantity), 0)
+        SELECT sale_id
+        FROM (
+            SELECT si.sale_id AS sale_id,
+                   SUM(COALESCE(si.quantity_hundredths, si.quantity * 100)) AS original_quantity_hundredths,
+                   (
+                       SELECT COALESCE(SUM(COALESCE(ri.return_quantity_hundredths, ri.return_quantity * 100)), 0)
+                       FROM reversal_items ri
+                       INNER JOIN sale_items source_item ON source_item.id = ri.sale_item_id
+                       WHERE source_item.sale_id = si.sale_id
+                   ) AS returned_quantity_hundredths
+            FROM sale_items si
+            GROUP BY si.sale_id
+        )
+        WHERE original_quantity_hundredths <= returned_quantity_hundredths
         UNION
         SELECT rt.original_sale_id
         FROM reversal_transactions rt
@@ -704,7 +760,12 @@ class OperationsStore(context: Context) {
         backupFailureAcknowledged: Boolean = false,
     ): Long {
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
+        val documentPrintKind = when (type) {
+            SettlementReportType.X_INSPECTION -> DocumentPrintKindV136.INSPECTION
+            SettlementReportType.Z_SETTLEMENT -> DocumentPrintKindV136.SETTLEMENT
+        }
+        val printerConfiguration = PrinterRoutingV136.resolve(appContext, documentPrintKind)
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
         val now = System.currentTimeMillis()
 
         return db.transaction {
@@ -798,7 +859,7 @@ class OperationsStore(context: Context) {
             val printJobId = insertDocumentJob(
                 OperationDocumentType.SETTLEMENT_REPORT,
                 id,
-                paperWidthMm,
+                printerConfiguration,
                 previewText,
                 now,
             )
@@ -851,6 +912,10 @@ class OperationsStore(context: Context) {
                     createdAt = now,
                 )
             }
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.SETTLEMENT.name, id.toString())
+            if (type == SettlementReportType.Z_SETTLEMENT) {
+                OutboxDocumentV150.materializeLatest(this, JournalEventType.BUSINESS_STATE.name, session.id.toString())
+            }
             if (operationKey != null) bindOperationKey(operationKey, id)
             id
         }
@@ -891,7 +956,11 @@ class OperationsStore(context: Context) {
     fun previewSettlement(reportId: Long): String {
         val record = settlementById(reportId)
             ?: throw IllegalArgumentException("点検・精算履歴No.${reportId}が見つかりません")
-        val paper = PrinterPaperSettingPolicy.currentPaper(appContext)
+        val documentPrintKind = when (record.type) {
+            SettlementReportType.X_INSPECTION -> DocumentPrintKindV136.INSPECTION
+            SettlementReportType.Z_SETTLEMENT -> DocumentPrintKindV136.SETTLEMENT
+        }
+        val paper = PrinterPaperSettingPolicy.paper(PrinterRoutingV136.resolve(appContext, documentPrintKind))
         val document = settlementDocumentData(record)
         if (document != null) return OperationDocumentRenderer.renderSettlement(document, paper)
         return SettlementSnapshotSchemaV027.originalPayload(db, reportId)
@@ -905,11 +974,16 @@ class OperationsStore(context: Context) {
         operatorName: String,
     ): Long {
         require(operatorName.isNotBlank()) { "再印字担当者を入力してください" }
-        val normalizedWidth = PrinterPaperSettingPolicy.currentWidthMm(appContext)
         val now = System.currentTimeMillis()
         return db.transaction {
             val record = settlementById(reportId)
                 ?: throw IllegalArgumentException("点検・精算履歴No.${reportId}が見つかりません")
+            val documentPrintKind = when (record.type) {
+                SettlementReportType.X_INSPECTION -> DocumentPrintKindV136.INSPECTION
+                SettlementReportType.Z_SETTLEMENT -> DocumentPrintKindV136.SETTLEMENT
+            }
+            val printerConfiguration = PrinterRoutingV136.resolve(appContext, documentPrintKind)
+            val normalizedWidth = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
             val document = settlementDocumentData(
                 record = record,
                 reprintedAt = now,
@@ -938,7 +1012,7 @@ class OperationsStore(context: Context) {
             val jobId = insertDocumentJob(
                 OperationDocumentType.SETTLEMENT_REPORT,
                 reportId,
-                normalizedWidth,
+                printerConfiguration,
                 payload,
                 now,
             )
@@ -1031,7 +1105,7 @@ class OperationsStore(context: Context) {
     private fun SQLiteDatabase.insertDocumentJob(
         type: OperationDocumentType,
         referenceId: Long,
-        paperWidthMm: Int,
+        configuration: PrinterConfiguration,
         payloadText: String,
         now: Long,
     ): Long = insertOrThrow(
@@ -1040,7 +1114,12 @@ class OperationsStore(context: Context) {
         ContentValues().apply {
             put("document_type", type.name)
             put("reference_id", referenceId)
-            put("paper_width_mm", if (paperWidthMm >= 80) 80 else 58)
+            put(
+                "paper_width_mm",
+                PrinterPaperSettingPolicy.normalizeWidthMm(configuration.paperWidthMm),
+            )
+            put("printer_id", configuration.printerId)
+            put("printable_dot_width", configuration.printableDotWidth)
             put("status", PrintJobStatus.PENDING.name)
             put("attempt_count", 0)
             putNull("last_error")
@@ -1231,6 +1310,8 @@ class OperationsStore(context: Context) {
                 document_type TEXT NOT NULL,
                 reference_id INTEGER NOT NULL,
                 paper_width_mm INTEGER NOT NULL,
+                printer_id TEXT NOT NULL DEFAULT 'printer-1',
+                printable_dot_width INTEGER NOT NULL DEFAULT 576,
                 status TEXT NOT NULL,
                 attempt_count INTEGER NOT NULL,
                 last_error TEXT,
@@ -1288,6 +1369,7 @@ class OperationsStore(context: Context) {
         BusinessSessionSchema.ensure(db)
         TaxSnapshotSchema.ensureReversalColumns(db)
         DocumentPrintSafetySchema.ensure(db)
+        PrinterJobRouteSchemaV136.ensureDocument(db)
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_business_sessions_status ON business_sessions(status, opened_at)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_cash_movements_session ON cash_movements(business_session_id, movement_type)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_reversal_original_sale ON reversal_transactions(original_sale_id)")

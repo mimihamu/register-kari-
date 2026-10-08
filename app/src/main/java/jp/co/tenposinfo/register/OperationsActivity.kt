@@ -400,7 +400,7 @@ private fun OperationsApp(
                 lookupSale = { saleId -> registerDatabase.loadSaleDetail(saleId)?.summary },
                 onExecute = { saleId, type, quantities, reason, pin, requestId ->
                     val result = runCatching {
-                        secureStore.createReversal(
+                        secureStore.createReversalHundredths(
                             saleId,
                             type,
                             quantities,
@@ -1002,6 +1002,7 @@ private fun CashMovementScreen(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OpChoiceButton("入金", type == CashMovementType.IN, Modifier.weight(1f)) { type = CashMovementType.IN }
                     OpChoiceButton("出金", type == CashMovementType.OUT, Modifier.weight(1f)) { type = CashMovementType.OUT }
+                    OpChoiceButton("両替", type == CashMovementType.EXCHANGE, Modifier.weight(1f)) { type = CashMovementType.EXCHANGE }
                 }
                 Spacer(Modifier.height(10.dp))
                 OpNumericField("金額", amount, { amount = it })
@@ -1022,7 +1023,13 @@ private fun CashMovementScreen(
                         reason = ""
                     },
                     modifier = Modifier.fillMaxWidth().height(56.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = if (type == CashMovementType.IN) OpBlue else OpDanger),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = when (type) {
+                            CashMovementType.IN -> OpBlue
+                            CashMovementType.OUT -> OpDanger
+                            CashMovementType.EXCHANGE -> OpNavy
+                        },
+                    ),
                 ) { Text("${type.displayName}を保存", fontWeight = FontWeight.Bold) }
                 if (message != null) {
                     Spacer(Modifier.height(8.dp))
@@ -1039,14 +1046,26 @@ private fun CashMovementScreen(
                     LazyColumn {
                         itemsIndexed(records) { _, record ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(record.type.displayName, color = if (record.type == CashMovementType.IN) OpBlue else OpDanger, fontWeight = FontWeight.Bold)
+                                Text(
+                                    record.type.displayName,
+                                    color = when (record.type) {
+                                        CashMovementType.IN -> OpBlue
+                                        CashMovementType.OUT -> OpDanger
+                                        CashMovementType.EXCHANGE -> OpNavy
+                                    },
+                                    fontWeight = FontWeight.Bold,
+                                )
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(record.reason, fontWeight = FontWeight.Medium)
                                     Text("${opDateTime(record.createdAt)} / ${record.operatorName}", color = Color.Gray)
                                 }
                                 Text(
-                                    if (record.type == CashMovementType.IN) "+${opYen(record.amount)}" else "-${opYen(record.amount)}",
+                                    when (record.type) {
+                                        CashMovementType.IN -> "+${opYen(record.amount)}"
+                                        CashMovementType.OUT -> "-${opYen(record.amount)}"
+                                        CashMovementType.EXCHANGE -> "±${opYen(record.amount)}"
+                                    },
                                     fontSize = 19.sp,
                                     fontWeight = FontWeight.Bold,
                                 )
@@ -1072,13 +1091,13 @@ private fun ReversalScreen(
     printerPaperWidthMm: Int,
     loadLines: (Long) -> List<ReturnableSaleLine>,
     lookupSale: (Long) -> SaleSummaryRecord?,
-    onExecute: (Long, ReversalType, Map<Long, Int>, String, String, String) -> PartialReversalResult?,
+    onExecute: (Long, ReversalType, Map<Long, Long>, String, String, String) -> PartialReversalResult?,
     onBack: () -> Unit,
 ) {
     var selectedSaleId by remember(initialSaleId) { mutableStateOf<Long?>(initialSaleId) }
     var contextSaleLocked by remember(initialSaleId) { mutableStateOf(initialSaleId != null) }
     var lines by remember { mutableStateOf<List<ReturnableSaleLine>>(emptyList()) }
-    var quantities by remember { mutableStateOf<Map<Long, Int>>(emptyMap()) }
+    var quantityInputs by remember { mutableStateOf<Map<Long, String>>(emptyMap()) }
     var type by remember { mutableStateOf(ReversalType.RETURN) }
     var reason by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
@@ -1093,12 +1112,29 @@ private fun ReversalScreen(
     val directSaleId = SalesHistoryLookupPolicy.parseDirectSaleId(directSaleIdText)
     val selected = directSaleOverride?.takeIf { it.id == selectedSaleId }
         ?: sales.firstOrNull { it.id == selectedSaleId }
-    val selectedItems = runCatching { PartialReturnPolicy.select(type, lines, quantities) }.getOrNull().orEmpty()
+    val quantityHundredths = lines.mapNotNull { line ->
+        val parsed = reversalQuantityInputHundredths(quantityInputs[line.saleItemId].orEmpty())
+        if (parsed != null && parsed > 0L) line.saleItemId to parsed else null
+    }.toMap()
+    val hasQuantityInputError = type == ReversalType.RETURN && lines.any { line ->
+        val raw = quantityInputs[line.saleItemId].orEmpty()
+        val parsed = reversalQuantityInputHundredths(raw)
+        raw.isNotBlank() && (
+            parsed == null ||
+                parsed > line.remainingQuantityHundredths ||
+                (line.quantityMode == QuantityMode.INTEGER && parsed % QuantityV136.SCALE != 0L)
+            )
+    }
+    val selectedItems = runCatching {
+        PartialReturnPolicy.selectHundredths(type, lines, quantityHundredths)
+    }.getOrNull().orEmpty()
     val previewSummary = selectedItems.takeIf { it.isNotEmpty() }?.let { TaxEngine.calculate(it.map { pair -> pair.second }) }
-    val canCancel = lines.isNotEmpty() && lines.all { it.returnedQuantity == 0 && it.remainingQuantity > 0 }
+    val canCancel = lines.isNotEmpty() && lines.all {
+        it.returnedQuantityHundredths == 0L && it.remainingQuantityHundredths > 0L
+    }
     val canExecute = selected != null && reason.isNotBlank() && pin.isNotBlank() && when (type) {
         ReversalType.CANCEL -> canCancel
-        ReversalType.RETURN -> selectedItems.isNotEmpty()
+        ReversalType.RETURN -> selectedItems.isNotEmpty() && !hasQuantityInputError
     }
 
     androidx.compose.runtime.LaunchedEffect(initialSaleId) {
@@ -1115,7 +1151,7 @@ private fun ReversalScreen(
                 directSaleOverride = null
                 contextSaleLocked = false
                 lines = emptyList()
-                quantities = emptyMap()
+                quantityInputs = emptyMap()
                 savedResult = null
                 requestId = UUID.randomUUID().toString()
                 localMessage = "指定された売上No.$saleId は見つかりません。元売上は選択していません"
@@ -1125,7 +1161,7 @@ private fun ReversalScreen(
                 directSaleOverride = null
                 contextSaleLocked = false
                 lines = emptyList()
-                quantities = emptyMap()
+                quantityInputs = emptyMap()
                 savedResult = null
                 requestId = UUID.randomUUID().toString()
                 localMessage = "売上No.$saleId は全量返品・取消済みです。元売上は選択していません"
@@ -1137,7 +1173,7 @@ private fun ReversalScreen(
                     localMessage = it.message ?: "明細取得に失敗しました"
                     emptyList()
                 }
-                quantities = emptyMap()
+                quantityInputs = emptyMap()
                 savedResult = null
                 requestId = UUID.randomUUID().toString()
                 if (lines.isEmpty()) {
@@ -1178,7 +1214,7 @@ private fun ReversalScreen(
                                     selectedSaleId = null
                                     directSaleOverride = null
                                     lines = emptyList()
-                                    quantities = emptyMap()
+                                    quantityInputs = emptyMap()
                                     savedResult = null
                                     requestId = UUID.randomUUID().toString()
                                     localMessage = "元売上固定を解除しました。別売上を検索してください"
@@ -1223,7 +1259,7 @@ private fun ReversalScreen(
                                     selectedSaleId = null
                                     directSaleOverride = null
                                     lines = emptyList()
-                                    quantities = emptyMap()
+                                    quantityInputs = emptyMap()
                                     savedResult = null
                                     requestId = UUID.randomUUID().toString()
                                     localMessage = "売上No.$saleId は見つかりません。元売上の選択を解除しました"
@@ -1232,7 +1268,7 @@ private fun ReversalScreen(
                                     selectedSaleId = null
                                     directSaleOverride = null
                                     lines = emptyList()
-                                    quantities = emptyMap()
+                                    quantityInputs = emptyMap()
                                     savedResult = null
                                     requestId = UUID.randomUUID().toString()
                                     localMessage = "売上No.${sale.id} は全量返品・取消済みです。元売上の選択を解除しました"
@@ -1244,7 +1280,7 @@ private fun ReversalScreen(
                                         localMessage = it.message ?: "明細取得に失敗しました"
                                         emptyList()
                                     }
-                                    quantities = emptyMap()
+                                    quantityInputs = emptyMap()
                                     savedResult = null
                                     requestId = UUID.randomUUID().toString()
                                     localMessage = if (lines.isEmpty()) "返品可能な明細がありません" else null
@@ -1289,7 +1325,7 @@ private fun ReversalScreen(
                                         localMessage = it.message ?: "明細取得に失敗しました"
                                         emptyList()
                                     }
-                                    quantities = emptyMap()
+                                    quantityInputs = emptyMap()
                                     savedResult = null
                                     requestId = UUID.randomUUID().toString()
                                     localMessage = if (lines.isEmpty()) "返品可能な明細がありません" else null
@@ -1328,38 +1364,88 @@ private fun ReversalScreen(
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         itemsIndexed(lines) { _, line ->
-                            val requested = if (type == ReversalType.CANCEL) line.remainingQuantity else quantities[line.saleItemId] ?: 0
+                            val inputText = quantityInputs[line.saleItemId].orEmpty()
+                            val parsedRequested = reversalQuantityInputHundredths(inputText)
+                            val requestedHundredths = if (type == ReversalType.CANCEL) {
+                                line.remainingQuantityHundredths
+                            } else {
+                                parsedRequested ?: 0L
+                            }
+                            val inputError = when {
+                                type != ReversalType.RETURN || inputText.isBlank() -> null
+                                parsedRequested == null -> "数量は整数または小数2桁までで入力してください"
+                                parsedRequested > line.remainingQuantityHundredths -> "残数 ${line.remainingQuantityText} を超えています"
+                                line.quantityMode == QuantityMode.INTEGER &&
+                                    parsedRequested % QuantityV136.SCALE != 0L -> "通常商品は整数数量で入力してください"
+                                else -> null
+                            }
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = if (line.remainingQuantity == 0) Color(0xFFF1F1F1) else Color.White),
+                                colors = CardDefaults.cardColors(containerColor = if (line.remainingQuantityHundredths == 0L) Color(0xFFF1F1F1) else Color.White),
                                 border = BorderStroke(1.dp, OpBorder),
                             ) {
-                                Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Column(Modifier.weight(1f)) {
-                                        Text("${line.productName} [${line.taxSymbol}]", fontWeight = FontWeight.Bold)
-                                        Text(
-                                            "${opYen(line.unitPrice)} / 販売 ${line.originalQuantity}・返品済 ${line.returnedQuantity}・残 ${line.remainingQuantity}",
-                                            color = Color.Gray,
-                                            fontSize = 12.sp,
-                                        )
-                                        if (line.remainingDiscount > 0) Text("値引残 ${opYen(line.remainingDiscount)}", color = Color.Gray, fontSize = 12.sp)
+                                Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text("${line.productName} [${line.taxSymbol}]", fontWeight = FontWeight.Bold)
+                                            Text(
+                                                "${opYen(line.unitPrice)} / 販売 ${line.originalQuantityText}・返品済 ${line.returnedQuantityText}・残 ${line.remainingQuantityText}",
+                                                color = Color.Gray,
+                                                fontSize = 12.sp,
+                                            )
+                                            if (line.remainingDiscount > 0) Text("値引残 ${opYen(line.remainingDiscount)}", color = Color.Gray, fontSize = 12.sp)
+                                        }
+                                        if (type == ReversalType.CANCEL) {
+                                            Text(
+                                                line.remainingQuantityText,
+                                                modifier = Modifier.width(92.dp),
+                                                textAlign = TextAlign.Center,
+                                                fontWeight = FontWeight.Bold,
+                                            )
+                                        } else {
+                                            OutlinedButton(
+                                                onClick = {
+                                                    val current = parsedRequested ?: 0L
+                                                    val next = (current - QuantityV136.SCALE).coerceAtLeast(0L)
+                                                    quantityInputs = if (next == 0L) {
+                                                        quantityInputs - line.saleItemId
+                                                    } else {
+                                                        quantityInputs + (line.saleItemId to reversalQuantityText(next))
+                                                    }
+                                                },
+                                                enabled = requestedHundredths > 0L,
+                                                modifier = Modifier.width(48.dp),
+                                            ) { Text("−") }
+                                            OutlinedTextField(
+                                                value = inputText,
+                                                onValueChange = { candidate ->
+                                                    if (candidate.length <= 12 && reversalQuantityInputRegex.matches(candidate)) {
+                                                        quantityInputs = if (candidate.isBlank()) {
+                                                            quantityInputs - line.saleItemId
+                                                        } else {
+                                                            quantityInputs + (line.saleItemId to candidate)
+                                                        }
+                                                    }
+                                                },
+                                                label = { Text("数量") },
+                                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                                singleLine = true,
+                                                modifier = Modifier.width(104.dp),
+                                            )
+                                            OutlinedButton(
+                                                onClick = {
+                                                    val current = parsedRequested ?: 0L
+                                                    val next = Math.addExact(current, QuantityV136.SCALE)
+                                                        .coerceAtMost(line.remainingQuantityHundredths)
+                                                    quantityInputs = quantityInputs + (line.saleItemId to reversalQuantityText(next))
+                                                },
+                                                enabled = parsedRequested != null && requestedHundredths < line.remainingQuantityHundredths,
+                                                modifier = Modifier.width(48.dp),
+                                            ) { Text("＋") }
+                                        }
                                     }
-                                    OutlinedButton(
-                                        onClick = {
-                                            val next = (requested - 1).coerceAtLeast(0)
-                                            quantities = quantities + (line.saleItemId to next)
-                                        },
-                                        enabled = type == ReversalType.RETURN && requested > 0,
-                                        modifier = Modifier.width(48.dp),
-                                    ) { Text("−") }
-                                    Text("$requested", modifier = Modifier.width(42.dp), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold)
-                                    OutlinedButton(
-                                        onClick = {
-                                            val next = (requested + 1).coerceAtMost(line.remainingQuantity)
-                                            quantities = quantities + (line.saleItemId to next)
-                                        },
-                                        enabled = type == ReversalType.RETURN && requested < line.remainingQuantity,
-                                        modifier = Modifier.width(48.dp),
-                                    ) { Text("＋") }
+                                    inputError?.let {
+                                        Text(it, color = OpDanger, fontSize = 11.sp)
+                                    }
                                 }
                             }
                         }
@@ -1410,11 +1496,11 @@ private fun ReversalScreen(
                 Button(
                     onClick = {
                         val saleId = selectedSaleId ?: return@Button
-                        val result = onExecute(saleId, type, quantities, reason, pin, requestId)
+                        val result = onExecute(saleId, type, quantityHundredths, reason, pin, requestId)
                         if (result != null) {
                             savedResult = result
                             lines = loadLines(saleId)
-                            quantities = emptyMap()
+                            quantityInputs = emptyMap()
                             reason = ""
                             pin = ""
                             requestId = UUID.randomUUID().toString()
@@ -1444,6 +1530,18 @@ private fun ReversalScreen(
         OpBottomBar("レジ管理へ戻る", onBack)
     }
 }
+
+private val reversalQuantityInputRegex = Regex("\\d*(?:\\.\\d{0,2})?")
+
+private fun reversalQuantityInputHundredths(text: String): Long? {
+    val normalized = text.trim()
+    if (normalized.isBlank()) return 0L
+    if (Regex("0(?:\\.0{0,2})?").matches(normalized)) return 0L
+    return runCatching { QuantityV136.parse(normalized).hundredths }.getOrNull()
+}
+
+private fun reversalQuantityText(quantityHundredths: Long): String =
+    if (quantityHundredths <= 0L) "0" else QuantityV136.fromHundredths(quantityHundredths).format()
 
 @Composable
 private fun OperationsAccessDeniedScreen(onClose: () -> Unit) {

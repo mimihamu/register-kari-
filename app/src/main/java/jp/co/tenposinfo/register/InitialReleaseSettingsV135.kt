@@ -578,8 +578,8 @@ private fun BusinessSettingsScreenV135(store: InitialReleaseSettingsStoreV135, a
         Card(colors = CardDefaults.cardColors(containerColor = IrPaleYellow), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp)) {
                 Text("v1.35 精算安全弁", fontWeight = FontWeight.Bold)
-                Text("現金実査: 必須 / 未会計伝票: BLOCK / 未印刷: 責任者確認")
-                Text("REP-003で確定済みの安全条件はこの設定画面から弱めません。", fontSize = 13.sp)
+                Text("現金実査: 必須 / 未会計伝票: 禁止 / 未印刷: 責任者確認")
+                Text("精算の安全条件は、この設定画面から弱めることはできません。", fontSize = 13.sp)
             }
         }
         BoolRowV135("Z精算後の自動バックアップ", value.autoBackupAfterSettlement) { value = value.copy(autoBackupAfterSettlement = it) }
@@ -601,7 +601,7 @@ private fun DeviceSettingsScreenV135(store: InitialReleaseSettingsStoreV135, act
         Text("キオスク・画面・音・更新・容量警告", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = IrNavy)
         BoolRowV135("販売中は画面を消灯しない", value.keepScreenOn) { value = value.copy(keepScreenOn = it) }
         BoolRowV135("キオスク運用を要求", value.kioskModeRequested) { value = value.copy(kioskModeRequested = it) }
-        Text("※ Androidの端末固定モード自体はDevice Owner等の端末側許可がある場合のみ有効化します。", fontSize = 13.sp)
+        Text("※ Androidの端末固定モードは、端末管理者（Device Owner）などの端末側許可がある場合のみ有効になります。", fontSize = 13.sp)
         BoolRowV135("操作音を有効", value.operationSoundEnabled) { value = value.copy(operationSoundEnabled = it) }
         BoolRowV135("更新確認を有効", value.automaticUpdateCheck) { value = value.copy(automaticUpdateCheck = it) }
         NumericSettingV135("空き容量警告しきい値（MB）", value.storageWarningMb) { value = value.copy(storageWarningMb = it) }
@@ -688,6 +688,36 @@ private fun BoolRowV135(label: String, checked: Boolean, onChange: (Boolean) -> 
     }
 }
 
+private fun Enum<*>.settingsDisplayNameV136(): String = when (this) {
+    QuantityInputModeV135.QUANTITY_THEN_ITEM -> "数量→商品"
+    QuantityInputModeV135.PRICE_THEN_QTY -> "単価→数量"
+    SettingPermissionPolicyV135.DENY -> "禁止"
+    SettingPermissionPolicyV135.MANAGER -> "責任者のみ"
+    SettingPermissionPolicyV135.ALLOW -> "許可"
+    ZeroPricePolicyV135.PRODUCT_SETTING -> "商品設定に従う"
+    ZeroPricePolicyV135.DENY -> "禁止"
+    LineDeletePolicyV135.ALLOW -> "許可"
+    LineDeletePolicyV135.MANAGER -> "責任者のみ"
+    RestoreWorkCartPolicyV135.ASK -> "確認する"
+    RestoreWorkCartPolicyV135.ALWAYS -> "常に復元"
+    RestoreWorkCartPolicyV135.NEVER -> "復元しない"
+    BusinessDateModeV135.AUTO -> "自動"
+    BusinessDateModeV135.CONFIRM -> "確認して決定"
+    BusinessDateModeV135.MANUAL -> "手動"
+    PrintOnHoldV135.NONE -> "印刷しない"
+    PrintOnHoldV135.ORDER -> "注文伝票"
+    PrintOnHoldV135.OPEN_CHECK -> "保留伝票"
+    SettlementWarningPolicyV135.BLOCK -> "禁止"
+    SettlementWarningPolicyV135.WARN -> "警告"
+    SettlementWarningPolicyV135.ALLOW -> "許可"
+    ZeroItemsPrintV135.SHOW -> "印字する"
+    ZeroItemsPrintV135.HIDE -> "印字しない"
+    ReceiptHeaderModeV135.TEXT -> "文字"
+    ReceiptHeaderModeV135.IMAGE -> "画像"
+    ReceiptHeaderModeV135.BOTH -> "文字＋画像"
+    else -> name
+}
+
 @Composable
 private inline fun <reified T : Enum<T>> EnumCycleRowV135(label: String, value: T, crossinline onChange: (T) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -695,7 +725,7 @@ private inline fun <reified T : Enum<T>> EnumCycleRowV135(label: String, value: 
         OutlinedButton(onClick = {
             val values = enumValues<T>()
             onChange(values[(value.ordinal + 1) % values.size])
-        }) { Text(value.name) }
+        }) { Text(value.settingsDisplayNameV136()) }
     }
 }
 

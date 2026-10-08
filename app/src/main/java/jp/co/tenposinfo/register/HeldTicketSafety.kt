@@ -91,12 +91,19 @@ internal object HeldTicketMergeSplitPolicy {
                         partQuantity = movedQuantity,
                         wholeQuantity = item.quantity,
                     )
+                    val movedQuantityHundredths = proportionalQuantityHundredths(
+                        totalHundredths = item.quantityHundredths,
+                        partQuantity = movedQuantity,
+                        wholeQuantity = item.quantity,
+                    )
                     moved += item.copy(
                         quantity = movedQuantity,
+                        quantityHundredths = movedQuantityHundredths,
                         discountAmount = movedDiscount,
                     )
                     remaining += item.copy(
                         quantity = item.quantity - movedQuantity,
+                        quantityHundredths = item.quantityHundredths - movedQuantityHundredths,
                         discountAmount = item.discountAmount - movedDiscount,
                     )
                 }
@@ -110,6 +117,15 @@ internal object HeldTicketMergeSplitPolicy {
             movedItems = moved,
         )
     }
+
+    private fun proportionalQuantityHundredths(
+        totalHundredths: Long,
+        partQuantity: Int,
+        wholeQuantity: Int,
+    ): Long = BigInteger.valueOf(totalHundredths)
+        .multiply(BigInteger.valueOf(partQuantity.toLong()))
+        .divide(BigInteger.valueOf(wholeQuantity.toLong()))
+        .longValueExact()
 
     private fun proportionalDiscount(
         totalDiscount: Long,
@@ -342,6 +358,8 @@ internal class HeldTicketSafetyCoordinator(
         put("tax_category", product.taxCategory.name)
         put("display_order", product.displayOrder)
         put("quantity", quantity)
+        put("quantity_hundredths", quantityHundredths)
+        put("quantity_mode", product.quantityMode.name)
         put("discount_amount", discountAmount)
         put("note", note)
     }
