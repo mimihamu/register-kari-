@@ -12,7 +12,8 @@ class V136FractionalQuantityDisplayTest {
 
         assertTrue(model.contains("quantityHundredths"))
         assertTrue(model.contains("quantityText"))
-        assertTrue(model.contains("item.optLong(\"quantityHundredths\")"))
+        assertTrue(model.contains("item.strictLong(\"quantityHundredths\")"))
+        assertTrue(model.contains("item.strictLong(\"quantityScaled\")"))
         assertTrue(model.contains("item.optString(\"quantityText\")"))
         assertTrue(ui.contains("item.quantityText"))
     }
