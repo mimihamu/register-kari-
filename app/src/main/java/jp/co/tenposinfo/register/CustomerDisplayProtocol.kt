@@ -71,9 +71,13 @@ data class CustomerDisplaySnapshot(
                     put("name", item.name)
                     put("quantity", item.quantity)
                     put("quantityHundredths", item.quantityHundredths)
+                    // Formal v2.5 §30.6 exact quantity wire fields; legacy aliases stay.
+                    put("quantityScaled", item.quantityHundredths)
+                    put("quantityScale", 2)
                     put("quantityText", item.quantityText)
                     put("unitPrice", item.unitPrice)
                     put("amount", item.amount)
+                    put("lineAmount", item.amount)
                     put("latest", item.latest)
                     put("cancelled", item.cancelled)
                     put("taxSymbol", item.taxSymbol)

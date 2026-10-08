@@ -2,6 +2,7 @@ package jp.co.tenposinfo.register.cd
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.math.BigDecimal
 
 internal const val CUSTOMER_DISPLAY_SCHEMA_VERSION = 1
 internal const val CUSTOMER_DISPLAY_PATH = "/customer-display/v1"
@@ -71,9 +72,12 @@ data class CustomerDisplaySnapshot(
                     put("name", item.name)
                     put("quantity", item.quantity)
                     put("quantityHundredths", item.quantityHundredths)
+                    put("quantityScaled", item.quantityHundredths)
+                    put("quantityScale", 2)
                     put("quantityText", item.quantityText)
                     put("unitPrice", item.unitPrice)
                     put("amount", item.amount)
+                    put("lineAmount", item.amount)
                     put("latest", item.latest)
                     put("cancelled", item.cancelled)
                     put("taxSymbol", item.taxSymbol)
@@ -94,23 +98,40 @@ data class CustomerDisplaySnapshot(
                 if (items != null) {
                     for (index in 0 until items.length()) {
                         val item = items.getJSONObject(index)
+                        // The v2.5 scaled integer is authoritative whenever present.
+                        // Legacy v1 snapshots continue to support quantityHundredths/quantity.
+                        if (item.has("quantityScale") && !item.isNull("quantityScale")) {
+                            require(item.getInt("quantityScale") == 2) { "quantityScale must be 2" }
+                        }
+                        val scaled = when {
+                            item.has("quantityScaled") && !item.isNull("quantityScaled") ->
+                                item.strictLong("quantityScaled")
+                            item.has("quantityHundredths") && !item.isNull("quantityHundredths") ->
+                                item.strictLong("quantityHundredths")
+                            else -> Math.multiplyExact(item.optInt("quantity").toLong(), 100L)
+                        }
+                        if (item.has("quantityHundredths") && item.has("quantityScaled") &&
+                            !item.isNull("quantityHundredths") && !item.isNull("quantityScaled")
+                        ) {
+                            require(item.strictLong("quantityHundredths") == scaled) {
+                                "quantityScaled and quantityHundredths disagree"
+                            }
+                        }
                         add(
                             CustomerDisplayOrderItem(
                                 productId = item.optString("productId"),
                                 name = item.optString("name"),
                                 quantity = item.optInt("quantity"),
-                                quantityHundredths = if (item.has("quantityHundredths")) {
-                                    item.optLong("quantityHundredths")
-                                } else {
-                                    item.optInt("quantity").toLong() * 100L
-                                },
+                                quantityHundredths = scaled,
                                 quantityText = item.optString("quantityText").ifBlank {
-                                    item.optInt("quantity").toString()
+                                    BigDecimal.valueOf(scaled, 2).stripTrailingZeros().toPlainString()
                                 },
                                 unitPrice = item.optLong("unitPrice"),
-                                amount = item.optLong("amount"),
+                                amount = if (item.has("lineAmount")) {
+                                    item.getLong("lineAmount")
+                                } else item.optLong("amount"),
                                 latest = item.optBoolean("latest"),
-                                cancelled = item.optBoolean("cancelled"),
+                                cancelled = item.optBoolean("cancelled", item.optBoolean("isVoided")),
                                 taxSymbol = item.optString("taxSymbol"),
                             ),
                         )
@@ -160,6 +181,13 @@ data class CustomerDisplaySnapshot(
             presentation = CustomerDisplayPresentation(),
         )
     }
+}
+
+// org.json getLong can silently truncate decimal numbers; exact quantities must not.
+private fun JSONObject.strictLong(name: String): Long {
+    val raw = get(name).toString()
+    require(Regex("-?[0-9]+").matches(raw)) { "$name must be an integer" }
+    return raw.toLong()
 }
 
 private fun JSONObject.optNullableString(name: String): String? =
