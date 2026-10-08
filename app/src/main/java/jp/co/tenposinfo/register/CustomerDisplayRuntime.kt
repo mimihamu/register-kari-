@@ -36,9 +36,15 @@ object CustomerDisplayRuntime {
             if (existing == config && ((config.enabled && server != null) || (!config.enabled && server == null))) return
             stopLocked()
             currentConfig = config
-            latestSnapshot = latestSnapshot.copy(
-                storeName = config.storeName,
-                presentation = config.presentation,
+            // Never reopen a newly configured socket with the prior cash/payment
+            // screen before this process has polled the current register database.
+            latestSnapshot = CustomerDisplaySnapshotFactory.standby(
+                config.storeName,
+                config.presentation,
+            ).copy(
+                sequence = sequence.incrementAndGet(),
+                serverInstanceId = serverInstanceId,
+                sentAtMillis = System.currentTimeMillis(),
             )
             lastError = null
             connectedClients = 0
@@ -65,13 +71,17 @@ object CustomerDisplayRuntime {
     }
 
     fun publish(snapshot: CustomerDisplaySnapshot) {
-        val normalized = snapshot.copy(
-            sequence = sequence.incrementAndGet(),
-            serverInstanceId = serverInstanceId,
-            sentAtMillis = System.currentTimeMillis(),
-        )
-        latestSnapshot = normalized
-        server?.broadcast(normalized.toJson())
+        synchronized(lock) {
+            // Calls arrive from both the cart poller and checkout UI.
+            // Assign sequence, replace latest, and enqueue delivery in one order.
+            val normalized = snapshot.copy(
+                sequence = sequence.incrementAndGet(),
+                serverInstanceId = serverInstanceId,
+                sentAtMillis = System.currentTimeMillis(),
+            )
+            latestSnapshot = normalized
+            server?.broadcast(normalized.toJson())
+        }
     }
 
     fun stop() {
