@@ -138,10 +138,11 @@ data class CustomerDisplaySnapshot(
                                 },
                                 unitPrice = item.optLong("unitPrice"),
                                 amount = if (item.has("lineAmount")) {
-                                    item.getLong("lineAmount")
+                                    item.strictLong("lineAmount")
                                 } else item.optLong("amount"),
                                 latest = item.optBoolean("latest"),
-                                cancelled = item.optBoolean("cancelled", item.optBoolean("isVoided")),
+                                cancelled = if (item.has("isVoided")) item.getBoolean("isVoided")
+                                    else item.optBoolean("cancelled"),
                                 taxSymbol = item.optString("taxSymbol"),
                             ),
                         )

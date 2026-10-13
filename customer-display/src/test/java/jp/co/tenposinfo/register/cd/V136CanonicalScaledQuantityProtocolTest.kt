@@ -49,6 +49,18 @@ class V136CanonicalScaledQuantityProtocolTest {
     }
 
     @Test
+    fun canonicalVoidedFieldWinsWhenLegacyAliasDisagrees() {
+        val wire = """{"schemaVersion":1,"sequence":8,"mode":"SALES","items":[{"name":"取消行","quantityScaled":100,"quantityScale":2,"isVoided":true,"cancelled":false}]}"""
+        assertTrue(CustomerDisplaySnapshot.parse(wire).orderItems.single().cancelled)
+    }
+
+    @Test
+    fun fractionalLineAmountIsRejectedInsteadOfTruncated() {
+        val wire = """{"schemaVersion":1,"sequence":9,"mode":"SALES","items":[{"name":"異常金額","quantityScaled":100,"quantityScale":2,"lineAmount":100.5}]}"""
+        assertTrue(runCatching { CustomerDisplaySnapshot.parse(wire) }.isFailure)
+    }
+
+    @Test
     fun conflictingOrFloatingExactQuantityIsRejected() {
         val mismatch = envelope("""{"quantity":1,"quantityScaled":50,"quantityHundredths":100,"quantityScale":2}""")
         assertTrue(runCatching { CustomerDisplaySnapshot.parse(mismatch) }.isFailure)
