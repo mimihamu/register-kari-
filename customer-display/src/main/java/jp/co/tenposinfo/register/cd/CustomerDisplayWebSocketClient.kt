@@ -46,6 +46,38 @@ internal object CustomerDisplayConnectionPolicy {
         if (hadEstablishedConnection) 0 else (failedAttempts + 1).coerceAtMost(retryDelaysMs.lastIndex)
 }
 
+/**
+ * Connection-local sequence safety. STATE_UPDATE is never applied across a gap,
+ * unknown session, or before the first authoritative SNAPSHOT.
+ */
+internal enum class CustomerDisplayDeliveryDecision { APPLY, IGNORE, REQUEST_SNAPSHOT }
+
+internal object CustomerDisplayDeliveryPolicy {
+    fun decide(
+        previous: CustomerDisplaySnapshot?,
+        incoming: CustomerDisplaySnapshot,
+        awaitingSnapshot: Boolean,
+    ): CustomerDisplayDeliveryDecision {
+        if (incoming.messageType == CustomerDisplayMessageType.SNAPSHOT) {
+            if (previous == null) return CustomerDisplayDeliveryDecision.APPLY
+            val sameServer = previous.serverInstanceId == incoming.serverInstanceId
+            val sameSession = previous.sessionId == incoming.sessionId
+            return if (sameServer && sameSession && incoming.sequence < previous.sequence) {
+                CustomerDisplayDeliveryDecision.IGNORE
+            } else CustomerDisplayDeliveryDecision.APPLY
+        }
+        if (awaitingSnapshot || previous == null) return CustomerDisplayDeliveryDecision.REQUEST_SNAPSHOT
+        if (previous.serverInstanceId != incoming.serverInstanceId ||
+            previous.sessionId != incoming.sessionId) {
+            return CustomerDisplayDeliveryDecision.REQUEST_SNAPSHOT
+        }
+        if (incoming.sequence <= previous.sequence) return CustomerDisplayDeliveryDecision.IGNORE
+        return if (previous.sequence != Long.MAX_VALUE && incoming.sequence == previous.sequence + 1) {
+            CustomerDisplayDeliveryDecision.APPLY
+        } else CustomerDisplayDeliveryDecision.REQUEST_SNAPSHOT
+    }
+}
+
 class CustomerDisplayWebSocketClient(
     private val settings: CustomerDisplayConnectionSettings,
     private val onConnected: () -> Unit,
@@ -170,8 +202,10 @@ private class SharedCustomerDisplaySession(
             delayedStop?.cancel(false)
             delayedStop = null
             listeners[id] = listener
-            replaySnapshot = latestSnapshot
-            replayAsConnected = visibility.shouldPresentAsConnected()
+            // Do not replay cached money to a newly created screen while the
+            // underlying socket is lost or still awaiting the first live snapshot.
+            replaySnapshot = if (visibility.transportConnected) latestSnapshot else null
+            replayAsConnected = visibility.transportConnected && replaySnapshot != null
             replayReason = if (visibility.visibleDisconnected) visibility.latestDisconnectReason else null
         }
         startWorker()
@@ -330,6 +364,8 @@ private class SharedCustomerDisplaySession(
 
     private fun readFrames(input: InputStream, output: OutputStream) {
         var missedHeartbeats = 0
+        var previousSnapshot: CustomerDisplaySnapshot? = null
+        var awaitingSnapshot = false
         while (running.get()) {
             val first = try {
                 input.read()
@@ -368,7 +404,23 @@ private class SharedCustomerDisplaySession(
                 0x1 -> {
                     require(finalFrame) { "分割WebSocketフレームには未対応です" }
                     val json = payload.toString(StandardCharsets.UTF_8)
-                    notifySnapshot(CustomerDisplaySnapshot.parse(json))
+                    val incoming = CustomerDisplaySnapshot.parse(json)
+                    when (CustomerDisplayDeliveryPolicy.decide(previousSnapshot, incoming, awaitingSnapshot)) {
+                        CustomerDisplayDeliveryDecision.APPLY -> {
+                            previousSnapshot = incoming
+                            awaitingSnapshot = false
+                            notifySnapshot(incoming)
+                        }
+                        CustomerDisplayDeliveryDecision.IGNORE -> Unit
+                        CustomerDisplayDeliveryDecision.REQUEST_SNAPSHOT -> {
+                            if (!awaitingSnapshot) {
+                                awaitingSnapshot = true
+                                notifyResyncRequired()
+                                val request = """{"messageType":"SNAPSHOT_REQUEST"}"""
+                                writeMaskedFrame(output, 0x1, request.toByteArray(StandardCharsets.UTF_8))
+                            }
+                        }
+                    }
                 }
                 0x8 -> {
                     writeMaskedFrame(output, 0x8, payload.copyOf(minOf(payload.size, 125)))
@@ -383,6 +435,9 @@ private class SharedCustomerDisplaySession(
 
     private fun notifyConnected() {
         val currentListeners = synchronized(listenerLock) {
+            // A new WebSocket transport is not proof that the saved snapshot is current.
+            // The server always sends its latest full snapshot after handshake.
+            latestSnapshot = null
             visibility.onConnected()
             everEstablishedConnection = true
             pendingVisibleDisconnect?.cancel(false)
@@ -394,6 +449,19 @@ private class SharedCustomerDisplaySession(
             "${settings.host}:${settings.port} へ接続",
         )
         currentListeners.forEach { listener -> safeCall(listener.onConnected) }
+    }
+
+    private fun notifyResyncRequired() {
+        val reason = "E-CD-004: 表示更新が不足したため最新状態を再取得しています"
+        val currentListeners = synchronized(listenerLock) {
+            // Suppress stale money immediately, including on newly created screens.
+            latestSnapshot = null
+            listeners.values.toList()
+        }
+        CustomerDisplayConnectionEventLog.record(
+            CustomerDisplayConnectionEventType.DISCONNECTED, reason,
+        )
+        currentListeners.forEach { listener -> safeCall { listener.onDisconnected(reason) } }
     }
 
     private fun notifySnapshot(snapshot: CustomerDisplaySnapshot) {

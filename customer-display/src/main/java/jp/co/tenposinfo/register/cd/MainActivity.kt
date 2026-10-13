@@ -459,7 +459,7 @@ private fun CustomerDisplayItemRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("${yen(item.unitPrice)} × ${item.quantity}", color = TextSecondary, fontSize = if (compact) 11.sp else 14.sp)
+                Text("${yen(item.unitPrice)} × ${item.quantityText}", color = TextSecondary, fontSize = if (compact) 11.sp else 14.sp)
                 if (presentation.showTaxSymbol && item.taxSymbol.isNotBlank()) {
                     Text(item.taxSymbol, color = Accent, fontSize = if (compact) 11.sp else 14.sp, fontWeight = FontWeight.Bold)
                 }
@@ -468,7 +468,7 @@ private fun CustomerDisplayItemRow(
                 }
             }
         }
-        Text("${item.quantity}", color = TextPrimary, fontSize = if (compact) 17.sp else 22.sp, textAlign = TextAlign.End, modifier = Modifier.weight(0.24f))
+        Text(item.quantityText, color = TextPrimary, fontSize = if (compact) 17.sp else 22.sp, textAlign = TextAlign.End, modifier = Modifier.weight(0.24f))
         Text(yen(item.amount), color = TextPrimary, fontSize = if (compact) 18.sp else 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.weight(0.46f))
     }
 }

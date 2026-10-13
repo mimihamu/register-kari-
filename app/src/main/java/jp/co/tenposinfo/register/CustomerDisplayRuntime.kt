@@ -11,6 +11,7 @@ object CustomerDisplayRuntime {
     private val lock = Any()
     private val sequence = AtomicLong(System.currentTimeMillis())
     private val serverInstanceId = UUID.randomUUID().toString()
+    private var displaySessionId = UUID.randomUUID().toString()
 
     @Volatile
     private var currentConfig: CustomerDisplayServerConfig? = null
@@ -36,9 +37,18 @@ object CustomerDisplayRuntime {
             if (existing == config && ((config.enabled && server != null) || (!config.enabled && server == null))) return
             stopLocked()
             currentConfig = config
-            latestSnapshot = latestSnapshot.copy(
-                storeName = config.storeName,
-                presentation = config.presentation,
+            // Never reopen a newly configured socket with the prior cash/payment
+            // screen before this process has polled the current register database.
+            displaySessionId = UUID.randomUUID().toString()
+            latestSnapshot = CustomerDisplaySnapshotFactory.standby(
+                config.storeName,
+                config.presentation,
+            ).copy(
+                sequence = sequence.incrementAndGet(),
+                serverInstanceId = serverInstanceId,
+                sentAtMillis = System.currentTimeMillis(),
+                sessionId = displaySessionId,
+                messageType = CustomerDisplayMessageType.SNAPSHOT,
             )
             lastError = null
             connectedClients = 0
@@ -46,7 +56,9 @@ object CustomerDisplayRuntime {
 
             val newServer = CustomerDisplayWebSocketServer(
                 config = config,
-                latestPayload = { latestSnapshot.toJson() },
+                latestPayload = {
+                    latestSnapshot.copy(messageType = CustomerDisplayMessageType.SNAPSHOT).toJson()
+                },
                 onError = { message -> lastError = message },
                 onClientCountChanged = { count ->
                     connectedClients = count
@@ -65,13 +77,33 @@ object CustomerDisplayRuntime {
     }
 
     fun publish(snapshot: CustomerDisplaySnapshot) {
-        val normalized = snapshot.copy(
-            sequence = sequence.incrementAndGet(),
-            serverInstanceId = serverInstanceId,
-            sentAtMillis = System.currentTimeMillis(),
-        )
-        latestSnapshot = normalized
-        server?.broadcast(normalized.toJson())
+        synchronized(lock) {
+            // Calls arrive from both the cart poller and checkout UI.
+            // Assign sequence, replace latest, and enqueue delivery in one order.
+            val previousMode = latestSnapshot.mode
+            val newSession = when {
+                snapshot.mode == CustomerDisplayMode.STANDBY &&
+                    previousMode != CustomerDisplayMode.STANDBY -> true
+                snapshot.mode != CustomerDisplayMode.STANDBY &&
+                    previousMode in setOf(
+                        CustomerDisplayMode.STANDBY,
+                        CustomerDisplayMode.COMPLETE,
+                        CustomerDisplayMode.DISCONNECTED,
+                    ) -> true
+                else -> false
+            }
+            if (newSession) displaySessionId = UUID.randomUUID().toString()
+            val normalized = snapshot.copy(
+                sequence = sequence.incrementAndGet(),
+                serverInstanceId = serverInstanceId,
+                sentAtMillis = System.currentTimeMillis(),
+                sessionId = displaySessionId,
+                messageType = if (newSession) CustomerDisplayMessageType.SNAPSHOT
+                    else CustomerDisplayMessageType.STATE_UPDATE,
+            )
+            latestSnapshot = normalized
+            server?.broadcast(normalized.toJson())
+        }
     }
 
     fun stop() {
@@ -207,7 +239,7 @@ internal class CustomerDisplayPoller(
         val beforeById = before.associateBy { it.product.id }
         return after.lastOrNull { current ->
             val old = beforeById[current.product.id]
-            old == null || old.quantity != current.quantity || old.unitPrice != current.unitPrice || old.discountAmount != current.discountAmount
+            old == null || old.quantityHundredths != current.quantityHundredths || old.unitPrice != current.unitPrice || old.discountAmount != current.discountAmount
         }?.product?.id
     }
 
@@ -216,6 +248,7 @@ internal class CustomerDisplayPoller(
             item.product.id,
             item.product.name,
             item.quantity,
+            item.quantityHundredths,
             item.unitPrice,
             item.discountAmount,
             item.note,

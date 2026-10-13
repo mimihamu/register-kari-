@@ -306,14 +306,22 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android API 36
+      # GitHub-hosted ubuntu-22.04 already supplies API 36 and Build Tools 36.
+      # The upstream setup action still asks sdkmanager for removed package "tools".
+      # Use the same verified, preinstalled SDK gate as the fallback workflow.
+      - name: Use runner Android SDK
         shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          test -d "$SDK"
+          test -d "$SDK/platforms/android-36"
+          test -d "$SDK/build-tools/36.0.0"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+          echo "$SDK/build-tools/36.0.0" >> "$GITHUB_PATH"
+          echo "Using preinstalled Android SDK: $SDK"
 
       - name: Set up Gradle 9.5
         uses: gradle/actions/setup-gradle@v4
@@ -474,7 +482,7 @@ jobs:
           ! grep -q 'android:screenOrientation="landscape"' management-app/src/main/AndroidManifest.xml
 
       - name: Run cumulative unit tests
-        run: gradle --no-daemon :app:testDebugUnitTest :customer-display:testDebugUnitTest :management-app:testDebugUnitTest
+        run: gradle --no-daemon clean :app:testDebugUnitTest :customer-display:testDebugUnitTest :management-app:testDebugUnitTest
 
       - name: Compile Kotlin
         run: gradle --no-daemon :app:compileDebugKotlin :customer-display:compileDebugKotlin :management-app:compileDebugKotlin

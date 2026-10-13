@@ -6,6 +6,11 @@ import org.json.JSONObject
 internal const val CUSTOMER_DISPLAY_SCHEMA_VERSION = 1
 internal const val CUSTOMER_DISPLAY_PATH = "/customer-display/v1"
 
+enum class CustomerDisplayMessageType {
+    SNAPSHOT,
+    STATE_UPDATE,
+}
+
 enum class CustomerDisplayMode {
     STANDBY,
     SALES,
@@ -19,6 +24,8 @@ data class CustomerDisplayOrderItem(
     val productId: String,
     val name: String,
     val quantity: Int,
+    val quantityHundredths: Long = Math.multiplyExact(quantity.toLong(), QuantityV136.SCALE),
+    val quantityText: String = QuantityV136.fromHundredths(quantityHundredths).format(),
     val unitPrice: Long,
     val amount: Long,
     val latest: Boolean = false,
@@ -44,16 +51,21 @@ data class CustomerDisplaySnapshot(
     val message: String? = null,
     val orderItems: List<CustomerDisplayOrderItem> = emptyList(),
     val presentation: CustomerDisplayPresentation = CustomerDisplayPresentation(),
+    val sessionId: String? = null,
+    val messageType: CustomerDisplayMessageType = CustomerDisplayMessageType.SNAPSHOT,
 ) {
     fun toJson(): String = JSONObject().apply {
         put("schemaVersion", schemaVersion)
         put("sequence", sequence)
+        put("sessionId", sessionId ?: JSONObject.NULL)
+        put("messageType", messageType.name)
         put("serverInstanceId", serverInstanceId ?: JSONObject.NULL)
         put("sentAtMillis", sentAtMillis)
         put("mode", mode.name)
         put("transactionId", transactionId ?: JSONObject.NULL)
         put("storeName", storeName)
         put("numberOfProducts", numberOfProducts)
+        put("itemCount", numberOfProducts)
         put("subtotalAmount", subtotalAmount)
         put("totalAmount", totalAmount)
         put("paymentMethod", paymentMethod ?: JSONObject.NULL)
@@ -68,14 +80,23 @@ data class CustomerDisplaySnapshot(
                     put("productId", item.productId)
                     put("name", item.name)
                     put("quantity", item.quantity)
+                    put("quantityHundredths", item.quantityHundredths)
+                    // Formal v2.5 §30.6 exact quantity wire fields; legacy aliases stay.
+                    put("quantityScaled", item.quantityHundredths)
+                    put("quantityScale", 2)
+                    put("quantityText", item.quantityText)
                     put("unitPrice", item.unitPrice)
                     put("amount", item.amount)
+                    put("lineAmount", item.amount)
                     put("latest", item.latest)
                     put("cancelled", item.cancelled)
+                    put("isVoided", item.cancelled)
                     put("taxSymbol", item.taxSymbol)
                 })
             }
         })
+        // v2.5 §30.6: canonical items; orderItems remains for older CD installations.
+        put("items", JSONArray(getJSONArray("orderItems").toString()))
     }.toString()
 }
 
@@ -189,6 +210,8 @@ object CustomerDisplaySnapshotFactory {
             productId = item.product.id,
             name = item.product.name,
             quantity = item.quantity,
+            quantityHundredths = item.quantityHundredths,
+            quantityText = item.quantityText,
             unitPrice = item.unitPrice,
             amount = item.baseAmount,
             latest = item.product.id == latestProductId,

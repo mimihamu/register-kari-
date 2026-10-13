@@ -87,11 +87,11 @@ class PrinterStatusLabActivity : ComponentActivity() {
 private fun PrinterStatusLabScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val settingsStore = remember { AdminSettingsStore(context.applicationContext) }
+    val profileStore = remember { PrinterProfileStoreV136(context.applicationContext) }
     val historyStore = remember { PrinterStatusProbeStore(context.applicationContext) }
     val actor = remember { OperatorSessionRegistry.lastKnownName() ?: "プリンター状態ラボ" }
 
-    var configuration by remember { mutableStateOf(settingsStore.loadPrinterConfiguration()) }
+    var configuration by remember { mutableStateOf(profileStore.resolve(DocumentPrintKindV136.SALE_RECEIPT) ?: PrinterConfiguration(enabled = false)) }
     var preset by remember { mutableStateOf(PrinterStatusProbePolicy.presetFor(configuration.profile)) }
     var experimentalConfirmed by remember { mutableStateOf(false) }
     var running by remember { mutableStateOf(false) }
@@ -158,7 +158,7 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
     DisposableEffect(Unit) {
         onDispose {
             historyStore.close()
-            settingsStore.close()
+            profileStore.close()
         }
     }
 
@@ -287,7 +287,7 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                         Spacer(Modifier.height(6.dp))
                         LabValue("プリンター", configuration.name)
                         LabValue("機種プロファイル", configuration.profile.displayName)
-                        LabValue("接続先", if (configuration.host.isBlank()) "未設定" else "${configuration.host}:${configuration.port}")
+                        LabValue("接続先", PrinterTransportPolicyV136.endpointDisplay(configuration).ifBlank { "未設定" })
                         LabValue(
                             "検証区分",
                             PrinterStatusCapabilityRegistry.forProfile(configuration.profile).verification.displayName,
@@ -402,7 +402,7 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                         Spacer(Modifier.height(8.dp))
                         OutlinedButton(
                             onClick = {
-                                configuration = settingsStore.loadPrinterConfiguration()
+                                configuration = profileStore.resolve(DocumentPrintKindV136.SALE_RECEIPT) ?: PrinterConfiguration(enabled = false)
                                 preset = PrinterStatusProbePolicy.presetFor(configuration.profile)
                                 experimentalConfirmed = false
                                 currentRecord = null
@@ -415,7 +415,7 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                         Spacer(Modifier.height(6.dp))
                         Button(
                             onClick = ::startProbe,
-                            enabled = !running && configuration.host.isNotBlank() && runAllowed,
+                            enabled = !running && PrinterTransportPolicyV136.supportsRealtimeStatus(configuration) && PrinterTransportPolicyV136.isConfigured(configuration) && runAllowed,
                             modifier = Modifier.fillMaxWidth().height(54.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = PlBlue),
                         ) { Text(if (running) "実行中…" else "条件付きプローブを実行", fontWeight = FontWeight.Bold) }

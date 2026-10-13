@@ -59,8 +59,12 @@ data class ReturnLineRecord(
     val note: String,
     val returnedQuantity: Int,
     val refundedDiscount: Long,
+    val originalQuantityHundredths: Long = Math.multiplyExact(originalQuantity.toLong(), QuantityV136.SCALE),
+    val returnedQuantityHundredths: Long = Math.multiplyExact(returnedQuantity.toLong(), QuantityV136.SCALE),
 ) {
     val remainingQuantity: Int get() = (originalQuantity - returnedQuantity).coerceAtLeast(0)
+    val remainingQuantityHundredths: Long
+        get() = (originalQuantityHundredths - returnedQuantityHundredths).coerceAtLeast(0L)
     val remainingDiscount: Long get() = (originalDiscount - refundedDiscount).coerceAtLeast(0)
 
     fun toReturnItem(quantity: Int): CartItem {
@@ -116,6 +120,8 @@ data class DocumentPrintJobRecord(
     val payloadText: String,
     val createdAt: Long,
     val updatedAt: Long,
+    val printerId: String = PrinterProfileContractV136.SINGLE_PRINTER_ID,
+    val printableDotWidth: Int = PrinterProfileContractV136.standardPrintableDotWidth(paperWidthMm),
 )
 
 class AdvancedOperationsStore(context: Context) {
@@ -209,6 +215,7 @@ class AdvancedOperationsStore(context: Context) {
                 },
             )
             insertAudit("BUSINESS_OPEN", id, "営業日 $dateText / セッションNo.$id / 開始釣銭 ${openingCash}円", operatorName, now)
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.BUSINESS_OPEN.name, id.toString())
             id
         }
     }
@@ -332,6 +339,7 @@ class AdvancedOperationsStore(context: Context) {
                 },
             )
             insertAudit("CASH_${type.name}", id, "${type.displayName} ${amount}円 / ${reason.trim()}", operatorName, now)
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.CASH_MOVEMENT.name, id.toString())
             id
         }
     }
@@ -368,7 +376,13 @@ class AdvancedOperationsStore(context: Context) {
         val session = activeSession() ?: error("営業中の営業セッションがありません")
         require(session.status == BusinessSessionStatus.OPEN) { "この営業セッションは既に終了しています" }
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
+        val documentPrintKind = when (type) {
+            SettlementReportType.X_INSPECTION -> DocumentPrintKindV136.INSPECTION
+            SettlementReportType.Z_SETTLEMENT -> DocumentPrintKindV136.SETTLEMENT
+        }
+        val printerConfiguration = PrinterRoutingV136.resolve(appContext, documentPrintKind)
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
+        val documentPrintSetting = DocumentPrintSettingsStoreV136(appContext).load(documentPrintKind)
         val now = System.currentTimeMillis()
         var previewText = ""
         var printJobId = 0L
@@ -424,7 +438,16 @@ class AdvancedOperationsStore(context: Context) {
                 paymentTotals = summary.paymentTotals,
             )
             previewText = OperationDocumentRenderer.renderSettlement(document, ReceiptPaper.fromWidth(paperWidthMm))
-            printJobId = insertDocumentJob(OperationDocumentType.SETTLEMENT_REPORT, id, paperWidthMm, previewText, now)
+            if (documentPrintSetting.autoPrintEnabled) {
+                printJobId = insertDocumentJob(
+                    OperationDocumentType.SETTLEMENT_REPORT,
+                    id,
+                    printerConfiguration,
+                    previewText,
+                    now,
+                    documentPrintKind,
+                )
+            }
             if (type == SettlementReportType.Z_SETTLEMENT) {
                 val updated = update(
                     "business_sessions",
@@ -440,9 +463,11 @@ class AdvancedOperationsStore(context: Context) {
                 )
                 check(updated == 1) { "営業セッション状態が更新されました。画面を更新してください" }
             }
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.SETTLEMENT.name, id.toString())
             insertAudit(type.name, id, "営業日 ${summary.businessDate} / セッションNo.${session.id} / 純売上 ${summary.netSales}円 / 現金差異 ${variance}円", operatorName, now)
             if (type == SettlementReportType.Z_SETTLEMENT) {
                 insertAudit("BUSINESS_CLOSE", session.id, "Z精算No.${id}により営業終了 / 現金実査 ${actual}円 / 過不足 ${variance}円", operatorName, now)
+                OutboxDocumentV150.materializeLatest(this, JournalEventType.BUSINESS_STATE.name, session.id.toString())
             }
             id
         }
@@ -497,8 +522,9 @@ class AdvancedOperationsStore(context: Context) {
                COALESCE(lts.taxable, CASE WHEN si.tax_category = 'NON_TAXABLE' THEN 0 ELSE 1 END),
                COALESCE(lts.reduced, CASE WHEN si.tax_category IN ('INCLUDED_8','EXCLUDED_8') THEN 1 ELSE 0 END),
                COALESCE(lts.tax_symbol, CASE si.tax_category WHEN 'INCLUDED_10' THEN '内' WHEN 'EXCLUDED_10' THEN '外' WHEN 'INCLUDED_8' THEN '内※' WHEN 'EXCLUDED_8' THEN '外※' ELSE '非' END),
-               si.quantity, si.discount_amount, si.note,
+               si.quantity, COALESCE(si.quantity_hundredths, si.quantity * 100), si.discount_amount, si.note,
                COALESCE(SUM(ri.return_quantity), 0) AS returned_quantity,
+               COALESCE(SUM(ri.return_quantity_hundredths), COALESCE(SUM(ri.return_quantity), 0) * 100) AS returned_quantity_hundredths,
                COALESCE(SUM(ri.discount_amount), 0) AS refunded_discount
         FROM sale_items si
         LEFT JOIN line_tax_snapshots lts
@@ -509,7 +535,7 @@ class AdvancedOperationsStore(context: Context) {
         WHERE si.sale_id = ?
         GROUP BY si.id, si.product_id, si.product_name, si.unit_price, si.tax_category,
                  lts.tax_key, lts.tax_label, lts.rate_percent, lts.tax_included, lts.taxable, lts.reduced, lts.tax_symbol,
-                 si.quantity, si.discount_amount, si.note
+                 si.quantity, si.quantity_hundredths, si.discount_amount, si.note
         ORDER BY si.id ASC
         """.trimIndent(),
         arrayOf(saleId.toString()),
@@ -531,10 +557,12 @@ class AdvancedOperationsStore(context: Context) {
                 reduced = cursor.getInt(10) != 0,
                 taxSymbol = cursor.getString(11),
                 originalQuantity = cursor.getInt(12),
-                originalDiscount = cursor.getLong(13),
-                note = cursor.getString(14),
-                returnedQuantity = cursor.getInt(15),
-                refundedDiscount = cursor.getLong(16),
+                originalQuantityHundredths = cursor.getLong(13),
+                originalDiscount = cursor.getLong(14),
+                note = cursor.getString(15),
+                returnedQuantity = cursor.getInt(16),
+                returnedQuantityHundredths = cursor.getLong(17),
+                refundedDiscount = cursor.getLong(18),
             )
         }
         result
@@ -551,7 +579,11 @@ class AdvancedOperationsStore(context: Context) {
         require(session.status == BusinessSessionStatus.OPEN) { "Z精算後は返品・取消できません" }
         require(reason.isNotBlank()) { "理由を入力してください" }
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
+        val printerConfiguration = PrinterRoutingV136.resolve(
+            appContext,
+            DocumentPrintKindV136.SALE_RECEIPT,
+        )
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
         val saleTotal = longQuery("SELECT COALESCE(total_amount, -1) FROM sales WHERE id = ?", arrayOf(originalSaleId.toString()))
         require(saleTotal >= 0) { "元売上が見つかりません" }
         val lines = loadReturnableLines(originalSaleId)
@@ -633,7 +665,9 @@ class AdvancedOperationsStore(context: Context) {
                         put("reduced", if (line.reduced) 1 else 0)
                         put("tax_symbol", line.taxSymbol)
                         put("original_quantity", line.originalQuantity)
+                        put("original_quantity_hundredths", line.originalQuantityHundredths)
                         put("return_quantity", item.quantity)
+                        put("return_quantity_hundredths", item.quantityHundredths)
                         put("discount_amount", item.discountAmount)
                         put("gross_amount", item.baseAmount)
                     },
@@ -662,8 +696,15 @@ class AdvancedOperationsStore(context: Context) {
                 refundPayments = refundPayments,
             )
             previewText = OperationDocumentRenderer.renderReversal(document, ReceiptPaper.fromWidth(paperWidthMm))
-            printJobId = insertDocumentJob(OperationDocumentType.REVERSAL_RECEIPT, id, paperWidthMm, previewText, now)
+            printJobId = insertDocumentJob(
+                OperationDocumentType.REVERSAL_RECEIPT,
+                id,
+                printerConfiguration,
+                previewText,
+                now,
+            )
             insertAudit(type.name, id, "元売上 No.$originalSaleId / 返金 ${refundTotal}円 / ${reason.trim()}", operatorName, now)
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.REVERSAL.name, id.toString())
             id
         }
         return ReversalSaveResult(reversalId, refundTotal, printJobId, previewText)
@@ -706,18 +747,9 @@ class AdvancedOperationsStore(context: Context) {
     ).use { cursor ->
         val result = mutableListOf<DocumentPrintJobRecord>()
         while (cursor.moveToNext()) {
-            result += DocumentPrintJobRecord(
-                id = cursor.getLong(0),
-                documentType = OperationDocumentType.valueOf(cursor.getString(1)),
-                referenceId = cursor.getLong(2),
-                paperWidthMm = cursor.getInt(3),
-                status = PrintJobStatus.valueOf(cursor.getString(4)),
-                attemptCount = cursor.getInt(5),
-                lastError = if (cursor.isNull(6)) null else cursor.getString(6),
-                payloadText = cursor.getString(7),
-                createdAt = cursor.getLong(8),
-                updatedAt = cursor.getLong(9),
-            )
+            // Keep the frozen printer route when listing jobs for the unified queue.
+            // Reconstructing only the legacy columns silently falls back to printer-1/standard dot width.
+            result += cursor.toDocumentPrintJob()
         }
         result
     }
@@ -740,7 +772,7 @@ class AdvancedOperationsStore(context: Context) {
             ?: throw IllegalArgumentException("業務帳票の印刷ジョブが見つかりません")
         require(current.status != PrintJobStatus.COMPLETED) { "完了済みジョブは再送できません。再印字を登録してください" }
         require(current.status != PrintJobStatus.DISCARDED) { "破棄済みジョブは再送できません" }
-        require(current.status != PrintJobStatus.PRINTING) { "印刷中のジョブは操作できません" }
+        require(current.status != PrintJobStatus.SENDING && current.status != PrintJobStatus.PRINTING) { "送信中または印刷結果不明のジョブは再送できません" }
         require(PrintQueueAtomicityV115.mayRetry(current.status)) { "このジョブは再送できません" }
         val updated = db.update(
             "document_print_jobs",
@@ -765,7 +797,7 @@ class AdvancedOperationsStore(context: Context) {
             ?: throw IllegalArgumentException("業務帳票の印刷ジョブが見つかりません")
         require(current.status != PrintJobStatus.COMPLETED) { "完了済みジョブは破棄できません" }
         require(current.status != PrintJobStatus.DISCARDED) { "このジョブは既に破棄済みです" }
-        require(current.status != PrintJobStatus.PRINTING) { "印刷中のジョブは破棄できません" }
+        require(current.status != PrintJobStatus.SENDING && current.status != PrintJobStatus.PRINTING) { "送信中または印刷結果不明のジョブは破棄できません" }
         require(reason.trim().length >= 4) { "破棄理由を4文字以上で入力してください" }
         require(actor.isNotBlank()) { "監査担当者が必要です" }
         db.beginTransaction()
@@ -777,11 +809,12 @@ class AdvancedOperationsStore(context: Context) {
                     put("last_error", "破棄理由：${reason.trim()}".take(500))
                     put("updated_at", System.currentTimeMillis())
                 },
-                "id = ? AND status NOT IN (?, ?, ?)",
+                "id = ? AND status NOT IN (?, ?, ?, ?)",
                 arrayOf(
                     jobId.toString(),
                     PrintJobStatus.COMPLETED.name,
                     PrintJobStatus.DISCARDED.name,
+                    PrintJobStatus.SENDING.name,
                     PrintJobStatus.PRINTING.name,
                 ),
             )
@@ -813,7 +846,7 @@ class AdvancedOperationsStore(context: Context) {
         val claimed = db.update(
             "document_print_jobs",
             ContentValues().apply {
-                put("status", PrintJobStatus.PRINTING.name)
+                put("status", PrintJobStatus.SENDING.name)
                 put("attempt_count", attempt)
                 putNull("last_error")
                 put("updated_at", System.currentTimeMillis())
@@ -824,7 +857,16 @@ class AdvancedOperationsStore(context: Context) {
         if (claimed != 1) {
             return Result.failure(IllegalStateException("印刷ジョブの状態が変更されたため送信を開始できませんでした"))
         }
-        val result = gateway.send(TextEscPosEncoder.encode(job.payloadText))
+        val renderedPayload = TextEscPosEncoder.encode(job.payloadText)
+        val stampSnapshot = DocumentStampJobSchemaV136.load(db, jobId)
+        val finalPayload = stampSnapshot.applyToPayload(renderedPayload)
+        PrintDocumentSnapshotSchemaV136.recordRenderedHash(
+            db = db,
+            table = "document_print_jobs",
+            jobId = jobId,
+            payload = finalPayload,
+        )
+        val result = gateway.send(finalPayload)
         return result.fold(
             onSuccess = {
                 val updated = db.update(
@@ -835,7 +877,7 @@ class AdvancedOperationsStore(context: Context) {
                         put("updated_at", System.currentTimeMillis())
                     },
                     "id = ? AND status = ? AND attempt_count = ?",
-                    arrayOf(jobId.toString(), PrintJobStatus.PRINTING.name, attempt.toString()),
+                    arrayOf(jobId.toString(), PrintJobStatus.SENDING.name, attempt.toString()),
                 )
                 if (updated == 1) Result.success(Unit) else Result.failure(
                     IllegalStateException("送信後に印刷ジョブの所有状態が変更されました。自動再送せず確認してください"),
@@ -849,13 +891,13 @@ class AdvancedOperationsStore(context: Context) {
                     ContentValues().apply {
                         put(
                             "status",
-                            if (manualConfirmation || attempt >= 5) PrintJobStatus.FAILED.name else PrintJobStatus.RETRY.name,
+                            if (manualConfirmation) PrintJobStatus.SENDING.name else if (attempt >= 5) PrintJobStatus.FAILED.name else PrintJobStatus.RETRY.name,
                         )
                         put("last_error", (error.message ?: error.javaClass.simpleName).take(500))
                         put("updated_at", System.currentTimeMillis())
                     },
                     "id = ? AND status = ? AND attempt_count = ?",
-                    arrayOf(jobId.toString(), PrintJobStatus.PRINTING.name, attempt.toString()),
+                    arrayOf(jobId.toString(), PrintJobStatus.SENDING.name, attempt.toString()),
                 )
                 Result.failure(error)
             },
@@ -865,24 +907,44 @@ class AdvancedOperationsStore(context: Context) {
     private fun SQLiteDatabase.insertDocumentJob(
         type: OperationDocumentType,
         referenceId: Long,
-        paperWidthMm: Int,
+        configuration: PrinterConfiguration,
         payloadText: String,
         now: Long,
-    ): Long = insertOrThrow(
-        "document_print_jobs",
-        null,
-        ContentValues().apply {
-            put("document_type", type.name)
-            put("reference_id", referenceId)
-            put("paper_width_mm", if (paperWidthMm >= 80) 80 else 58)
-            put("status", PrintJobStatus.PENDING.name)
-            put("attempt_count", 0)
-            putNull("last_error")
-            put("payload_text", payloadText)
-            put("created_at", now)
-            put("updated_at", now)
-        },
-    )
+        settingsKind: DocumentPrintKindV136? = DocumentPrintSettingsPolicyV136.kindFor(type),
+    ): Long {
+        val setting = settingsKind?.let { DocumentPrintSettingsStoreV136(appContext).load(it) }
+        val copies = if (setting != null && settingsKind != null) {
+            DocumentPrintSettingsPolicyV136.normalizeCopies(settingsKind, setting.copies)
+        } else {
+            1
+        }
+        val decoratedPayload = setting?.let { DocumentPrintSettingsPolicyV136.decorateText(payloadText, it) } ?: payloadText
+        var firstJobId = 0L
+        kotlin.repeat(copies) { copyIndex ->
+            val jobId = insertOrThrow(
+                "document_print_jobs",
+                null,
+                ContentValues().apply {
+                    put("document_type", type.name)
+                    put("reference_id", referenceId)
+                    put(
+                        "paper_width_mm",
+                        PrinterPaperSettingPolicy.normalizeWidthMm(configuration.paperWidthMm),
+                    )
+                    put("printer_id", configuration.printerId)
+                    put("printable_dot_width", configuration.printableDotWidth)
+                    put("status", PrintJobStatus.PENDING.name)
+                    put("attempt_count", 0)
+                    putNull("last_error")
+                    put("payload_text", decoratedPayload)
+                    put("created_at", now + copyIndex)
+                    put("updated_at", now + copyIndex)
+                },
+            )
+            if (copyIndex == 0) firstJobId = jobId
+        }
+        return firstJobId
+    }
 
     private fun android.database.Cursor.toDocumentPrintJob() = DocumentPrintJobRecord(
         id = getLong(0),
@@ -895,6 +957,8 @@ class AdvancedOperationsStore(context: Context) {
         payloadText = getString(7),
         createdAt = getLong(8),
         updatedAt = getLong(9),
+        printerId = getString(10),
+        printableDotWidth = getInt(11),
     )
 
     private fun requireSessionStillOpen(sessionId: Long) {
@@ -958,6 +1022,30 @@ class AdvancedOperationsStore(context: Context) {
             },
         )
     }
+
+    private fun ensureFractionalReversalQuantityColumns() {
+        if (!hasColumn("reversal_items", "original_quantity_hundredths")) {
+            db.execSQL("ALTER TABLE reversal_items ADD COLUMN original_quantity_hundredths INTEGER")
+        }
+        if (!hasColumn("reversal_items", "return_quantity_hundredths")) {
+            db.execSQL("ALTER TABLE reversal_items ADD COLUMN return_quantity_hundredths INTEGER")
+        }
+        db.execSQL(
+            "UPDATE reversal_items SET original_quantity_hundredths = original_quantity * 100 WHERE original_quantity_hundredths IS NULL",
+        )
+        db.execSQL(
+            "UPDATE reversal_items SET return_quantity_hundredths = return_quantity * 100 WHERE return_quantity_hundredths IS NULL",
+        )
+    }
+
+    private fun hasColumn(table: String, column: String): Boolean =
+        db.rawQuery("PRAGMA table_info($table)", null).use { cursor ->
+            val nameIndex = cursor.getColumnIndexOrThrow("name")
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameIndex) == column) return@use true
+            }
+            false
+        }
 
     private fun ensureSchema() {
         db.execSQL(
@@ -1027,6 +1115,7 @@ class AdvancedOperationsStore(context: Context) {
             )
             """.trimIndent(),
         )
+        ensureFractionalReversalQuantityColumns()
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS settlement_reports (
@@ -1084,6 +1173,8 @@ class AdvancedOperationsStore(context: Context) {
                 document_type TEXT NOT NULL,
                 reference_id INTEGER NOT NULL,
                 paper_width_mm INTEGER NOT NULL,
+                printer_id TEXT NOT NULL DEFAULT 'printer-1',
+                printable_dot_width INTEGER NOT NULL DEFAULT 576,
                 status TEXT NOT NULL,
                 attempt_count INTEGER NOT NULL,
                 last_error TEXT,
@@ -1093,12 +1184,15 @@ class AdvancedOperationsStore(context: Context) {
             )
             """.trimIndent(),
         )
+        DocumentStampJobSchemaV136.ensure(db)
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_business_sessions_status ON business_sessions(status, opened_at)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_reversal_items_sale_item ON reversal_items(sale_item_id)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_document_jobs_status ON document_print_jobs(status, created_at)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_settlement_date ON settlement_reports(business_date, report_type)")
         BusinessSessionSchema.ensure(db)
         TaxSnapshotSchema.ensureReversalColumns(db)
+        PrintDocumentSnapshotSchemaV136.ensureDocument(db)
+        PrinterJobRouteSchemaV136.ensureDocument(db)
     }
 
     companion object {
@@ -1109,6 +1203,7 @@ class AdvancedOperationsStore(context: Context) {
         private val DOCUMENT_JOB_COLUMNS = arrayOf(
             "id", "document_type", "reference_id", "paper_width_mm", "status",
             "attempt_count", "last_error", "payload_text", "created_at", "updated_at",
+            "printer_id", "printable_dot_width",
         )
 
         fun isBusinessOpen(context: Context): Boolean {

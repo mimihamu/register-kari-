@@ -86,6 +86,30 @@ class SalesJournalImportContractTest {
     }
 
     @Test
+    fun exactFractionalQuantityFieldsAreAcceptedAndValidated() {
+        val exact = validEnvelope().replace(
+            "\"totalAmount\":1080",
+            "\"totalAmount\":1080,\"items\":[{\"quantity\":1,\"quantityScaled\":50,\"quantityScale\":2,\"quantityMode\":\"DECIMAL\"}]",
+        )
+        assertTrue(SalesJournalImportContract.parse(exact) is JournalParseResult.Accepted)
+
+        val badScale = exact.replace("\"quantityScale\":2", "\"quantityScale\":100")
+        assertRejected(SalesJournalImportContract.parse(badScale), ImportRejectionCode.INVALID_FIELD)
+
+        val integerFraction = exact.replace("\"quantityMode\":\"DECIMAL\"", "\"quantityMode\":\"INTEGER\"")
+        assertRejected(SalesJournalImportContract.parse(integerFraction), ImportRejectionCode.INVALID_FIELD)
+    }
+
+    @Test
+    fun legacyQuantityOnlyPayloadRemainsAccepted() {
+        val legacy = validEnvelope().replace(
+            "\"totalAmount\":1080",
+            "\"totalAmount\":1080,\"items\":[{\"quantity\":1}]",
+        )
+        assertTrue(SalesJournalImportContract.parse(legacy) is JournalParseResult.Accepted)
+    }
+
+    @Test
     fun duplicateInsertPolicyMatchesSqliteConflictIgnore() {
         assertTrue(SalesJournalImportPolicy.isDuplicateInsertResult(-1L))
         assertTrue(!SalesJournalImportPolicy.isDuplicateInsertResult(42L))

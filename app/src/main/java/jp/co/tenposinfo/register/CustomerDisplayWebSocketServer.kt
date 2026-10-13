@@ -19,6 +19,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import org.json.JSONObject
 
 internal object CustomerDisplayWebSocketHandshake {
     private const val MAGIC = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -191,7 +192,7 @@ internal class CustomerDisplayWebSocketServer(
             output.flush()
 
             socket.soTimeout = CustomerDisplayConnectionLivenessPolicy.LIVENESS_CHECK_INTERVAL_MS
-            connection = ClientConnection(socket, executor)
+            connection = ClientConnection(socket, executor, latestPayload)
             clients += connection
             notifyClientCount()
             connection.sendText(latestPayload())
@@ -252,6 +253,14 @@ internal class CustomerDisplayWebSocketServer(
                     return
                 }
                 0x9 -> connection.sendControl(0xA, payload)
+                0x1 -> {
+                    require(masked) { "unmasked client text frame" }
+                    val message = JSONObject(String(payload, StandardCharsets.UTF_8))
+                    if (message.optString("messageType") == "SNAPSHOT_REQUEST") {
+                        // A gap never replays old events: publish the latest full state.
+                        connection.requestSnapshot()
+                    }
+                }
                 else -> Unit
             }
         }
@@ -318,14 +327,19 @@ internal class CustomerDisplayWebSocketServer(
     private class ClientConnection(
         val socket: Socket,
         executor: Executor,
+        private val latestPayload: () -> String,
     ) {
         private val writeLock = Any()
+        private val snapshotRequested = AtomicBoolean(false)
         private val lastTransportActivityAtMillis = AtomicLong(System.currentTimeMillis())
         private val textDispatcher = CustomerDisplayLatestSendDispatcher(
             executor = executor,
             send = { payload ->
                 synchronized(writeLock) {
-                    writeFrame(socket.getOutputStream(), 0x1, payload.toByteArray(StandardCharsets.UTF_8))
+                    // Keep a requested snapshot authoritative even when the
+                    // latest-only dispatcher coalesces it with further updates.
+                    val outgoing = if (snapshotRequested.getAndSet(false)) latestPayload() else payload
+                    writeFrame(socket.getOutputStream(), 0x1, outgoing.toByteArray(StandardCharsets.UTF_8))
                     markTransportActivity()
                 }
             },
@@ -333,6 +347,11 @@ internal class CustomerDisplayWebSocketServer(
         )
 
         fun sendText(payload: String): Boolean = textDispatcher.offer(payload)
+
+        fun requestSnapshot(): Boolean {
+            snapshotRequested.set(true)
+            return textDispatcher.offer(latestPayload())
+        }
 
         fun sendControl(opcode: Int, payload: ByteArray): Boolean = runCatching {
             synchronized(writeLock) {

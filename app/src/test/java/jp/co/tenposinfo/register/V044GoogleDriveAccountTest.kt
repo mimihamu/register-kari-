@@ -42,7 +42,7 @@ class V044GoogleDriveAccountTest {
         assertTrue(sync.contains("Googleかんたん接続"))
         assertTrue(sync.contains("GoogleDriveSetupGuideActivity::class.java"))
         assertTrue(guide.contains("GoogleDriveAccountActivity::class.java"))
-        assertTrue(sync.contains("互換用フォルダ送信設定"))
+        assertTrue(sync.contains("送信運用・個別再試行の詳細"))
         assertTrue(manifest.contains("android:name=\".GoogleDriveEasyConnectActivity\""))
         assertTrue(manifest.contains("android:name=\".GoogleDriveSetupGuideActivity\""))
         assertTrue(manifest.contains("android:name=\".GoogleDriveAccountActivity\""))

@@ -10,10 +10,10 @@ class V135OriginalSaleReturnSafetyTest {
     fun returnReReadsRemainingQuantityAndSaleTimeTaxSnapshotInsideStorePath() {
         val source = File("src/main/java/jp/co/tenposinfo/register/OperationsStore.kt").readText()
         assertTrue(source.contains("val lines = loadReturnableLines(this, originalSaleId)"))
-        assertTrue(source.contains("PartialReturnPolicy.select(type, lines, requestedQuantities)"))
+        assertTrue(source.contains("PartialReturnPolicy.selectHundredths(type, lines, requestedQuantityHundredths)"))
         assertTrue(source.contains("LEFT JOIN line_tax_snapshots lts"))
         assertTrue(source.contains("lts.scope = 'SALE'"))
-        assertTrue(source.contains("COALESCE(SUM(ri.return_quantity), 0)"))
+        assertTrue(source.contains("COALESCE(SUM(ri.return_quantity_hundredths), COALESCE(SUM(ri.return_quantity), 0) * 100)"))
     }
 
     @Test

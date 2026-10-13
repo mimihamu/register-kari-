@@ -1,0 +1,132 @@
+name: Build つぐレジ APK CI fallback
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fallback-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-debug-apk-fallback:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Use runner Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          test -d "$SDK"
+          test -d "$SDK/platforms/android-36"
+          test -d "$SDK/build-tools/36.0.0"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+          echo "$SDK/build-tools/36.0.0" >> "$GITHUB_PATH"
+          echo "Using preinstalled Android SDK: $SDK"
+
+      - name: Set up Gradle 9.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Verify cumulative source gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby -ryaml -rshellwords -e '
+            workflow = YAML.load_file(".github/workflows/build-apk.yml")
+            job = workflow.fetch("jobs").fetch("build-debug-apk")
+            step = job.fetch("steps").find { |s| s["name"] == "Verify cumulative v0.14-v1.34 sources" }
+            raise "formal source gate not found" unless step
+            File.open("/tmp/formal-source-gate.sh", "w") do |f|
+              (step["env"] || {}).each { |k,v| f.puts "export #{k}=#{Shellwords.escape(v.to_s)}" }
+              f.write(step.fetch("run"))
+              f.write("\n")
+            end
+          '
+          bash -euxo pipefail /tmp/formal-source-gate.sh
+
+      - name: Verify launcher and orientation configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          register_launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' app/src/main app/src/debug | wc -l)
+          cd_launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' customer-display/src/main | wc -l)
+          plus_launcher_count=$(grep -R -h --include='AndroidManifest.xml' 'android.intent.category.LAUNCHER' management-app/src/main | wc -l)
+          test "$register_launcher_count" -eq 1
+          test "$cd_launcher_count" -eq 1
+          test "$plus_launcher_count" -eq 1
+          grep -q 'android:screenOrientation="landscape"' app/src/main/AndroidManifest.xml
+          grep -q 'android:screenOrientation="sensorPortrait"' management-app/src/main/AndroidManifest.xml
+          ! grep -q 'android:screenOrientation="landscape"' management-app/src/main/AndroidManifest.xml
+
+      - name: Run cumulative unit tests
+        run: gradle --no-daemon clean :app:testDebugUnitTest :customer-display:testDebugUnitTest :management-app:testDebugUnitTest --stacktrace
+
+      - name: Compile Kotlin
+        run: gradle --no-daemon :app:compileDebugKotlin :customer-display:compileDebugKotlin :management-app:compileDebugKotlin --stacktrace
+
+      - name: Build all debug APKs
+        run: gradle --no-daemon :app:assembleDebug :customer-display:assembleDebug :management-app:assembleDebug --stacktrace
+
+      - name: Verify APK release identity and integrity
+        shell: bash
+        env:
+          POS_VERSION_CODE: 164
+          POS_VERSION_NAME: 1.34.0-dev.1
+          PLUS_VERSION_CODE: 33
+          PLUS_VERSION_NAME: 0.33.0-dev.1
+          BUILD_TOOLS_VERSION: 36.0.0
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          bash ci/verify-apk-release-integrity.sh
+          cat artifacts/apk-integrity-summary.txt
+
+      - name: Prepare named APKs and SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          register_apk=artifacts/TSUGUREGI_v1.34.0_dev1_drive_page_commit_checkpoint_recovery_debug.apk
+          plus_apk=artifacts/TSUGUREGI_PLUS_v0.33.0_dev1_drive_page_commit_checkpoint_recovery_debug.apk
+          cd_apk=artifacts/TSUGUREGI_CD_v0.14.0_dev1_presentation_restore_debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
+          cp management-app/build/outputs/apk/debug/management-app-debug.apk "$plus_apk"
+          cp customer-display/build/outputs/apk/debug/customer-display-debug.apk "$cd_apk"
+          sha256sum "$register_apk" | tee "$register_apk.sha256"
+          sha256sum "$plus_apk" | tee "$plus_apk.sha256"
+          sha256sum "$cd_apk" | tee "$cd_apk.sha256"
+          git rev-parse HEAD | sed 's/^/HEAD=/' > artifacts/build-summary.txt
+          echo 'FORMAL_CUMULATIVE_SOURCE_GATE=true' >> artifacts/build-summary.txt
+          echo 'FORMAL_APK_RELEASE_INTEGRITY_GATE=true' >> artifacts/build-summary.txt
+
+      - name: Upload APKs
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSUGUREGI-v1.36-formal-gates-preinstalled-sdk-apks
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Report artifact ID
+        run: echo "ARTIFACT_ID=${{ steps.upload.outputs.artifact-id }}"

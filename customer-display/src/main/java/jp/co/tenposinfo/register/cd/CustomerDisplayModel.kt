@@ -2,9 +2,15 @@ package jp.co.tenposinfo.register.cd
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.math.BigDecimal
 
 internal const val CUSTOMER_DISPLAY_SCHEMA_VERSION = 1
 internal const val CUSTOMER_DISPLAY_PATH = "/customer-display/v1"
+
+enum class CustomerDisplayMessageType {
+    SNAPSHOT,
+    STATE_UPDATE,
+}
 
 enum class CustomerDisplayMode {
     STANDBY,
@@ -19,6 +25,8 @@ data class CustomerDisplayOrderItem(
     val productId: String,
     val name: String,
     val quantity: Int,
+    val quantityHundredths: Long = quantity.toLong() * 100L,
+    val quantityText: String = quantity.toString(),
     val unitPrice: Long,
     val amount: Long,
     val latest: Boolean,
@@ -44,16 +52,21 @@ data class CustomerDisplaySnapshot(
     val message: String?,
     val orderItems: List<CustomerDisplayOrderItem>,
     val presentation: CustomerDisplayPresentation = CustomerDisplayPresentation(),
+    val sessionId: String? = null,
+    val messageType: CustomerDisplayMessageType = CustomerDisplayMessageType.SNAPSHOT,
 ) {
     fun toJson(): String = JSONObject().apply {
         put("schemaVersion", schemaVersion)
         put("sequence", sequence)
+        put("sessionId", sessionId ?: JSONObject.NULL)
+        put("messageType", messageType.name)
         put("serverInstanceId", serverInstanceId ?: JSONObject.NULL)
         put("sentAtMillis", sentAtMillis)
         put("mode", mode.name)
         put("transactionId", transactionId ?: JSONObject.NULL)
         put("storeName", storeName)
         put("numberOfProducts", numberOfProducts)
+        put("itemCount", numberOfProducts)
         put("subtotalAmount", subtotalAmount)
         put("totalAmount", totalAmount)
         put("paymentMethod", paymentMethod ?: JSONObject.NULL)
@@ -68,14 +81,22 @@ data class CustomerDisplaySnapshot(
                     put("productId", item.productId)
                     put("name", item.name)
                     put("quantity", item.quantity)
+                    put("quantityHundredths", item.quantityHundredths)
+                    put("quantityScaled", item.quantityHundredths)
+                    put("quantityScale", 2)
+                    put("quantityText", item.quantityText)
                     put("unitPrice", item.unitPrice)
                     put("amount", item.amount)
+                    put("lineAmount", item.amount)
                     put("latest", item.latest)
                     put("cancelled", item.cancelled)
+                    put("isVoided", item.cancelled)
                     put("taxSymbol", item.taxSymbol)
                 })
             }
         })
+        // v2.5 §30.6: canonical items; orderItems remains for older CD installations.
+        put("items", JSONArray(getJSONArray("orderItems").toString()))
     }.toString()
 
     companion object {
@@ -85,20 +106,52 @@ data class CustomerDisplaySnapshot(
             require(schemaVersion == CUSTOMER_DISPLAY_SCHEMA_VERSION) {
                 "未対応の通信形式です（schemaVersion=$schemaVersion）"
             }
-            val items = root.optJSONArray("orderItems")
+            // Canonical v2.5 "items" takes precedence; keep legacy compatibility.
+            val items = if (root.has("items") && !root.isNull("items")) {
+                root.getJSONArray("items")
+            } else {
+                root.optJSONArray("orderItems")
+            }
+            require((items?.length() ?: 0) <= 200) { "items exceeds 200 lines" }
             val orderItems = buildList {
                 if (items != null) {
                     for (index in 0 until items.length()) {
                         val item = items.getJSONObject(index)
+                        // The v2.5 scaled integer is authoritative whenever present.
+                        // Legacy v1 snapshots continue to support quantityHundredths/quantity.
+                        if (item.has("quantityScale") && !item.isNull("quantityScale")) {
+                            require(item.getInt("quantityScale") == 2) { "quantityScale must be 2" }
+                        }
+                        val scaled = when {
+                            item.has("quantityScaled") && !item.isNull("quantityScaled") ->
+                                item.strictLong("quantityScaled")
+                            item.has("quantityHundredths") && !item.isNull("quantityHundredths") ->
+                                item.strictLong("quantityHundredths")
+                            else -> Math.multiplyExact(item.optInt("quantity").toLong(), 100L)
+                        }
+                        if (item.has("quantityHundredths") && item.has("quantityScaled") &&
+                            !item.isNull("quantityHundredths") && !item.isNull("quantityScaled")
+                        ) {
+                            require(item.strictLong("quantityHundredths") == scaled) {
+                                "quantityScaled and quantityHundredths disagree"
+                            }
+                        }
                         add(
                             CustomerDisplayOrderItem(
                                 productId = item.optString("productId"),
                                 name = item.optString("name"),
                                 quantity = item.optInt("quantity"),
+                                quantityHundredths = scaled,
+                                quantityText = item.optString("quantityText").ifBlank {
+                                    BigDecimal.valueOf(scaled, 2).stripTrailingZeros().toPlainString()
+                                },
                                 unitPrice = item.optLong("unitPrice"),
-                                amount = item.optLong("amount"),
+                                amount = if (item.has("lineAmount")) {
+                                    item.strictLong("lineAmount")
+                                } else item.optLong("amount"),
                                 latest = item.optBoolean("latest"),
-                                cancelled = item.optBoolean("cancelled"),
+                                cancelled = if (item.has("isVoided")) item.getBoolean("isVoided")
+                                    else item.optBoolean("cancelled"),
                                 taxSymbol = item.optString("taxSymbol"),
                             ),
                         )
@@ -107,13 +160,17 @@ data class CustomerDisplaySnapshot(
             }
             return CustomerDisplaySnapshot(
                 schemaVersion = schemaVersion,
-                sequence = root.getLong("sequence"),
+                sequence = root.strictLong("sequence"),
+                sessionId = root.optNullableString("sessionId"),
+                messageType = CustomerDisplayMessageType.valueOf(
+                    root.optString("messageType", "SNAPSHOT"),
+                ),
                 serverInstanceId = root.optNullableString("serverInstanceId"),
                 sentAtMillis = root.optLong("sentAtMillis"),
                 mode = CustomerDisplayMode.valueOf(root.getString("mode")),
                 transactionId = root.optNullableString("transactionId"),
                 storeName = root.optString("storeName", "つぐレジ"),
-                numberOfProducts = root.optInt("numberOfProducts"),
+                numberOfProducts = if (root.has("itemCount")) root.getInt("itemCount") else root.optInt("numberOfProducts"),
                 subtotalAmount = root.optLong("subtotalAmount"),
                 totalAmount = root.optLong("totalAmount"),
                 paymentMethod = root.optNullableString("paymentMethod"),
@@ -150,6 +207,13 @@ data class CustomerDisplaySnapshot(
     }
 }
 
+// org.json getLong can silently truncate decimal numbers; exact quantities must not.
+private fun JSONObject.strictLong(name: String): Long {
+    val raw = get(name).toString()
+    require(Regex("-?[0-9]+").matches(raw)) { "$name must be an integer" }
+    return raw.toLong()
+}
+
 private fun JSONObject.optNullableString(name: String): String? =
     if (!has(name) || isNull(name)) null else optString(name).takeIf { it.isNotBlank() }
 
@@ -162,8 +226,10 @@ data class CustomerDisplayUiState(
 
 object CustomerDisplayStateReducer {
     fun connected(current: CustomerDisplayUiState): CustomerDisplayUiState = current.copy(
-        connected = true,
-        statusMessage = "接続中",
+        // Transport 101 handshake is not a verified business snapshot.
+        // The old on-disk / previous-session amount stays hidden until received().
+        connected = false,
+        statusMessage = "最新の表示データを受信中",
         lastError = null,
     )
 
@@ -178,7 +244,17 @@ object CustomerDisplayStateReducer {
         val incomingInstance = incoming.serverInstanceId
         val incomingIdentifiedServer = !incomingInstance.isNullOrBlank()
         val serverInstanceChanged = incomingIdentifiedServer && incomingInstance != currentInstance
-        if (!serverInstanceChanged && incoming.sequence <= current.snapshot.sequence) {
+        // Equal sequence is a fresh full snapshot on reconnect. It is authoritative
+        // even when an identical sequence was persisted before the transport failed.
+        // Strictly older data from the same server must never resurrect old totals.
+        val sessionChanged = !incoming.sessionId.isNullOrBlank() &&
+            incoming.sessionId != current.snapshot.sessionId
+        if (!serverInstanceChanged && !sessionChanged &&
+            incoming.sequence < current.snapshot.sequence) {
+            return current
+        }
+        if (!serverInstanceChanged && !sessionChanged &&
+            incoming.sequence == current.snapshot.sequence && current.connected) {
             return current
         }
         return current.copy(

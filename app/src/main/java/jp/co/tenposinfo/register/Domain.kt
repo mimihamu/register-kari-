@@ -16,6 +16,20 @@ enum class TaxCategory(
     EXCLUDED_8("8%外税", "外※", 8, false, true),
 }
 
+enum class QuantityMode(val displayName: String) {
+    INTEGER("整数"),
+    DECIMAL("量り売り"),
+
+    ;
+
+    fun requireAllowed(quantityHundredths: Long) {
+        require(quantityHundredths in 1L..999_999L) { "数量は0.01～9,999.99で入力してください" }
+        if (this == INTEGER) {
+            require(quantityHundredths % QuantityV136.SCALE == 0L) { "通常商品は整数数量で入力してください" }
+        }
+    }
+}
+
 data class Product(
     val id: String,
     val name: String,
@@ -34,6 +48,8 @@ data class Product(
     val slotNo: Int = ((displayOrder.coerceAtLeast(1) - 1) % 24) + 1,
     val kana: String = "",
     val barcode: String = "",
+    val receiptShortName: String = "",
+    val quantityMode: QuantityMode = QuantityMode.INTEGER,
 ) {
     fun withLegacyTaxCategory(category: TaxCategory): Product = copy(
         taxCategory = category,
@@ -54,15 +70,18 @@ data class CartItem(
     val discountAmount: Long = 0,
     val note: String = "",
     val lineId: String = "",
+    val quantityHundredths: Long = Math.multiplyExact(quantity.toLong(), QuantityV136.SCALE),
 ) {
     init {
         require(quantity > 0) { "quantity must be greater than zero" }
+        require(quantityHundredths > 0) { "quantityHundredths must be greater than zero" }
         require(unitPrice >= 0) { "unitPrice must not be negative" }
         require(discountAmount >= 0) { "discountAmount must not be negative" }
-        require(discountAmount <= unitPrice * quantity) { "discount exceeds line amount" }
+        require(discountAmount <= amountBeforeDiscount) { "discount exceeds line amount" }
     }
 
-    val amountBeforeDiscount: Long get() = unitPrice * quantity
+    val quantityText: String get() = QuantityV136.fromHundredths(quantityHundredths).format()
+    val amountBeforeDiscount: Long get() = QuantityV136.fromHundredths(quantityHundredths).multiplyYen(unitPrice)
     val baseAmount: Long get() = amountBeforeDiscount - discountAmount
 }
 
@@ -230,6 +249,8 @@ object DiscountEngine {
 enum class PaymentMethod(val displayName: String) {
     CASH("現金"),
     CARD("クレジット"),
+    ELECTRONIC_MONEY("電子マネー"),
+    QR("QR"),
     GIFT_CERTIFICATE("商品券"),
     ACCOUNT_RECEIVABLE("掛売"),
     OTHER("その他"),
@@ -258,6 +279,7 @@ object PaymentEngine {
         total: Long,
         method: PaymentMethod,
         inputAmount: Long?,
+        policy: PaymentTenderPolicyV136 = PaymentTenderPolicyV136.defaultFor(method),
     ): PaymentState {
         val remaining = state.remaining(total)
         require(remaining > 0) { "payment is already complete" }
@@ -266,10 +288,20 @@ object PaymentEngine {
             require(received > 0) { "cash received must be positive" }
             PaymentAllocation(method, received.coerceAtMost(remaining), received)
         } else {
-            val applied = inputAmount ?: remaining
-            require(applied > 0) { "payment amount must be positive" }
-            require(applied <= remaining) { "non-cash payment must not exceed remaining amount" }
-            PaymentAllocation(method, applied, applied)
+            val received = inputAmount ?: remaining
+            require(received > 0) { "payment amount must be positive" }
+            if (received > remaining) {
+                require(policy.allowOverpay) {
+                    "non-cash payment must not exceed remaining amount"
+                }
+                if (policy.givesChange) {
+                    PaymentAllocation(method, remaining, received)
+                } else {
+                    PaymentAllocation(method, remaining, remaining)
+                }
+            } else {
+                PaymentAllocation(method, received, received)
+            }
         }
         return state.copy(allocations = state.allocations + allocation)
     }
