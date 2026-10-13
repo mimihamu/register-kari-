@@ -6,6 +6,11 @@ import org.json.JSONObject
 internal const val CUSTOMER_DISPLAY_SCHEMA_VERSION = 1
 internal const val CUSTOMER_DISPLAY_PATH = "/customer-display/v1"
 
+enum class CustomerDisplayMessageType {
+    SNAPSHOT,
+    STATE_UPDATE,
+}
+
 enum class CustomerDisplayMode {
     STANDBY,
     SALES,
@@ -46,10 +51,14 @@ data class CustomerDisplaySnapshot(
     val message: String? = null,
     val orderItems: List<CustomerDisplayOrderItem> = emptyList(),
     val presentation: CustomerDisplayPresentation = CustomerDisplayPresentation(),
+    val sessionId: String? = null,
+    val messageType: CustomerDisplayMessageType = CustomerDisplayMessageType.SNAPSHOT,
 ) {
     fun toJson(): String = JSONObject().apply {
         put("schemaVersion", schemaVersion)
         put("sequence", sequence)
+        put("sessionId", sessionId ?: JSONObject.NULL)
+        put("messageType", messageType.name)
         put("serverInstanceId", serverInstanceId ?: JSONObject.NULL)
         put("sentAtMillis", sentAtMillis)
         put("mode", mode.name)

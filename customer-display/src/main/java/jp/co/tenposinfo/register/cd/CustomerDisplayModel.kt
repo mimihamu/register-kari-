@@ -7,6 +7,11 @@ import java.math.BigDecimal
 internal const val CUSTOMER_DISPLAY_SCHEMA_VERSION = 1
 internal const val CUSTOMER_DISPLAY_PATH = "/customer-display/v1"
 
+enum class CustomerDisplayMessageType {
+    SNAPSHOT,
+    STATE_UPDATE,
+}
+
 enum class CustomerDisplayMode {
     STANDBY,
     SALES,
@@ -47,10 +52,14 @@ data class CustomerDisplaySnapshot(
     val message: String?,
     val orderItems: List<CustomerDisplayOrderItem>,
     val presentation: CustomerDisplayPresentation = CustomerDisplayPresentation(),
+    val sessionId: String? = null,
+    val messageType: CustomerDisplayMessageType = CustomerDisplayMessageType.SNAPSHOT,
 ) {
     fun toJson(): String = JSONObject().apply {
         put("schemaVersion", schemaVersion)
         put("sequence", sequence)
+        put("sessionId", sessionId ?: JSONObject.NULL)
+        put("messageType", messageType.name)
         put("serverInstanceId", serverInstanceId ?: JSONObject.NULL)
         put("sentAtMillis", sentAtMillis)
         put("mode", mode.name)
@@ -151,7 +160,11 @@ data class CustomerDisplaySnapshot(
             }
             return CustomerDisplaySnapshot(
                 schemaVersion = schemaVersion,
-                sequence = root.getLong("sequence"),
+                sequence = root.strictLong("sequence"),
+                sessionId = root.optNullableString("sessionId"),
+                messageType = CustomerDisplayMessageType.valueOf(
+                    root.optString("messageType", "SNAPSHOT"),
+                ),
                 serverInstanceId = root.optNullableString("serverInstanceId"),
                 sentAtMillis = root.optLong("sentAtMillis"),
                 mode = CustomerDisplayMode.valueOf(root.getString("mode")),
@@ -234,10 +247,14 @@ object CustomerDisplayStateReducer {
         // Equal sequence is a fresh full snapshot on reconnect. It is authoritative
         // even when an identical sequence was persisted before the transport failed.
         // Strictly older data from the same server must never resurrect old totals.
-        if (!serverInstanceChanged && incoming.sequence < current.snapshot.sequence) {
+        val sessionChanged = !incoming.sessionId.isNullOrBlank() &&
+            incoming.sessionId != current.snapshot.sessionId
+        if (!serverInstanceChanged && !sessionChanged &&
+            incoming.sequence < current.snapshot.sequence) {
             return current
         }
-        if (!serverInstanceChanged && incoming.sequence == current.snapshot.sequence && current.connected) {
+        if (!serverInstanceChanged && !sessionChanged &&
+            incoming.sequence == current.snapshot.sequence && current.connected) {
             return current
         }
         return current.copy(
