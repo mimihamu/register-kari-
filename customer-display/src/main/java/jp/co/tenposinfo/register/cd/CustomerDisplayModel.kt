@@ -57,6 +57,7 @@ data class CustomerDisplaySnapshot(
         put("transactionId", transactionId ?: JSONObject.NULL)
         put("storeName", storeName)
         put("numberOfProducts", numberOfProducts)
+        put("itemCount", numberOfProducts)
         put("subtotalAmount", subtotalAmount)
         put("totalAmount", totalAmount)
         put("paymentMethod", paymentMethod ?: JSONObject.NULL)
@@ -80,10 +81,13 @@ data class CustomerDisplaySnapshot(
                     put("lineAmount", item.amount)
                     put("latest", item.latest)
                     put("cancelled", item.cancelled)
+                    put("isVoided", item.cancelled)
                     put("taxSymbol", item.taxSymbol)
                 })
             }
         })
+        // v2.5 §30.6: canonical items; orderItems remains for older CD installations.
+        put("items", JSONArray(getJSONArray("orderItems").toString()))
     }.toString()
 
     companion object {
@@ -93,7 +97,13 @@ data class CustomerDisplaySnapshot(
             require(schemaVersion == CUSTOMER_DISPLAY_SCHEMA_VERSION) {
                 "未対応の通信形式です（schemaVersion=$schemaVersion）"
             }
-            val items = root.optJSONArray("orderItems")
+            // Canonical v2.5 "items" takes precedence; keep legacy compatibility.
+            val items = if (root.has("items") && !root.isNull("items")) {
+                root.getJSONArray("items")
+            } else {
+                root.optJSONArray("orderItems")
+            }
+            require((items?.length() ?: 0) <= 200) { "items exceeds 200 lines" }
             val orderItems = buildList {
                 if (items != null) {
                     for (index in 0 until items.length()) {
@@ -146,7 +156,7 @@ data class CustomerDisplaySnapshot(
                 mode = CustomerDisplayMode.valueOf(root.getString("mode")),
                 transactionId = root.optNullableString("transactionId"),
                 storeName = root.optString("storeName", "つぐレジ"),
-                numberOfProducts = root.optInt("numberOfProducts"),
+                numberOfProducts = if (root.has("itemCount")) root.getInt("itemCount") else root.optInt("numberOfProducts"),
                 subtotalAmount = root.optLong("subtotalAmount"),
                 totalAmount = root.optLong("totalAmount"),
                 paymentMethod = root.optNullableString("paymentMethod"),

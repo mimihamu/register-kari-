@@ -24,5 +24,10 @@ class V136CustomerDisplayScaledWireTest {
         assertEquals(50L, wire.getLong("quantityHundredths"))
         assertEquals("0.5", wire.getString("quantityText"))
         assertEquals(wire.getLong("amount"), wire.getLong("lineAmount"))
+        val canonical = JSONObject(snapshot.toJson()).getJSONArray("items").getJSONObject(0)
+        assertEquals(50L, canonical.getLong("quantityScaled"))
+        assertEquals(100L, canonical.getLong("lineAmount"))
+        assertEquals(false, canonical.getBoolean("isVoided"))
+        assertEquals(snapshot.numberOfProducts, JSONObject(snapshot.toJson()).getInt("itemCount"))
     }
 }

@@ -56,6 +56,7 @@ data class CustomerDisplaySnapshot(
         put("transactionId", transactionId ?: JSONObject.NULL)
         put("storeName", storeName)
         put("numberOfProducts", numberOfProducts)
+        put("itemCount", numberOfProducts)
         put("subtotalAmount", subtotalAmount)
         put("totalAmount", totalAmount)
         put("paymentMethod", paymentMethod ?: JSONObject.NULL)
@@ -80,10 +81,13 @@ data class CustomerDisplaySnapshot(
                     put("lineAmount", item.amount)
                     put("latest", item.latest)
                     put("cancelled", item.cancelled)
+                    put("isVoided", item.cancelled)
                     put("taxSymbol", item.taxSymbol)
                 })
             }
         })
+        // v2.5 §30.6: canonical items; orderItems remains for older CD installations.
+        put("items", JSONArray(getJSONArray("orderItems").toString()))
     }.toString()
 }
 
