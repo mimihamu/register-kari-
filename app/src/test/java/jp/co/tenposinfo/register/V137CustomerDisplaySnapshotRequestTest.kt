@@ -128,7 +128,7 @@ class V137CustomerDisplaySnapshotRequestTest {
 
     private fun connectWithRetry(port: Int): Socket {
         var lastError: Exception? = null
-        repeat(50) {
+        for (attempt in 0 until 50) {
             try {
                 return Socket("127.0.0.1", port)
             } catch (error: Exception) {
