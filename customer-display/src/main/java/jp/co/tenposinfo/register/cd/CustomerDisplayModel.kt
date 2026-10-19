@@ -32,6 +32,7 @@ data class CustomerDisplayOrderItem(
     val latest: Boolean,
     val cancelled: Boolean,
     val taxSymbol: String = "",
+    val lineId: String = "",
 )
 
 data class CustomerDisplaySnapshot(
@@ -62,23 +63,32 @@ data class CustomerDisplaySnapshot(
         put("messageType", messageType.name)
         put("serverInstanceId", serverInstanceId ?: JSONObject.NULL)
         put("sentAtMillis", sentAtMillis)
+        put("sentAt", if (sentAtMillis > 0L) java.time.Instant.ofEpochMilli(sentAtMillis).toString() else JSONObject.NULL)
         put("mode", mode.name)
         put("transactionId", transactionId ?: JSONObject.NULL)
         put("storeName", storeName)
         put("numberOfProducts", numberOfProducts)
         put("itemCount", numberOfProducts)
+        put("latestLineId", orderItems.lastOrNull { it.latest }?.lineId ?: JSONObject.NULL)
         put("subtotalAmount", subtotalAmount)
         put("totalAmount", totalAmount)
         put("paymentMethod", paymentMethod ?: JSONObject.NULL)
         put("receivedAmount", receivedAmount)
         put("shortageAmount", shortageAmount)
+        put("remainingAmount", shortageAmount)
         put("changeAmount", changeAmount)
+        put("payment", paymentMethod?.let { name -> JSONObject().apply {
+            put("receiptName", name)
+            put("tenderedAmount", receivedAmount)
+            put("appliedAmount", (totalAmount - shortageAmount).coerceAtLeast(0L))
+        } } ?: JSONObject.NULL)
         put("message", message ?: JSONObject.NULL)
         put("presentation", presentation.toJsonObject())
         put("orderItems", JSONArray().apply {
             orderItems.forEach { item ->
                 put(JSONObject().apply {
                     put("productId", item.productId)
+                    put("lineId", item.lineId)
                     put("name", item.name)
                     put("quantity", item.quantity)
                     put("quantityHundredths", item.quantityHundredths)
@@ -102,10 +112,12 @@ data class CustomerDisplaySnapshot(
     companion object {
         fun parse(json: String): CustomerDisplaySnapshot {
             val root = JSONObject(json)
-            val schemaVersion = root.getInt("schemaVersion")
-            require(schemaVersion == CUSTOMER_DISPLAY_SCHEMA_VERSION) {
-                "未対応の通信形式です（schemaVersion=$schemaVersion）"
+            // Accept formal v2.5 string "1.0" and legacy numeric 1; reject unknown majors.
+            val rawSchema = root.get("schemaVersion").toString()
+            require(rawSchema == "1" || rawSchema == "1.0") {
+                "E-CD-005: 未対応の通信形式です（schemaVersion=$rawSchema）"
             }
+            val schemaVersion = CUSTOMER_DISPLAY_SCHEMA_VERSION
             // Canonical v2.5 "items" takes precedence; keep legacy compatibility.
             val items = if (root.has("items") && !root.isNull("items")) {
                 root.getJSONArray("items")
@@ -113,6 +125,21 @@ data class CustomerDisplaySnapshot(
                 root.optJSONArray("orderItems")
             }
             require((items?.length() ?: 0) <= 200) { "items exceeds 200 lines" }
+            val canonicalItems = root.has("items") && !root.isNull("items")
+            val latestLineId = root.optNullableString("latestLineId")
+            // Canonical payloads must never show a guessed zero for absent money values.
+            fun money(name: String): Long {
+                if (!root.has(name) || root.isNull(name)) {
+                    require(!canonicalItems) { "E-CD-005: $name is required" }
+                    return 0L // legacy wire only
+                }
+                return root.strictLong(name)
+            }
+            val payment = root.optJSONObject("payment")
+            if (payment != null) {
+                payment.strictLong("tenderedAmount")
+                payment.strictLong("appliedAmount")
+            }
             val orderItems = buildList {
                 if (items != null) {
                     for (index in 0 until items.length()) {
@@ -139,17 +166,19 @@ data class CustomerDisplaySnapshot(
                         add(
                             CustomerDisplayOrderItem(
                                 productId = item.optString("productId"),
+                                lineId = item.optString("lineId").ifBlank { "legacy-line-${index + 1}" },
                                 name = item.optString("name"),
                                 quantity = item.optInt("quantity"),
                                 quantityHundredths = scaled,
                                 quantityText = item.optString("quantityText").ifBlank {
                                     BigDecimal.valueOf(scaled, 2).stripTrailingZeros().toPlainString()
                                 },
-                                unitPrice = item.optLong("unitPrice"),
+                                unitPrice = if (canonicalItems) item.strictLong("unitPrice") else item.optLong("unitPrice"),
                                 amount = if (item.has("lineAmount")) {
                                     item.strictLong("lineAmount")
                                 } else item.optLong("amount"),
-                                latest = item.optBoolean("latest"),
+                                latest = if (latestLineId != null) latestLineId == item.optString("lineId")
+                                    else item.optBoolean("latest"),
                                 cancelled = if (item.has("isVoided")) item.getBoolean("isVoided")
                                     else item.optBoolean("cancelled"),
                                 taxSymbol = item.optString("taxSymbol"),
@@ -167,16 +196,21 @@ data class CustomerDisplaySnapshot(
                 ),
                 serverInstanceId = root.optNullableString("serverInstanceId"),
                 sentAtMillis = root.optLong("sentAtMillis"),
-                mode = CustomerDisplayMode.valueOf(root.getString("mode")),
+                mode = when (root.getString("mode")) {
+                    "CART" -> CustomerDisplayMode.SALES
+                    "PAYMENT", "CASH_RECEIVED" -> CustomerDisplayMode.ACCOUNTING
+                    "CHANGE" -> CustomerDisplayMode.COMPLETE
+                    else -> CustomerDisplayMode.valueOf(root.getString("mode"))
+                },
                 transactionId = root.optNullableString("transactionId"),
                 storeName = root.optString("storeName", "つぐレジ"),
                 numberOfProducts = if (root.has("itemCount")) root.getInt("itemCount") else root.optInt("numberOfProducts"),
-                subtotalAmount = root.optLong("subtotalAmount"),
-                totalAmount = root.optLong("totalAmount"),
-                paymentMethod = root.optNullableString("paymentMethod"),
-                receivedAmount = root.optLong("receivedAmount"),
-                shortageAmount = root.optLong("shortageAmount"),
-                changeAmount = root.optLong("changeAmount"),
+                subtotalAmount = money("subtotalAmount"),
+                totalAmount = money("totalAmount"),
+                paymentMethod = root.optNullableString("paymentMethod") ?: payment?.optNullableString("receiptName"),
+                receivedAmount = if (root.has("receivedAmount")) money("receivedAmount") else payment?.strictLong("tenderedAmount") ?: 0L,
+                shortageAmount = if (root.has("remainingAmount")) money("remainingAmount") else money("shortageAmount"),
+                changeAmount = money("changeAmount").also { require(it >= 0L) { "E-CD-005: changeAmount must be nonnegative" } },
                 message = root.optNullableString("message"),
                 orderItems = orderItems,
                 presentation = CustomerDisplayPresentation.fromJsonObject(

@@ -31,6 +31,7 @@ data class CustomerDisplayOrderItem(
     val latest: Boolean = false,
     val cancelled: Boolean = false,
     val taxSymbol: String = "",
+    val lineId: String = "",
 )
 
 data class CustomerDisplaySnapshot(
@@ -61,23 +62,32 @@ data class CustomerDisplaySnapshot(
         put("messageType", messageType.name)
         put("serverInstanceId", serverInstanceId ?: JSONObject.NULL)
         put("sentAtMillis", sentAtMillis)
+        put("sentAt", if (sentAtMillis > 0L) java.time.Instant.ofEpochMilli(sentAtMillis).toString() else JSONObject.NULL)
         put("mode", mode.name)
         put("transactionId", transactionId ?: JSONObject.NULL)
         put("storeName", storeName)
         put("numberOfProducts", numberOfProducts)
         put("itemCount", numberOfProducts)
+        put("latestLineId", orderItems.lastOrNull { it.latest }?.lineId ?: JSONObject.NULL)
         put("subtotalAmount", subtotalAmount)
         put("totalAmount", totalAmount)
         put("paymentMethod", paymentMethod ?: JSONObject.NULL)
         put("receivedAmount", receivedAmount)
         put("shortageAmount", shortageAmount)
+        put("remainingAmount", shortageAmount)
         put("changeAmount", changeAmount)
+        put("payment", paymentMethod?.let { name -> JSONObject().apply {
+            put("receiptName", name)
+            put("tenderedAmount", receivedAmount)
+            put("appliedAmount", (totalAmount - shortageAmount).coerceAtLeast(0L))
+        } } ?: JSONObject.NULL)
         put("message", message ?: JSONObject.NULL)
         put("presentation", presentation.toJsonObject())
         put("orderItems", JSONArray().apply {
             orderItems.forEach { item ->
                 put(JSONObject().apply {
                     put("productId", item.productId)
+                    put("lineId", item.lineId)
                     put("name", item.name)
                     put("quantity", item.quantity)
                     put("quantityHundredths", item.quantityHundredths)
@@ -205,17 +215,21 @@ object CustomerDisplaySnapshotFactory {
     private fun orderItems(
         items: List<CartItem>,
         latestProductId: String? = null,
-    ): List<CustomerDisplayOrderItem> = items.map { item ->
+    ): List<CustomerDisplayOrderItem> {
+        val latestIndex = items.indexOfLast { latestProductId != null && it.product.id == latestProductId }
+        return items.mapIndexed { index, item ->
         CustomerDisplayOrderItem(
             productId = item.product.id,
+            lineId = item.lineId.ifBlank { "legacy-line-${index + 1}" },
             name = item.product.name,
             quantity = item.quantity,
             quantityHundredths = item.quantityHundredths,
             quantityText = item.quantityText,
             unitPrice = item.unitPrice,
             amount = item.baseAmount,
-            latest = item.product.id == latestProductId,
+            latest = index == latestIndex,
             taxSymbol = item.product.taxSymbol,
         )
+        }
     }
 }
