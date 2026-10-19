@@ -404,7 +404,14 @@ private class SharedCustomerDisplaySession(
                 0x1 -> {
                     require(finalFrame) { "分割WebSocketフレームには未対応です" }
                     val json = payload.toString(StandardCharsets.UTF_8)
-                    val incoming = CustomerDisplaySnapshot.parse(json)
+                    val incoming = try {
+                        CustomerDisplaySnapshot.parse(json)
+                    } catch (error: Exception) {
+                        // Unknown mandatory fields/major can never be displayed as guessed money.
+                        // Hide the previously visible amount immediately, before retrying transport.
+                        notifyResyncRequired("E-CD-005: 表示データを確認できません。再接続しています")
+                        throw IllegalArgumentException("E-CD-005: invalid display payload", error)
+                    }
                     when (CustomerDisplayDeliveryPolicy.decide(previousSnapshot, incoming, awaitingSnapshot)) {
                         CustomerDisplayDeliveryDecision.APPLY -> {
                             previousSnapshot = incoming
@@ -451,8 +458,9 @@ private class SharedCustomerDisplaySession(
         currentListeners.forEach { listener -> safeCall(listener.onConnected) }
     }
 
-    private fun notifyResyncRequired() {
-        val reason = "E-CD-004: 表示更新が不足したため最新状態を再取得しています"
+    private fun notifyResyncRequired(
+        reason: String = "E-CD-004: 表示更新が不足したため最新状態を再取得しています",
+    ) {
         val currentListeners = synchronized(listenerLock) {
             // Suppress stale money immediately, including on newly created screens.
             latestSnapshot = null

@@ -28,6 +28,28 @@ class V137CanonicalModeRenderTest {
         assertEquals("CASH_RECEIVED", CustomerDisplaySnapshot.parse(source.toJson()).canonicalMode)
     }
 
+
+    @Test
+    fun formalCashReceivedModeWithoutCompatibilityAliasRemainsCashReceived() {
+        val json = JSONObject(CustomerDisplaySnapshot.initial().toJson())
+        json.remove("canonicalMode")
+        json.put("mode", "CASH_RECEIVED")
+        val parsed = CustomerDisplaySnapshot.parse(json.toString())
+        assertEquals(CustomerDisplayMode.ACCOUNTING, parsed.mode)
+        assertEquals("CASH_RECEIVED", parsed.canonicalMode)
+    }
+
+    @Test
+    fun legacyCompletedSaleStillShowsChangeDuringOriginalCompletion() {
+        val json = JSONObject(CustomerDisplaySnapshot.initial().copy(
+            mode = CustomerDisplayMode.COMPLETE,
+            changeAmount = 700L,
+        ).toJson())
+        json.remove("canonicalMode")
+        val parsed = CustomerDisplaySnapshot.parse(json.toString())
+        assertEquals("CHANGE", parsed.canonicalMode)
+    }
+
     @Test
     fun unsupportedCanonicalModeMustNotFallbackToStaleAmount() {
         val root = JSONObject(CustomerDisplaySnapshot.initial().toJson())

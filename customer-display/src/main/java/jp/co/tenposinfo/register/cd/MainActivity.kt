@@ -185,7 +185,8 @@ private fun CustomerDisplayScreen(
                     when (state.snapshot.canonicalMode) {
                         "STANDBY" -> StandbyScreen(state.snapshot, layoutMode)
                         "CART" -> SalesScreen(state.snapshot, layoutMode)
-                        "SUBTOTAL", "PAYMENT", "CASH_RECEIVED" -> AccountingScreen(state.snapshot, layoutMode)
+                        "SUBTOTAL" -> SalesScreen(state.snapshot, layoutMode)
+                        "PAYMENT", "CASH_RECEIVED" -> AccountingScreen(state.snapshot, layoutMode)
                         "CHANGE" -> CompleteScreen(state.snapshot, layoutMode)
                         "COMPLETE" -> CompleteScreen(state.snapshot.copy(changeAmount = 0L), layoutMode)
                         else -> DisconnectedScreen(state.snapshot.message, layoutMode)
@@ -394,6 +395,7 @@ private fun TotalSummaryCard(
     horizontal: Boolean,
     modifier: Modifier,
 ) {
+    val subtotal = snapshot.canonicalMode == "SUBTOTAL"
     Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = PanelLight)) {
         if (horizontal) {
             Row(
@@ -406,8 +408,8 @@ private fun TotalSummaryCard(
                     Text("${snapshot.numberOfProducts} 点", color = TextPrimary, fontSize = if (compact) 21.sp else 28.sp, fontWeight = FontWeight.Bold)
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    Text("合計", color = TextSecondary, fontSize = if (compact) 15.sp else 21.sp)
-                    Text(yen(snapshot.totalAmount), color = TextPrimary, fontSize = if (compact) 31.sp else 44.sp, fontWeight = FontWeight.Bold)
+                    Text(if (subtotal) "小計" else "合計", color = TextSecondary, fontSize = if (compact) 15.sp else 21.sp)
+                    Text(yen(if (subtotal) snapshot.subtotalAmount else snapshot.totalAmount), color = TextPrimary, fontSize = if (compact) 31.sp else 44.sp, fontWeight = FontWeight.Bold)
                 }
             }
         } else {
@@ -420,8 +422,8 @@ private fun TotalSummaryCard(
                     Text("${snapshot.numberOfProducts} 点", color = TextPrimary, fontSize = if (compact) 23.sp else 30.sp, fontWeight = FontWeight.Bold)
                 }
                 Column(horizontalAlignment = Alignment.End, modifier = Modifier.fillMaxWidth()) {
-                    Text("合計", color = TextSecondary, fontSize = if (compact) 18.sp else 24.sp)
-                    Text(yen(snapshot.totalAmount), color = TextPrimary, fontSize = if (compact) 34.sp else 52.sp, fontWeight = FontWeight.Bold)
+                    Text(if (subtotal) "小計" else "合計", color = TextSecondary, fontSize = if (compact) 18.sp else 24.sp)
+                    Text(yen(if (subtotal) snapshot.subtotalAmount else snapshot.totalAmount), color = TextPrimary, fontSize = if (compact) 34.sp else 52.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

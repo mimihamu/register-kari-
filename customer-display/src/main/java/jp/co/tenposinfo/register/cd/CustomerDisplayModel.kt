@@ -148,6 +148,7 @@ data class CustomerDisplaySnapshot(
                 return root.strictLong(name)
             }
             val canonicalModeWire = root.optNullableString("canonicalMode")
+                ?: root.getString("mode").takeIf { it in setOf("CART", "PAYMENT", "CASH_RECEIVED", "CHANGE") }
             require(canonicalModeWire == null || canonicalModeWire in setOf(
                 "STANDBY", "CART", "SUBTOTAL", "PAYMENT", "CASH_RECEIVED",
                 "CHANGE", "COMPLETE", "DISCONNECTED",
