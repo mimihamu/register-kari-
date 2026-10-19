@@ -125,12 +125,14 @@ data class CustomerDisplaySnapshot(
                 root.optJSONArray("orderItems")
             }
             require((items?.length() ?: 0) <= 200) { "items exceeds 200 lines" }
-            val canonicalItems = root.has("items") && !root.isNull("items")
+            // Legacy numeric version 1 may contain partial canonical aliases from older senders.
+            // Require full v2.5 money fields only when the sender opts into string "1.0".
+            val strictCanonical = rawSchema == "1.0"
             val latestLineId = root.optNullableString("latestLineId")
             // Canonical payloads must never show a guessed zero for absent money values.
             fun money(name: String): Long {
                 if (!root.has(name) || root.isNull(name)) {
-                    require(!canonicalItems) { "E-CD-005: $name is required" }
+                    require(!strictCanonical) { "E-CD-005: $name is required" }
                     return 0L // legacy wire only
                 }
                 return root.strictLong(name)
@@ -173,7 +175,7 @@ data class CustomerDisplaySnapshot(
                                 quantityText = item.optString("quantityText").ifBlank {
                                     BigDecimal.valueOf(scaled, 2).stripTrailingZeros().toPlainString()
                                 },
-                                unitPrice = if (canonicalItems) item.strictLong("unitPrice") else item.optLong("unitPrice"),
+                                unitPrice = if (strictCanonical) item.strictLong("unitPrice") else item.optLong("unitPrice"),
                                 amount = if (item.has("lineAmount")) {
                                     item.strictLong("lineAmount")
                                 } else item.optLong("amount"),
