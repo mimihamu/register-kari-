@@ -55,7 +55,16 @@ data class CustomerDisplaySnapshot(
     val presentation: CustomerDisplayPresentation = CustomerDisplayPresentation(),
     val sessionId: String? = null,
     val messageType: CustomerDisplayMessageType = CustomerDisplayMessageType.SNAPSHOT,
+    val canonicalModeWire: String? = null,
 ) {
+    val canonicalMode: String get() = canonicalModeWire ?: when (mode) {
+        CustomerDisplayMode.STANDBY -> "STANDBY"
+        CustomerDisplayMode.SALES -> "CART"
+        CustomerDisplayMode.SUBTOTAL -> "SUBTOTAL"
+        CustomerDisplayMode.ACCOUNTING -> "PAYMENT"
+        CustomerDisplayMode.COMPLETE -> if (changeAmount > 0L) "CHANGE" else "COMPLETE"
+        CustomerDisplayMode.DISCONNECTED -> "DISCONNECTED"
+    }
     fun toJson(): String = JSONObject().apply {
         put("schemaVersion", schemaVersion)
         put("sequence", sequence)
@@ -65,6 +74,7 @@ data class CustomerDisplaySnapshot(
         put("sentAtMillis", sentAtMillis)
         put("sentAt", if (sentAtMillis > 0L) java.time.Instant.ofEpochMilli(sentAtMillis).toString() else JSONObject.NULL)
         put("mode", mode.name)
+        put("canonicalMode", canonicalMode)
         put("transactionId", transactionId ?: JSONObject.NULL)
         put("storeName", storeName)
         put("numberOfProducts", numberOfProducts)
@@ -137,6 +147,11 @@ data class CustomerDisplaySnapshot(
                 }
                 return root.strictLong(name)
             }
+            val canonicalModeWire = root.optNullableString("canonicalMode")
+            require(canonicalModeWire == null || canonicalModeWire in setOf(
+                "STANDBY", "CART", "SUBTOTAL", "PAYMENT", "CASH_RECEIVED",
+                "CHANGE", "COMPLETE", "DISCONNECTED",
+            )) { "E-CD-005: unsupported canonicalMode" }
             val payment = root.optJSONObject("payment")
             if (payment != null) {
                 payment.strictLong("tenderedAmount")
@@ -196,6 +211,7 @@ data class CustomerDisplaySnapshot(
                 messageType = CustomerDisplayMessageType.valueOf(
                     root.optString("messageType", "SNAPSHOT"),
                 ),
+                canonicalModeWire = canonicalModeWire,
                 serverInstanceId = root.optNullableString("serverInstanceId"),
                 sentAtMillis = root.optLong("sentAtMillis"),
                 mode = when (root.getString("mode")) {

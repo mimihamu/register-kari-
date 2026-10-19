@@ -63,7 +63,15 @@ data class CustomerDisplaySnapshot(
         put("serverInstanceId", serverInstanceId ?: JSONObject.NULL)
         put("sentAtMillis", sentAtMillis)
         put("sentAt", if (sentAtMillis > 0L) java.time.Instant.ofEpochMilli(sentAtMillis).toString() else JSONObject.NULL)
-        put("mode", mode.name)
+        put("mode", mode.name) // Legacy mode retained for previously installed CD apps.
+        put("canonicalMode", when (mode) {
+            CustomerDisplayMode.STANDBY -> "STANDBY"
+            CustomerDisplayMode.SALES -> "CART"
+            CustomerDisplayMode.SUBTOTAL -> "SUBTOTAL"
+            CustomerDisplayMode.ACCOUNTING -> if (receivedAmount > 0L && paymentMethod?.contains("現金") == true) "CASH_RECEIVED" else "PAYMENT"
+            CustomerDisplayMode.COMPLETE -> if (changeAmount > 0L) "CHANGE" else "COMPLETE"
+            CustomerDisplayMode.DISCONNECTED -> "DISCONNECTED"
+        })
         put("transactionId", transactionId ?: JSONObject.NULL)
         put("storeName", storeName)
         put("numberOfProducts", numberOfProducts)
@@ -185,7 +193,9 @@ object CustomerDisplaySnapshotFactory {
             paymentMethod = methods,
             receivedAmount = paymentState.allocations.sumOf { it.receivedAmount },
             shortageAmount = paymentState.remaining(total),
-            changeAmount = paymentState.changeAmount,
+            // Provisional overpayment must never be published as confirmed change.
+            // Only the persisted sale completion may reveal the actual change.
+            changeAmount = 0L,
             message = if (paymentState.remaining(total) > 0L) "お支払い金額をご確認ください" else "お支払いを確認しました",
             orderItems = orderItems(items),
             presentation = presentation,

@@ -160,6 +160,8 @@ internal class CustomerDisplayPoller(
     private var lastSeenSaleId: Long = 0L
     private var lastPublishedSaleId: Long = 0L
     private var completeUntil: Long = 0L
+    private var changeUntil: Long = 0L
+    private var changeSnapshot: CustomerDisplaySnapshot? = null
     private var latestProductId: String? = null
     private var initialized = false
 
@@ -206,6 +208,8 @@ internal class CustomerDisplayPoller(
         val cartFingerprint = fingerprint(cart)
         if (cart.isNotEmpty()) {
             completeUntil = 0L
+            changeUntil = 0L
+            changeSnapshot = null
             val detectedLatest = detectLatestProduct(previousCart, cart)
             if (detectedLatest != null) latestProductId = detectedLatest
             if (cartFingerprint != lastCartFingerprint) {
@@ -218,8 +222,27 @@ internal class CustomerDisplayPoller(
                 if (detail != null) {
                     publish(CustomerDisplaySnapshotFactory.complete(detail, config.storeName, config.presentation))
                     lastPublishedSaleId = saleId
-                    completeUntil = now + config.completeSeconds * 1_000L
+                    if (detail.summary.changeAmount > 0L) {
+                        changeSnapshot = CustomerDisplaySnapshotFactory.complete(detail, config.storeName, config.presentation)
+                        changeUntil = now + config.changeSeconds * 1_000L
+                        completeUntil = 0L
+                    } else {
+                        changeUntil = 0L
+                        changeSnapshot = null
+                        completeUntil = now + config.completeSeconds * 1_000L
+                    }
                 }
+            } else if (changeUntil > 0L && now >= changeUntil) {
+                // The money is now settled; switch to a thank-you view rather than
+                // continuing to show change indefinitely during the COMPLETE phase.
+                val completed = changeSnapshot?.copy(
+                    changeAmount = 0L,
+                    message = "ありがとうございました",
+                )
+                if (completed != null) publish(completed)
+                changeSnapshot = null
+                changeUntil = 0L
+                completeUntil = now + config.completeSeconds * 1_000L
             } else if (completeUntil > 0L && now >= completeUntil) {
                 publish(CustomerDisplaySnapshotFactory.standby(config.storeName, config.presentation))
                 completeUntil = 0L

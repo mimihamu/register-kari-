@@ -182,13 +182,13 @@ private fun CustomerDisplayScreen(
                 if (!state.connected) {
                     DisconnectedScreen(state.lastError, layoutMode)
                 } else {
-                    when (state.snapshot.mode) {
-                        CustomerDisplayMode.STANDBY -> StandbyScreen(state.snapshot, layoutMode)
-                        CustomerDisplayMode.SALES -> SalesScreen(state.snapshot, layoutMode)
-                        CustomerDisplayMode.SUBTOTAL -> AccountingScreen(state.snapshot, layoutMode)
-                        CustomerDisplayMode.ACCOUNTING -> AccountingScreen(state.snapshot, layoutMode)
-                        CustomerDisplayMode.COMPLETE -> CompleteScreen(state.snapshot, layoutMode)
-                        CustomerDisplayMode.DISCONNECTED -> DisconnectedScreen(state.snapshot.message, layoutMode)
+                    when (state.snapshot.canonicalMode) {
+                        "STANDBY" -> StandbyScreen(state.snapshot, layoutMode)
+                        "CART" -> SalesScreen(state.snapshot, layoutMode)
+                        "SUBTOTAL", "PAYMENT", "CASH_RECEIVED" -> AccountingScreen(state.snapshot, layoutMode)
+                        "CHANGE" -> CompleteScreen(state.snapshot, layoutMode)
+                        "COMPLETE" -> CompleteScreen(state.snapshot.copy(changeAmount = 0L), layoutMode)
+                        else -> DisconnectedScreen(state.snapshot.message, layoutMode)
                     }
                 }
             }
@@ -514,7 +514,8 @@ private fun PaymentSummaryCard(
             if (snapshot.shortageAmount > 0L) {
                 AmountLine("不足", snapshot.shortageAmount, if (compact) 27 else 34, Warning, compact)
             } else {
-                AmountLine("お釣り", snapshot.changeAmount, if (compact) 29 else 38, Success, compact)
+                // Never present change in PAYMENT/CASH_RECEIVED before the sale commits.
+                Text("お支払い確認中", color = TextPrimary, fontSize = if (compact) 18.sp else 26.sp)
             }
         }
     }

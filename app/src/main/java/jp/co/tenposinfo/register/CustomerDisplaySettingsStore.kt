@@ -13,12 +13,14 @@ data class CustomerDisplayServerConfig(
     val storeName: String,
     val completeSeconds: Int,
     val presentation: CustomerDisplayPresentation = CustomerDisplayPresentation(),
+    val changeSeconds: Int = 5,
 ) {
     init {
         require(port in 1024..65535) { "port must be between 1024 and 65535" }
         require(path.startsWith('/')) { "path must start with /" }
         require(token.length >= 16) { "token is too short" }
         require(completeSeconds in 1..30) { "completeSeconds must be between 1 and 30" }
+        require(changeSeconds in 1..30) { "changeSeconds must be between 1 and 30" }
     }
 
     fun connectionUrl(host: String): String = "ws://$host:$port$path?token=$token"
@@ -41,6 +43,7 @@ class CustomerDisplaySettingsStore(context: Context) {
                 ?.takeIf { it.isNotEmpty() }
                 ?: DEFAULT_STORE_NAME,
             completeSeconds = preferences.getInt(KEY_COMPLETE_SECONDS, DEFAULT_COMPLETE_SECONDS).coerceIn(1, 30),
+            changeSeconds = preferences.getInt(KEY_CHANGE_SECONDS, DEFAULT_CHANGE_SECONDS).coerceIn(1, 30),
             presentation = CustomerDisplayPresentation(
                 theme = runCatching {
                     CustomerDisplayTheme.valueOf(
@@ -69,6 +72,7 @@ class CustomerDisplaySettingsStore(context: Context) {
             .putString(KEY_TOKEN, config.token)
             .putString(KEY_STORE_NAME, config.storeName.trim().ifEmpty { DEFAULT_STORE_NAME })
             .putInt(KEY_COMPLETE_SECONDS, config.completeSeconds)
+            .putInt(KEY_CHANGE_SECONDS, config.changeSeconds)
             .putString(KEY_THEME, config.presentation.theme.name)
             .putBoolean(KEY_SHOW_LOGO, config.presentation.showLogo)
             .putString(KEY_LOGO_TEXT, config.presentation.logoText)
@@ -89,6 +93,7 @@ class CustomerDisplaySettingsStore(context: Context) {
         const val DEFAULT_PORT = 18080
         const val DEFAULT_STORE_NAME = "つぐレジ"
         const val DEFAULT_COMPLETE_SECONDS = 5
+        const val DEFAULT_CHANGE_SECONDS = 5
 
         private const val PREFS_NAME = "customer_display_server"
         private const val KEY_ENABLED = "enabled"
@@ -96,6 +101,7 @@ class CustomerDisplaySettingsStore(context: Context) {
         private const val KEY_TOKEN = "token"
         private const val KEY_STORE_NAME = "store_name"
         private const val KEY_COMPLETE_SECONDS = "complete_seconds"
+        private const val KEY_CHANGE_SECONDS = "change_seconds"
         private const val KEY_THEME = "presentation_theme"
         private const val KEY_SHOW_LOGO = "presentation_show_logo"
         private const val KEY_LOGO_TEXT = "presentation_logo_text"
