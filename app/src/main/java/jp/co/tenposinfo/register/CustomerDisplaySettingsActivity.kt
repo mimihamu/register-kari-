@@ -67,6 +67,7 @@ private fun CustomerDisplaySettingsScreen(
     var storeName by remember { mutableStateOf(initial.storeName) }
     var token by remember { mutableStateOf(initial.token) }
     var completeSecondsText by remember { mutableStateOf(initial.completeSeconds.toString()) }
+    var changeSecondsText by remember { mutableStateOf(initial.changeSeconds.toString()) }
     var displayTheme by remember { mutableStateOf(initial.presentation.theme) }
     var showLogo by remember { mutableStateOf(initial.presentation.showLogo) }
     var logoText by remember { mutableStateOf(initial.presentation.logoText) }
@@ -119,6 +120,7 @@ private fun CustomerDisplaySettingsScreen(
     fun buildConfig(requestedEnabled: Boolean): CustomerDisplayServerConfig? {
         val port = portText.toIntOrNull()
         val seconds = completeSecondsText.toIntOrNull()
+        val changeSeconds = changeSecondsText.toIntOrNull()
         val textScale = textScaleText.toIntOrNull()
         val maxRows = maxRowsText.toIntOrNull()
         val rowSpacing = rowSpacingText.toIntOrNull()
@@ -129,6 +131,10 @@ private fun CustomerDisplaySettingsScreen(
             }
             seconds == null || seconds !in 1..30 -> {
                 message = "完了表示秒数は1～30で入力してください"
+                null
+            }
+            changeSeconds == null || changeSeconds !in 1..30 -> {
+                message = "お釣り表示秒数は1～30で入力してください"
                 null
             }
             token.length < 16 -> {
@@ -154,6 +160,7 @@ private fun CustomerDisplaySettingsScreen(
                 token = token,
                 storeName = storeName.trim().ifEmpty { CustomerDisplaySettingsStore.DEFAULT_STORE_NAME },
                 completeSeconds = seconds,
+                changeSeconds = changeSeconds,
                 presentation = CustomerDisplayPresentation(
                     theme = displayTheme,
                     showLogo = showLogo,
@@ -250,9 +257,18 @@ private fun CustomerDisplaySettingsScreen(
                 )
 
                 OutlinedTextField(
+                    value = changeSecondsText,
+                    onValueChange = { changeSecondsText = it.filter(Char::isDigit).take(2) },
+                    label = { Text("お釣り表示秒数（1～30秒・初期5秒）") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                OutlinedTextField(
                     value = completeSecondsText,
                     onValueChange = { completeSecondsText = it.filter(Char::isDigit).take(2) },
-                    label = { Text("お釣り・完了表示秒数（1～30秒）") },
+                    label = { Text("完了表示秒数（1～30秒・初期3秒）") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),

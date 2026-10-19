@@ -92,7 +92,7 @@ class CustomerDisplaySettingsStore(context: Context) {
     companion object {
         const val DEFAULT_PORT = 18080
         const val DEFAULT_STORE_NAME = "つぐレジ"
-        const val DEFAULT_COMPLETE_SECONDS = 5
+        const val DEFAULT_COMPLETE_SECONDS = 3
         const val DEFAULT_CHANGE_SECONDS = 5
 
         private const val PREFS_NAME = "customer_display_server"
