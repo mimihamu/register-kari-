@@ -80,18 +80,9 @@ object CustomerDisplayRuntime {
         synchronized(lock) {
             // Calls arrive from both the cart poller and checkout UI.
             // Assign sequence, replace latest, and enqueue delivery in one order.
-            val previousMode = latestSnapshot.mode
-            val newSession = when {
-                snapshot.mode == CustomerDisplayMode.STANDBY &&
-                    previousMode != CustomerDisplayMode.STANDBY -> true
-                snapshot.mode != CustomerDisplayMode.STANDBY &&
-                    previousMode in setOf(
-                        CustomerDisplayMode.STANDBY,
-                        CustomerDisplayMode.COMPLETE,
-                        CustomerDisplayMode.DISCONNECTED,
-                    ) -> true
-                else -> false
-            }
+            val newSession = CustomerDisplaySessionBoundary.startsNewSession(
+                latestSnapshot, snapshot,
+            )
             if (newSession) displaySessionId = UUID.randomUUID().toString()
             val normalized = snapshot.copy(
                 sequence = sequence.incrementAndGet(),
@@ -132,6 +123,27 @@ object CustomerDisplayRuntime {
         server = null
         connectedClients = 0
         lastClientCountChangedAt = System.currentTimeMillis()
+    }
+}
+
+/**
+ * Session identity belongs to a transaction, not each visual phase.
+ * In particular CHANGE -> COMPLETE for the same sale must keep sessionId.
+ * A genuinely new sale must still start its own session.
+ */
+internal object CustomerDisplaySessionBoundary {
+    fun startsNewSession(
+        previous: CustomerDisplaySnapshot,
+        next: CustomerDisplaySnapshot,
+    ): Boolean = when {
+        next.mode == CustomerDisplayMode.STANDBY ->
+            previous.mode != CustomerDisplayMode.STANDBY
+        previous.mode == CustomerDisplayMode.STANDBY ||
+            previous.mode == CustomerDisplayMode.DISCONNECTED -> true
+        previous.mode == CustomerDisplayMode.COMPLETE ->
+            next.mode != CustomerDisplayMode.COMPLETE ||
+                previous.transactionId != next.transactionId
+        else -> false
     }
 }
 
@@ -189,7 +201,8 @@ internal class CustomerDisplayPoller(
     private fun poll() {
         val cart = database.loadCart()
         val latestSale = database.listSales(limit = 1).firstOrNull()
-        val now = System.currentTimeMillis()
+        // Payment display durations must survive wall-clock/NTP corrections.
+        val now = android.os.SystemClock.elapsedRealtime()
 
         if (!initialized) {
             initialized = true
