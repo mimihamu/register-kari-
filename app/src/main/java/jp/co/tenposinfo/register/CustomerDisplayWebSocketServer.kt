@@ -4,6 +4,9 @@ import java.io.ByteArrayOutputStream
 import java.io.EOFException
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.Inet4Address
+import java.net.Inet6Address
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -28,6 +31,30 @@ internal object CustomerDisplayWebSocketHandshake {
         val digest = MessageDigest.getInstance("SHA-1")
             .digest((key.trim() + MAGIC).toByteArray(StandardCharsets.ISO_8859_1))
         return Base64.getEncoder().encodeToString(digest)
+    }
+}
+
+/**
+ * WebSocket bearer-token endpoint may not be reachable from an arbitrary
+ * routed/public source even if the user accidentally forwards its TCP port.
+ * Loopback is intentionally permitted for local JVM integration tests and
+ * same-device diagnostics. RFC1918 and link-local peers use local networking.
+ */
+internal object CustomerDisplayServerPeerPolicy {
+    fun allows(remote: InetAddress?): Boolean {
+        if (remote == null || remote.isAnyLocalAddress) return false
+        if (remote.isLoopbackAddress) return true
+        return when (remote) {
+            is Inet4Address -> {
+                val bytes = remote.address.map { it.toInt() and 0xff }
+                val a = bytes[0]
+                val b = bytes[1]
+                a == 10 || (a == 172 && b in 16..31) ||
+                    (a == 192 && b == 168) || (a == 169 && b == 254)
+            }
+            is Inet6Address -> remote.isLinkLocalAddress
+            else -> false
+        }
     }
 }
 
@@ -194,6 +221,12 @@ internal class CustomerDisplayWebSocketServer(
     private fun handleClient(socket: Socket) {
         var connection: ClientConnection? = null
         try {
+            // Validate the actual TCP peer, not a client-controlled Host/XFF header.
+            // Authentication is still enforced for every admitted LAN peer below.
+            if (!CustomerDisplayServerPeerPolicy.allows(socket.inetAddress)) {
+                writeHttpError(socket.getOutputStream(), 403, "Forbidden")
+                return
+            }
             val request = readHttpRequest(socket.getInputStream())
             val requestLine = request.lines.firstOrNull().orEmpty().split(' ')
             val target = requestLine.getOrNull(1).orEmpty()
