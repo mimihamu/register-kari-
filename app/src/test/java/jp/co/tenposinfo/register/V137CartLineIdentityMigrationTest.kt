@@ -20,7 +20,7 @@ class V137CartLineIdentityMigrationTest {
     @Test
     fun fillsOnlyMissingAndDuplicateIdsWithoutChangingBusinessData() {
         val original = listOf(row("stable"), row(""), row("stable"), row(" ", 400), row("other"))
-        val ids = iteratorOf("generated-1", "generated-2", "generated-3")
+        val ids = listOf("generated-1", "generated-2", "generated-3").iterator()
         val result = CartLineIdentityV137.normalize(original) { ids.next() }
         assertEquals(listOf("stable", "generated-1", "generated-2", "generated-3", "other"),
             result.map { it.lineId })
