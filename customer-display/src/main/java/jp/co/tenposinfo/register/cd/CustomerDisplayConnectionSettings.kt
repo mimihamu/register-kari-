@@ -37,6 +37,15 @@ internal object CustomerDisplayPrivateLanHostPolicy {
         // a scoped address (e.g. fe80::1234%wlan0). Global/ULA/loopback are not.
         if (literal.contains(':')) {
             val unbracketed = literal.removePrefix("[").removeSuffix("]")
+            // Never ignore arbitrary bytes following a zone separator:
+            // Host headers must not contain CR/LF or a second HTTP header.
+            if (unbracketed.count { it == '%' } > 1) return false
+            val zone = unbracketed.substringAfter('%', "")
+            if (unbracketed.contains('%') && (
+                zone.isEmpty() || zone.length > 24 ||
+                !zone.all { it.isLetterOrDigit() || it == '_' || it == '-' || it == '.' }
+            )) return false
+            if (literal.contains('[') != literal.contains(']')) return false
             val bareAddress = unbracketed.substringBefore('%')
             if (!bareAddress.contains(':')) return false
             val parsed = runCatching { InetAddress.getByName(bareAddress) }.getOrNull()

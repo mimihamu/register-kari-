@@ -48,9 +48,20 @@ class V137CartLineIdentityMigrationTest {
     }
 
     @Test
+    fun hotPathStaysReadOnlyAfterFirstMigration() {
+        val valid = listOf(row("stable"), row("unique"))
+        assertTrue(!CartLineIdentityV137.needsRepair(valid))
+        assertTrue(CartLineIdentityV137.needsRepair(valid + row("")))
+        assertTrue(CartLineIdentityV137.needsRepair(valid + row("stable")))
+        val source = File("src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt").readText()
+        assertTrue(source.contains("if (!CartLineIdentityV137.needsRepair(rows))"))
+        assertTrue(source.contains("return repairLegacyCartLineIds()"))
+    }
+
+    @Test
     fun activeCartMigrationUpdatesIdentityOnlyInsideTransaction() {
         val source = File("src/main/java/jp/co/tenposinfo/register/RegisterDatabase.kt").readText()
-        val load = source.substringAfter("fun loadCart(): List<CartItem>")
+        val load = source.substringAfter("private fun repairLegacyCartLineIds()")
             .substringBefore("fun saveCart(")
         assertTrue(load.contains("writableDatabase.runInTransactionWithResult"))
         assertTrue(load.contains("ContentValues().apply { put(\"line_id\", id) }"))

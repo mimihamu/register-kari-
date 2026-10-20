@@ -58,6 +58,21 @@ class V137PrivateLanDestinationTest {
     }
 
     @Test
+    fun zoneIdsCannotInjectHttpHostHeaders() {
+        listOf(
+            "fe80::1%wlan0\r\nInjected: yes",
+            "[fe80::1%wlan0\r\nInjected: yes]",
+            "fe80::1%",
+            "fe80::1%wlan0%evil",
+            "fe80::1%zone with spaces",
+            "fe80::1%wlan0/../../",
+        ).forEach {
+            assertFalse("Unsafe IPv6 zone: $it", CustomerDisplayPrivateLanHostPolicy.isPermitted(it))
+        }
+        assertTrue(CustomerDisplayPrivateLanHostPolicy.isPermitted("fe80::1%wlan0"))
+    }
+
+    @Test
     fun shortTokenCannotBypassLanGuard() {
         val short = CustomerDisplayConnectionSettings(
             host = "192.168.1.5", port = 18080, token = "short", autoConnect = true,

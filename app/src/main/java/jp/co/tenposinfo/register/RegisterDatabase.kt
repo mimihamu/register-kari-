@@ -79,10 +79,26 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         }
     }
 
-    fun loadCart(): List<CartItem> = writableDatabase.runInTransactionWithResult {
-        // Legacy carts can have blank/duplicate line_id. Upgrade just the identity
-        // columns in the same SQLite transaction as the read: do not rewrite money,
-        // tax snapshots, discounts or the ordering of unfinished sales.
+    fun loadCart(): List<CartItem> {
+        // Hot path (CD polls every 300ms) must remain read-only: avoid taking
+        // SQLite write locks or committing a transaction for each screen refresh.
+        val db = readableDatabase
+        val rows = db.query(
+            "cart_items", CART_COLUMNS, null, null, null, null, "line_no ASC",
+        ).use { cursor ->
+            buildList { while (cursor.moveToNext()) add(cursor.toCartItem()) }
+        }
+        if (!CartLineIdentityV137.needsRepair(rows)) {
+            return LineTaxSnapshotStore.apply(db, LineTaxSnapshotStore.SCOPE_CART, 0L, rows)
+        }
+        return repairLegacyCartLineIds()
+    }
+
+    private fun repairLegacyCartLineIds(): List<CartItem> =
+        writableDatabase.runInTransactionWithResult {
+        // Re-read inside the transaction: a checkout may have cleared or
+        // edited the cart between the fast-path read and acquiring the lock.
+        // Only change line_id, preserving totals, tax and transaction ordering.
         val rows = query(
             "cart_items",
             CART_COLUMNS + "line_no",

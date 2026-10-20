@@ -7,6 +7,14 @@ import java.util.UUID
  * payment or tax attributes. Idempotent once saved into SQLite.
  */
 internal object CartLineIdentityV137 {
+    fun needsRepair(rows: List<CartItem>): Boolean {
+        val seen = HashSet<String>()
+        return rows.any { item ->
+            val id = item.lineId
+            id.isBlank() || id != id.trim() || !seen.add(id)
+        }
+    }
+
     fun normalize(
         rows: List<CartItem>,
         newId: () -> String = { UUID.randomUUID().toString() },
