@@ -19,8 +19,11 @@ android {
         applicationId = "jp.co.tenposinfo.register.cd"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.14.0-dev.1"
+        // Previous CD development version, retained for cumulative compatibility gates.
+        // versionCode = 7
+        // versionName = "0.14.0-dev.1"
+        versionCode = 8
+        versionName = "0.15.0-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ CD"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
