@@ -342,6 +342,9 @@ private class SharedCustomerDisplaySession(
                 append("Connection: Upgrade\r\n")
                 append("Sec-WebSocket-Key: $key\r\n")
                 append("Sec-WebSocket-Version: 13\r\n")
+                // Explicit opt-in: older CD builds omit the header and continue
+                // receiving the numeric schemaVersion + legacy SALES/ACCOUNTING modes.
+                append("X-Tsuguregi-CD-Wire: 1.0\r\n")
                 append("\r\n")
             }
             output.write(request.toByteArray(StandardCharsets.ISO_8859_1))

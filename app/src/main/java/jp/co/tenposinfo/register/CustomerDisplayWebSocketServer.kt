@@ -103,6 +103,27 @@ internal class CustomerDisplayLatestSendDispatcher(
     }
 }
 
+/**
+ * A new CD opts in to the formal v2.5 1.0 contract at the WebSocket
+ * handshake. Old installations remain on the numeric schema/mode wire.
+ * This is deliberately a transport-specific projection, not a mutation
+ * of the stored authoritative POS snapshot.
+ */
+internal object CustomerDisplayWireNegotiation {
+    const val HEADER = "x-tsuguregi-cd-wire"
+    const val CANONICAL_VERSION = "1.0"
+
+    fun wantsCanonical(header: String?): Boolean = header == CANONICAL_VERSION
+
+    fun payload(legacyJson: String, canonical: Boolean): String {
+        if (!canonical) return legacyJson
+        val objectValue = JSONObject(legacyJson)
+        objectValue.put("schemaVersion", CANONICAL_VERSION)
+        objectValue.put("mode", objectValue.getString("canonicalMode"))
+        return objectValue.toString()
+    }
+}
+
 internal class CustomerDisplayWebSocketServer(
     private val config: CustomerDisplayServerConfig,
     private val latestPayload: () -> String,
@@ -192,7 +213,12 @@ internal class CustomerDisplayWebSocketServer(
             output.flush()
 
             socket.soTimeout = CustomerDisplayConnectionLivenessPolicy.LIVENESS_CHECK_INTERVAL_MS
-            connection = ClientConnection(socket, executor, latestPayload)
+            connection = ClientConnection(
+                socket, executor, latestPayload,
+                canonicalWire = CustomerDisplayWireNegotiation.wantsCanonical(
+                    request.headers[CustomerDisplayWireNegotiation.HEADER],
+                ),
+            )
             clients += connection
             notifyClientCount()
             connection.sendText(latestPayload())
@@ -328,6 +354,7 @@ internal class CustomerDisplayWebSocketServer(
         val socket: Socket,
         executor: Executor,
         private val latestPayload: () -> String,
+        private val canonicalWire: Boolean,
     ) {
         private val writeLock = Any()
         private val snapshotRequested = AtomicBoolean(false)
@@ -339,7 +366,8 @@ internal class CustomerDisplayWebSocketServer(
                     // Keep a requested snapshot authoritative even when the
                     // latest-only dispatcher coalesces it with further updates.
                     val outgoing = if (snapshotRequested.getAndSet(false)) latestPayload() else payload
-                    writeFrame(socket.getOutputStream(), 0x1, outgoing.toByteArray(StandardCharsets.UTF_8))
+                    val negotiated = CustomerDisplayWireNegotiation.payload(outgoing, canonicalWire)
+                    writeFrame(socket.getOutputStream(), 0x1, negotiated.toByteArray(StandardCharsets.UTF_8))
                     markTransportActivity()
                 }
             },
