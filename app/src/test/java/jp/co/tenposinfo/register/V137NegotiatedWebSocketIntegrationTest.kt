@@ -82,7 +82,7 @@ class V137NegotiatedWebSocketIntegrationTest {
 
     private fun connectWithRetry(port: Int): Socket {
         var failure: Exception? = null
-        repeat(60) {
+        kotlin.repeat(60) {
             try {
                 return Socket("127.0.0.1", port)
             } catch (e: Exception) {
