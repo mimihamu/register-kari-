@@ -282,19 +282,53 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
     }
 
     fun loadHeldTicket(ticketId: Long): List<CartItem> {
-        readableDatabase.query(
-            "held_ticket_items",
-            CART_COLUMNS,
-            "ticket_id = ?",
-            arrayOf(ticketId.toString()),
-            null,
-            null,
-            "id ASC",
+        // Regular held-ticket browsing stays read-only. Legacy empty/duplicate
+        // line IDs are repaired only when actually present on this ticket.
+        val db = readableDatabase
+        val rows = db.query(
+            "held_ticket_items", CART_COLUMNS, "ticket_id = ?",
+            arrayOf(ticketId.toString()), null, null, "id ASC",
         ).use { cursor ->
-            val result = mutableListOf<CartItem>()
-            while (cursor.moveToNext()) result += cursor.toCartItem()
-            return LineTaxSnapshotStore.apply(readableDatabase, LineTaxSnapshotStore.SCOPE_HELD, ticketId, result)
+            buildList { while (cursor.moveToNext()) add(cursor.toCartItem()) }
         }
+        if (!CartLineIdentityV137.needsRepair(rows)) {
+            return LineTaxSnapshotStore.apply(db, LineTaxSnapshotStore.SCOPE_HELD, ticketId, rows)
+        }
+        return repairLegacyHeldLineIds(ticketId)
+    }
+
+    private fun repairLegacyHeldLineIds(ticketId: Long): List<CartItem> {
+        val db = writableDatabase
+        val repair: () -> List<CartItem> = {
+            // Re-read under the current SQLite transaction; ticket may have
+            // been merged, deleted or restored since the fast-path read.
+            val rows = db.query(
+                "held_ticket_items", CART_COLUMNS + "id", "ticket_id = ?",
+                arrayOf(ticketId.toString()), null, null, "id ASC",
+            ).use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) {
+                        add(cursor.getLong(CART_COLUMNS.size) to cursor.toCartItem())
+                    }
+                }
+            }
+            val fixed = CartLineIdentityV137.normalize(rows.map { it.second })
+            rows.forEachIndexed { index, (dbId, old) ->
+                val lineId = fixed[index].lineId
+                if (old.lineId != lineId) {
+                    check(db.update(
+                        "held_ticket_items",
+                        ContentValues().apply { put("line_id", lineId) },
+                        "id = ? AND ticket_id = ?",
+                        arrayOf(dbId.toString(), ticketId.toString()),
+                    ) == 1) { "held line identity migration did not persist" }
+                }
+            }
+            LineTaxSnapshotStore.apply(db, LineTaxSnapshotStore.SCOPE_HELD, ticketId, fixed)
+        }
+        // A held ticket may be loaded inside another atomic swap/merge/split
+        // operation: reuse its active transaction rather than committing early.
+        return if (db.inTransaction()) repair() else db.runInTransactionWithResult { repair() }
     }
 
     fun deleteHeldTicket(ticketId: Long) {
