@@ -345,6 +345,9 @@ private class SharedCustomerDisplaySession(
                 // Explicit opt-in: older CD builds omit the header and continue
                 // receiving the numeric schemaVersion + legacy SALES/ACCOUNTING modes.
                 append("X-Tsuguregi-CD-Wire: 1.0\r\n")
+                if (settings.displayDeviceId.isNotBlank()) {
+                    append("X-Tsuguregi-CD-Device-Id: ${settings.displayDeviceId}\r\n")
+                }
                 append("\r\n")
             }
             output.write(request.toByteArray(StandardCharsets.ISO_8859_1))

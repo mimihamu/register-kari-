@@ -56,6 +56,9 @@ data class CustomerDisplaySnapshot(
     val sessionId: String? = null,
     val messageType: CustomerDisplayMessageType = CustomerDisplayMessageType.SNAPSHOT,
     val canonicalModeWire: String? = null,
+    val storeId: String? = null,
+    val registerTerminalId: String? = null,
+    val displayDeviceId: String? = null,
 ) {
     val canonicalMode: String get() = canonicalModeWire ?: when (mode) {
         CustomerDisplayMode.STANDBY -> "STANDBY"
@@ -77,6 +80,9 @@ data class CustomerDisplaySnapshot(
         put("canonicalMode", canonicalMode)
         put("transactionId", transactionId ?: JSONObject.NULL)
         put("storeName", storeName)
+        put("storeId", storeId ?: JSONObject.NULL)
+        put("registerTerminalId", registerTerminalId ?: JSONObject.NULL)
+        put("displayDeviceId", displayDeviceId ?: JSONObject.NULL)
         put("numberOfProducts", numberOfProducts)
         put("itemCount", numberOfProducts)
         put("latestLineId", orderItems.lastOrNull { it.latest }?.lineId ?: JSONObject.NULL)
@@ -258,6 +264,9 @@ data class CustomerDisplaySnapshot(
                     else -> CustomerDisplayMode.valueOf(root.getString("mode"))
                 },
                 transactionId = root.optNullableString("transactionId"),
+                storeId = root.optNullableString("storeId"),
+                registerTerminalId = root.optNullableString("registerTerminalId"),
+                displayDeviceId = root.optNullableString("displayDeviceId"),
                 storeName = root.optString("storeName", "つぐレジ"),
                 numberOfProducts = if (root.has("itemCount")) root.getInt("itemCount") else root.optInt("numberOfProducts"),
                 subtotalAmount = money("subtotalAmount"),

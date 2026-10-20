@@ -3,12 +3,14 @@ package jp.co.tenposinfo.register.cd
 import android.content.Context
 import java.net.Inet6Address
 import java.net.InetAddress
+import java.util.UUID
 
 data class CustomerDisplayConnectionSettings(
     val host: String,
     val port: Int,
     val token: String,
     val autoConnect: Boolean,
+    val displayDeviceId: String = "",
 ) {
     init {
         require(port in 1024..65535) { "port must be between 1024 and 65535" }
@@ -67,6 +69,7 @@ class CustomerDisplayConnectionSettingsStore(context: Context) {
         port = preferences.getInt(KEY_PORT, DEFAULT_PORT).coerceIn(1024, 65535),
         token = preferences.getString(KEY_TOKEN, "").orEmpty().trim(),
         autoConnect = preferences.getBoolean(KEY_AUTO_CONNECT, true),
+        displayDeviceId = persistentId(),
     )
 
     fun save(settings: CustomerDisplayConnectionSettings) {
@@ -75,7 +78,17 @@ class CustomerDisplayConnectionSettingsStore(context: Context) {
             .putInt(KEY_PORT, settings.port)
             .putString(KEY_TOKEN, settings.token.trim())
             .putBoolean(KEY_AUTO_CONNECT, settings.autoConnect)
+            .putString(KEY_DISPLAY_DEVICE_ID, settings.displayDeviceId.ifBlank { persistentId() })
             .apply()
+    }
+
+    private fun persistentId(): String {
+        val current = preferences.getString(KEY_DISPLAY_DEVICE_ID, null)
+            ?.takeIf { it.isNotBlank() }
+        if (current != null) return current
+        return UUID.randomUUID().toString().also {
+            preferences.edit().putString(KEY_DISPLAY_DEVICE_ID, it).apply()
+        }
     }
 
     companion object {
@@ -85,5 +98,6 @@ class CustomerDisplayConnectionSettingsStore(context: Context) {
         private const val KEY_PORT = "port"
         private const val KEY_TOKEN = "token"
         private const val KEY_AUTO_CONNECT = "auto_connect"
+        private const val KEY_DISPLAY_DEVICE_ID = "display_device_id"
     }
 }

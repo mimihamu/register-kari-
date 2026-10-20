@@ -134,8 +134,11 @@ class MainActivity : ComponentActivity() {
                         CustomerDisplayConnectionSettingsScreen(
                             initial = settings,
                             onSave = { updated ->
-                                settingsStore.save(updated)
-                                settings = updated
+                                val normalized = updated.copy(
+                                    displayDeviceId = settingsStore.load().displayDeviceId,
+                                )
+                                settingsStore.save(normalized)
+                                settings = normalized
                                 uiState = CustomerDisplayUiState(statusMessage = "接続準備中")
                                 settingsOpen = false
                             },
