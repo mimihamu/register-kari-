@@ -319,7 +319,7 @@ private class SharedCustomerDisplaySession(
     }
 
     private fun connectAndRead(onHandshakeComplete: () -> Unit) {
-        require(settings.isConfigured) { "接続先IPとトークンを設定してください" }
+        require(settings.isConfigured) { "同一LANのプライベートIPとトークンを設定してください" }
         val client = Socket()
         socket = client
         try {

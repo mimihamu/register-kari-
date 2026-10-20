@@ -43,7 +43,8 @@ internal object CustomerDisplayPairingParser {
         port: Int,
         attributes: Map<String, ByteArray>,
     ): DiscoveredRegister? {
-        if (serviceName.isBlank() || host.isBlank() || port !in 1024..65535) return null
+        if (serviceName.isBlank() || !CustomerDisplayPrivateLanHostPolicy.isPermitted(host) ||
+            port !in 1024..65535) return null
         val schema = attributes.stringValue(ATTRIBUTE_SCHEMA)?.toIntOrNull() ?: return null
         if (schema != CUSTOMER_DISPLAY_SCHEMA_VERSION) return null
         val path = attributes.stringValue(ATTRIBUTE_PATH) ?: return null
