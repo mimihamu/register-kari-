@@ -174,14 +174,14 @@ internal class CustomerDisplayWebSocketServer(
         if (!running.getAndSet(false)) return
         runCatching { serverSocket?.close() }
         serverSocket = null
-        clients.toList().forEach { it.close() }
+        clients.forEach { it.close() }
         clients.clear()
         notifyClientCount()
         executor.shutdownNow()
     }
 
     fun broadcast(payload: String) {
-        clients.toList().forEach { connection ->
+        clients.forEach { connection ->
             if (!connection.sendText(payload)) {
                 if (clients.remove(connection)) notifyClientCount()
                 connection.close()
