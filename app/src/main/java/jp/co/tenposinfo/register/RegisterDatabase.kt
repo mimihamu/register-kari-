@@ -79,29 +79,45 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         }
     }
 
-    fun loadCart(): List<CartItem> {
-        readableDatabase.query(
+    fun loadCart(): List<CartItem> = writableDatabase.runInTransactionWithResult {
+        // Legacy carts can have blank/duplicate line_id. Upgrade just the identity
+        // columns in the same SQLite transaction as the read: do not rewrite money,
+        // tax snapshots, discounts or the ordering of unfinished sales.
+        val rows = query(
             "cart_items",
-            CART_COLUMNS,
-            null,
-            null,
-            null,
-            null,
-            "line_no ASC",
+            CART_COLUMNS + "line_no",
+            null, null, null, null, "line_no ASC",
         ).use { cursor ->
-            val result = mutableListOf<CartItem>()
-            while (cursor.moveToNext()) result += cursor.toCartItem()
-            return LineTaxSnapshotStore.apply(readableDatabase, LineTaxSnapshotStore.SCOPE_CART, 0L, result)
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(cursor.getInt(CART_COLUMNS.size) to cursor.toCartItem())
+                }
+            }
         }
+        val normalized = CartLineIdentityV137.normalize(rows.map { it.second })
+        rows.forEachIndexed { index, (lineNo, old) ->
+            val id = normalized[index].lineId
+            if (old.lineId != id) {
+                val count = update(
+                    "cart_items",
+                    ContentValues().apply { put("line_id", id) },
+                    "line_no = ?",
+                    arrayOf(lineNo.toString()),
+                )
+                check(count == 1) { "cart line identity migration did not persist" }
+            }
+        }
+        LineTaxSnapshotStore.apply(this, LineTaxSnapshotStore.SCOPE_CART, 0L, normalized)
     }
 
     fun saveCart(items: List<CartItem>) {
         writableDatabase.runInTransaction {
+            val normalized = CartLineIdentityV137.normalize(items)
             delete("cart_items", null, null)
-            items.forEachIndexed { index, item ->
+            normalized.forEachIndexed { index, item ->
                 insertOrThrow("cart_items", null, item.toContentValues().apply { put("line_no", index + 1) })
             }
-            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_CART, 0L, items)
+            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_CART, 0L, normalized)
         }
     }
 
@@ -171,21 +187,25 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 this,
                 LineTaxSnapshotStore.SCOPE_CART,
                 0L,
-                rawItems,
+                CartLineIdentityV137.normalize(rawItems),
             )
             val result = buildResult(currentItems)
+            val normalizedResult = CartLineIdentityV137.normalize(result.items)
 
             delete("cart_items", null, null)
-            result.items.forEachIndexed { index, item ->
+            normalizedResult.forEachIndexed { index, item ->
                 insertOrThrow(
                     "cart_items",
                     null,
                     item.toContentValues().apply { put("line_no", index + 1) },
                 )
             }
-            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_CART, 0L, result.items)
+            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_CART, 0L, normalizedResult)
             val historyId = CartCorrectionSchemaV135.insert(this, result.record)
-            result.copy(record = result.record.copy(id = historyId))
+            result.copy(
+                items = normalizedResult,
+                record = result.record.copy(id = historyId),
+            )
         }
     }
 
@@ -201,14 +221,15 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     put("created_at", System.currentTimeMillis())
                 },
             )
-            items.forEach { item ->
+            val normalized = CartLineIdentityV137.normalize(items)
+            normalized.forEach { item ->
                 insertOrThrow(
                     "held_ticket_items",
                     null,
                     item.toContentValues().apply { put("ticket_id", ticketId) },
                 )
             }
-            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_HELD, ticketId, items)
+            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_HELD, ticketId, normalized)
             ticketId
         }
     }
