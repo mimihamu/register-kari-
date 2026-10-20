@@ -134,6 +134,7 @@ object CustomerDisplaySnapshotFactory {
         storeName: String,
         latestProductId: String? = null,
         presentation: CustomerDisplayPresentation = CustomerDisplayPresentation(),
+        latestLineId: String? = null,
     ): CustomerDisplaySnapshot {
         if (items.isEmpty()) return standby(storeName, presentation)
         val total = TaxEngine.calculate(items).grossAmount
@@ -143,7 +144,7 @@ object CustomerDisplaySnapshotFactory {
             numberOfProducts = items.sumOf { it.quantity },
             subtotalAmount = total,
             totalAmount = total,
-            orderItems = orderItems(items, latestProductId),
+            orderItems = orderItems(items, latestProductId, latestLineId),
             presentation = presentation,
         )
     }
@@ -225,8 +226,17 @@ object CustomerDisplaySnapshotFactory {
     private fun orderItems(
         items: List<CartItem>,
         latestProductId: String? = null,
+        latestLineId: String? = null,
     ): List<CustomerDisplayOrderItem> {
-        val latestIndex = items.indexOfLast { latestProductId != null && it.product.id == latestProductId }
+        // Explicit row identity wins over product identity: two lines may share
+        // the same productId but have different price, quantity, or tax conditions.
+        val latestIndex = if (latestLineId != null) {
+            items.indices.lastOrNull { index ->
+                items[index].lineId.ifBlank { "legacy-line-${index + 1}" } == latestLineId
+            } ?: -1
+        } else {
+            items.indexOfLast { latestProductId != null && it.product.id == latestProductId }
+        }
         return items.mapIndexed { index, item ->
         CustomerDisplayOrderItem(
             productId = item.product.id,
@@ -240,6 +250,55 @@ object CustomerDisplaySnapshotFactory {
             latest = index == latestIndex,
             taxSymbol = item.product.taxSymbol,
         )
+        }
+    }
+}
+
+/**
+ * Customer Display cart delta policy. Keeping it free of Android and database
+ * dependencies makes duplicate-product and reorder behavior directly testable.
+ * Length-prefixing each field avoids collisions from names/notes containing ':'
+ * or '|' characters.
+ */
+internal object CustomerDisplayCartChangePolicy {
+    fun fingerprint(items: List<CartItem>): String = buildString {
+        append(items.size).append('#')
+        items.forEach { item ->
+            val row = rowFingerprint(item)
+            append(row.length).append(':').append(row)
+        }
+    }
+
+    fun latestChangedLineId(before: List<CartItem>, after: List<CartItem>): String? {
+        val beforeById = before.filter { it.lineId.isNotBlank() }.associateBy { it.lineId }
+        val lastChangedIndex = after.indices.lastOrNull { index ->
+            val current = after[index]
+            val old = if (current.lineId.isNotBlank()) {
+                beforeById[current.lineId]
+            } else {
+                // Old records can lack lineId; avoid treating a different
+                // product at the same position as the same line.
+                before.getOrNull(index)?.takeIf {
+                    it.lineId.isBlank() && it.product.id == current.product.id
+                }
+            }
+            old == null || rowFingerprint(old) != rowFingerprint(current)
+        } ?: return null
+        return after[lastChangedIndex].lineId.ifBlank { "legacy-line-${lastChangedIndex + 1}" }
+    }
+
+    private fun rowFingerprint(item: CartItem): String = buildString {
+        val fields = listOf(
+            item.lineId, item.product.id, item.product.name,
+            item.quantity.toString(), item.quantityHundredths.toString(),
+            item.unitPrice.toString(), item.discountAmount.toString(), item.note,
+            item.product.taxKey, item.product.taxRatePercent.toString(),
+            item.product.taxIncluded.toString(), item.product.taxable.toString(),
+            item.product.reducedTax.toString(), item.product.taxSymbol,
+            item.product.quantityMode.name,
+        )
+        fields.forEach { value ->
+            append(value.length).append(':').append(value)
         }
     }
 }

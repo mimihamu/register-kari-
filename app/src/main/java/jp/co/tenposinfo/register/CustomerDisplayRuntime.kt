@@ -162,7 +162,7 @@ internal class CustomerDisplayPoller(
     private var completeUntil: Long = 0L
     private var changeUntil: Long = 0L
     private var changeSnapshot: CustomerDisplaySnapshot? = null
-    private var latestProductId: String? = null
+    private var latestLineId: String? = null
     private var initialized = false
 
     fun start() {
@@ -194,26 +194,32 @@ internal class CustomerDisplayPoller(
         if (!initialized) {
             initialized = true
             previousCart = cart
-            lastCartFingerprint = fingerprint(cart)
+            lastCartFingerprint = CustomerDisplayCartChangePolicy.fingerprint(cart)
             lastSeenSaleId = latestSale?.id ?: 0L
             if (cart.isEmpty()) {
                 publish(CustomerDisplaySnapshotFactory.standby(config.storeName, config.presentation))
             } else {
-                latestProductId = cart.lastOrNull()?.product?.id
-                publish(CustomerDisplaySnapshotFactory.sales(cart, config.storeName, latestProductId, config.presentation))
+                latestLineId = cart.lastOrNull()?.lineId?.takeIf { it.isNotBlank() }
+                    ?: "legacy-line-${cart.size}"
+                publish(CustomerDisplaySnapshotFactory.sales(
+                    items = cart, storeName = config.storeName,
+                    presentation = config.presentation, latestLineId = latestLineId,
+                ))
             }
             return
         }
 
-        val cartFingerprint = fingerprint(cart)
+        val cartFingerprint = CustomerDisplayCartChangePolicy.fingerprint(cart)
         if (cart.isNotEmpty()) {
             completeUntil = 0L
             changeUntil = 0L
             changeSnapshot = null
-            val detectedLatest = detectLatestProduct(previousCart, cart)
-            if (detectedLatest != null) latestProductId = detectedLatest
             if (cartFingerprint != lastCartFingerprint) {
-                publish(CustomerDisplaySnapshotFactory.sales(cart, config.storeName, latestProductId, config.presentation))
+                latestLineId = CustomerDisplayCartChangePolicy.latestChangedLineId(previousCart, cart)
+                publish(CustomerDisplaySnapshotFactory.sales(
+                    items = cart, storeName = config.storeName,
+                    presentation = config.presentation, latestLineId = latestLineId,
+                ))
             }
         } else {
             val saleId = latestSale?.id ?: 0L
@@ -246,39 +252,16 @@ internal class CustomerDisplayPoller(
             } else if (completeUntil > 0L && now >= completeUntil) {
                 publish(CustomerDisplaySnapshotFactory.standby(config.storeName, config.presentation))
                 completeUntil = 0L
-                latestProductId = null
+                latestLineId = null
             } else if (previousCart.isNotEmpty() && saleId <= lastSeenSaleId && completeUntil == 0L) {
                 publish(CustomerDisplaySnapshotFactory.standby(config.storeName, config.presentation))
-                latestProductId = null
+                latestLineId = null
             }
             lastSeenSaleId = maxOf(lastSeenSaleId, saleId)
         }
 
         previousCart = cart
         lastCartFingerprint = cartFingerprint
-    }
-
-    private fun detectLatestProduct(before: List<CartItem>, after: List<CartItem>): String? {
-        val beforeById = before.associateBy { it.product.id }
-        return after.lastOrNull { current ->
-            val old = beforeById[current.product.id]
-            old == null || old.quantityHundredths != current.quantityHundredths || old.unitPrice != current.unitPrice || old.discountAmount != current.discountAmount
-        }?.product?.id
-    }
-
-    private fun fingerprint(items: List<CartItem>): String = items.joinToString("|") { item ->
-        listOf(
-            item.product.id,
-            item.product.name,
-            item.quantity,
-            item.quantityHundredths,
-            item.unitPrice,
-            item.discountAmount,
-            item.note,
-            item.product.taxKey,
-            item.product.taxRatePercent,
-            item.product.taxIncluded,
-        ).joinToString(":")
     }
 
     companion object {
