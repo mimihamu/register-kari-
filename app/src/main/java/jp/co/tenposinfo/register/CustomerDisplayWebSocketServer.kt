@@ -115,11 +115,16 @@ internal object CustomerDisplayWireNegotiation {
 
     fun wantsCanonical(header: String?): Boolean = header == CANONICAL_VERSION
 
-    fun payload(legacyJson: String, canonical: Boolean): String {
+    fun payload(
+        legacyJson: String,
+        canonical: Boolean,
+        displayDeviceId: String? = null,
+    ): String {
         if (!canonical) return legacyJson
         val objectValue = JSONObject(legacyJson)
         objectValue.put("schemaVersion", CANONICAL_VERSION)
         objectValue.put("mode", objectValue.getString("canonicalMode"))
+        if (displayDeviceId != null) objectValue.put("displayDeviceId", displayDeviceId)
         return objectValue.toString()
     }
 }
@@ -218,6 +223,8 @@ internal class CustomerDisplayWebSocketServer(
                 canonicalWire = CustomerDisplayWireNegotiation.wantsCanonical(
                     request.headers[CustomerDisplayWireNegotiation.HEADER],
                 ),
+                displayDeviceId = request.headers["x-tsuguregi-cd-device-id"]
+                    ?.takeIf { it.matches(Regex("[a-fA-F0-9-]{36}")) },
             )
             clients += connection
             notifyClientCount()
@@ -355,6 +362,7 @@ internal class CustomerDisplayWebSocketServer(
         executor: Executor,
         private val latestPayload: () -> String,
         private val canonicalWire: Boolean,
+        private val displayDeviceId: String?,
     ) {
         private val writeLock = Any()
         private val snapshotRequested = AtomicBoolean(false)
@@ -366,7 +374,7 @@ internal class CustomerDisplayWebSocketServer(
                     // Keep a requested snapshot authoritative even when the
                     // latest-only dispatcher coalesces it with further updates.
                     val outgoing = if (snapshotRequested.getAndSet(false)) latestPayload() else payload
-                    val negotiated = CustomerDisplayWireNegotiation.payload(outgoing, canonicalWire)
+                    val negotiated = CustomerDisplayWireNegotiation.payload(outgoing, canonicalWire, displayDeviceId)
                     writeFrame(socket.getOutputStream(), 0x1, negotiated.toByteArray(StandardCharsets.UTF_8))
                     markTransportActivity()
                 }
