@@ -287,9 +287,17 @@ private fun CustomerDisplaySettingsScreen(
 
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedButton(onClick = {
+                        // Revocation must take effect immediately, not only after
+                        // the user later presses Save. The old WebSocket clients
+                        // are closed by applySettings() when the token changes.
                         advertiser.stop(null)
-                        token = store.regenerateToken()
-                        message = "接続トークンを再発行しました。表示端末側も再設定してください。"
+                        val newToken = store.regenerateToken()
+                        token = newToken
+                        val runningConfig = store.load().copy(token = newToken)
+                        store.save(runningConfig)
+                        CustomerDisplayRuntime.applySettings(context, runningConfig)
+                        runtimeStatus = CustomerDisplayRuntime.status()
+                        message = "旧端末の接続を切断し、トークンを再発行しました。表示端末側も再設定してください。"
                     }) { Text("トークン再発行") }
                     if (previewUrl != null) {
                         OutlinedButton(onClick = {
