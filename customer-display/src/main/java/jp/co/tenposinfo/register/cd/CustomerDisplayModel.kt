@@ -138,6 +138,17 @@ data class CustomerDisplaySnapshot(
             // Legacy numeric version 1 may contain partial canonical aliases from older senders.
             // Require full v2.5 money fields only when the sender opts into string "1.0".
             val strictCanonical = rawSchema == "1.0"
+            if (strictCanonical) {
+                require(root.has("items") && !root.isNull("items")) {
+                    "E-CD-005: canonical items is required"
+                }
+                require(root.has("itemCount") && !root.isNull("itemCount")) {
+                    "E-CD-005: canonical itemCount is required"
+                }
+                require(root.strictLong("itemCount") in 0L..Int.MAX_VALUE.toLong()) {
+                    "E-CD-005: itemCount out of range"
+                }
+            }
             val latestLineId = root.optNullableString("latestLineId")
             // Canonical payloads must never show a guessed zero for absent money values.
             fun money(name: String): Long {
@@ -145,7 +156,9 @@ data class CustomerDisplaySnapshot(
                     require(!strictCanonical) { "E-CD-005: $name is required" }
                     return 0L // legacy wire only
                 }
-                return root.strictLong(name)
+                return root.strictLong(name).also {
+                    require(it >= 0L) { "E-CD-005: $name must be nonnegative" }
+                }
             }
             val canonicalModeWire = root.optNullableString("canonicalMode")
                 ?: root.getString("mode").takeIf { it in setOf("CART", "PAYMENT", "CASH_RECEIVED", "CHANGE") }
@@ -155,9 +168,14 @@ data class CustomerDisplaySnapshot(
             )) { "E-CD-005: unsupported canonicalMode" }
             val payment = root.optJSONObject("payment")
             if (payment != null) {
-                payment.strictLong("tenderedAmount")
-                payment.strictLong("appliedAmount")
+                require(payment.strictLong("tenderedAmount") >= 0L) {
+                    "E-CD-005: tenderedAmount must be nonnegative"
+                }
+                require(payment.strictLong("appliedAmount") >= 0L) {
+                    "E-CD-005: appliedAmount must be nonnegative"
+                }
             }
+            val seenLineIds = HashSet<String>()
             val orderItems = buildList {
                 if (items != null) {
                     for (index in 0 until items.length()) {
@@ -179,6 +197,24 @@ data class CustomerDisplaySnapshot(
                         ) {
                             require(item.strictLong("quantityHundredths") == scaled) {
                                 "quantityScaled and quantityHundredths disagree"
+                            }
+                        }
+                        if (strictCanonical) {
+                            val lineId = item.optString("lineId")
+                            require(lineId.isNotBlank() && seenLineIds.add(lineId)) {
+                                "E-CD-005: lineId is required and must be unique"
+                            }
+                            require(item.optString("name").isNotBlank()) {
+                                "E-CD-005: item name is required"
+                            }
+                            require(scaled > 0L) {
+                                "E-CD-005: quantityScaled must be positive"
+                            }
+                            require(item.strictLong("unitPrice") >= 0L) {
+                                "E-CD-005: unitPrice must be nonnegative"
+                            }
+                            require(item.strictLong("lineAmount") >= 0L) {
+                                "E-CD-005: lineAmount must be nonnegative"
                             }
                         }
                         add(
