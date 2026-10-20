@@ -48,6 +48,8 @@ object CustomerDisplayRuntime {
                 serverInstanceId = serverInstanceId,
                 sentAtMillis = System.currentTimeMillis(),
                 sessionId = displaySessionId,
+                storeId = config.storeId,
+                registerTerminalId = config.registerTerminalId,
                 messageType = CustomerDisplayMessageType.SNAPSHOT,
             )
             lastError = null
@@ -89,6 +91,8 @@ object CustomerDisplayRuntime {
                 serverInstanceId = serverInstanceId,
                 sentAtMillis = System.currentTimeMillis(),
                 sessionId = displaySessionId,
+                storeId = currentConfig?.storeId ?: snapshot.storeId,
+                registerTerminalId = currentConfig?.registerTerminalId ?: snapshot.registerTerminalId,
                 messageType = if (newSession) CustomerDisplayMessageType.SNAPSHOT
                     else CustomerDisplayMessageType.STATE_UPDATE,
             )

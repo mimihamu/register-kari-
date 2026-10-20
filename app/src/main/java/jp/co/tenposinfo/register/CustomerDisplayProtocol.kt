@@ -54,6 +54,8 @@ data class CustomerDisplaySnapshot(
     val presentation: CustomerDisplayPresentation = CustomerDisplayPresentation(),
     val sessionId: String? = null,
     val messageType: CustomerDisplayMessageType = CustomerDisplayMessageType.SNAPSHOT,
+    val storeId: String? = null,
+    val registerTerminalId: String? = null,
 ) {
     fun toJson(): String = JSONObject().apply {
         put("schemaVersion", schemaVersion)
@@ -74,6 +76,8 @@ data class CustomerDisplaySnapshot(
         })
         put("transactionId", transactionId ?: JSONObject.NULL)
         put("storeName", storeName)
+        put("storeId", storeId ?: JSONObject.NULL)
+        put("registerTerminalId", registerTerminalId ?: JSONObject.NULL)
         put("numberOfProducts", numberOfProducts)
         put("itemCount", numberOfProducts)
         put("latestLineId", orderItems.lastOrNull { it.latest }?.lineId ?: JSONObject.NULL)
