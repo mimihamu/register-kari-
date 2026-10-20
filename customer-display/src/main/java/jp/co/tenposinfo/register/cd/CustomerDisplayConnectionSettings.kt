@@ -16,7 +16,9 @@ data class CustomerDisplayConnectionSettings(
 
     val isConfigured: Boolean get() =
         token.length >= 16 && CustomerDisplayPrivateLanHostPolicy.isPermitted(host)
-    val displayAddress: String get() = "$host:$port$CUSTOMER_DISPLAY_PATH"
+    val socketHost: String get() = host.trim().removePrefix("[").removeSuffix("]")
+    val httpHost: String get() = if (socketHost.contains(':')) "[$socketHost]:$port" else "$socketHost:$port"
+    val displayAddress: String get() = "$httpHost$CUSTOMER_DISPLAY_PATH"
 }
 
 /**

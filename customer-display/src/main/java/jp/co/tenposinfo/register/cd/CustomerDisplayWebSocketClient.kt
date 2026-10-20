@@ -327,7 +327,7 @@ private class SharedCustomerDisplaySession(
             client.keepAlive = true
             client.soTimeout = CustomerDisplayConnectionPolicy.CONNECT_TIMEOUT_MS
             client.connect(
-                InetSocketAddress(settings.host, settings.port),
+                InetSocketAddress(settings.socketHost, settings.port),
                 CustomerDisplayConnectionPolicy.CONNECT_TIMEOUT_MS,
             )
             val input = client.getInputStream()
@@ -337,7 +337,7 @@ private class SharedCustomerDisplaySession(
             val token = URLEncoder.encode(settings.token, StandardCharsets.UTF_8.name())
             val request = buildString {
                 append("GET $CUSTOMER_DISPLAY_PATH?token=$token HTTP/1.1\r\n")
-                append("Host: ${settings.host}:${settings.port}\r\n")
+                append("Host: ${settings.httpHost}\r\n")
                 append("Upgrade: websocket\r\n")
                 append("Connection: Upgrade\r\n")
                 append("Sec-WebSocket-Key: $key\r\n")
