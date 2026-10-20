@@ -37,6 +37,7 @@ class V137NegotiatedWebSocketIntegrationTest {
                 val oldFirst = JSONObject(readTextFrame(old.getInputStream()))
                 assertEquals(1, oldFirst.getInt("schemaVersion"))
                 assertEquals("STANDBY", oldFirst.getString("mode"))
+                assertTrue(!oldFirst.has("displayDeviceId"))
 
                 connectWithRetry(port).use { modern ->
                     modern.soTimeout = 5_000
@@ -44,6 +45,8 @@ class V137NegotiatedWebSocketIntegrationTest {
                     val formalFirst = JSONObject(readTextFrame(modern.getInputStream()))
                     assertEquals("1.0", formalFirst.getString("schemaVersion"))
                     assertEquals("STANDBY", formalFirst.getString("mode"))
+                    assertEquals("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                        formalFirst.getString("displayDeviceId"))
 
                     live.set(
                         CustomerDisplaySnapshotFactory.standby("更新済").copy(
@@ -68,6 +71,8 @@ class V137NegotiatedWebSocketIntegrationTest {
                     assertEquals(72L, formalUpdate.getLong("sequence"))
                     assertEquals("SNAPSHOT", formalUpdate.getString("messageType"))
                     assertEquals("session-70", formalUpdate.getString("sessionId"))
+                    assertEquals("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                        formalUpdate.getString("displayDeviceId"))
                 }
             }
         } finally {
@@ -95,7 +100,10 @@ class V137NegotiatedWebSocketIntegrationTest {
             append("Upgrade: websocket\r\nConnection: Upgrade\r\n")
             append("Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n")
             append("Sec-WebSocket-Version: 13\r\n")
-            if (canonical) append("X-Tsuguregi-CD-Wire: 1.0\r\n")
+            if (canonical) {
+                append("X-Tsuguregi-CD-Wire: 1.0\r\n")
+                append("X-Tsuguregi-CD-Device-Id: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\r\n")
+            }
             append("\r\n")
         }
         socket.getOutputStream().write(request.toByteArray(StandardCharsets.ISO_8859_1))

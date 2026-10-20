@@ -158,6 +158,8 @@ private fun CustomerDisplaySettingsScreen(
                 port = port,
                 path = CUSTOMER_DISPLAY_PATH,
                 token = token,
+                storeId = initial.storeId,
+                registerTerminalId = initial.registerTerminalId,
                 storeName = storeName.trim().ifEmpty { CustomerDisplaySettingsStore.DEFAULT_STORE_NAME },
                 completeSeconds = seconds,
                 changeSeconds = changeSeconds,
