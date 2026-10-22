@@ -294,7 +294,7 @@ internal class CustomerDisplayWebSocketServer(
                 append("HTTP/1.1 101 Switching Protocols\r\n")
                 append("Upgrade: websocket\r\n")
                 append("Connection: Upgrade\r\n")
-                append("Sec-WebSocket-Accept: ${CustomerDisplayWebSocketHandshake.accept(key)}\r\n")
+                append("Sec-WebSocket-Accept: ${CustomerDisplayWebSocketHandshake.accept(requireNotNull(key))}\r\n")
                 append("\r\n")
             }
             output.write(response.toByteArray(StandardCharsets.ISO_8859_1))
