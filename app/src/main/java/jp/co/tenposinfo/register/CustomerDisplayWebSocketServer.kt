@@ -24,6 +24,42 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONObject
 
+/**
+ * Strict RFC6455 handshake inspection; rejecting malformed requests before
+ * sending business snapshots protects the authenticated kiosk endpoint.
+ * The wire-format header is intentionally optional for legacy displays.
+ */
+internal object CustomerDisplayUpgradeRequestPolicy {
+    fun valid(
+        requestLine: String,
+        upgradeHeader: String?,
+        connectionHeader: String?,
+        version: String?,
+        key: String?,
+    ): Boolean {
+        val parts = requestLine.split(' ')
+        if (parts.size != 3 || parts[0] != "GET" || parts[2] != "HTTP/1.1") return false
+        if (upgradeHeader?.equals("websocket", ignoreCase = true) != true) return false
+        if (connectionHeader?.split(',')?.any { it.trim().equals("Upgrade", ignoreCase = true) } != true) return false
+        if (version != "13" || key.isNullOrBlank()) return false
+        val decoded = runCatching { Base64.getDecoder().decode(key) }.getOrNull() ?: return false
+        return decoded.size == 16 && Base64.getEncoder().encodeToString(decoded) == key
+    }
+
+    fun tokenMatches(received: String?, configured: String): Boolean =
+        received != null && MessageDigest.isEqual(
+            received.toByteArray(StandardCharsets.UTF_8),
+            configured.toByteArray(StandardCharsets.UTF_8),
+        )
+}
+
+internal object CustomerDisplayDeviceIdentityPolicy {
+    private val uuidPattern = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+    fun parseHeader(header: String?): String? =
+        header?.takeIf { uuidPattern.matches(it) }?.lowercase(Locale.ROOT)
+}
+
 internal object CustomerDisplayWebSocketHandshake {
     private const val MAGIC = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
@@ -233,9 +269,23 @@ internal class CustomerDisplayWebSocketServer(
             val path = target.substringBefore('?')
             val token = queryParameter(target, "token")
             val key = request.headers["sec-websocket-key"]
-            val upgrade = request.headers["upgrade"]?.lowercase(Locale.ROOT)
-            if (path != config.path || token != config.token || key.isNullOrBlank() || upgrade != "websocket") {
+            // Authentication and RFC6455 transport validation are independent.
+            // Never accept a malformed upgrade even with a correct bearer token.
+            if (path != config.path ||
+                !CustomerDisplayUpgradeRequestPolicy.tokenMatches(token, config.token)
+            ) {
                 writeHttpError(socket.getOutputStream(), 401, "Unauthorized")
+                return
+            }
+            if (!CustomerDisplayUpgradeRequestPolicy.valid(
+                    requestLine = request.lines.firstOrNull().orEmpty(),
+                    upgradeHeader = request.headers["upgrade"],
+                    connectionHeader = request.headers["connection"],
+                    version = request.headers["sec-websocket-version"],
+                    key = key,
+                )
+            ) {
+                writeHttpError(socket.getOutputStream(), 400, "Bad Request")
                 return
             }
 
@@ -256,8 +306,9 @@ internal class CustomerDisplayWebSocketServer(
                 canonicalWire = CustomerDisplayWireNegotiation.wantsCanonical(
                     request.headers[CustomerDisplayWireNegotiation.HEADER],
                 ),
-                displayDeviceId = request.headers["x-tsuguregi-cd-device-id"]
-                    ?.takeIf { it.matches(Regex("[a-fA-F0-9-]{36}")) },
+                displayDeviceId = CustomerDisplayDeviceIdentityPolicy.parseHeader(
+                    request.headers["x-tsuguregi-cd-device-id"],
+                ),
             )
             clients += connection
             notifyClientCount()
