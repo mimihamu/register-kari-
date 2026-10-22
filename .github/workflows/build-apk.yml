@@ -511,7 +511,7 @@ jobs:
           mkdir -p artifacts
           register_apk=artifacts/TSUGUREGI_v1.34.0_dev1_drive_page_commit_checkpoint_recovery_debug.apk
           plus_apk=artifacts/TSUGUREGI_PLUS_v0.33.0_dev1_drive_page_commit_checkpoint_recovery_debug.apk
-          cd_apk=artifacts/TSUGUREGI_CD_v0.15.1_dev1_legacy_line_token_safety_debug.apk
+          cd_apk=artifacts/TSUGUREGI_CD_v0.15.2_dev1_handshake_identity_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
           cp management-app/build/outputs/apk/debug/management-app-debug.apk "$plus_apk"
           cp customer-display/build/outputs/apk/debug/customer-display-debug.apk "$cd_apk"
@@ -526,8 +526,8 @@ jobs:
           REGISTER_VERSION_CODE=164
           MANAGEMENT_APP_VERSION_NAME=0.33.0-dev.1
           MANAGEMENT_APP_VERSION_CODE=33
-          CUSTOMER_DISPLAY_VERSION_NAME=0.15.1-dev.1
-          CUSTOMER_DISPLAY_VERSION_CODE=9
+          CUSTOMER_DISPLAY_VERSION_NAME=0.15.2-dev.1
+          CUSTOMER_DISPLAY_VERSION_CODE=10
           DRIVE_REMOTE_VERSION_FINGERPRINT=true
           DRIVE_PAGINATION_COMPLETE=true
           DRIVE_SYNC_SINGLE_FLIGHT=true
