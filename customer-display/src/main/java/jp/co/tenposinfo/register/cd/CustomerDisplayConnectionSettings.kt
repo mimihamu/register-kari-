@@ -24,6 +24,17 @@ data class CustomerDisplayConnectionSettings(
 }
 
 /**
+ * Identity is metadata and never grants admission; the shared pairing token
+ * still authenticates the socket. Only a canonical UUID can be placed in an
+ * HTTP header or persisted as this device's stable identity.
+ */
+internal object CustomerDisplayDeviceIdPolicy {
+    private val uuid = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+    fun isValid(id: String): Boolean = uuid.matches(id)
+}
+
+/**
  * v2.5 CDP-NET-001: the initial release may only connect inside the private
  * LAN. Numeric-only parsing intentionally avoids DNS rebinding and prevents
  * accidentally sending the bearer token to an external hostname.
@@ -87,13 +98,15 @@ class CustomerDisplayConnectionSettingsStore(context: Context) {
             .putInt(KEY_PORT, settings.port)
             .putString(KEY_TOKEN, settings.token.trim())
             .putBoolean(KEY_AUTO_CONNECT, settings.autoConnect)
-            .putString(KEY_DISPLAY_DEVICE_ID, settings.displayDeviceId.ifBlank { persistentId() })
+            // Connection target settings must not rotate a physical CD device
+            // identity, even if a malformed import supplied its own value.
+            .putString(KEY_DISPLAY_DEVICE_ID, persistentId())
             .apply()
     }
 
     private fun persistentId(): String {
         val current = preferences.getString(KEY_DISPLAY_DEVICE_ID, null)
-            ?.takeIf { it.isNotBlank() }
+            ?.takeIf { CustomerDisplayDeviceIdPolicy.isValid(it) }
         if (current != null) return current
         return UUID.randomUUID().toString().also {
             preferences.edit().putString(KEY_DISPLAY_DEVICE_ID, it).apply()
