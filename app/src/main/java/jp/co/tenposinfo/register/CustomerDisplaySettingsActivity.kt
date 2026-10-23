@@ -278,6 +278,11 @@ private fun CustomerDisplaySettingsScreen(
                         }
                     }
                 }
+                pairingState.message?.takeIf {
+                    it.contains("できません") || it.contains("エラー") || it.contains("失敗")
+                }?.let {
+                    Text(it, color = Color(0xFFC62828))
+                }
             }
         }
 

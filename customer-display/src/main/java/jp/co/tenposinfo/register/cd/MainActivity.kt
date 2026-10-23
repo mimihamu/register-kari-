@@ -756,7 +756,9 @@ private fun CustomerDisplayConnectionSettingsScreen(
                         discoveryState.status == CustomerDisplayDiscoveryStatus.FINISHED
                     ) {
                         Text(
-                            "見つかりません。同じWi-Fiとレジ側の受付状態を確認してください。",
+                            discoveryState.message?.takeIf {
+                                it.contains("できません") || it.contains("失敗")
+                            } ?: "見つかりません。同じWi-Fiとレジ側の受付状態を確認してください。",
                             color = Color(0xFFC62828),
                         )
                     }
