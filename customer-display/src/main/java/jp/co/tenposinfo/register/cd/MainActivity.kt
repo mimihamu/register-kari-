@@ -75,9 +75,10 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 val settingsStore = remember { CustomerDisplayConnectionSettingsStore(this) }
                 val snapshotStore = remember { CustomerDisplaySnapshotStore(this) }
+                val connectionEpoch = remember { CustomerDisplayConnectionEpochGuard() }
                 var settings by remember { mutableStateOf(settingsStore.load()) }
                 var uiState by remember {
-                    val restored = snapshotStore.load()
+                    val restored = snapshotStore.load(settings)
                     mutableStateOf(
                         if (restored == null) {
                             CustomerDisplayUiState()
@@ -94,18 +95,38 @@ class MainActivity : ComponentActivity() {
                 var settingsOpen by remember { mutableStateOf(!settings.isConfigured) }
 
                 DisposableEffect(settings) {
+                    val epoch = connectionEpoch.start()
+                    val boundSettings = settings
                     val client = if (settings.autoConnect && settings.isConfigured) {
                         CustomerDisplayWebSocketClient(
-                            settings = settings,
+                            settings = boundSettings,
                             onConnected = {
-                                runOnUiThread { uiState = CustomerDisplayStateReducer.connected(uiState) }
+                                runOnUiThread {
+                                    if (connectionEpoch.accepts(epoch)) {
+                                        uiState = CustomerDisplayStateReducer.connected(uiState)
+                                    }
+                                }
                             },
                             onSnapshot = { snapshot ->
-                                snapshotStore.save(snapshot)
-                                runOnUiThread { uiState = CustomerDisplayStateReducer.received(uiState, snapshot) }
+                                // Both the UI and the durable cache belong to this
+                                // endpoint generation. Never save on the worker
+                                // before the reducer has accepted the update.
+                                runOnUiThread {
+                                    if (connectionEpoch.accepts(epoch)) {
+                                        val next = CustomerDisplayStateReducer.received(uiState, snapshot)
+                                        if (next.connected && next.snapshot === snapshot) {
+                                            snapshotStore.save(snapshot, boundSettings)
+                                        }
+                                        uiState = next
+                                    }
+                                }
                             },
                             onDisconnected = { reason ->
-                                runOnUiThread { uiState = CustomerDisplayStateReducer.disconnected(uiState, reason) }
+                                runOnUiThread {
+                                    if (connectionEpoch.accepts(epoch)) {
+                                        uiState = CustomerDisplayStateReducer.disconnected(uiState, reason)
+                                    }
+                                }
                             },
                         ).also { it.start() }
                     } else {
@@ -115,7 +136,10 @@ class MainActivity : ComponentActivity() {
                         )
                         null
                     }
-                    onDispose { client?.stop() }
+                    onDispose {
+                        connectionEpoch.invalidate(epoch)
+                        client?.stop()
+                    }
                 }
 
                 val presentation = uiState.snapshot.presentation
@@ -138,8 +162,13 @@ class MainActivity : ComponentActivity() {
                                     displayDeviceId = settingsStore.load().displayDeviceId,
                                 )
                                 settingsStore.save(normalized)
-                                settings = normalized
-                                uiState = CustomerDisplayUiState(statusMessage = "接続準備中")
+                                if (normalized != settings) {
+                                    // Invalidate pending main-thread callbacks before
+                                    // Compose disposes the previous WebSocket effect.
+                                    connectionEpoch.invalidateCurrent()
+                                    uiState = CustomerDisplayUiState(statusMessage = "接続準備中")
+                                    settings = normalized
+                                }
                                 settingsOpen = false
                             },
                             onCancel = { if (settings.isConfigured) settingsOpen = false },
