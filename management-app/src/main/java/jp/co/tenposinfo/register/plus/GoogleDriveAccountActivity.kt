@@ -80,6 +80,33 @@ object GoogleDriveAccountPolicy {
         }
 }
 
+/**
+ * Authorization sheet cancellation and service/setup failures can both return
+ * RESULT_CANCELED. The UI must not claim the user explicitly pressed Cancel.
+ * No account identifiers, tokens or OAuth response contents are logged.
+ */
+object GoogleDriveAuthorizationOutcomePolicy {
+    fun unfinishedMessage(resultCode: Int): String =
+        "Google連携を完了できませんでした（認可画面の結果：$resultCode）。" +
+            "操作を取り消していない場合は、Google Cloudのアプリ登録とテストユーザー、Google Play開発者サービスを確認してください"
+
+    fun errorMessage(error: Throwable): String {
+        if (error is ApiException) {
+            val message = when (error.statusCode) {
+                CommonStatusCodes.DEVELOPER_ERROR ->
+                    "Google CloudのAndroid OAuth登録（パッケージ名・署名SHA-1）を確認してください"
+                CommonStatusCodes.NETWORK_ERROR ->
+                    "Googleとの通信に失敗しました。ネットワークを確認してください"
+                CommonStatusCodes.CANCELED ->
+                    "Google連携を完了できませんでした。取り消していない場合は初期設定を確認してください"
+                else -> "Google認証に失敗しました。初期設定とGoogle Play開発者サービスを確認してください"
+            }
+            return "$message（Google認証コード：${error.statusCode}）"
+        }
+        return "Google認証に失敗しました（${error.javaClass.simpleName}）。初期設定を確認してください"
+    }
+}
+
 class GoogleDriveAccountStore(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences(
         "tsuguregi_plus_google_drive_account",
@@ -165,16 +192,28 @@ class GoogleDriveAccountActivity : ComponentActivity() {
     private val authorizationLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult(),
     ) { result ->
-        if (result.resultCode != Activity.RESULT_OK || result.data == null) {
-            state.value = state.value.copy(
-                status = GoogleDriveAccountStatus.AUTHORIZATION_FAILED,
-                message = "Googleアカウント接続がキャンセルされました",
-            )
+        if (result.resultCode != Activity.RESULT_OK) {
+            val error = result.data?.let { intent ->
+                runCatching { authorizationClient.getAuthorizationResultFromIntent(intent) }.exceptionOrNull()
+            }
+            if (error is ApiException && error.statusCode != CommonStatusCodes.CANCELED) {
+                handleAuthorizationFailure(error)
+            } else {
+                val message = GoogleDriveAuthorizationOutcomePolicy.unfinishedMessage(result.resultCode)
+                state.value = state.value.copy(
+                    status = GoogleDriveAccountStatus.AUTHORIZATION_FAILED,
+                    message = message,
+                )
+            }
             return@registerForActivityResult
         }
-        runCatching {
-            authorizationClient.getAuthorizationResultFromIntent(result.data!!)
-        }.onSuccess(::consumeAuthorizationResult)
+        val intent = result.data
+        if (intent == null) {
+            handleAuthorizationFailure(IllegalStateException("認証結果がありません"))
+            return@registerForActivityResult
+        }
+        runCatching { authorizationClient.getAuthorizationResultFromIntent(intent) }
+            .onSuccess(::consumeAuthorizationResult)
             .onFailure(::handleAuthorizationFailure)
     }
 
@@ -358,11 +397,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
         val status = GoogleDriveAccountPolicy.statusForAuthorizationError(error)
         state.value = state.value.copy(
             status = status,
-            message = if (status == GoogleDriveAccountStatus.CLOUD_CONFIGURATION_REQUIRED) {
-                "Google CloudにapplicationIdと署名SHA-1を登録してください"
-            } else {
-                "Googleアカウント認可に失敗しました：${error.message ?: error.javaClass.simpleName}"
-            },
+            message = GoogleDriveAuthorizationOutcomePolicy.errorMessage(error),
         )
     }
 
