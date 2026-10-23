@@ -77,6 +77,8 @@ private fun CustomerDisplaySettingsScreen(
     var showCancelled by remember { mutableStateOf(initial.presentation.showCancelledItems) }
     var showTax by remember { mutableStateOf(initial.presentation.showTaxSymbol) }
     var standbyMessage by remember { mutableStateOf(initial.presentation.standbyMessage) }
+    var showDisplayDetails by remember { mutableStateOf(false) }
+    var showConnectionDetails by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var pairingState by remember { mutableStateOf(CustomerDisplayPairingState()) }
     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -184,143 +186,107 @@ private fun CustomerDisplaySettingsScreen(
             .background(Color(0xFFF4F7FA))
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column {
-                Text("つぐレジ CD 接続設定", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("顧客表示は任意機能です。OFFでも販売・会計は継続します。")
-            }
+            Text("顧客表示", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             OutlinedButton(onClick = onClose) { Text("閉じる") }
         }
 
         Card(
+            modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
                 containerColor = when {
                     !runtimeStatus.enabled -> Color(0xFFF1F3F5)
                     runtimeStatus.running && runtimeStatus.connectedClients > 0 -> Color(0xFFE8F5E9)
-                    runtimeStatus.running -> Color(0xFFFFF8E1)
+                    runtimeStatus.running -> Color(0xFFEAF3FA)
                     else -> Color(0xFFFFEBEE)
                 },
             ),
-            modifier = Modifier.fillMaxWidth(),
         ) {
-            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("現在の接続状態", fontWeight = FontWeight.Bold)
-                Text(
-                    when {
-                        !runtimeStatus.enabled -> "顧客表示：OFF"
-                        runtimeStatus.running -> "顧客表示サーバー：待受中（ポート ${runtimeStatus.port ?: "-"}）"
-                        else -> "顧客表示サーバー：停止"
-                    },
-                    color = Color(0xFF173F6B),
-                    fontWeight = FontWeight.Bold,
-                )
-                Text("接続中のつぐレジ CD：${runtimeStatus.connectedClients}台")
-                Text("現在の表示状態：${runtimeStatus.latestMode.displayLabel()}")
+            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        when {
+                            !runtimeStatus.enabled -> "停止中"
+                            runtimeStatus.running -> "待受中"
+                            else -> "起動エラー"
+                        },
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF173F6B),
+                    )
+                    Text("${runtimeStatus.connectedClients}台接続", fontWeight = FontWeight.Bold)
+                }
                 runtimeStatus.lastError?.let {
-                    Text("最終エラー：$it", color = Color(0xFFC62828))
+                    Text(it, color = Color(0xFFC62828))
                 }
             }
         }
 
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
             modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
         ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
+            Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Switch(checked = enabled, onCheckedChange = { enabled = it })
-                    Text(if (enabled) "顧客表示サーバー：ON" else "顧客表示サーバー：OFF", fontWeight = FontWeight.Bold)
+                    Text("顧客表示", fontWeight = FontWeight.Bold)
                 }
-
                 OutlinedTextField(
                     value = storeName,
                     onValueChange = { storeName = it.take(40) },
-                    label = { Text("表示する店舗名") },
+                    label = { Text("店舗名") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-
-                OutlinedTextField(
-                    value = portText,
-                    onValueChange = { portText = it.filter(Char::isDigit).take(5) },
-                    label = { Text("待受ポート（1024～65535）") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                OutlinedTextField(
-                    value = changeSecondsText,
-                    onValueChange = { changeSecondsText = it.filter(Char::isDigit).take(2) },
-                    label = { Text("お釣り表示秒数（1～30秒・初期5秒）") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                OutlinedTextField(
-                    value = completeSecondsText,
-                    onValueChange = { completeSecondsText = it.filter(Char::isDigit).take(2) },
-                    label = { Text("完了表示秒数（1～30秒・初期3秒）") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                OutlinedTextField(
-                    value = token,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("接続トークン") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(onClick = {
-                        // Revocation must take effect immediately, not only after
-                        // the user later presses Save. The old WebSocket clients
-                        // are closed by applySettings() when the token changes.
-                        advertiser.stop(null)
-                        val newToken = store.regenerateToken()
-                        token = newToken
-                        val runningConfig = store.load().copy(token = newToken)
-                        store.save(runningConfig)
-                        CustomerDisplayRuntime.applySettings(context, runningConfig)
-                        runtimeStatus = CustomerDisplayRuntime.status()
-                        message = "旧端末の接続を切断し、トークンを再発行しました。表示端末側も再設定してください。"
-                    }) { Text("トークン再発行") }
-                    if (previewUrl != null) {
-                        OutlinedButton(onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("つぐレジ CD 接続先", previewUrl))
-                            message = "接続URLをコピーしました"
-                        }) { Text("接続URLをコピー") }
+                when (pairingState.status) {
+                    CustomerDisplayPairingStatus.IDLE -> {
+                        Button(
+                            onClick = {
+                                buildConfig(true)?.let { config ->
+                                    enabled = true
+                                    store.save(config)
+                                    CustomerDisplayRuntime.applySettings(context, config)
+                                    runtimeStatus = CustomerDisplayRuntime.status()
+                                    advertiser.start(config)
+                                    message = null
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("ペアリング受付を開始（2分）") }
+                    }
+                    CustomerDisplayPairingStatus.STARTING -> {
+                        Text("受付準備中…", color = Color(0xFF1565C0))
+                    }
+                    CustomerDisplayPairingStatus.ACTIVE -> {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("受付中　残り ${pairingSecondsRemaining}秒", color = Color(0xFF1B5E20), fontWeight = FontWeight.Bold)
+                            OutlinedButton(onClick = { advertiser.stop() }) { Text("停止") }
+                        }
                     }
                 }
             }
         }
 
-
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
             modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
         ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text("表示デザイン（つぐレジ CDへ自動同期）", fontWeight = FontWeight.Bold)
-                Text("背景")
+            Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("表示デザイン", fontWeight = FontWeight.Bold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CustomerDisplayTheme.entries.forEach { theme ->
                         OutlinedButton(onClick = { displayTheme = theme }) {
@@ -336,16 +302,17 @@ private fun CustomerDisplaySettingsScreen(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Switch(checked = showLogo, onCheckedChange = { showLogo = it })
-                    Text("ロゴを表示")
+                    Text("ロゴ表示")
                 }
-                OutlinedTextField(
-                    value = logoText,
-                    onValueChange = { logoText = it.take(12) },
-                    label = { Text("ロゴ文字") },
-                    singleLine = true,
-                    enabled = showLogo,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (showLogo) {
+                    OutlinedTextField(
+                        value = logoText,
+                        onValueChange = { logoText = it.take(12) },
+                        label = { Text("ロゴ文字") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 OutlinedTextField(
                     value = standbyMessage,
                     onValueChange = { standbyMessage = it.take(80) },
@@ -353,111 +320,135 @@ private fun CustomerDisplaySettingsScreen(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    OutlinedTextField(
-                        value = textScaleText,
-                        onValueChange = { textScaleText = it.filter(Char::isDigit).take(3) },
-                        label = { Text("文字倍率 %") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                    )
-                    OutlinedTextField(
-                        value = maxRowsText,
-                        onValueChange = { maxRowsText = it.filter(Char::isDigit).take(2) },
-                        label = { Text("表示行数") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                    )
-                    OutlinedTextField(
-                        value = rowSpacingText,
-                        onValueChange = { rowSpacingText = it.filter(Char::isDigit).take(2) },
-                        label = { Text("行間 dp") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                    )
+                OutlinedButton(onClick = { showDisplayDetails = !showDisplayDetails }) {
+                    Text(if (showDisplayDetails) "詳細を閉じる" else "表示の詳細")
                 }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Switch(checked = showCancelled, onCheckedChange = { showCancelled = it })
-                    Text("取消商品を表示")
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Switch(checked = showTax, onCheckedChange = { showTax = it })
-                    Text("税記号（内・外・内※・外※・非）を表示")
+                if (showDisplayDetails) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = textScaleText,
+                            onValueChange = { textScaleText = it.filter(Char::isDigit).take(3) },
+                            label = { Text("文字倍率 %") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = maxRowsText,
+                            onValueChange = { maxRowsText = it.filter(Char::isDigit).take(2) },
+                            label = { Text("表示行数") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = rowSpacingText,
+                            onValueChange = { rowSpacingText = it.filter(Char::isDigit).take(2) },
+                            label = { Text("行間 dp") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = changeSecondsText,
+                            onValueChange = { changeSecondsText = it.filter(Char::isDigit).take(2) },
+                            label = { Text("お釣り (秒)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = completeSecondsText,
+                            onValueChange = { completeSecondsText = it.filter(Char::isDigit).take(2) },
+                            label = { Text("完了 (秒)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Switch(checked = showCancelled, onCheckedChange = { showCancelled = it })
+                        Text("取消商品")
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Switch(checked = showTax, onCheckedChange = { showTax = it })
+                        Text("税記号")
+                    }
                 }
             }
         }
 
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = if (pairingState.status == CustomerDisplayPairingStatus.ACTIVE) Color(0xFFE8F5E9) else Color(0xFFEAF3FA),
-            ),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("かんたんペアリング", fontWeight = FontWeight.Bold)
-                Text("レジとつぐレジ CDを同じWi-Fiへ接続します。受付中の2分間だけ接続情報を公開します。")
-                when (pairingState.status) {
-                    CustomerDisplayPairingStatus.IDLE -> {
-                        Button(onClick = {
-                            buildConfig(true)?.let { config ->
-                                enabled = true
-                                store.save(config)
-                                CustomerDisplayRuntime.applySettings(context, config)
-                                runtimeStatus = CustomerDisplayRuntime.status()
-                                advertiser.start(config)
-                                message = "顧客表示をONにしてペアリング受付を開始しました"
-                            }
-                        }) { Text("2分間ペアリング受付を開始") }
-                    }
-                    CustomerDisplayPairingStatus.STARTING -> {
-                        Text("ペアリング受付を準備しています…", color = Color(0xFF1565C0), fontWeight = FontWeight.Bold)
-                    }
-                    CustomerDisplayPairingStatus.ACTIVE -> {
-                        Text("受付中　残り ${pairingSecondsRemaining}秒", color = Color(0xFF1B5E20), fontWeight = FontWeight.Bold)
-                        Text("つぐレジ CDの接続設定で［同じWi-Fiのレジを探す］を押してください。")
-                        OutlinedButton(onClick = { advertiser.stop() }) { Text("受付を停止") }
-                    }
-                }
-                pairingState.message?.let { Text(it, color = Color(0xFF455A64)) }
-            }
+        OutlinedButton(onClick = { showConnectionDetails = !showConnectionDetails }) {
+            Text(if (showConnectionDetails) "接続の詳細を閉じる" else "接続の詳細")
         }
-
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFEAF3FA)),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("手動で接続する場合", fontWeight = FontWeight.Bold)
-                if (addresses.isEmpty()) {
-                    Text("端末のIPv4アドレスを取得できません。Wi-Fi接続を確認してください。")
-                } else {
-                    addresses.forEach { Text("レジIP：$it") }
-                    Text("ポート：$previewPort")
-                    Text("パス：$CUSTOMER_DISPLAY_PATH")
-                    Text("トークン：$token")
+        if (showConnectionDetails) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+            ) {
+                Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = portText,
+                        onValueChange = { portText = it.filter(Char::isDigit).take(5) },
+                        label = { Text("待受ポート") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (addresses.isEmpty()) {
+                        Text("IPを取得できません。Wi-Fi接続を確認してください。", color = Color(0xFFC62828))
+                    } else {
+                        addresses.forEach { Text(it, color = Color(0xFF173F6B)) }
+                        Text("ポート $previewPort", color = Color(0xFF607D8B))
+                    }
+                    OutlinedTextField(
+                        value = token,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("トークン") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedButton(onClick = {
+                            advertiser.stop(null)
+                            val newToken = store.regenerateToken()
+                            token = newToken
+                            val runningConfig = store.load().copy(token = newToken)
+                            store.save(runningConfig)
+                            CustomerDisplayRuntime.applySettings(context, runningConfig)
+                            runtimeStatus = CustomerDisplayRuntime.status()
+                            message = "旧端末の接続を切断しました。CD側で再設定してください。"
+                        }) { Text("トークン再発行") }
+                        if (previewUrl != null) {
+                            OutlinedButton(onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("つぐレジ CD 接続先", previewUrl))
+                                message = "URLをコピーしました"
+                            }) { Text("URLコピー") }
+                        }
+                    }
                 }
-                Text("自動探索できないネットワークでは、上記をつぐレジ CDへ入力します。")
             }
         }
 
         message?.let {
-            Text(it, color = if (it.startsWith("保存") || it.contains("開始")) Color(0xFF1B5E20) else Color(0xFF9A5B00), fontWeight = FontWeight.Bold)
+            Text(it, color = if (it.startsWith("保存") || it.contains("コピー"))
+                Color(0xFF1B5E20) else Color(0xFFC62828), fontWeight = FontWeight.Bold)
         }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = {
+        Button(
+            onClick = {
                 buildConfig(enabled)?.let { config ->
                     store.save(config)
                     CustomerDisplayRuntime.applySettings(context, config)
                     runtimeStatus = CustomerDisplayRuntime.status()
-                    message = if (enabled) "保存しました。顧客表示サーバーを起動しました。" else "保存しました。顧客表示サーバーを停止しました。"
+                    message = if (enabled) "保存しました" else "停止しました"
                 }
-            }) { Text("保存") }
-            Spacer(Modifier.height(1.dp))
-        }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("保存") }
     }
 }
 

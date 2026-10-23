@@ -70,7 +70,7 @@ class V037CustomerDisplayPresentationTest {
         val cdBuild = File("../customer-display/build.gradle.kts").readText()
 
         assertTrue(settings.contains("presentation = CustomerDisplayPresentation"))
-        assertTrue(screen.contains("表示デザイン（つぐレジ CDへ自動同期）"))
+        assertTrue(screen.contains("Text(\"表示デザイン\""))
         assertTrue(runtime.contains("config.presentation"))
         assertTrue(protocol.contains("put(\"presentation\""))
         assertTrue(protocol.contains("taxSymbol = item.product.taxSymbol"))
