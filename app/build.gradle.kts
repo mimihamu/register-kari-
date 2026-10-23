@@ -126,6 +126,11 @@ android {
     }
 }
 
+val cumulativeV134ReleaseIdentityMarker = """
+versionCode = 164
+versionName = "1.34.0-dev.1"
+""".trimIndent()
+
 val cumulativeV133ReleaseIdentityMarker = """
 versionCode = 163
 versionName = "1.33.0-dev.1"
