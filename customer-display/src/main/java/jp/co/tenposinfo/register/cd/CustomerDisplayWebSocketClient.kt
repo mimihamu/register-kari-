@@ -30,6 +30,43 @@ internal object CustomerDisplayClientHandshake {
     }
 }
 
+/**
+ * Reject non-WebSocket responses before ever presenting a customer amount.
+ * A 101 status and Sec-WebSocket-Accept alone do not constitute a valid upgrade.
+ */
+internal object CustomerDisplayClientUpgradeResponsePolicy {
+    fun isSwitchingProtocols(statusLine: String): Boolean {
+        val parts = statusLine.split(' ', limit = 3)
+        return parts.size >= 2 && parts[0] == "HTTP/1.1" && parts[1] == "101"
+    }
+
+    fun valid(statusLine: String, headers: Map<String, String>, key: String): Boolean =
+        isSwitchingProtocols(statusLine) &&
+            headers["upgrade"]?.equals("websocket", ignoreCase = true) == true &&
+            headers["connection"]?.split(',')?.any {
+                it.trim().equals("Upgrade", ignoreCase = true)
+            } == true &&
+            headers["sec-websocket-accept"] == CustomerDisplayClientHandshake.accept(key)
+}
+
+/** RFC6455: a server frame is unmasked, unfragmented, and has no RSV flags. */
+internal object CustomerDisplayInboundFramePolicy {
+    const val MAX_PAYLOAD_BYTES = 1_048_576L
+
+    fun verify(first: Int, second: Int, length: Long) {
+        require(first in 0..255 && second in 0..255) { "WebSocketフレームが不正です" }
+        require(first and 0x70 == 0) { "WebSocket予約ビットが不正です" }
+        require(first and 0x80 != 0) { "分割WebSocketフレームには未対応です" }
+        require(second and 0x80 == 0) { "サーバーからマスク付きフレームを受信しました" }
+        val opcode = first and 0x0F
+        require(opcode == 0x1 || opcode == 0x8 || opcode == 0x9 || opcode == 0xA) {
+            "WebSocketフレーム種別が不正です"
+        }
+        require(length in 0..MAX_PAYLOAD_BYTES) { "受信データが大きすぎます" }
+        require(opcode < 0x8 || length <= 125L) { "制御フレームが大きすぎます" }
+    }
+}
+
 internal object CustomerDisplayConnectionPolicy {
     const val SCREEN_TRANSITION_GRACE_MS = 4_000L
     const val CONNECT_TIMEOUT_MS = 5_000
@@ -355,9 +392,12 @@ private class SharedCustomerDisplaySession(
 
             val response = readHttpResponse(input)
             val statusLine = response.lines.firstOrNull().orEmpty()
-            val accept = response.headers["sec-websocket-accept"]
-            require(statusLine.contains(" 101 ")) { "接続が拒否されました（$statusLine）" }
-            require(accept == CustomerDisplayClientHandshake.accept(key)) { "WebSocket応答を検証できません" }
+            require(CustomerDisplayClientUpgradeResponsePolicy.isSwitchingProtocols(statusLine)) {
+                "接続が拒否されました（$statusLine）"
+            }
+            require(CustomerDisplayClientUpgradeResponsePolicy.valid(statusLine, response.headers, key)) {
+                "WebSocket応答を検証できません"
+            }
 
             client.soTimeout = CustomerDisplayConnectionPolicy.HEARTBEAT_INTERVAL_MS
             onHandshakeComplete()
@@ -390,7 +430,6 @@ private class SharedCustomerDisplaySession(
 
             val finalFrame = first and 0x80 != 0
             val opcode = first and 0x0F
-            val masked = second and 0x80 != 0
             var length = (second and 0x7F).toLong()
             if (length == 126L) {
                 length = ((readRequired(input) shl 8) or readRequired(input)).toLong()
@@ -398,14 +437,8 @@ private class SharedCustomerDisplaySession(
                 length = 0L
                 kotlin.repeat(8) { length = (length shl 8) or readRequired(input).toLong() }
             }
-            require(length <= MAX_FRAME_BYTES) { "受信データが大きすぎます" }
-            val mask = if (masked) ByteArray(4).also { readFully(input, it) } else null
+            CustomerDisplayInboundFramePolicy.verify(first, second, length)
             val payload = ByteArray(length.toInt()).also { readFully(input, it) }
-            if (mask != null) {
-                payload.indices.forEach { index ->
-                    payload[index] = (payload[index].toInt() xor mask[index % 4].toInt()).toByte()
-                }
-            }
             when (opcode) {
                 0x1 -> {
                     require(finalFrame) { "分割WebSocketフレームには未対応です" }
@@ -617,7 +650,6 @@ private class SharedCustomerDisplaySession(
 
     companion object {
         private const val MAX_HTTP_HEADER_BYTES = 16 * 1024
-        private const val MAX_FRAME_BYTES = 1_048_576L
         private val HEARTBEAT_PAYLOAD = "tsuguregi".toByteArray(StandardCharsets.UTF_8)
     }
 }
