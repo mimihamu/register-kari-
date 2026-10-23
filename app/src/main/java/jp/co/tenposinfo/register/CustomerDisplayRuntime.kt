@@ -25,6 +25,9 @@ object CustomerDisplayRuntime {
     private var lastClientCountChangedAt: Long = 0L
     private var server: CustomerDisplayWebSocketServer? = null
     private var poller: CustomerDisplayPoller? = null
+    // A stopped poller may finish an in-flight database read after reconfigure.
+    // Its final callback must never publish into the newly configured server.
+    @Volatile private var runtimeGeneration = 0L
 
     fun ensureStarted(context: Context) {
         applySettings(context, CustomerDisplaySettingsStore(context).load())
@@ -36,6 +39,7 @@ object CustomerDisplayRuntime {
             val existing = currentConfig
             if (existing == config && ((config.enabled && server != null) || (!config.enabled && server == null))) return
             stopLocked()
+            val generation = runtimeGeneration
             currentConfig = config
             // Never reopen a newly configured socket with the prior cash/payment
             // screen before this process has polled the current register database.
@@ -61,10 +65,18 @@ object CustomerDisplayRuntime {
                 latestPayload = {
                     latestSnapshot.copy(messageType = CustomerDisplayMessageType.SNAPSHOT).toJson()
                 },
-                onError = { message -> lastError = message },
+                onError = { message ->
+                    synchronized(lock) {
+                        if (runtimeGeneration == generation) lastError = message
+                    }
+                },
                 onClientCountChanged = { count ->
-                    connectedClients = count
-                    lastClientCountChangedAt = System.currentTimeMillis()
+                    synchronized(lock) {
+                        if (runtimeGeneration == generation) {
+                            connectedClients = count
+                            lastClientCountChangedAt = System.currentTimeMillis()
+                        }
+                    }
                 },
             )
             server = newServer
@@ -72,8 +84,16 @@ object CustomerDisplayRuntime {
             poller = CustomerDisplayPoller(
                 context = appContext,
                 config = config,
-                publish = ::publish,
-                onError = { message -> lastError = message },
+                publish = { snapshot ->
+                    synchronized(lock) {
+                        if (runtimeGeneration == generation) publish(snapshot)
+                    }
+                },
+                onError = { message ->
+                    synchronized(lock) {
+                        if (runtimeGeneration == generation) lastError = message
+                    }
+                },
             ).also { it.start() }
         }
     }
@@ -121,6 +141,8 @@ object CustomerDisplayRuntime {
     )
 
     private fun stopLocked() {
+        // Invalidate all old asynchronous callbacks *before* stopping sockets.
+        runtimeGeneration++
         poller?.stop()
         poller = null
         server?.stop()
