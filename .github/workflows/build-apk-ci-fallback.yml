@@ -90,10 +90,10 @@ jobs:
       - name: Verify APK release identity and integrity
         shell: bash
         env:
-          POS_VERSION_CODE: 164
-          POS_VERSION_NAME: 1.34.0-dev.1
-          PLUS_VERSION_CODE: 33
-          PLUS_VERSION_NAME: 0.33.0-dev.1
+          POS_VERSION_CODE: 165
+          POS_VERSION_NAME: 1.34.1-dev.1
+          PLUS_VERSION_CODE: 34
+          PLUS_VERSION_NAME: 0.33.1-dev.1
           BUILD_TOOLS_VERSION: 36.0.0
         run: |
           set -euo pipefail
@@ -106,8 +106,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v1.34.0_dev1_drive_page_commit_checkpoint_recovery_debug.apk
-          plus_apk=artifacts/TSUGUREGI_PLUS_v0.33.0_dev1_drive_page_commit_checkpoint_recovery_debug.apk
+          register_apk=artifacts/TSUGUREGI_v1.34.1_dev1_google_auth_diagnostics_debug.apk
+          plus_apk=artifacts/TSUGUREGI_PLUS_v0.33.1_dev1_google_auth_diagnostics_debug.apk
           cd_apk=artifacts/TSUGUREGI_CD_v0.15.6_dev1_websocket_frame_guard_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
           cp management-app/build/outputs/apk/debug/management-app-debug.apk "$plus_apk"
