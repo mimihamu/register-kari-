@@ -28,8 +28,11 @@ android {
         // Previous verified development APK (v0.15.1); retained for source gates.
         // versionCode = 9
         // versionName = "0.15.1-dev.1"
-        versionCode = 10
-        versionName = "0.15.2-dev.1"
+        // Previous verified CD development version; kept for cumulative gates.
+        // versionCode = 10
+        // versionName = "0.15.2-dev.1"
+        versionCode = 11
+        versionName = "0.15.3-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ CD"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
