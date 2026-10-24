@@ -943,7 +943,9 @@ private fun LoginScreen(
     val panelGapDp = if (responsive.isCompact) responsive.panelGapDp else 28
     val operatorGapDp = if (responsive.isCompact) 6 else 16
     val operatorButtonHeightDp = if (responsive.isCompact) 58 else 82
-    val pinPanelWidthDp = if (responsive.isCompact) 320 else 420
+    val loginWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+    val pinPanelWidthDp = (loginWidthDp * if (responsive.isCompact) 0.43f else 0.36f)
+        .toInt().coerceIn(240, 420)
     Column(modifier = Modifier.fillMaxSize()) {
         Header("SCR-010", "担当者選択／ログイン")
         Row(
