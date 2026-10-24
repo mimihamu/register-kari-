@@ -79,6 +79,7 @@ class OperationsHubActivityV030 : ComponentActivity() {
                     openSalesLookup = { startActivity(Intent(this, BusinessDateSalesLookupActivity::class.java)) },
                     openReceiptReprintLedger = { startActivity(Intent(this, SaleReceiptReprintLedgerActivity::class.java)) },
                     openManualReturn = { startActivity(Intent(this, ManualReturnActivityV135::class.java)) },
+                    openSettings = { startActivity(Intent(this, AdminSettingsActivity::class.java)) },
                     openLegacyManagement = { destination ->
                         startActivity(OperationsLegacyRouteV140.intent(this, destination))
                     },
@@ -99,6 +100,7 @@ private fun OperationsHubRouteV030(
     openSalesLookup: () -> Unit,
     openReceiptReprintLedger: () -> Unit,
     openManualReturn: () -> Unit,
+    openSettings: () -> Unit,
     openLegacyManagement: (String) -> Unit,
 ) {
     val context = LocalContext.current
@@ -137,6 +139,7 @@ private fun OperationsHubRouteV030(
             openSalesLookup = openSalesLookup,
             openReceiptReprintLedger = openReceiptReprintLedger,
             openManualReturn = openManualReturn,
+            openSettings = openSettings,
             openLegacyManagement = openLegacyManagement,
         )
     }
@@ -157,11 +160,12 @@ private fun OperationsHubScreenV030(
     openSalesLookup: () -> Unit,
     openReceiptReprintLedger: () -> Unit,
     openManualReturn: () -> Unit,
+    openSettings: () -> Unit,
     openLegacyManagement: (String) -> Unit,
 ) {
     val metrics = rememberRegisterResponsiveMetrics()
     Column(Modifier.fillMaxSize()) {
-        HubHeaderV030(metrics)
+        HubHeaderV030(metrics, openSettings)
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val compact = metrics.isCompact || maxWidth < 1_050.dp || maxHeight < 560.dp
             if (compact) {
@@ -182,7 +186,7 @@ private fun OperationsHubScreenV030(
                         title = "営業開始・状態",
                         description = "営業セッションの開始と状態確認",
                         background = Color(0xFFE8EAF6),
-                        enabled = RegisterPermission.Z_SETTLEMENT in permissions,
+                        enabled = RegisterPermission.BUSINESS_START in permissions,
                         onClick = openBusiness,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 112.dp),
                     )
@@ -292,7 +296,7 @@ private fun OperationsHubScreenV030(
                             "営業開始・状態",
                             "営業セッションの開始と状態確認",
                             Color(0xFFE8EAF6),
-                            RegisterPermission.Z_SETTLEMENT in permissions,
+                            RegisterPermission.BUSINESS_START in permissions,
                             openBusiness,
                             Modifier.weight(0.75f).fillMaxWidth(),
                         )
@@ -491,12 +495,14 @@ private fun HubTileV030(
                 color = if (enabled) HubNavyV030 else Color.Gray,
                 textAlign = TextAlign.Center,
             )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                if (enabled) description else "$description\n権限なし",
-                textAlign = TextAlign.Center,
-                color = if (enabled) Color.DarkGray else Color.Gray,
-            )
+            if (description.isNotBlank() || !enabled) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    if (enabled) description else if (description.isBlank()) "権限なし" else "$description\n権限なし",
+                    textAlign = TextAlign.Center,
+                    color = if (enabled) Color.DarkGray else Color.Gray,
+                )
+            }
         }
     }
 }
@@ -520,7 +526,7 @@ private fun HubAmountV030(label: String, value: String, emphasized: Boolean = fa
 }
 
 @Composable
-private fun HubHeaderV030(metrics: RegisterResponsiveMetrics) {
+private fun HubHeaderV030(metrics: RegisterResponsiveMetrics, openSettings: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -531,9 +537,11 @@ private fun HubHeaderV030(metrics: RegisterResponsiveMetrics) {
     ) {
         Text("つぐレジ", color = Color.White, fontSize = if (metrics.isCompact) 19.sp else 23.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(if (metrics.isCompact) 12.dp else 24.dp))
-        Text("SCR-700  レジ管理メニュー", color = Color.White, fontSize = if (metrics.isCompact) 17.sp else 21.sp, fontWeight = FontWeight.SemiBold)
+        Text("レジ管理", color = Color.White, fontSize = if (metrics.isCompact) 17.sp else 21.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.weight(1f))
-        if (!metrics.isCompact) Text("オフライン管理", color = Color.White, fontSize = 14.sp)
+        OutlinedButton(onClick = openSettings, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text("各種設定", color = Color.White, fontWeight = FontWeight.Bold)
+        }
     }
 }
 
