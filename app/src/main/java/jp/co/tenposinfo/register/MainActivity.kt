@@ -130,8 +130,11 @@ class MainActivity : ComponentActivity() {
             InitialReleaseSettingsStoreV135(applicationContext).loadDevice(),
         )
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 RegisterApp()
+            }
+        
             }
         }
     }
@@ -864,40 +867,7 @@ private fun RegisterApp() {
 
 @Composable
 private fun Header(screenId: String, title: String) {
-    val responsive = rememberRegisterResponsiveMetrics()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(responsive.headerHeightDp.dp)
-            .background(Navy)
-            .padding(horizontal = responsive.screenPaddingDp.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            "つぐレジ",
-            color = Color.White,
-            fontSize = if (responsive.isCompact) 20.sp else 23.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-        )
-        Spacer(Modifier.width(if (responsive.isCompact) 12.dp else 24.dp))
-        Text(
-            "$screenId  $title",
-            modifier = Modifier.weight(1f),
-            color = Color.White,
-            fontSize = if (responsive.isCompact) 17.sp else 21.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-        )
-        if (!responsive.isCompact) {
-            Text(
-                "営業日 ${LocalDate.now()}  ${LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))}",
-                color = Color.White,
-                fontSize = 14.sp,
-                maxLines = 1,
-            )
-        }
-    }
+    RegisterTopBarV141(title)
 }
 
 @Composable
@@ -973,7 +943,7 @@ private fun LoginScreen(
     val panelGapDp = if (responsive.isCompact) responsive.panelGapDp else 28
     val operatorGapDp = if (responsive.isCompact) 6 else 16
     val operatorButtonHeightDp = if (responsive.isCompact) 58 else 82
-    val pinPanelWidthDp = if (responsive.isCompact) 260 else 390
+    val pinPanelWidthDp = if (responsive.isCompact) 320 else 420
     Column(modifier = Modifier.fillMaxSize()) {
         Header("SCR-010", "担当者選択／ログイン")
         Row(
@@ -1028,13 +998,18 @@ private fun LoginScreen(
                 }
             }
             CardPanel(Modifier.width(pinPanelWidthDp.dp).fillMaxHeight()) {
-                Column(
-                    Modifier
-                        .fillMaxSize()
-                        .then(
-                            if (responsive.isCompact) Modifier.verticalScroll(pinScroll) else Modifier,
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val keypad = RegisterResponsiveLayoutPolicy.keypadMetrics(
+                        availableHeightDp = maxHeight.value.toInt(),
+                        functionRows = 0,
+                        reservedTopDp = if (responsive.isCompact) 104 else 120,
+                        preferredMinKeyDp = 72,
+                    )
+                    Column(
+                        Modifier.fillMaxSize().then(
+                            if (keypad.scrollRequired) Modifier.verticalScroll(pinScroll) else Modifier,
                         ),
-                ) {
+                    ) {
                     Text(
                         "PIN入力",
                         fontSize = if (responsive.isCompact) 18.sp else 24.sp,
@@ -1046,7 +1021,7 @@ private fun LoginScreen(
                     ValueBox(
                         if (pin.isEmpty()) "PINを入力" else "●".repeat(pin.length),
                         compact = responsive.isCompact,
-                        heightDp = if (responsive.isCompact) RegisterLayoutPolicy.COMPACT_VALUE_HEIGHT_DP else null,
+                        heightDp = keypad.valueHeightDp,
                     )
                     if (message != null) {
                         Spacer(Modifier.height(if (responsive.isCompact) 6.dp else 10.dp))
@@ -1065,9 +1040,10 @@ private fun LoginScreen(
                         bottomActionLabel = "ログイン",
                         onBottomAction = { selectedId?.let { onLogin(it, pin) } },
                         compact = responsive.isCompact,
-                        buttonHeightDp = if (responsive.isCompact) RegisterLayoutPolicy.COMPACT_KEY_HEIGHT_DP else null,
-                        rowGapDp = if (responsive.isCompact) RegisterLayoutPolicy.COMPACT_KEY_GAP_DP else null,
+                        buttonHeightDp = keypad.keyHeightDp,
+                        rowGapDp = keypad.gapDp,
                     )
+                    }
                 }
             }
         }
