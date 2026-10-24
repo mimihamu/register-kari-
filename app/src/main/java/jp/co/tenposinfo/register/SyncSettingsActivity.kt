@@ -125,7 +125,6 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                                         DriveSyncFoundationSettings(automatic, folderName),
                                     )
                                     DriveOutboxScheduler.ensurePeriodic(context.applicationContext)
-                                    GoogleDriveDirectUploadScheduler.ensurePeriodic(context.applicationContext)
                                     message = "同期設定を保存しました"
                                 },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
@@ -134,11 +133,17 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                             Spacer(Modifier.height(10.dp))
                             Button(
                                 onClick = {
-                                    context.startActivity(Intent(context, GoogleDriveEasyConnectActivity::class.java))
+                                    context.startActivity(Intent(context, OutboxDeliverySettingsActivity::class.java))
                                 },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = SyBlue),
-                            ) { Text("Googleかんたん接続") }
+                            ) { Text("Google Driveの送信フォルダを選択") }
+                            OutlinedButton(
+                                onClick = {
+                                    context.startActivity(Intent(context, GoogleDriveEasyConnectActivity::class.java))
+                                },
+                                modifier = Modifier.fillMaxWidth().height(46.dp),
+                            ) { Text("Googleかんたん接続（API方式・詳細）") }
                             Spacer(Modifier.height(8.dp))
                             OutlinedButton(
                                 onClick = {
@@ -151,9 +156,8 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                                 onClick = {
                                     val count = store.stagePending(500)
                                     DriveOutboxScheduler.enqueueNow(context.applicationContext)
-                                    GoogleDriveDirectUploadScheduler.enqueueNow(context.applicationContext)
                                     refresh++
-                                    message = "$count 件の未送信データを送信準備し、Google Driveへ送信を要求しました"
+                                    message = "$count 件の未送信データをフォルダ送信キューに登録しました"
                                 },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                             ) { Text("未送信データを今すぐ送信") }
@@ -162,7 +166,6 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                                 onClick = {
                                     val count = store.requeueStaged()
                                     DriveOutboxScheduler.enqueueNow(context.applicationContext)
-                                    GoogleDriveDirectUploadScheduler.enqueueNow(context.applicationContext)
                                     refresh++
                                     message = "$count 件を再送待ちへ戻しました"
                                 },
@@ -173,7 +176,7 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
                                 Column(Modifier.fillMaxWidth().padding(12.dp)) {
                                     Text("同期運用", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
                                     Text(
-                                        "Googleかんたん接続を通常経路にしつつ、送信状態と個別再試行は下の運用画面から確認できます。既存売上と同期履歴は削除しません。",
+                                        "通常は共有フォルダへのJSON書き出しを使います。Google CloudのOAuth登録は不要です。Drive API方式は必要な場合のみ詳細から選択します。",
                                         fontSize = 13.sp,
                                     )
                                     Spacer(Modifier.height(5.dp))
