@@ -73,9 +73,13 @@ private val StBorder = Color(0xFFD5DEE7)
 class PrinterSoakTestActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 PrinterSoakTestScreen(onClose = { finish() })
+            }
+        
             }
         }
     }

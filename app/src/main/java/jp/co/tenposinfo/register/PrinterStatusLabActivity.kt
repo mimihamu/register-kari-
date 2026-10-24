@@ -75,9 +75,13 @@ enum class PrinterStatusProbeOutcomeFilter(val displayName: String) {
 class PrinterStatusLabActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 PrinterStatusLabScreen(onClose = { finish() })
+            }
+        
             }
         }
     }

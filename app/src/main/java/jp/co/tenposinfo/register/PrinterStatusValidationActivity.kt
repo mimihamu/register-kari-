@@ -63,9 +63,13 @@ private val PvBorder = Color(0xFFD5DEE7)
 class PrinterStatusValidationActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 PrinterStatusValidationScreen(onClose = { finish() })
+            }
+        
             }
         }
     }

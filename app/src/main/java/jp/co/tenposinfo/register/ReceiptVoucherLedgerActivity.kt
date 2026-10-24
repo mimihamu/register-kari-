@@ -69,6 +69,7 @@ class ReceiptVoucherLedgerActivity : ComponentActivity() {
         configureRegisterSystemBars(window)
         val requestedSaleId = ReceiptVoucherNavigation.requestedSaleId(intent)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 ReceiptVoucherLedgerRoute(
                     requestedSaleId = requestedSaleId,
@@ -76,6 +77,8 @@ class ReceiptVoucherLedgerActivity : ComponentActivity() {
                     onOpenIssuance = { saleId -> startActivity(ReceiptVoucherNavigation.issuanceIntent(this, saleId)) },
                     onClose = { finish() },
                 )
+            }
+        
             }
         }
     }

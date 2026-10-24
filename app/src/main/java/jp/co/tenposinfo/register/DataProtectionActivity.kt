@@ -71,7 +71,11 @@ private val DpSelected = Color(0xFFEAF3FA)
 class DataProtectionActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { MaterialTheme { DataProtectionScreen(onClose = { finish() }) } }
+        configureRegisterSystemBars(window)
+        setContent {
+            RegisterSafeAreaV141 { MaterialTheme { DataProtectionScreen(onClose = { finish() }) } 
+            }
+        }
     }
 }
 

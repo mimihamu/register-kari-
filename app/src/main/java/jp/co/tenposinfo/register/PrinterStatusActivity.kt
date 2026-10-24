@@ -66,9 +66,13 @@ private val PsBorder = Color(0xFFD5DEE7)
 class PrinterStatusActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 PrinterStatusApp(onClose = { finish() })
+            }
+        
             }
         }
     }

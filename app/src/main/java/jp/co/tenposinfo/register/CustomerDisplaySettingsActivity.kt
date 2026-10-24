@@ -44,12 +44,16 @@ import androidx.compose.ui.unit.dp
 class CustomerDisplaySettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 CustomerDisplaySettingsScreen(
                     context = this,
                     onClose = ::finish,
                 )
+            }
+        
             }
         }
     }

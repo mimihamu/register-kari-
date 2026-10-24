@@ -14,6 +14,8 @@ import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -50,6 +52,12 @@ class ManualReturnActivityV135 : ComponentActivity() {
 
     private fun buildContent(): ScrollView {
         val scroll = ScrollView(this)
+        ViewCompat.setOnApplyWindowInsetsListener(scroll) { view, windowInsets ->
+            val bars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            windowInsets
+        }
+        ViewCompat.requestApplyInsets(scroll)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(24), dp(18), dp(24), dp(24))

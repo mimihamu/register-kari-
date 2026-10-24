@@ -65,7 +65,9 @@ private val PhBorder = Color(0xFFD5DEE7)
 class PrinterToolsHubActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 PrinterToolsHubScreen(
                     onOpenDiagnostics = { startActivity(Intent(this, PrinterStatusActivity::class.java)) },
@@ -79,6 +81,8 @@ class PrinterToolsHubActivity : ComponentActivity() {
                     onOpenPerformanceDiagnostics = { startActivity(Intent(this, PerformanceDiagnosticsActivityV136::class.java)) },
                     onClose = { finish() },
                 )
+            }
+        
             }
         }
     }
