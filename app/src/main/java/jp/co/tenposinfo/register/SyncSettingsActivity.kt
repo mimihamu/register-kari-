@@ -61,8 +61,11 @@ class SyncSettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 SyncSettingsApp(onClose = { finish() })
+            }
+        
             }
         }
     }
