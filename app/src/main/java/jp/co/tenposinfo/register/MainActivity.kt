@@ -13,6 +13,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -1453,45 +1454,57 @@ private fun SalesScreen(
                     }
                     OutlinedButton(
                         onClick = { currentPage = pages[(pageIndex - 1 + pages.size) % pages.size] },
-                        modifier = Modifier.width(54.dp).height(38.dp),
+                        modifier = Modifier.width(54.dp).height(48.dp),
                     ) { Text("＜") }
                     Text(" ${currentPage}/${pages.maxOrNull() ?: 1} ", color = Navy, fontWeight = FontWeight.Bold)
                     OutlinedButton(
                         onClick = { currentPage = pages[(pageIndex + 1) % pages.size] },
-                        modifier = Modifier.width(54.dp).height(38.dp),
+                        modifier = Modifier.width(54.dp).height(48.dp),
                     ) { Text("＞") }
                 }
                 Spacer(Modifier.height(7.dp))
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                    for (row in 0 until 8) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            for (column in 0 until 3) {
-                                val slot = row * 3 + column + 1
-                                val product = pageProducts[slot]
-                                if (product == null) {
-                                    Spacer(Modifier.weight(1f).height(72.dp))
-                                } else {
-                                    Button(
-                                        onClick = { registerProduct(product) },
-                                        modifier = Modifier.weight(1f).height(72.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = ProductButtonPalette.background(product.buttonColor),
-                                            contentColor = ProductButtonPalette.foreground(product.buttonColor),
-                                        ),
-                                        border = BorderStroke(1.dp, Border),
-                                    ) {
-                                        Text(
-                                            "${product.name}\n${yen(product.unitPrice)} ${product.taxSymbol}",
-                                            textAlign = TextAlign.Center,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp,
-                                            maxLines = 3,
-                                        )
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                    val grid = RegisterProductGridPolicy.metrics(
+                        widthDp = maxWidth.value.toInt(),
+                        heightDp = maxHeight.value.toInt(),
+                        fontScale = androidx.compose.ui.platform.LocalConfiguration.current.fontScale,
+                    )
+                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                        for (row in 0 until grid.rows) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(grid.gapDp.dp),
+                            ) {
+                                for (column in 0 until grid.columns) {
+                                    val slot = row * grid.columns + column + 1
+                                    val product = pageProducts[slot]
+                                    if (product == null) {
+                                        Spacer(Modifier.weight(1f).height(grid.buttonHeightDp.dp))
+                                    } else {
+                                        Button(
+                                            onClick = { registerProduct(product) },
+                                            modifier = Modifier.weight(1f).height(grid.buttonHeightDp.dp),
+                                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 3.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = ProductButtonPalette.background(product.buttonColor),
+                                                contentColor = ProductButtonPalette.foreground(product.buttonColor),
+                                            ),
+                                            border = BorderStroke(1.dp, Border),
+                                        ) {
+                                            Text(
+                                                "${product.name}\n${yen(product.unitPrice)} ${product.taxSymbol}",
+                                                textAlign = TextAlign.Center,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = grid.textSizeSp.sp,
+                                                lineHeight = (grid.textSizeSp + 2).sp,
+                                                maxLines = 3,
+                                            )
+                                        }
                                     }
                                 }
                             }
+                            if (row != grid.rows - 1) Spacer(Modifier.height(grid.gapDp.dp))
                         }
-                        Spacer(Modifier.height(7.dp))
                     }
                 }
             }

@@ -36,6 +36,40 @@ internal data class RegisterKeypadMetrics(
     val scrollRequired: Boolean,
 )
 
+internal data class RegisterProductGridMetrics(
+    val columns: Int,
+    val rows: Int,
+    val buttonHeightDp: Int,
+    val gapDp: Int,
+    val textSizeSp: Int,
+    val scrollRequired: Boolean,
+)
+
+internal object RegisterProductGridPolicy {
+    const val TOTAL_SLOTS = 24
+    const val STANDARD_COLUMNS = 3
+    const val MIN_BUTTON_HEIGHT_DP = 56
+    const val MAX_BUTTON_HEIGHT_DP = 116
+
+    /** Preserve stable slot 1..24 while filling available pane height. */
+    fun metrics(widthDp: Int, heightDp: Int, fontScale: Float = 1f): RegisterProductGridMetrics {
+        val columns = STANDARD_COLUMNS
+        val rows = (TOTAL_SLOTS + columns - 1) / columns
+        val gap = if (heightDp < 500) 5 else 8
+        val naturalHeight = (heightDp.coerceAtLeast(0) - (rows - 1) * gap) / rows
+        val height = naturalHeight.coerceIn(MIN_BUTTON_HEIGHT_DP, MAX_BUTTON_HEIGHT_DP)
+        val cellWidth = (widthDp.coerceAtLeast(0) - (columns - 1) * gap) / columns
+        val font = when {
+            cellWidth < 90 || fontScale >= 1.3f -> 11
+            cellWidth < 120 || heightDp < 520 -> 12
+            cellWidth >= 180 && height >= 86 && fontScale <= 1.15f -> 16
+            cellWidth >= 145 && height >= 72 -> 15
+            else -> 13
+        }
+        return RegisterProductGridMetrics(columns, rows, height, gap, font, naturalHeight < MIN_BUTTON_HEIGHT_DP)
+    }
+}
+
 internal object RegisterResponsiveLayoutPolicy {
     const val MIN_TOUCH_DP = 48
     const val MAX_KEY_HEIGHT_DP = 80
