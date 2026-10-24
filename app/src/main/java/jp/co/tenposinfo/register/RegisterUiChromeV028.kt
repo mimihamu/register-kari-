@@ -12,9 +12,9 @@ object RegisterUiChromeV028 {
 @Suppress("DEPRECATION")
 fun configureRegisterSystemBars(window: Window) {
     window.statusBarColor = Color.rgb(23, 63, 107)
-    window.navigationBarColor = Color.WHITE
+    window.navigationBarColor = Color.rgb(23, 63, 107)
     WindowCompat.getInsetsController(window, window.decorView).apply {
         isAppearanceLightStatusBars = false
-        isAppearanceLightNavigationBars = true
+        isAppearanceLightNavigationBars = false
     }
 }
