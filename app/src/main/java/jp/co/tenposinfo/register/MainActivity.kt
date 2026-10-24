@@ -82,7 +82,7 @@ private val Border = Color(0xFFD5DEE7)
 internal object RegisterLayoutPolicy {
     const val DIAGNOSTIC_CARD_HEIGHT_DP = 280
     const val COMPACT_VALUE_HEIGHT_DP = 46
-    const val COMPACT_KEY_HEIGHT_DP = 42
+    const val COMPACT_KEY_HEIGHT_DP = 56
     const val COMPACT_KEY_GAP_DP = 5
     const val COMPACT_FUNCTION_HEIGHT_DP = 40
 
@@ -2515,6 +2515,7 @@ private fun PaymentScreen(
                         availableHeightDp = maxHeight.value.toInt(),
                         functionRows = ((enabledNonCashMethods.size + 2) / 3).coerceAtLeast(1),
                         reservedTopDp = if (responsive.isCompact) 104 else 126,
+                        preferredMinKeyDp = 64,
                     )
                     val keypadScroll = rememberScrollState()
                     Column(

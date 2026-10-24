@@ -27,6 +27,7 @@ class V140SalesUsabilityTest {
             assertTrue(k.keyHeightDp >= 64)
             assertTrue(k.keyHeightDp <= 80)
         }
+        assertTrue(RegisterLayoutPolicy.COMPACT_KEY_HEIGHT_DP >= 56)
         assertTrue(RegisterResponsiveLayoutPolicy.keypadMetrics(
             availableHeightDp = 270, functionRows = 2, preferredMinKeyDp = 64).scrollRequired)
         assertEquals(48, RegisterResponsiveLayoutPolicy.keypadMetrics(
