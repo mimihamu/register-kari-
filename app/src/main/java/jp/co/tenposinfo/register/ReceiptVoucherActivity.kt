@@ -95,11 +95,14 @@ class ReceiptVoucherActivity : ComponentActivity() {
         configureRegisterSystemBars(window)
         val requestedSaleId = ReceiptVoucherNavigation.requestedSaleId(intent)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 ReceiptVoucherRoute(
                     requestedSaleId = requestedSaleId,
                     onClose = { finish() },
                 )
+            }
+        
             }
         }
     }
