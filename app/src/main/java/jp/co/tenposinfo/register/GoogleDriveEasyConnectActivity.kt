@@ -139,7 +139,7 @@ class GoogleDriveEasyConnectActivity : ComponentActivity() {
 
     private fun refresh(message: String? = null) {
         uiState.value = GoogleDriveEasyConnectUiState(
-            account = accountStore.load(),
+            account = GoogleDriveAuthorizationRefreshPolicy.merge(uiState.value.account, accountStore.load()),
             upload = GoogleDriveDirectUploadStatusStore(applicationContext).load(),
             connectionTest = GoogleDriveConnectionTestStore(applicationContext).load(),
             busy = uiState.value.busy,

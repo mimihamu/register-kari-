@@ -107,6 +107,20 @@ object GoogleDriveAuthorizationOutcomePolicy {
     }
 }
 
+/** Keep the authorization result visible when Android resumes after Google's account sheet. */
+object GoogleDriveAuthorizationRefreshPolicy {
+    fun merge(current: GoogleDriveAccountState, persisted: GoogleDriveAccountState): GoogleDriveAccountState {
+        val retain = when (current.status) {
+            GoogleDriveAccountStatus.CONNECTING,
+            GoogleDriveAccountStatus.CLOUD_CONFIGURATION_REQUIRED,
+            GoogleDriveAccountStatus.AUTHORIZATION_FAILED,
+            GoogleDriveAccountStatus.VERIFICATION_FAILED -> true
+            else -> false
+        }
+        return if (retain && current.email == persisted.email) current else persisted
+    }
+}
+
 class GoogleDriveAccountStore(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences(
         "tsuguregi_plus_google_drive_account",
@@ -256,7 +270,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
     }
 
     private fun refreshState() {
-        state.value = accountStore.load()
+        state.value = GoogleDriveAuthorizationRefreshPolicy.merge(state.value, accountStore.load())
         syncStatus.value = GoogleDriveDirectSyncStatusStore(this).load()
         connectionTest.value = GoogleDriveConnectionTestStore(this).load()
     }
