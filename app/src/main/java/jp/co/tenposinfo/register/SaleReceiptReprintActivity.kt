@@ -73,11 +73,14 @@ class SaleReceiptReprintActivity : ComponentActivity() {
         configureRegisterSystemBars(window)
         val requestedSaleId = SaleReceiptNavigation.requestedSaleId(intent)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 SaleReceiptReprintRoute(
                     requestedSaleId = requestedSaleId,
                     onClose = { finish() },
                 )
+            }
+        
             }
         }
     }
