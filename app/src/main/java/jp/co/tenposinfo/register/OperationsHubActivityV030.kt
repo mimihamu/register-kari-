@@ -443,7 +443,7 @@ private fun HubStatusPanelV030(
     }
 }
 
-// Historical "その他の管理機能" tile hid 当日売上・入出金・返品取消.
+// Historical "その他の管理機能" tile opened OperationsActivity::class.java for 当日売上・入出金・返品取消.
 // Each function is now one direct tile on the unified management screen.
 @Composable
 private fun HubLegacyActionTileV140(
