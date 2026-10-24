@@ -23,13 +23,13 @@ class V140SalesUsabilityTest {
         }
         for (height in listOf(270, 420, 600, 850)) {
             val k = RegisterResponsiveLayoutPolicy.keypadMetrics(
-                availableHeightDp = height, functionRows = 2, preferredMinKeyDp = 64)
-            assertTrue(k.keyHeightDp >= 64)
-            assertTrue(k.keyHeightDp <= 80)
+                availableHeightDp = height, functionRows = 2, preferredMinKeyDp = 72)
+            assertTrue(k.keyHeightDp >= 72)
+            assertTrue(k.keyHeightDp <= RegisterResponsiveLayoutPolicy.MAX_KEY_HEIGHT_DP)
         }
         assertTrue(RegisterLayoutPolicy.COMPACT_KEY_HEIGHT_DP >= 56)
         assertTrue(RegisterResponsiveLayoutPolicy.keypadMetrics(
-            availableHeightDp = 270, functionRows = 2, preferredMinKeyDp = 64).scrollRequired)
+            availableHeightDp = 270, functionRows = 2, preferredMinKeyDp = 72).scrollRequired)
         assertEquals(48, RegisterResponsiveLayoutPolicy.keypadMetrics(
             availableHeightDp = 270, functionRows = 2).keyHeightDp)
     }
@@ -42,7 +42,9 @@ class V140SalesUsabilityTest {
         assertTrue(sales.contains("onPrinterStatus()"))
         assertTrue(sales.contains("dismissedPrinterError"))
         assertFalse(sales.contains("PrinterHealthBanner(printerHealth, onPrinterStatus)"))
-        assertTrue(sales.contains("preferredMinKeyDp = 64"))
+        assertTrue(sales.contains("preferredMinKeyDp = 72"))
+        val payment = main.substring(main.indexOf("private fun PaymentScreen("), main.indexOf("private fun CompleteScreen("))
+        assertTrue(payment.contains("preferredMinKeyDp = 72"))
         assertTrue(sales.contains("buttonHeightDp = keypad.keyHeightDp"))
     }
 
@@ -55,6 +57,10 @@ class V140SalesUsabilityTest {
         assertTrue(hub.contains("\"返品・取消\""))
         assertFalse(hub.contains("private fun HubLegacyPanelV030("))
         assertTrue(hub.contains("OperationsLegacyRouteV140.intent(this, destination)"))
+        assertTrue(hub.contains("HubHeaderV030(metrics, openSettings)"))
+        assertTrue(hub.contains("Intent(this, AdminSettingsActivity::class.java)"))
+        assertTrue(hub.contains("RegisterPermission.BUSINESS_START in permissions"))
+        assertTrue(hub.contains("openBusiness,"))
         assertTrue(operations.contains("OperationsLegacyRouteV140.requiredPermission"))
         assertTrue(operations.contains("returnToHubOrMenu()"))
         assertTrue(route.contains("OperationsActivity::class.java"))
