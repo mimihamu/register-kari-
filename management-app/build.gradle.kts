@@ -11,6 +11,9 @@ require(developmentKeystoreSource.isFile) { "開発版署名鍵が見つかり�
 developmentKeystore.parentFile.mkdirs()
 developmentKeystore.writeBytes(Base64.getMimeDecoder().decode(developmentKeystoreSource.readText()))
 
+// Previous responsive OAuth release, retained for cumulative source tests.
+// versionCode = 35
+// versionName = "0.33.2-dev.1"
 // Previous OAuth diagnostics identity, retained for cumulative source tests.
 // versionCode = 34
 // versionName = "0.33.1-dev.1"
@@ -80,8 +83,8 @@ android {
         applicationId = "jp.co.tenposinfo.register.plus"
         minSdk = 26
         targetSdk = 36
-        versionCode = 35
-        versionName = "0.33.2-dev.1"
+        versionCode = 36
+        versionName = "0.33.3-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ＋"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
