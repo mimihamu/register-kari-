@@ -14,6 +14,8 @@ import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -31,7 +33,6 @@ class ManualReturnActivityV135 : ComponentActivity() {
     private lateinit var reasonInput: EditText
     private lateinit var refundSpinner: Spinner
     private lateinit var managerPinInput: EditText
-    private lateinit var reasonRequiredCheck: CheckBox
     private lateinit var confirmButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -50,6 +51,12 @@ class ManualReturnActivityV135 : ComponentActivity() {
 
     private fun buildContent(): ScrollView {
         val scroll = ScrollView(this)
+        ViewCompat.setOnApplyWindowInsetsListener(scroll) { view, windowInsets ->
+            val bars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            windowInsets
+        }
+        ViewCompat.requestApplyInsets(scroll)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(24), dp(18), dp(24), dp(24))
@@ -74,7 +81,7 @@ class ManualReturnActivityV135 : ComponentActivity() {
         productRow.addView(productSpinner, LinearLayout.LayoutParams(0, dp(54), 4f))
         quantityInput = EditText(this).apply {
             hint = "数量"
-            inputType = InputType.TYPE_CLASS_NUMBER
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             setText("1")
             gravity = Gravity.CENTER
         }
@@ -109,7 +116,7 @@ class ManualReturnActivityV135 : ComponentActivity() {
         }, matchWrap())
 
         reasonInput = EditText(this).apply {
-            hint = "返品理由"
+            hint = "返品理由（任意）"
             minLines = 2
         }
         root.addView(reasonInput, matchWrap(top = 14))
@@ -131,23 +138,13 @@ class ManualReturnActivityV135 : ComponentActivity() {
         root.addView(refundRow, matchWrap(top = 12))
 
         managerPinInput = EditText(this).apply {
-            hint = "責任者PIN（実行・設定変更時に必須）"
+            hint = "責任者PIN"
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
         }
-        root.addView(managerPinInput, matchWrap(top = 12))
-
-        val settingRow = horizontalRow()
-        reasonRequiredCheck = CheckBox(this).apply {
-            text = "返品理由を必須にする"
-            textSize = 16f
-            isChecked = coordinator.reasonRequired()
+        if (!ManagerApprovalV145.canUseCurrentManagerSession(applicationContext)) {
+            root.addView(managerPinInput, matchWrap(top = 12))
         }
-        settingRow.addView(reasonRequiredCheck, LinearLayout.LayoutParams(0, dp(52), 2f))
-        settingRow.addView(Button(this).apply {
-            text = "理由必須設定を保存"
-            setOnClickListener { saveReasonSetting() }
-        }, LinearLayout.LayoutParams(0, dp(52), 1.3f))
-        root.addView(settingRow, matchWrap(top = 8))
+
 
         root.addView(TextView(this).apply {
             text = "カード返金を選んだ場合、つぐレジ側には返金記録を残しますが、決済端末側の返金操作完了も必ず確認してください。"
@@ -161,7 +158,7 @@ class ManualReturnActivityV135 : ComponentActivity() {
             setOnClickListener { finish() }
         }, LinearLayout.LayoutParams(0, dp(58), 1f))
         confirmButton = Button(this).apply {
-            text = "責任者承認して返品確定"
+            text = "返品を確定"
             setOnClickListener { executeReturn() }
         }
         actionRow.addView(confirmButton, LinearLayout.LayoutParams(0, dp(58), 2f).apply { marginStart = dp(12) })
@@ -171,15 +168,37 @@ class ManualReturnActivityV135 : ComponentActivity() {
 
     private fun addLine() {
         if (products.isEmpty()) return showError("返品対象の商品が登録されていません")
-        val quantity = quantityInput.text.toString().trim().toIntOrNull()
-            ?: return showError("数量を数字で入力してください")
-        if (quantity <= 0) return showError("数量は1以上で入力してください")
+        val rawQuantity = quantityInput.text.toString().trim()
+        val quantityHundredths = runCatching { QuantityV136.parse(rawQuantity).hundredths }
+            .getOrElse { return showError(it.message ?: "数量を入力してください") }
         val product = products[productSpinner.selectedItemPosition.coerceIn(products.indices)]
+        runCatching { product.quantityMode.requireAllowed(quantityHundredths) }
+            .exceptionOrNull()
+            ?.let { return showError(it.message ?: "数量を確認してください") }
         val existing = lines.indexOfFirst { it.product.id == product.id }
-        if (existing >= 0) {
-            lines[existing] = lines[existing].copy(quantity = lines[existing].quantity + quantity)
+        val combinedHundredths = if (existing >= 0) {
+            Math.addExact(lines[existing].quantityHundredths, quantityHundredths)
         } else {
-            lines += ManualReturnLineRequestV135(product, quantity)
+            quantityHundredths
+        }
+        runCatching { product.quantityMode.requireAllowed(combinedHundredths) }
+            .exceptionOrNull()
+            ?.let { return showError(it.message ?: "数量を確認してください") }
+        val legacyQuantity = ((combinedHundredths + QuantityV136.SCALE - 1L) / QuantityV136.SCALE)
+            .coerceAtLeast(1L)
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
+        if (existing >= 0) {
+            lines[existing] = lines[existing].copy(
+                quantity = legacyQuantity,
+                quantityHundredths = combinedHundredths,
+            )
+        } else {
+            lines += ManualReturnLineRequestV135(
+                product = product,
+                quantity = legacyQuantity,
+                quantityHundredths = quantityHundredths,
+            )
         }
         quantityInput.setText("1")
         refreshLines()
@@ -192,19 +211,17 @@ class ManualReturnActivityV135 : ComponentActivity() {
             return
         }
         linesText.text = lines.joinToString("\n") { line ->
-            "${line.product.name} ${line.product.taxSymbol}   -${line.quantity} × ${yen(line.product.unitPrice)}"
+            "${line.product.name} ${line.product.taxSymbol}   -${line.quantityText} × ${yen(line.product.unitPrice)}"
         }
-        val items = lines.map { CartItem(it.product, it.quantity) }
+        val items = lines.map {
+            CartItem(
+                product = it.product,
+                quantity = it.quantity,
+                quantityHundredths = it.quantityHundredths,
+            )
+        }
         val total = TaxEngine.calculate(items).grossAmount
         totalText.text = "返金合計  -${yen(total)}"
-    }
-
-    private fun saveReasonSetting() {
-        runCatching {
-            coordinator.setReasonRequired(reasonRequiredCheck.isChecked, managerPinInput.text.toString())
-        }.onSuccess {
-            toastDialog("設定保存", if (reasonRequiredCheck.isChecked) "返品理由を必須にしました" else "返品理由を任意にしました")
-        }.onFailure { showError(it.message ?: "設定を保存できませんでした") }
     }
 
     private fun executeReturn() {

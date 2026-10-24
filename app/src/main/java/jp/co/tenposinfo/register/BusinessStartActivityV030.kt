@@ -70,6 +70,7 @@ class BusinessStartActivityV030 : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 BusinessStartRouteV030(
                     onOpenOperations = {
@@ -78,6 +79,8 @@ class BusinessStartActivityV030 : ComponentActivity() {
                     },
                     onClose = { finish() },
                 )
+            }
+        
             }
         }
     }
@@ -403,20 +406,7 @@ private fun BusinessAmountRowV030(label: String, value: String, emphasized: Bool
 
 @Composable
 private fun BusinessHeaderV030(metrics: RegisterResponsiveMetrics) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(metrics.headerHeightDp.dp)
-            .background(BusinessNavyV030)
-            .padding(horizontal = metrics.screenPaddingDp.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = if (metrics.isCompact) 19.sp else 23.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(if (metrics.isCompact) 12.dp else 24.dp))
-        Text("SCR-490  営業開始・状態", color = Color.White, fontSize = if (metrics.isCompact) 17.sp else 21.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
-        if (!metrics.isCompact) Text("オフライン管理", color = Color.White, fontSize = 14.sp)
-    }
+    RegisterTopBarV141("営業開始・状態")
 }
 
 @Composable

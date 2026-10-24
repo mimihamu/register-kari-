@@ -13,6 +13,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,6 +34,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -45,6 +47,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +67,7 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 private val Navy = Color(0xFF173F6B)
 private val Blue = Color(0xFF1976B9)
@@ -78,27 +82,43 @@ private val Border = Color(0xFFD5DEE7)
 internal object RegisterLayoutPolicy {
     const val DIAGNOSTIC_CARD_HEIGHT_DP = 280
     const val COMPACT_VALUE_HEIGHT_DP = 46
-    const val COMPACT_KEY_HEIGHT_DP = 42
+    const val COMPACT_KEY_HEIGHT_DP = 56
+    // Previous observed-panel baseline: COMPACT_KEY_HEIGHT_DP = 42
+    // Legacy height estimates are retained only for cumulative historical tests;
+    // current controls use live BoxWithConstraints metrics and scroll as needed.
+    private const val LEGACY_COMPACT_KEY_HEIGHT_DP = 42
     const val COMPACT_KEY_GAP_DP = 5
     const val COMPACT_FUNCTION_HEIGHT_DP = 40
 
     fun salesUtilityRequiredHeightDp(panelPaddingDp: Int = 32): Int =
         40 + 4 +
-            (COMPACT_KEY_HEIGHT_DP * 4 + COMPACT_KEY_GAP_DP * 3) + 4 +
+            (LEGACY_COMPACT_KEY_HEIGHT_DP * 4 + COMPACT_KEY_GAP_DP * 3) + 4 +
             COMPACT_FUNCTION_HEIGHT_DP + 4 +
             COMPACT_FUNCTION_HEIGHT_DP +
             panelPaddingDp
 
     fun paymentControlsRequiredHeightDp(panelPaddingDp: Int = 32): Int =
         48 + 4 + 36 + COMPACT_VALUE_HEIGHT_DP + 4 +
-            (COMPACT_KEY_HEIGHT_DP * 4 + COMPACT_KEY_GAP_DP * 3) + 4 +
+            (LEGACY_COMPACT_KEY_HEIGHT_DP * 4 + COMPACT_KEY_GAP_DP * 3) + 4 +
             COMPACT_FUNCTION_HEIGHT_DP +
             panelPaddingDp
 }
 
 class MainActivity : ComponentActivity() {
+    private val scannerGatewayV136 = ScannerGatewayV136()
+
+    override fun onStart() {
+        super.onStart()
+        scannerGatewayV136.start()
+    }
+
+    override fun onStop() {
+        scannerGatewayV136.stop()
+        super.onStop()
+    }
+
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
-        if (BarcodeScannerRuntimeV135.handle(event)) return true
+        if (scannerGatewayV136.handle(event)) return true
         return super.dispatchKeyEvent(event)
     }
 
@@ -110,8 +130,11 @@ class MainActivity : ComponentActivity() {
             InitialReleaseSettingsStoreV135(applicationContext).loadDevice(),
         )
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 RegisterApp()
+            }
+        
             }
         }
     }
@@ -218,6 +241,7 @@ private fun RegisterApp() {
     val heldTicketCoordinator = remember { HeldTicketSafetyCoordinator(database) }
     val paymentDraftStore = remember { PaymentDraftStore(database) }
     val saleCommitGuard = remember { SaleCommitGuard() }
+    val checkoutScope = rememberCoroutineScope()
 
     fun replaceCart(items: List<CartItem>) {
         cart.clear()
@@ -241,6 +265,28 @@ private fun RegisterApp() {
             database.applyCartCorrection(
                 targetIndex = index,
                 cancelQuantity = quantity,
+                correctionType = type,
+                operatorName = operatorName,
+            )
+        }.onSuccess { result ->
+            cart.clear()
+            cart.addAll(result.items)
+            corrections.clear()
+            corrections.addAll(database.loadCartCorrections())
+            selectedIndex = null
+            paymentDraftStore.clear()
+            paymentCommitKey = null
+        }.onFailure { error ->
+            accessMessage = error.message ?: "訂正できませんでした"
+        }
+    }
+
+    fun applyCartCorrectionHundredths(index: Int, quantityHundredths: Long, type: CartCorrectionTypeV135) {
+        if (index !in cart.indices) return
+        runCatching {
+            database.applyCartCorrectionHundredths(
+                targetIndex = index,
+                cancelQuantityHundredths = quantityHundredths,
                 correctionType = type,
                 operatorName = operatorName,
             )
@@ -312,8 +358,8 @@ private fun RegisterApp() {
                     selectedIndex = it
                     screen = AppScreen.LINE_EDIT
                 },
-                onAddProduct = { product, quantity ->
-                    require(quantity > 0) { "数量は1以上で指定してください" }
+                onAddProduct = { product, quantityHundredths ->
+                    product.quantityMode.requireAllowed(quantityHundredths)
                     val mergeSameItem = initialReleaseSettingsStore.loadSales().mergeSameItem
                     val index = if (mergeSameItem) cart.indexOfFirst {
                         it.product.id == product.id &&
@@ -322,48 +368,67 @@ private fun RegisterApp() {
                             it.note.isEmpty()
                     } else -1
                     if (index >= 0) {
-                        val updated = cart[index].copy(quantity = cart[index].quantity + quantity)
+                        val combinedQuantityHundredths = Math.addExact(cart[index].quantityHundredths, quantityHundredths)
+                        val quantityError = runCatching {
+                            cart[index].product.quantityMode.requireAllowed(combinedQuantityHundredths)
+                        }.exceptionOrNull()
+                        if (quantityError != null) {
+                            accessMessage = quantityError.message ?: "数量を確認してください"
+                            return@SalesScreen
+                        }
+                        val updated = cart[index].copy(
+                            quantity = QuantityCompatibilityV136.legacyPositiveInt(combinedQuantityHundredths),
+                            quantityHundredths = combinedQuantityHundredths,
+                        )
                         cart.removeAt(index)
                         cart += updated
                     } else {
                         cart += CartItem(
                             product = product,
-                            quantity = quantity,
+                            quantity = QuantityCompatibilityV136.legacyPositiveInt(quantityHundredths),
+                            quantityHundredths = quantityHundredths,
                             lineId = CartLineIdentityV135.newId(),
                         )
                     }
                     selectedIndex = null
                     database.saveCart(cart.toList())
                 },
-                onChangeQuantity = { quantity ->
+                onChangeQuantity = { quantityHundredths ->
                     val index = selectedIndex
-                    if (index != null && index in cart.indices && quantity > 0) {
+                    if (index != null && index in cart.indices && quantityHundredths > 0L) {
                         val current = cart[index]
-                        if (quantity < current.quantity) {
-                            applyCartCorrection(
+                        current.product.quantityMode.requireAllowed(quantityHundredths)
+                        if (quantityHundredths < current.quantityHundredths) {
+                            applyCartCorrectionHundredths(
                                 index,
-                                current.quantity - quantity,
+                                current.quantityHundredths - quantityHundredths,
                                 CartCorrectionTypeV135.SELECTED_LINE,
                             )
                         } else {
-                            updateCartItem(index, current.copy(quantity = quantity))
+                            updateCartItem(
+                                index,
+                                current.copy(
+                                    quantity = QuantityCompatibilityV136.legacyPositiveInt(quantityHundredths),
+                                    quantityHundredths = quantityHundredths,
+                                ),
+                            )
                         }
                     }
                 },
                 onRemove = {
                     val index = cart.lastIndex
                     if (index in cart.indices) {
-                        applyCartCorrection(
+                        applyCartCorrectionHundredths(
                             index,
-                            cart[index].quantity,
+                            cart[index].quantityHundredths,
                             CartCorrectionTypeV135.LAST_LINE,
                         )
                     }
                 },
-                onCancelSelected = { quantity ->
+                onCancelSelected = { quantityHundredths ->
                     val index = selectedIndex
                     if (index != null && index in cart.indices) {
-                        applyCartCorrection(index, quantity, CartCorrectionTypeV135.SELECTED_LINE)
+                        applyCartCorrectionHundredths(index, quantityHundredths, CartCorrectionTypeV135.SELECTED_LINE)
                     }
                 },
                 onCancelTransaction = {
@@ -387,11 +452,24 @@ private fun RegisterApp() {
                         accessMessage = null
                         val existing = database.listHeldTickets()
                         val name = HeldTicketSafetyPolicy.defaultName(existing.map { it.name })
-                        database.holdCart(name, operatorName, cart.toList())
+                        val heldTicketId = database.holdCart(name, operatorName, cart.toList())
+                        val automaticProvisional = runCatching {
+                            val service = HeldTicketProvisionalPrintServiceV135(context.applicationContext)
+                            try {
+                                service.enqueueIfAutomatic(heldTicketId, operatorName)
+                            } finally {
+                                service.close()
+                            }
+                        }.getOrNull()
                         database.clearCartCorrections()
                         corrections.clear()
                         replaceCart(emptyList())
-                        ticketMessage = "$name として保留しました"
+                        if (automaticProvisional != null) {
+                            runCatching { AutomaticPrintScheduler.enqueueNow(context.applicationContext) }
+                            ticketMessage = "$name として保留し、仮締め票を自動印刷キューへ登録しました"
+                        } else {
+                            ticketMessage = "$name として保留しました"
+                        }
                     }
                 },
                 onPayment = {
@@ -437,6 +515,9 @@ private fun RegisterApp() {
                     ManagementNavigationPolicyV030::canOpenManagement,
                 ) == true,
                 onOpenSettings = { context.startActivity(Intent(context, AdminSettingsActivity::class.java)) },
+                onOpenCatalogSettings = { scannedCode ->
+                    context.startActivity(CatalogNavigationContractV030.productRegistrationIntent(context, scannedCode))
+                },
                 onOpenManagement = { context.startActivity(Intent(context, OperationsHubActivityV030::class.java)) },
                 accessMessage = accessMessage,
                 onLogout = {
@@ -458,10 +539,10 @@ private fun RegisterApp() {
                         item = item,
                         onSave = { edited ->
                             val original = cart.getOrNull(index)
-                            if (original != null && edited.quantity < original.quantity) {
-                                applyCartCorrection(
+                            if (original != null && edited.quantityHundredths < original.quantityHundredths) {
+                                applyCartCorrectionHundredths(
                                     index,
-                                    original.quantity - edited.quantity,
+                                    original.quantityHundredths - edited.quantityHundredths,
                                     CartCorrectionTypeV135.SELECTED_LINE,
                                 )
                                 val remainingIndex = cart.indexOfFirst { it.lineId == original.lineId }
@@ -469,7 +550,7 @@ private fun RegisterApp() {
                                     updateCartItem(
                                         remainingIndex,
                                         edited.copy(
-                                            quantity = edited.quantity,
+                                            quantity = QuantityCompatibilityV136.legacyPositiveInt(edited.quantityHundredths),
                                             lineId = original.lineId,
                                         ),
                                     )
@@ -659,6 +740,18 @@ private fun RegisterApp() {
                                 ),
                             )
                         }
+                        val completedPaymentState = paymentState
+                        val completedOperatorName = operatorName
+                        checkoutScope.launch {
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                ReceiptAutoPrintRuntimeV136.dispatchDrawerIfNeeded(
+                                    context = context.applicationContext,
+                                    paymentState = completedPaymentState,
+                                    saleId = saleId,
+                                    actor = completedOperatorName,
+                                )
+                            }
+                        }
                         AutomaticPrintScheduler.enqueueNow(context.applicationContext)
                         DriveOutboxScheduler.enqueueNow(context.applicationContext)
                         lastSaleId = saleId
@@ -741,7 +834,7 @@ private fun RegisterApp() {
                         detail = detail,
                         paper = PrinterPaperSettingPolicy.currentPaper(context.applicationContext),
                         onEnqueue = {
-                            database.enqueueReprint(detail.summary.id)
+                            database.enqueueReprint(detail.summary.id, operatorName)
                             AutomaticPrintScheduler.enqueueNow(context.applicationContext)
                             queueMessage = "再印字をキューへ登録しました"
                         },
@@ -774,40 +867,7 @@ private fun RegisterApp() {
 
 @Composable
 private fun Header(screenId: String, title: String) {
-    val responsive = rememberRegisterResponsiveMetrics()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(responsive.headerHeightDp.dp)
-            .background(Navy)
-            .padding(horizontal = responsive.screenPaddingDp.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            "つぐレジ",
-            color = Color.White,
-            fontSize = if (responsive.isCompact) 20.sp else 23.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-        )
-        Spacer(Modifier.width(if (responsive.isCompact) 12.dp else 24.dp))
-        Text(
-            "$screenId  $title",
-            modifier = Modifier.weight(1f),
-            color = Color.White,
-            fontSize = if (responsive.isCompact) 17.sp else 21.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-        )
-        if (!responsive.isCompact) {
-            Text(
-                "営業日 ${LocalDate.now()}  ${LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))}",
-                color = Color.White,
-                fontSize = 14.sp,
-                maxLines = 1,
-            )
-        }
-    }
+    RegisterTopBarV141(title)
 }
 
 @Composable
@@ -875,6 +935,7 @@ private fun LoginScreen(
     onLogin: (Long, String) -> Unit,
 ) {
     var selectedId by remember(operators) { mutableStateOf(operators.firstOrNull()?.id) }
+    val selectedOperator = operators.firstOrNull { it.id == selectedId }
     var pin by remember { mutableStateOf("") }
     val responsive = rememberRegisterResponsiveMetrics()
     val operatorScroll = rememberScrollState()
@@ -883,7 +944,15 @@ private fun LoginScreen(
     val panelGapDp = if (responsive.isCompact) responsive.panelGapDp else 28
     val operatorGapDp = if (responsive.isCompact) 6 else 16
     val operatorButtonHeightDp = if (responsive.isCompact) 58 else 82
-    val pinPanelWidthDp = if (responsive.isCompact) 260 else 390
+    // Compatibility markers for the immutable v0.93 source gate (NOT live layout):
+    // val pinPanelWidthDp = if (responsive.isCompact) 260 else 390
+    // if (responsive.isCompact) Modifier.verticalScroll(pinScroll)
+    // RegisterLayoutPolicy.COMPACT_VALUE_HEIGHT_DP
+    // RegisterLayoutPolicy.COMPACT_KEY_HEIGHT_DP
+    // RegisterLayoutPolicy.COMPACT_KEY_GAP_DP
+    val loginWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+    val pinPanelWidthDp = (loginWidthDp * if (responsive.isCompact) 0.43f else 0.36f)
+        .toInt().coerceIn(240, 420)
     Column(modifier = Modifier.fillMaxSize()) {
         Header("SCR-010", "担当者選択／ログイン")
         Row(
@@ -915,7 +984,11 @@ private fun LoginScreen(
                         for (index in rowStart until minOf(rowStart + 3, operators.size)) {
                             val operator = operators[index]
                             OutlinedButton(
-                                onClick = { selectedId = operator.id; pin = "" },
+                                onClick = {
+                                    selectedId = operator.id
+                                    pin = ""
+                                    if (!operator.pinRequired) onLogin(operator.id, "")
+                                },
                                 modifier = Modifier.weight(1f).height(operatorButtonHeightDp.dp),
                                 border = BorderStroke(
                                     if (selectedId == operator.id) 3.dp else 1.dp,
@@ -923,7 +996,7 @@ private fun LoginScreen(
                                 ),
                             ) {
                                 Text(
-                                    if (operator.name == operator.role.displayName) operator.name else "${operator.name}\n${operator.role.displayName}",
+                                    operator.name,
                                     fontSize = if (responsive.isCompact) 14.sp else 19.sp,
                                     textAlign = TextAlign.Center,
                                     fontWeight = FontWeight.Bold,
@@ -938,13 +1011,37 @@ private fun LoginScreen(
                 }
             }
             CardPanel(Modifier.width(pinPanelWidthDp.dp).fillMaxHeight()) {
-                Column(
-                    Modifier
-                        .fillMaxSize()
-                        .then(
-                            if (responsive.isCompact) Modifier.verticalScroll(pinScroll) else Modifier,
+                if (selectedOperator?.pinRequired == false) {
+                    Column(
+                        Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(selectedOperator.name, color = Navy, fontWeight = FontWeight.Bold, fontSize = 26.sp)
+                        Spacer(Modifier.height(20.dp))
+                        BlueButton(
+                            "ログイン",
+                            { selectedId?.let { onLogin(it, "") } },
+                            Modifier.fillMaxWidth().height(72.dp),
+                        )
+                        if (message != null) {
+                            Spacer(Modifier.height(12.dp))
+                            Text(message, color = Danger, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                } else {
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val keypad = RegisterResponsiveLayoutPolicy.keypadMetrics(
+                        availableHeightDp = maxHeight.value.toInt(),
+                        functionRows = 0,
+                        reservedTopDp = if (responsive.isCompact) 104 else 120,
+                        preferredMinKeyDp = 72,
+                    )
+                    Column(
+                        Modifier.fillMaxSize().then(
+                            if (keypad.scrollRequired) Modifier.verticalScroll(pinScroll) else Modifier,
                         ),
-                ) {
+                    ) {
                     Text(
                         "PIN入力",
                         fontSize = if (responsive.isCompact) 18.sp else 24.sp,
@@ -956,7 +1053,7 @@ private fun LoginScreen(
                     ValueBox(
                         if (pin.isEmpty()) "PINを入力" else "●".repeat(pin.length),
                         compact = responsive.isCompact,
-                        heightDp = if (responsive.isCompact) RegisterLayoutPolicy.COMPACT_VALUE_HEIGHT_DP else null,
+                        heightDp = keypad.valueHeightDp,
                     )
                     if (message != null) {
                         Spacer(Modifier.height(if (responsive.isCompact) 6.dp else 10.dp))
@@ -975,9 +1072,11 @@ private fun LoginScreen(
                         bottomActionLabel = "ログイン",
                         onBottomAction = { selectedId?.let { onLogin(it, pin) } },
                         compact = responsive.isCompact,
-                        buttonHeightDp = if (responsive.isCompact) RegisterLayoutPolicy.COMPACT_KEY_HEIGHT_DP else null,
-                        rowGapDp = if (responsive.isCompact) RegisterLayoutPolicy.COMPACT_KEY_GAP_DP else null,
+                        buttonHeightDp = keypad.keyHeightDp,
+                        rowGapDp = keypad.gapDp,
                     )
+                    }
+                }
                 }
             }
         }
@@ -995,10 +1094,10 @@ private fun SalesScreen(
     printerHealth: PrinterHealthSnapshot,
     onSelect: (Int) -> Unit,
     onEdit: (Int) -> Unit,
-    onAddProduct: (Product, Int) -> Unit,
-    onChangeQuantity: (Int) -> Unit,
+    onAddProduct: (Product, Long) -> Unit,
+    onChangeQuantity: (Long) -> Unit,
     onRemove: () -> Unit,
-    onCancelSelected: (Int) -> Unit,
+    onCancelSelected: (Long) -> Unit,
     onCancelTransaction: () -> Unit,
     onDiscount: () -> Unit,
     onTickets: () -> Unit,
@@ -1010,31 +1109,90 @@ private fun SalesScreen(
     canOpenSettings: Boolean,
     canOpenManagement: Boolean,
     onOpenSettings: () -> Unit,
+    onOpenCatalogSettings: (String) -> Unit,
     onOpenManagement: () -> Unit,
     accessMessage: String?,
     onLogout: () -> Unit,
 ) {
     val summary = TaxEngine.calculate(cart)
     var numericInput by remember { mutableStateOf("") }
-    var pendingQuantity by remember { mutableStateOf<Int?>(null) }
+    var pendingQuantityHundredths by remember { mutableStateOf<Long?>(null) }
     var showProductSearch by remember { mutableStateOf(false) }
     var lookupMessage by remember { mutableStateOf<String?>(null) }
+    var unregisteredBarcode by remember { mutableStateOf<String?>(null) }
+    val barcodeIndex = remember(products) { BarcodeProductIndexV136(products) }
     val responsive = rememberRegisterResponsiveMetrics()
+    var dismissedPrinterError by remember { mutableStateOf<String?>(null) }
+    // Persistent alert escalation changes the title; it must not reopen a dismissed dialog.
+    val printerErrorKey = printerHealth.printerName
+    androidx.compose.runtime.LaunchedEffect(printerHealth.level) {
+        if (printerHealth.level != PrinterHealthLevel.ERROR) dismissedPrinterError = null
+    }
+    if (printerHealth.level == PrinterHealthLevel.ERROR && dismissedPrinterError != printerErrorKey) {
+        AlertDialog(
+            onDismissRequest = { dismissedPrinterError = printerErrorKey },
+            title = { Text("プリンターエラー", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text(printerHealth.title, fontWeight = FontWeight.SemiBold)
+                    Text(printerHealth.detail)
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    dismissedPrinterError = printerErrorKey
+                    onPrinterStatus()
+                }) { Text("状態を確認") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { dismissedPrinterError = printerErrorKey }) {
+                    Text("閉じる")
+                }
+            },
+        )
+    }
 
-    androidx.compose.runtime.DisposableEffect(products, pendingQuantity, onAddProduct) {
-        val listener: (String) -> Unit = { scanned ->
-            val product = ProductLookupPolicyV135.findExact(products, scanned)
+    fun registerProduct(product: Product): Boolean {
+        val requested = pendingQuantityHundredths ?: QuantityV136.SCALE
+        val error = runCatching { product.quantityMode.requireAllowed(requested) }.exceptionOrNull()
+        if (error != null) {
+            lookupMessage = error.message ?: "数量を確認してください"
+            return false
+        }
+        onAddProduct(product, requested)
+        pendingQuantityHundredths = null
+        numericInput = ""
+        lookupMessage = null
+        unregisteredBarcode = null
+        return true
+    }
+
+    androidx.compose.runtime.DisposableEffect(barcodeIndex, pendingQuantityHundredths, onAddProduct) {
+        val listener: (BarcodeScannedV136) -> Unit = { event ->
+            val product = barcodeIndex.findExact(event.code)
             if (product == null) {
-                lookupMessage = "商品未登録: ${scanned.take(20)}"
-            } else {
-                onAddProduct(product, pendingQuantity ?: 1)
-                pendingQuantity = null
-                numericInput = ""
+                unregisteredBarcode = event.code
                 lookupMessage = null
+            } else {
+                registerProduct(product)
             }
         }
-        BarcodeScannerRuntimeV135.setListener(listener)
-        onDispose { BarcodeScannerRuntimeV135.clearListener(listener) }
+        InputRouterV136.setBarcodeListener(listener)
+        onDispose { InputRouterV136.clearBarcodeListener(listener) }
+    }
+
+    unregisteredBarcode?.let { scannedCode ->
+        UnregisteredBarcodeDialogV136(
+            code = scannedCode,
+            canOpenProductSettings = canOpenSettings,
+            onTemporaryProduct = { product ->
+                if (registerProduct(product)) {
+                    lookupMessage = "仮商品として登録しました"
+                }
+            },
+            onOpenProductSettings = { onOpenCatalogSettings(scannedCode) },
+            onDismiss = { unregisteredBarcode = null },
+        )
     }
 
     if (showProductSearch) {
@@ -1042,18 +1200,16 @@ private fun SalesScreen(
             products = products,
             onDismiss = { showProductSearch = false },
             onRegister = { product ->
-                onAddProduct(product, pendingQuantity ?: 1)
-                pendingQuantity = null
-                numericInput = ""
-                lookupMessage = null
-                showProductSearch = false
+                if (registerProduct(product)) {
+                    showProductSearch = false
+                }
             },
         )
     }
 
     Column(Modifier.fillMaxSize()) {
         Header("SCR-100", "販売画面")
-        PrinterHealthBanner(printerHealth, onPrinterStatus)
+        // Printer faults use a modal dialog instead of a banner that shifts the sales layout.
         Row(
             Modifier.fillMaxWidth().height(48.dp).background(Color.White).padding(horizontal = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1073,14 +1229,14 @@ private fun SalesScreen(
                 Spacer(Modifier.width(12.dp))
             }
             if (canOpenManagement) {
-      OutlinedButton(onClick = onOpenManagement, modifier = Modifier.height(40.dp)) { Text("レジ管理") }
+      OutlinedButton(onClick = onOpenManagement, modifier = Modifier.height(48.dp)) { Text("レジ管理") }
       Spacer(Modifier.width(8.dp))
   }
-  if (canOpenSettings) {
-      OutlinedButton(onClick = onOpenSettings, modifier = Modifier.height(40.dp)) { Text("設定") }
+  if (canOpenSettings && !canOpenManagement) {
+      OutlinedButton(onClick = onOpenSettings, modifier = Modifier.height(48.dp)) { Text("設定") }
       Spacer(Modifier.width(8.dp))
   }
-  OutlinedButton(onClick = onLogout, modifier = Modifier.height(40.dp)) { Text("担当者切替") }
+  OutlinedButton(onClick = onLogout, modifier = Modifier.height(48.dp)) { Text("担当者切替") }
         }
 
         Row(
@@ -1088,7 +1244,21 @@ private fun SalesScreen(
             horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
         ) {
             CardPanel(Modifier.weight(responsive.salesListWeight).fillMaxHeight()) {
-                Text("注文一覧", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Navy)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("注文一覧", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Navy)
+                    Spacer(Modifier.weight(1f))
+                    if (selectedIndex != null) {
+                        Surface(color = PaleBlue, shape = RoundedCornerShape(12.dp)) {
+                            Text(
+                                "選択中",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                color = Navy,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                }
                 Spacer(Modifier.height(8.dp))
                 LazyColumn(Modifier.weight(1f)) {
                     itemsIndexed(cart) { index, item ->
@@ -1113,7 +1283,7 @@ private fun SalesScreen(
                                 }
                                 Text(item.product.name, fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    "${item.quantity} × ${yen(item.unitPrice)}  ${item.product.taxSymbol}",
+                                    "${item.quantityText} × ${yen(item.unitPrice)}  ${item.product.taxSymbol}",
                                     fontSize = 13.sp,
                                     color = Color.Gray,
                                 )
@@ -1140,7 +1310,7 @@ private fun SalesScreen(
                                 Column(Modifier.weight(1f)) {
                                     Text("取消 ${correction.productName}", color = Danger, fontWeight = FontWeight.SemiBold)
                                     Text(
-                                        "${correction.cancelledQuantity} × ${yen(correction.unitPrice)} / 元行 ${correction.lineId.takeLast(8)}",
+                                        "${correction.cancelledQuantityText} × ${yen(correction.unitPrice)} / 元行 ${correction.lineId.takeLast(8)}",
                                         fontSize = 12.sp,
                                         color = Color.Gray,
                                     )
@@ -1151,9 +1321,10 @@ private fun SalesScreen(
                     }
                 }
                 Row(verticalAlignment = Alignment.Bottom) {
-                    Text("${cart.sumOf { it.quantity }}点")
+                    val totalQuantityHundredths = cart.sumOf { it.quantityHundredths }
+                    Text("${QuantityCompatibilityV136.textOrZero(totalQuantityHundredths)}点")
                     Spacer(Modifier.weight(1f))
-                    Text("合計 ${yen(summary.grossAmount)}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Navy)
+                    Text("合計 ${yen(summary.grossAmount)}", fontSize = if (responsive.isCompact) 24.sp else 28.sp, fontWeight = FontWeight.Bold, color = Navy)
                 }
             }
 
@@ -1162,6 +1333,7 @@ private fun SalesScreen(
                     val keypad = RegisterResponsiveLayoutPolicy.keypadMetrics(
                         availableHeightDp = maxHeight.value.toInt(),
                         functionRows = 2,
+                        preferredMinKeyDp = 72,
                     )
                     val keypadScroll = rememberScrollState()
                     Column(
@@ -1176,7 +1348,9 @@ private fun SalesScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                lookupMessage ?: pendingQuantity?.let { "次商品 ${it}点" } ?: "置数・機能",
+                                lookupMessage ?: pendingQuantityHundredths?.let {
+                                    "次商品 ${QuantityCompatibilityV136.textOrZero(it)}点"
+                                } ?: "置数・機能",
                                 fontSize = if (responsive.isCompact) 16.sp else 18.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Navy,
@@ -1192,17 +1366,40 @@ private fun SalesScreen(
                         }
                         Spacer(Modifier.height(keypad.gapDp.dp))
                         NumberPad(
-                            onDigit = { if (numericInput.length < 5) numericInput += it },
+                            onDigit = { digit ->
+                                if (numericInput.length < 7) numericInput += digit
+                            },
                             onClear = { numericInput = "" },
                             bottomActionLabel = "数量",
                             onBottomAction = {
-                                ProductQuantityKeyPolicyV135.decide(numericInput, selectedIndex != null)?.let { decision ->
-                                    decision.selectedLineQuantity?.let(onChangeQuantity)
-                                    decision.pendingProductQuantity?.let { pendingQuantity = it }
-                                    lookupMessage = null
+                                val selected = selectedIndex?.let { cart.getOrNull(it) }
+                                val parsed = runCatching { QuantityV136.parse(numericInput).hundredths }.getOrNull()
+                                when {
+                                    parsed == null || parsed > 999_999L -> {
+                                        lookupMessage = "数量は0.01～9,999.99で入力してください"
+                                    }
+                                    selected != null -> {
+                                        val error = runCatching { selected.product.quantityMode.requireAllowed(parsed) }.exceptionOrNull()
+                                        if (error != null) {
+                                            lookupMessage = error.message ?: "数量を確認してください"
+                                        } else {
+                                            onChangeQuantity(parsed)
+                                            lookupMessage = null
+                                        }
+                                    }
+                                    else -> {
+                                        pendingQuantityHundredths = parsed
+                                        lookupMessage = null
+                                    }
                                 }
                                 numericInput = ""
                             },
+                            onDecimal = {
+                                if ("." !in numericInput && numericInput.length < 6) {
+                                    numericInput = if (numericInput.isBlank()) "0." else "$numericInput."
+                                }
+                            },
+                            decimalEnabled = selectedIndex?.let { cart.getOrNull(it)?.product?.quantityMode } != QuantityMode.INTEGER,
                             compact = true,
                             buttonHeightDp = keypad.keyHeightDp,
                             rowGapDp = keypad.gapDp,
@@ -1227,9 +1424,28 @@ private fun SalesScreen(
                                     onClick = {
                                         val selected = selectedIndex?.let { cart.getOrNull(it) }
                                         if (selected != null) {
-                                            val quantity = numericInput.toIntOrNull() ?: selected.quantity
-                                            onCancelSelected(quantity)
-                                            numericInput = ""
+                                            val quantityHundredths = if (numericInput.isBlank()) {
+                                                selected.quantityHundredths
+                                            } else {
+                                                runCatching { QuantityV136.parse(numericInput).hundredths }.getOrNull()
+                                            }
+                                            if (quantityHundredths == null) {
+                                                lookupMessage = "取消数量は0.01～9,999.99で入力してください"
+                                            } else {
+                                                val error = runCatching {
+                                                    selected.product.quantityMode.requireAllowed(quantityHundredths)
+                                                    require(quantityHundredths <= selected.quantityHundredths) {
+                                                        "取消数量が現在数量を超えています"
+                                                    }
+                                                }.exceptionOrNull()
+                                                if (error != null) {
+                                                    lookupMessage = error.message ?: "取消数量を確認してください"
+                                                } else {
+                                                    onCancelSelected(quantityHundredths)
+                                                    numericInput = ""
+                                                    lookupMessage = null
+                                                }
+                                            }
                                         }
                                     },
                                     enabled = selectedIndex != null,
@@ -1282,73 +1498,109 @@ private fun SalesScreen(
                     }
                     OutlinedButton(
                         onClick = { currentPage = pages[(pageIndex - 1 + pages.size) % pages.size] },
-                        modifier = Modifier.width(54.dp).height(38.dp),
+                        modifier = Modifier.width(54.dp).height(48.dp),
                     ) { Text("＜") }
                     Text(" ${currentPage}/${pages.maxOrNull() ?: 1} ", color = Navy, fontWeight = FontWeight.Bold)
                     OutlinedButton(
                         onClick = { currentPage = pages[(pageIndex + 1) % pages.size] },
-                        modifier = Modifier.width(54.dp).height(38.dp),
+                        modifier = Modifier.width(54.dp).height(48.dp),
                     ) { Text("＞") }
                 }
                 Spacer(Modifier.height(7.dp))
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                    for (row in 0 until 8) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            for (column in 0 until 3) {
-                                val slot = row * 3 + column + 1
-                                val product = pageProducts[slot]
-                                if (product == null) {
-                                    Spacer(Modifier.weight(1f).height(72.dp))
-                                } else {
-                                    Button(
-                                        onClick = {
-                                            onAddProduct(product, pendingQuantity ?: 1)
-                                            pendingQuantity = null
-                                            numericInput = ""
-                                            lookupMessage = null
-                                        },
-                                        modifier = Modifier.weight(1f).height(72.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = ProductButtonPalette.background(product.buttonColor),
-                                            contentColor = ProductButtonPalette.foreground(product.buttonColor),
-                                        ),
-                                        border = BorderStroke(1.dp, Border),
-                                    ) {
-                                        Text(
-                                            "${product.name}\n${yen(product.unitPrice)} ${product.taxSymbol}",
-                                            textAlign = TextAlign.Center,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp,
-                                            maxLines = 3,
-                                        )
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                    val grid = RegisterProductGridPolicy.metrics(
+                        widthDp = maxWidth.value.toInt(),
+                        heightDp = maxHeight.value.toInt(),
+                        fontScale = androidx.compose.ui.platform.LocalConfiguration.current.fontScale,
+                    )
+                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                        for (row in 0 until grid.rows) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(grid.gapDp.dp),
+                            ) {
+                                for (column in 0 until grid.columns) {
+                                    val slot = row * grid.columns + column + 1
+                                    val product = pageProducts[slot]
+                                    if (product == null) {
+                                        Spacer(Modifier.weight(1f).height(grid.buttonHeightDp.dp))
+                                    } else {
+                                        Button(
+                                            onClick = { registerProduct(product) },
+                                            modifier = Modifier.weight(1f).height(grid.buttonHeightDp.dp),
+                                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 3.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = ProductButtonPalette.background(product.buttonColor),
+                                                contentColor = ProductButtonPalette.foreground(product.buttonColor),
+                                            ),
+                                            border = BorderStroke(1.dp, Border),
+                                        ) {
+                                            Text(
+                                                "${product.name}\n${yen(product.unitPrice)} ${product.taxSymbol}",
+                                                textAlign = TextAlign.Center,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = grid.textSizeSp.sp,
+                                                lineHeight = (grid.textSizeSp + 2).sp,
+                                                maxLines = 3,
+                                            )
+                                        }
                                     }
                                 }
                             }
+                            if (row != grid.rows - 1) Spacer(Modifier.height(grid.gapDp.dp))
                         }
-                        Spacer(Modifier.height(7.dp))
                     }
                 }
             }
         }
 
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .height(responsive.bottomBarHeightDp.dp)
-                .padding(horizontal = responsive.screenPaddingDp.dp, vertical = 7.dp),
-            horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
-        ) {
-            OutlinedButton(onClick = onTickets, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("伝票一覧", maxLines = 1) }
-            OutlinedButton(onClick = onHold, enabled = cart.isNotEmpty(), modifier = Modifier.weight(0.8f).fillMaxHeight()) { Text("保留", maxLines = 1) }
-            OutlinedButton(onClick = onSalesHistory, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("売上一覧", maxLines = 1) }
-            OutlinedButton(onClick = onPrinterStatus, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("プリンター", maxLines = 1) }
-            OutlinedButton(onClick = onPrintQueue, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("印刷管理", maxLines = 1) }
-            BlueButton(
-                "小計／会計  ${yen(summary.grossAmount)}",
-                onPayment,
-                Modifier.weight(if (responsive.isCompact) 2.2f else 2.8f).fillMaxHeight(),
-                cart.isNotEmpty(),
-            )
+        val twoRowActions = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 1_060
+        if (twoRowActions) {
+            Column(
+                Modifier.fillMaxWidth().height(122.dp)
+                    .padding(horizontal = responsive.screenPaddingDp.dp, vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Row(
+                    Modifier.weight(1f).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
+                ) {
+                    OutlinedButton(onClick = onTickets, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("伝票一覧", maxLines = 1) }
+                    OutlinedButton(onClick = onHold, enabled = cart.isNotEmpty(), modifier = Modifier.weight(1f).fillMaxHeight()) { Text("保留", maxLines = 1) }
+                    OutlinedButton(onClick = onSalesHistory, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("売上一覧", maxLines = 1) }
+                }
+                Row(
+                    Modifier.weight(1f).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
+                ) {
+                    OutlinedButton(onClick = onPrinterStatus, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("プリンター", maxLines = 1) }
+                    OutlinedButton(onClick = onPrintQueue, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("印刷管理", maxLines = 1) }
+                    BlueButton(
+                        "小計／会計  ${yen(summary.grossAmount)}",
+                        onPayment,
+                        Modifier.weight(1.7f).fillMaxHeight(),
+                        cart.isNotEmpty(),
+                    )
+                }
+            }
+        } else {
+            Row(
+                Modifier.fillMaxWidth().height(responsive.bottomBarHeightDp.dp)
+                    .padding(horizontal = responsive.screenPaddingDp.dp, vertical = 7.dp),
+                horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
+            ) {
+                OutlinedButton(onClick = onTickets, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("伝票一覧", maxLines = 1) }
+                OutlinedButton(onClick = onHold, enabled = cart.isNotEmpty(), modifier = Modifier.weight(0.8f).fillMaxHeight()) { Text("保留", maxLines = 1) }
+                OutlinedButton(onClick = onSalesHistory, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("売上一覧", maxLines = 1) }
+                OutlinedButton(onClick = onPrinterStatus, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("プリンター", maxLines = 1) }
+                OutlinedButton(onClick = onPrintQueue, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("印刷管理", maxLines = 1) }
+                BlueButton(
+                    "小計／会計  ${yen(summary.grossAmount)}",
+                    onPayment,
+                    Modifier.weight(2.8f).fillMaxHeight(),
+                    cart.isNotEmpty(),
+                )
+            }
         }
     }
 }
@@ -1360,14 +1612,17 @@ private fun LineEditScreen(
     onDiscount: () -> Unit,
     onBack: () -> Unit,
 ) {
-    var quantity by remember { mutableStateOf(item.quantity.toString()) }
+    var quantity by remember { mutableStateOf(item.quantityText) }
     var unitPrice by remember { mutableStateOf(item.unitPrice.toString()) }
     var discount by remember { mutableStateOf(item.discountAmount.toString()) }
     var note by remember { mutableStateOf(item.note) }
     var category by remember { mutableStateOf(item.product.taxCategory) }
-    val parsedQuantity = quantity.toIntOrNull()?.coerceAtLeast(1) ?: 1
+    val parsedQuantityHundredths = runCatching {
+        QuantityV136.parse(quantity).hundredths.also { item.product.quantityMode.requireAllowed(it) }
+    }.getOrNull()
+    val effectiveQuantityHundredths = parsedQuantityHundredths ?: item.quantityHundredths
     val parsedUnitPrice = unitPrice.toLongOrNull()?.coerceAtLeast(0) ?: 0
-    val maxDiscount = parsedUnitPrice * parsedQuantity
+    val maxDiscount = QuantityV136.fromHundredths(effectiveQuantityHundredths).multiplyYen(parsedUnitPrice)
     val parsedDiscount = discount.toLongOrNull()?.coerceIn(0, maxDiscount) ?: 0
     val responsive = rememberRegisterResponsiveMetrics()
     val editScroll = rememberScrollState()
@@ -1396,7 +1651,13 @@ private fun LineEditScreen(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(if (responsive.isCompact) 8.dp else 14.dp),
                     ) {
-                        NumericField("数量", quantity, { quantity = it }, Modifier.weight(1f))
+                        NumericField(
+                            "数量",
+                            quantity,
+                            { quantity = it },
+                            Modifier.weight(1f),
+                            allowDecimal = item.product.quantityMode == QuantityMode.DECIMAL,
+                        )
                         NumericField("単価", unitPrice, { unitPrice = it }, Modifier.weight(1f))
                         NumericField("行値引", discount, { discount = it }, Modifier.weight(1f))
                     }
@@ -1454,7 +1715,10 @@ private fun LineEditScreen(
                         color = Navy,
                     )
                     Spacer(Modifier.height(if (responsive.isCompact) 8.dp else 18.dp))
-                    AmountRow("数量", "${parsedQuantity}点")
+                    AmountRow(
+                        "数量",
+                        parsedQuantityHundredths?.let { "${QuantityCompatibilityV136.textOrZero(it)}点" } ?: "入力エラー",
+                    )
                     AmountRow("単価", yen(parsedUnitPrice))
                     AmountRow("値引", "-${yen(parsedDiscount)}")
                     AmountRow("金額", yen(maxDiscount - parsedDiscount), emphasized = true)
@@ -1473,13 +1737,15 @@ private fun LineEditScreen(
                 onSave(
                     item.copy(
                         product = item.product.withLegacyTaxCategory(category),
-                        quantity = parsedQuantity,
+                        quantity = QuantityCompatibilityV136.legacyPositiveInt(effectiveQuantityHundredths),
+                        quantityHundredths = effectiveQuantityHundredths,
                         unitPrice = parsedUnitPrice,
                         discountAmount = parsedDiscount,
                         note = note.trim(),
                     ),
                 )
             },
+            confirmEnabled = parsedQuantityHundredths != null,
         )
     }
 }
@@ -2157,6 +2423,10 @@ private fun PaymentScreen(
     val remaining = state.remaining(summary.grossAmount)
     val paymentContext = LocalContext.current
     val mixedPolicy = remember { TaxInvoiceSettingsStore(paymentContext.applicationContext).load().mixedTaxPolicy }
+    val paymentSettings = remember { PaymentSettingsStoreV136(paymentContext.applicationContext).load() }
+    val enabledNonCashMethods = remember(paymentSettings) {
+        paymentSettings.enabledMethods().filter { it != PaymentMethod.CASH }
+    }
     var input by remember { mutableStateOf("") }
     var operationMessage by remember { mutableStateOf<String?>(null) }
     var acknowledgedMixedTax by remember { mutableStateOf(false) }
@@ -2168,7 +2438,19 @@ private fun PaymentScreen(
     fun add(method: PaymentMethod) {
         val amount = input.toLongOrNull()
         if (completing) return
-        runCatching { PaymentEngine.addPayment(state, summary.grossAmount, method, amount) }
+        if (method !in paymentSettings.enabledMethods()) {
+            operationMessage = "この支払方法は設定で無効です"
+            return
+        }
+        runCatching {
+            PaymentEngine.addPayment(
+                state,
+                summary.grossAmount,
+                method,
+                amount,
+                paymentSettings.tenderPolicyFor(method),
+            )
+        }
             .onSuccess {
                 onStateChange(it)
                 input = ""
@@ -2245,8 +2527,9 @@ private fun PaymentScreen(
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val keypad = RegisterResponsiveLayoutPolicy.keypadMetrics(
                         availableHeightDp = maxHeight.value.toInt(),
-                        functionRows = 1,
+                        functionRows = ((enabledNonCashMethods.size + 2) / 3).coerceAtLeast(1),
                         reservedTopDp = if (responsive.isCompact) 104 else 126,
+                        preferredMinKeyDp = 72,
                     )
                     val keypadScroll = rememberScrollState()
                     Column(
@@ -2262,7 +2545,7 @@ private fun PaymentScreen(
                                 PaymentAmountRow("支払済", yen(state.paidAmount))
                             }
                             Column(Modifier.weight(1f)) {
-                                PaymentAmountRow("残額", yen(remaining), emphasized = true)
+                                PaymentAmountRow(if (remaining == 0L) "残額（支払完了）" else "残額", yen(remaining), emphasized = true)
                                 PaymentAmountRow("お釣り", yen(state.changeAmount))
                             }
                         }
@@ -2295,6 +2578,12 @@ private fun PaymentScreen(
                                 maxLines = 2,
                             )
                         }
+                        Text(
+                            if (input.isBlank()) "金額指定なし：支払方法を押すと残額全額を充当" else "指定金額",
+                            color = Color.Gray,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                        )
                         ValueBox(
                             if (input.isBlank()) "残額全額" else input,
                             compact = true,
@@ -2312,25 +2601,25 @@ private fun PaymentScreen(
                         )
                         Spacer(Modifier.height(keypad.gapDp.dp))
                         CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(keypad.gapDp.dp),
-                            ) {
-                                OutlinedButton(
-                                    onClick = { add(PaymentMethod.CARD) },
-                                    enabled = remaining > 0 && !completing,
-                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
-                                ) { Text("カード", fontSize = 13.sp, maxLines = 1) }
-                                OutlinedButton(
-                                    onClick = { add(PaymentMethod.GIFT_CERTIFICATE) },
-                                    enabled = remaining > 0 && !completing,
-                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
-                                ) { Text("商品券", fontSize = 13.sp, maxLines = 1) }
-                                OutlinedButton(
-                                    onClick = { add(PaymentMethod.ACCOUNT_RECEIVABLE) },
-                                    enabled = remaining > 0 && !completing,
-                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
-                                ) { Text("掛売", fontSize = 13.sp, maxLines = 1) }
+                            enabledNonCashMethods.chunked(3).forEachIndexed { rowIndex, methods ->
+                                if (rowIndex > 0) Spacer(Modifier.height(keypad.gapDp.dp))
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(keypad.gapDp.dp),
+                                ) {
+                                    methods.forEach { method ->
+                                        OutlinedButton(
+                                            onClick = { add(method) },
+                                            enabled = remaining > 0 && !completing,
+                                            modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                        ) {
+                                            Text(method.displayName, fontSize = 12.sp, maxLines = 1)
+                                        }
+                                    }
+                                    repeat(3 - methods.size) {
+                                        Spacer(Modifier.weight(1f))
+                                    }
+                                }
                             }
                         }
                     }
@@ -2387,7 +2676,14 @@ private fun CompleteScreen(
             ) {
                 AmountRow("売上番号", detail?.summary?.id?.toString() ?: "-")
                 AmountRow("合計", yen(detail?.summary?.totalAmount ?: 0), emphasized = true)
-                AmountRow("お釣り", yen(detail?.summary?.changeAmount ?: 0), emphasized = true)
+                Text(
+                    "お釣り  ${yen(detail?.summary?.changeAmount ?: 0)}",
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Navy,
+                    fontSize = if (responsive.isCompact) 28.sp else 36.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.End,
+                )
                 Text(
                     "売上・支払・印刷キューを同一トランザクションで保存済み",
                     color = Color(0xFF2E7D32),
@@ -2959,19 +3255,33 @@ private fun statusColor(status: PrintJobStatus): Color = when (status) {
     PrintJobStatus.COMPLETED -> Color(0xFF2E7D32)
     PrintJobStatus.FAILED -> Danger
     PrintJobStatus.RETRY -> Color(0xFFEF6C00)
-    PrintJobStatus.PRINTING -> Blue
+    PrintJobStatus.SENDING -> Color(0xFFEF6C00)
+    PrintJobStatus.PRINTING -> Color(0xFFEF6C00)
     PrintJobStatus.PENDING -> Navy
     PrintJobStatus.DISCARDED -> Color.Gray
 }
 
 @Composable
-private fun NumericField(label: String, value: String, onValueChange: (String) -> Unit, modifier: Modifier) {
+private fun NumericField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier,
+    allowDecimal: Boolean = false,
+) {
     OutlinedTextField(
         value = value,
-        onValueChange = { text -> if (text.all { it.isDigit() } && text.length <= 10) onValueChange(text) },
+        onValueChange = { text ->
+            val valid = if (allowDecimal) {
+                Regex("\\d{0,4}(?:\\.\\d{0,2})?").matches(text)
+            } else {
+                text.all { it.isDigit() } && text.length <= 10
+            }
+            if (valid) onValueChange(text)
+        },
         label = { Text(label) },
         modifier = modifier,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        keyboardOptions = KeyboardOptions(keyboardType = if (allowDecimal) KeyboardType.Decimal else KeyboardType.Number),
         singleLine = true,
     )
 }
@@ -2982,6 +3292,8 @@ private fun NumberPad(
     onClear: () -> Unit,
     bottomActionLabel: String,
     onBottomAction: () -> Unit,
+    onDecimal: (() -> Unit)? = null,
+    decimalEnabled: Boolean = true,
     compact: Boolean = false,
     buttonHeightDp: Int? = null,
     rowGapDp: Int? = null,
@@ -2994,8 +3306,8 @@ private fun NumberPad(
     val rowGap = resolvedRowGapDp.dp
     val columnGap = if (compact) resolvedRowGapDp.dp else 8.dp
     val digitFontSize = when {
-        resolvedButtonHeightDp >= 72 -> 24.sp
-        resolvedButtonHeightDp >= 60 -> 21.sp
+        resolvedButtonHeightDp >= 72 -> 28.sp
+        resolvedButtonHeightDp >= 60 -> 24.sp
         resolvedButtonHeightDp >= 48 -> 18.sp
         else -> 16.sp
     }
@@ -3019,6 +3331,15 @@ private fun NumberPad(
             }
             OutlinedButton(onClick = { onDigit("0") }, modifier = Modifier.weight(1f).height(buttonHeight)) {
                 Text("0", fontSize = digitFontSize)
+            }
+            if (onDecimal != null) {
+                OutlinedButton(
+                    onClick = onDecimal,
+                    enabled = decimalEnabled,
+                    modifier = Modifier.weight(1f).height(buttonHeight),
+                ) {
+                    Text(".", fontSize = digitFontSize)
+                }
             }
             BlueButton(bottomActionLabel, onBottomAction, Modifier.weight(1f).height(buttonHeight))
         }

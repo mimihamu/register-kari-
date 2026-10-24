@@ -106,6 +106,7 @@ class GoogleDriveSetupGuideActivity : ComponentActivity() {
         configureRegisterSystemBars(window)
         val clientInfo = GoogleDriveAndroidClientInfoReader.read(this)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GoogleDriveSetupGuideScreen(
@@ -121,6 +122,8 @@ class GoogleDriveSetupGuideActivity : ComponentActivity() {
                         onClose = ::finish,
                     )
                 }
+            }
+        
             }
         }
     }

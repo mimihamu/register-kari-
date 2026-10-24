@@ -78,7 +78,7 @@ class V030ResponsiveManagementTest {
         assertTrue(catalog.contains("DynamicCatalogHubActivityV030::class.java"))
         assertTrue(dynamic.contains("DynamicCatalogNavigationContractV030.EXTRA_INITIAL_SCREEN"))
         assertTrue(dynamic.contains("DynamicCatalogNavigationContractV030.TAX_RULES -> DynamicCatalogScreen.TAX_RULES"))
-        assertTrue(catalogHub.contains("SCR-200  商品・分類・税・販売プロファイル"))
+        assertTrue(catalogHub.contains("商品・部門・税・販売条件"))
         assertTrue(dynamicHub.contains("SCR-270  任意税率・メニュー改定"))
     }
 }

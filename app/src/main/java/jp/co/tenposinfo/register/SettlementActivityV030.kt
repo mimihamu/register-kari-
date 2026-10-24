@@ -76,8 +76,11 @@ class SettlementActivityV030 : ComponentActivity() {
             SettlementReportType.valueOf(intent.getStringExtra(EXTRA_REPORT_TYPE).orEmpty())
         }.getOrDefault(SettlementReportType.X_INSPECTION)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 SettlementRouteV030(reportType = reportType, onClose = { finish() })
+            }
+        
             }
         }
     }
@@ -234,7 +237,7 @@ private fun SettlementScreenV030(
                         showConfirmation = false
                         onExecute(actual, managerPin, pendingAcknowledged, backupFailureAcknowledged)
                     },
-                    enabled = managerPin.isNotBlank() && preflight.mayProceed,
+                    enabled = (managerPin.isNotBlank() || ManagerApprovalV145.canUseCurrentManagerSession(context)) && preflight.mayProceed,
                     colors = ButtonDefaults.buttonColors(containerColor = SettlementDangerV030),
                 ) { Text("Z精算して営業終了") }
             },

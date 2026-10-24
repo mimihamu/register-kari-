@@ -64,6 +64,7 @@ class OperationsHubActivityV030 : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 OperationsHubRouteV030(
                     onClose = { finish() },
@@ -79,8 +80,13 @@ class OperationsHubActivityV030 : ComponentActivity() {
                     openSalesLookup = { startActivity(Intent(this, BusinessDateSalesLookupActivity::class.java)) },
                     openReceiptReprintLedger = { startActivity(Intent(this, SaleReceiptReprintLedgerActivity::class.java)) },
                     openManualReturn = { startActivity(Intent(this, ManualReturnActivityV135::class.java)) },
-                    openLegacyManagement = { startActivity(Intent(this, OperationsActivity::class.java)) },
+                    openSettings = { startActivity(Intent(this, AdminSettingsActivity::class.java)) },
+                    openLegacyManagement = { destination ->
+                        startActivity(OperationsLegacyRouteV140.intent(this, destination))
+                    },
                 )
+            }
+        
             }
         }
     }
@@ -97,7 +103,8 @@ private fun OperationsHubRouteV030(
     openSalesLookup: () -> Unit,
     openReceiptReprintLedger: () -> Unit,
     openManualReturn: () -> Unit,
-    openLegacyManagement: () -> Unit,
+    openSettings: () -> Unit,
+    openLegacyManagement: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val store = remember { OperationsStore(context.applicationContext) }
@@ -135,10 +142,29 @@ private fun OperationsHubRouteV030(
             openSalesLookup = openSalesLookup,
             openReceiptReprintLedger = openReceiptReprintLedger,
             openManualReturn = openManualReturn,
+            openSettings = openSettings,
             openLegacyManagement = openLegacyManagement,
         )
     }
 }
+
+/** Horizontal tablet management remains two-pane even at 800×480dp. */
+internal object HubManagementLayoutV143 {
+    const val TWO_PANE_MIN_WIDTH_DP = 700
+    const val THREE_COLUMN_MIN_PANE_WIDTH_DP = 720
+    fun twoPane(widthDp: Int): Boolean = widthDp >= TWO_PANE_MIN_WIDTH_DP
+    fun columns(actionPaneWidthDp: Int): Int =
+        if (actionPaneWidthDp >= THREE_COLUMN_MIN_PANE_WIDTH_DP) 3 else 2
+    fun tileHeightDp(availableHeightDp: Int): Int =
+        if (availableHeightDp < 470) 82 else 94
+}
+
+private data class HubManagementActionV143(
+    val title: String,
+    val background: Color,
+    val enabled: Boolean,
+    val onClick: () -> Unit,
+)
 
 @Composable
 private fun OperationsHubScreenV030(
@@ -155,207 +181,137 @@ private fun OperationsHubScreenV030(
     openSalesLookup: () -> Unit,
     openReceiptReprintLedger: () -> Unit,
     openManualReturn: () -> Unit,
-    openLegacyManagement: () -> Unit,
+    openSettings: () -> Unit,
+    openLegacyManagement: (String) -> Unit,
 ) {
     val metrics = rememberRegisterResponsiveMetrics()
+    // Keep every legacy operation a one-tap entry on the same management screen.
+    val actions = listOf(
+        HubManagementActionV143(
+            "営業開始・状態", Color(0xFFE8EAF6),
+            RegisterPermission.BUSINESS_START in permissions, openBusiness,
+        ),
+        HubManagementActionV143(
+            "当日売上", HubPaleBlueV030,
+            RegisterPermission.VIEW_SALES in permissions,
+            { openLegacyManagement(OperationsLegacyRouteV140.DAILY_SALES) },
+        ),
+        HubManagementActionV143(
+            "入出金", HubPaleYellowV030,
+            RegisterPermission.CASH_MOVEMENT in permissions,
+            { openLegacyManagement(OperationsLegacyRouteV140.CASH_MOVEMENT) },
+        ),
+        HubManagementActionV143(
+            "X点検", HubPaleGreenV030,
+            RegisterPermission.X_INSPECTION in permissions, openXInspection,
+        ),
+        HubManagementActionV143(
+            "Z精算", Color(0xFFFFE8E8),
+            RegisterPermission.Z_SETTLEMENT in permissions, openZSettlement,
+        ),
+        HubManagementActionV143(
+            "返品・取消", HubPaleYellowV030,
+            RegisterPermission.REVERSAL in permissions,
+            { openLegacyManagement(OperationsLegacyRouteV140.REVERSAL) },
+        ),
+        HubManagementActionV143(
+            "点検・精算履歴", Color(0xFFEDE7F6),
+            SettlementHistoryPolicyV027.canView(permissions), openHistory,
+        ),
+        HubManagementActionV143(
+            "営業日別 売上検索", HubPaleBlueV030,
+            RegisterPermission.VIEW_SALES in permissions, openSalesLookup,
+        ),
+        HubManagementActionV143(
+            "領収書発行", VoucherHubBackgroundV059,
+            RegisterPermission.VIEW_SALES in permissions, openReceiptVoucher,
+        ),
+        HubManagementActionV143(
+            "レシート再印字台帳", Color(0xFFFFF3E0),
+            RegisterPermission.VIEW_SALES in permissions, openReceiptReprintLedger,
+        ),
+        HubManagementActionV143(
+            "元取引なし返品", Color(0xFFFFE9E9),
+            RegisterPermission.REVERSAL in permissions, openManualReturn,
+        ),
+    )
     Column(Modifier.fillMaxSize()) {
-        HubHeaderV030(metrics)
+        HubHeaderV030(metrics, openSettings)
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-            val compact = metrics.isCompact || maxWidth < 1_050.dp || maxHeight < 560.dp
-            if (compact) {
-                Column(
-                    Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .padding(metrics.screenPaddingDp.dp),
-                    verticalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
-                ) {
-                    HubStatusPanelV030(
-                        Modifier.fillMaxWidth(),
-                        operatorName,
-                        session,
-                        summary,
-                    )
-                    HubTileV030(
-                        title = "営業開始・状態",
-                        description = "営業セッションの開始と状態確認",
-                        background = Color(0xFFE8EAF6),
-                        enabled = RegisterPermission.Z_SETTLEMENT in permissions,
-                        onClick = openBusiness,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 112.dp),
-                    )
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
-                    ) {
-                        HubTileV030(
-                            "X点検",
-                            "営業を継続したまま保存",
-                            HubPaleGreenV030,
-                            RegisterPermission.X_INSPECTION in permissions,
-                            openXInspection,
-                            Modifier.weight(1f).heightIn(min = 126.dp),
-                        )
-                        HubTileV030(
-                            "Z精算",
-                            "精算して営業終了",
-                            Color(0xFFFFE8E8),
-                            RegisterPermission.Z_SETTLEMENT in permissions,
-                            openZSettlement,
-                            Modifier.weight(1f).heightIn(min = 126.dp),
-                        )
-                    }
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
-                    ) {
-                        HubTileV030(
-                            "点検・精算履歴",
-                            "営業セッション別の確認・再印字",
-                            Color(0xFFEDE7F6),
-                            SettlementHistoryPolicyV027.canView(permissions),
-                            openHistory,
-                            Modifier.weight(1f).heightIn(min = 112.dp),
-                        )
-                        HubTileV030(
-                            "領収書発行",
-                            "一部領収・複数枚・再発行",
-                            VoucherHubBackgroundV059,
-                            RegisterPermission.VIEW_SALES in permissions,
-                            openReceiptVoucher,
-                            Modifier.weight(1f).heightIn(min = 112.dp),
-                        )
-                    }
-                    HubTileV030(
-                        "営業日別 売上検索",
-                        "営業日・売上No.・担当・支払・金額で検索",
-                        HubPaleBlueV030,
-                        RegisterPermission.VIEW_SALES in permissions,
-                        openSalesLookup,
-                        Modifier.fillMaxWidth().heightIn(min = 112.dp),
-                    )
-                    HubTileV030(
-                        "レシート再印字台帳",
-                        "再印字要求・印刷状態・エラーを全売上横断で確認",
-                        Color(0xFFFFF3E0),
-                        RegisterPermission.VIEW_SALES in permissions,
-                        openReceiptReprintLedger,
-                        Modifier.fillMaxWidth().heightIn(min = 112.dp),
-                    )
-                    HubTileV030(
-                        "元取引なし返品",
-                        "レシートなし・売上No.不明の返品（責任者承認）",
-                        Color(0xFFFFE9E9),
-                        RegisterPermission.REVERSAL in permissions,
-                        openManualReturn,
-                        Modifier.fillMaxWidth().heightIn(min = 112.dp),
-                    )
-                    HubLegacyPanelV030(Modifier.fillMaxWidth(), permissions, openLegacyManagement)
-                }
-            } else {
+            val twoPane = HubManagementLayoutV143.twoPane(maxWidth.value.toInt())
+            if (twoPane) {
                 Row(
                     Modifier.fillMaxSize().padding(metrics.screenPaddingDp.dp),
                     horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
                 ) {
                     HubStatusPanelV030(
-                        Modifier.weight(0.92f).fillMaxHeight(),
-                        operatorName,
-                        session,
-                        summary,
+                        Modifier.weight(0.85f).fillMaxHeight(),
+                        operatorName, session, summary,
                     )
-                    Column(
-                        Modifier.weight(1.48f).fillMaxHeight(),
-                        verticalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
-                    ) {
-                        HubTileV030(
-                            "営業開始・状態",
-                            "営業セッションの開始と状態確認",
-                            Color(0xFFE8EAF6),
-                            RegisterPermission.Z_SETTLEMENT in permissions,
-                            openBusiness,
-                            Modifier.weight(0.75f).fillMaxWidth(),
+                    BoxWithConstraints(Modifier.weight(1.55f).fillMaxHeight()) {
+                        HubManagementGridV143(
+                            actions = actions,
+                            columns = HubManagementLayoutV143.columns(maxWidth.value.toInt()),
+                            tileHeightDp = HubManagementLayoutV143.tileHeightDp(maxHeight.value.toInt()),
+                            metrics = metrics,
+                            modifier = Modifier.fillMaxSize(),
                         )
-                        Row(
-                            Modifier.weight(1f).fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
-                        ) {
-                            HubTileV030(
-                                "X点検",
-                                "営業を継続したまま保存",
-                                HubPaleGreenV030,
-                                RegisterPermission.X_INSPECTION in permissions,
-                                openXInspection,
-                                Modifier.weight(1f).fillMaxHeight(),
-                            )
-                            HubTileV030(
-                                "Z精算",
-                                "精算して営業終了",
-                                Color(0xFFFFE8E8),
-                                RegisterPermission.Z_SETTLEMENT in permissions,
-                                openZSettlement,
-                                Modifier.weight(1f).fillMaxHeight(),
-                            )
-                        }
-                        Row(
-                            Modifier.weight(1f).fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
-                        ) {
-                            HubTileV030(
-                                "点検・精算履歴",
-                                "営業セッション別の確認・再印字",
-                                Color(0xFFEDE7F6),
-                                SettlementHistoryPolicyV027.canView(permissions),
-                                openHistory,
-                                Modifier.weight(1f).fillMaxHeight(),
-                            )
-                            HubTileV030(
-                                "領収書発行",
-                                "一部領収・複数枚・再発行",
-                                VoucherHubBackgroundV059,
-                                RegisterPermission.VIEW_SALES in permissions,
-                                openReceiptVoucher,
-                                Modifier.weight(1f).fillMaxHeight(),
-                            )
-                        }
-                        Row(
-                            Modifier.weight(0.75f).fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
-                        ) {
-                            HubTileV030(
-                                "営業日別 売上検索",
-                                "営業日・売上No.・担当・支払・金額で検索",
-                                HubPaleBlueV030,
-                                RegisterPermission.VIEW_SALES in permissions,
-                                openSalesLookup,
-                                Modifier.weight(1f).fillMaxHeight(),
-                            )
-                            HubTileV030(
-                                "レシート再印字台帳",
-                                "再印字要求・印刷状態・エラーを横断確認",
-                                Color(0xFFFFF3E0),
-                                RegisterPermission.VIEW_SALES in permissions,
-                                openReceiptReprintLedger,
-                                Modifier.weight(1f).fillMaxHeight(),
-                            )
-                            HubTileV030(
-                                "元取引なし返品",
-                                "レシートなし返品",
-                                Color(0xFFFFE9E9),
-                                RegisterPermission.REVERSAL in permissions,
-                                openManualReturn,
-                                Modifier.weight(1f).fillMaxHeight(),
-                            )
-                            HubLegacyPanelV030(
-                                Modifier.weight(1f).fillMaxHeight(),
-                                permissions,
-                                openLegacyManagement,
-                            )
-                        }
                     }
+                }
+            } else {
+                // Only portrait/narrow windows stack the two independently scrolling panes.
+                Column(
+                    Modifier.fillMaxSize().padding(metrics.screenPaddingDp.dp),
+                    verticalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
+                ) {
+                    HubStatusPanelV030(
+                        Modifier.fillMaxWidth().height(208.dp),
+                        operatorName, session, summary,
+                    )
+                    HubManagementGridV143(
+                        actions = actions,
+                        columns = 2,
+                        tileHeightDp = 82,
+                        metrics = metrics,
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                    )
                 }
             }
         }
         HubBottomV030(metrics, onClose)
+    }
+}
+
+@Composable
+private fun HubManagementGridV143(
+    actions: List<HubManagementActionV143>,
+    columns: Int,
+    tileHeightDp: Int,
+    metrics: RegisterResponsiveMetrics,
+    modifier: Modifier,
+) {
+    Column(
+        modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
+    ) {
+        actions.chunked(columns).forEach { line ->
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
+            ) {
+                line.forEach { action ->
+                    HubTileV030(
+                        title = action.title,
+                        description = "",
+                        background = action.background,
+                        enabled = action.enabled,
+                        onClick = action.onClick,
+                        modifier = Modifier.weight(1f).height(tileHeightDp.dp),
+                    )
+                }
+                repeat(columns - line.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
     }
 }
 
@@ -375,7 +331,11 @@ private fun HubStatusPanelV030(
         border = BorderStroke(1.dp, HubBorderV030),
         shape = RoundedCornerShape(10.dp),
     ) {
-        Column(Modifier.fillMaxSize().padding(metrics.cardPaddingDp.dp)) {
+        Column(
+            Modifier.fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(metrics.cardPaddingDp.dp),
+        ) {
             Text("営業日の状態", fontSize = if (metrics.isCompact) 20.sp else 24.sp, fontWeight = FontWeight.Bold, color = HubNavyV030)
             Spacer(Modifier.height(8.dp))
             Row(
@@ -407,23 +367,22 @@ private fun HubStatusPanelV030(
     }
 }
 
+// Historical "その他の管理機能" tile opened OperationsActivity::class.java for 当日売上・入出金・返品取消.
+// Each function is now one direct tile on the unified management screen.
 @Composable
-private fun HubLegacyPanelV030(
+private fun HubLegacyActionTileV140(
+    title: String,
+    enabled: Boolean,
+    destination: String,
     modifier: Modifier,
-    permissions: Set<RegisterPermission>,
-    onClick: () -> Unit,
+    openLegacyManagement: (String) -> Unit,
 ) {
-    val enabled = permissions.any {
-        it == RegisterPermission.VIEW_SALES ||
-            it == RegisterPermission.CASH_MOVEMENT ||
-            it == RegisterPermission.REVERSAL
-    }
     HubTileV030(
-        title = "その他の管理機能",
-        description = "当日売上・入出金・返品取消を開く",
+        title = title,
+        description = "",
         background = HubPaleYellowV030,
         enabled = enabled,
-        onClick = onClick,
+        onClick = { openLegacyManagement(destination) },
         modifier = modifier,
     )
 }
@@ -456,12 +415,14 @@ private fun HubTileV030(
                 color = if (enabled) HubNavyV030 else Color.Gray,
                 textAlign = TextAlign.Center,
             )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                if (enabled) description else "$description\n権限なし",
-                textAlign = TextAlign.Center,
-                color = if (enabled) Color.DarkGray else Color.Gray,
-            )
+            if (description.isNotBlank() || !enabled) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    if (enabled) description else if (description.isBlank()) "権限なし" else "$description\n権限なし",
+                    textAlign = TextAlign.Center,
+                    color = if (enabled) Color.DarkGray else Color.Gray,
+                )
+            }
         }
     }
 }
@@ -485,34 +446,38 @@ private fun HubAmountV030(label: String, value: String, emphasized: Boolean = fa
 }
 
 @Composable
-private fun HubHeaderV030(metrics: RegisterResponsiveMetrics) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(metrics.headerHeightDp.dp)
-            .background(HubNavyV030)
-            .padding(horizontal = metrics.screenPaddingDp.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = if (metrics.isCompact) 19.sp else 23.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(if (metrics.isCompact) 12.dp else 24.dp))
-        Text("SCR-700  レジ管理メニュー", color = Color.White, fontSize = if (metrics.isCompact) 17.sp else 21.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
-        if (!metrics.isCompact) Text("オフライン管理", color = Color.White, fontSize = 14.sp)
-    }
+private fun HubHeaderV030(metrics: RegisterResponsiveMetrics, openSettings: () -> Unit) {
+    RegisterTopBarV141(title = "レジ管理", action = {
+        Button(
+            onClick = openSettings,
+            modifier = Modifier.heightIn(min = 48.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color.White,
+                contentColor = HubNavyV030,
+            ),
+        ) {
+            Text("各種設定", color = HubNavyV030, fontWeight = FontWeight.Bold)
+        }
+    })
 }
 
 @Composable
 private fun HubBottomV030(metrics: RegisterResponsiveMetrics, onClose: () -> Unit) {
     Row(
-        Modifier
-            .fillMaxWidth()
-            .height(metrics.bottomBarHeightDp.dp)
-            .background(Color.White)
+        Modifier.fillMaxWidth()
+            .height(if (metrics.isCompact) 64.dp else 72.dp)
+            .background(HubNavyV030)
             .padding(horizontal = metrics.screenPaddingDp.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        OutlinedButton(onClick = onClose, modifier = Modifier.weight(1f).fillMaxHeight()) {
+        Button(
+            onClick = onClose,
+            modifier = Modifier.fillMaxHeight().width(220.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = HubBlueV030,
+                contentColor = Color.White,
+            ),
+        ) {
             Text("販売へ戻る", fontWeight = FontWeight.Bold)
         }
     }

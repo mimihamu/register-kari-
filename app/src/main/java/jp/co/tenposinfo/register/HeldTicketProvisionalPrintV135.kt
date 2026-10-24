@@ -35,12 +35,12 @@ internal object HeldTicketProvisionalReceiptRendererV135 {
         lines += separator(width, '-')
 
         items.forEach { item ->
-            lines += fit("${item.product.name} [${item.product.taxSymbol}]", width)
+            lines.addAll(ReceiptLineWrapV136.wrap("${item.product.name} [${item.product.taxSymbol}]", width))
             lines += amountLine("${item.quantity} × ${yen(item.unitPrice)}", yen(item.amountBeforeDiscount), width)
             if (item.discountAmount > 0) {
                 lines += amountLine("  値引", "-${yen(item.discountAmount)}", width)
             }
-            if (item.note.isNotBlank()) lines += fit("  ※${item.note}", width)
+            if (item.note.isNotBlank()) lines.addAll(ReceiptLineWrapV136.wrap("  ※${item.note}", width))
         }
 
         lines += separator(width, '-')
@@ -66,8 +66,12 @@ internal object HeldTicketProvisionalReceiptRendererV135 {
 
     private fun amountLine(label: String, amount: String, width: Int): String {
         val amountWidth = displayWidth(amount)
-        val labelWidth = (width - amountWidth - 1).coerceAtLeast(1)
-        return padRight(fit(label, labelWidth), labelWidth) + " " + amount
+        require(amountWidth <= width) { "金額が印字幅を超えています: $amount" }
+        if (displayWidth(label) + 1 + amountWidth > width) {
+            return ReceiptLineWrapV136.wrap(label, width).joinToString("\n") +
+                "\n" + " ".repeat((width - amountWidth).coerceAtLeast(0)) + amount
+        }
+        return padRight(label, width - amountWidth - 1) + " " + amount
     }
 
     private fun separator(width: Int, char: Char): String = char.toString().repeat(width)
@@ -78,22 +82,13 @@ internal object HeldTicketProvisionalReceiptRendererV135 {
         return " ".repeat(left) + fitted
     }
 
-    private fun fit(value: String, width: Int): String {
-        val out = StringBuilder()
-        var used = 0
-        for (char in value) {
-            val charWidth = if (char.code <= 0xFF) 1 else 2
-            if (used + charWidth > width) break
-            out.append(char)
-            used += charWidth
-        }
-        return out.toString()
-    }
+    private fun fit(value: String, width: Int): String =
+        ReceiptLineWrapV136.wrap(value, width).firstOrNull().orEmpty()
 
     private fun padRight(value: String, width: Int): String =
         value + " ".repeat((width - displayWidth(value)).coerceAtLeast(0))
 
-    private fun displayWidth(value: String): Int = value.sumOf { if (it.code <= 0xFF) 1 else 2 }
+    private fun displayWidth(value: String): Int = ReceiptLineWrapV136.displayWidth(value)
 
     private fun yen(amount: Long): String = NumberFormat.getCurrencyInstance(Locale.JAPAN).format(amount)
 }
@@ -113,6 +108,12 @@ internal class HeldTicketProvisionalPrintServiceV135(context: Context) : AutoClo
         schemaStore.close()
     }
 
+    fun enqueueIfAutomatic(ticketId: Long, actor: String): HeldTicketProvisionalPrintResultV135? {
+        val setting = DocumentPrintSettingsStoreV136(appContext).load(DocumentPrintKindV136.PROVISIONAL_RECEIPT)
+        if (!setting.autoPrintEnabled) return null
+        return enqueue(ticketId, actor)
+    }
+
     fun enqueue(ticketId: Long, actor: String): HeldTicketProvisionalPrintResultV135 {
         require(ticketId > 0L) { "保留伝票No.が不正です" }
         require(actor.isNotBlank()) { "担当者が必要です" }
@@ -120,7 +121,14 @@ internal class HeldTicketProvisionalPrintServiceV135(context: Context) : AutoClo
             ?: error("仮締め対象の保留伝票が見つかりません")
         val items = database.loadHeldTicket(ticketId)
         require(items.isNotEmpty()) { "仮締め対象の伝票に明細がありません" }
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
+        val printerConfiguration = PrinterRoutingV136.resolve(
+            appContext,
+            DocumentPrintKindV136.PROVISIONAL_RECEIPT,
+        )
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
+        val documentPrintSetting = DocumentPrintSettingsStoreV136(appContext).load(
+            DocumentPrintKindV136.PROVISIONAL_RECEIPT,
+        )
         val now = System.currentTimeMillis()
         val payload = HeldTicketProvisionalReceiptRendererV135.render(
             ticket = ticket,
@@ -128,23 +136,33 @@ internal class HeldTicketProvisionalPrintServiceV135(context: Context) : AutoClo
             paper = ReceiptPaper.fromWidth(paperWidthMm),
         )
 
+        val decoratedPayload = DocumentPrintSettingsPolicyV136.decorateText(payload, documentPrintSetting)
         db.beginTransaction()
         val jobId = try {
-            val id = db.insertOrThrow(
-                "document_print_jobs",
-                null,
-                ContentValues().apply {
-                    put("document_type", OperationDocumentType.HELD_TICKET_PROVISIONAL.name)
-                    put("reference_id", ticket.id)
-                    put("paper_width_mm", paperWidthMm)
-                    put("status", PrintJobStatus.PENDING.name)
-                    put("attempt_count", 0)
-                    putNull("last_error")
-                    put("payload_text", payload)
-                    put("created_at", now)
-                    put("updated_at", now)
-                },
-            )
+            val jobIds = buildList {
+                kotlin.repeat(DocumentPrintSettingsPolicyV136.normalizeCopies(documentPrintSetting.copies)) { copyIndex ->
+                    add(
+                        db.insertOrThrow(
+                            "document_print_jobs",
+                            null,
+                            ContentValues().apply {
+                                put("document_type", OperationDocumentType.HELD_TICKET_PROVISIONAL.name)
+                                put("reference_id", ticket.id)
+                                put("paper_width_mm", paperWidthMm)
+                                put("printer_id", printerConfiguration.printerId)
+                                put("printable_dot_width", printerConfiguration.printableDotWidth)
+                                put("status", PrintJobStatus.PENDING.name)
+                                put("attempt_count", 0)
+                                putNull("last_error")
+                                put("payload_text", decoratedPayload)
+                                put("created_at", now + copyIndex)
+                                put("updated_at", now + copyIndex)
+                            },
+                        ),
+                    )
+                }
+            }
+            val id = jobIds.first()
             db.insertOrThrow(
                 "operation_audit",
                 null,
@@ -161,6 +179,6 @@ internal class HeldTicketProvisionalPrintServiceV135(context: Context) : AutoClo
         } finally {
             db.endTransaction()
         }
-        return HeldTicketProvisionalPrintResultV135(jobId, ticket.id, payload)
+        return HeldTicketProvisionalPrintResultV135(jobId, ticket.id, decoratedPayload)
     }
 }

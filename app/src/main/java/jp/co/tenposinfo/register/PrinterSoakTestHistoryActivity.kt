@@ -69,9 +69,13 @@ private val HsBorder = Color(0xFFD5DEE7)
 class PrinterSoakTestHistoryActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 PrinterSoakTestHistoryScreen(onClose = { finish() })
+            }
+        
             }
         }
     }

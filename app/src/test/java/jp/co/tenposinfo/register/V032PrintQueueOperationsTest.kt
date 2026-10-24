@@ -49,7 +49,12 @@ class V032PrintQueueOperationsTest {
             assertTrue(UnifiedPrintJobActionPolicy.mayPrint(status))
             assertTrue(UnifiedPrintJobActionPolicy.mayDiscard(status))
         }
-        for (status in listOf(PrintJobStatus.PRINTING, PrintJobStatus.COMPLETED, PrintJobStatus.DISCARDED)) {
+        for (status in listOf(
+            PrintJobStatus.SENDING,
+            PrintJobStatus.PRINTING,
+            PrintJobStatus.COMPLETED,
+            PrintJobStatus.DISCARDED,
+        )) {
             assertFalse(UnifiedPrintJobActionPolicy.mayRetry(status))
             assertFalse(UnifiedPrintJobActionPolicy.mayPrint(status))
             assertFalse(UnifiedPrintJobActionPolicy.mayDiscard(status))
@@ -99,13 +104,14 @@ class V032PrintQueueOperationsTest {
                 job(status = PrintJobStatus.PENDING),
                 job(status = PrintJobStatus.RETRY),
                 job(status = PrintJobStatus.FAILED),
+                job(status = PrintJobStatus.SENDING),
                 job(status = PrintJobStatus.PRINTING),
                 job(status = PrintJobStatus.COMPLETED),
                 job(status = PrintJobStatus.DISCARDED),
             ),
         )
-        assertEquals(4, summary.active)
-        assertEquals(2, summary.actionRequired)
+        assertEquals(5, summary.active)
+        assertEquals(4, summary.actionRequired)
         assertEquals(1, summary.discarded)
     }
 

@@ -2,9 +2,15 @@ package jp.co.tenposinfo.register.cd
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.math.BigDecimal
 
 internal const val CUSTOMER_DISPLAY_SCHEMA_VERSION = 1
 internal const val CUSTOMER_DISPLAY_PATH = "/customer-display/v1"
+
+enum class CustomerDisplayMessageType {
+    SNAPSHOT,
+    STATE_UPDATE,
+}
 
 enum class CustomerDisplayMode {
     STANDBY,
@@ -19,11 +25,14 @@ data class CustomerDisplayOrderItem(
     val productId: String,
     val name: String,
     val quantity: Int,
+    val quantityHundredths: Long = quantity.toLong() * 100L,
+    val quantityText: String = quantity.toString(),
     val unitPrice: Long,
     val amount: Long,
     val latest: Boolean,
     val cancelled: Boolean,
     val taxSymbol: String = "",
+    val lineId: String = "",
 )
 
 data class CustomerDisplaySnapshot(
@@ -44,61 +53,194 @@ data class CustomerDisplaySnapshot(
     val message: String?,
     val orderItems: List<CustomerDisplayOrderItem>,
     val presentation: CustomerDisplayPresentation = CustomerDisplayPresentation(),
+    val sessionId: String? = null,
+    val messageType: CustomerDisplayMessageType = CustomerDisplayMessageType.SNAPSHOT,
+    val canonicalModeWire: String? = null,
+    val storeId: String? = null,
+    val registerTerminalId: String? = null,
+    val displayDeviceId: String? = null,
 ) {
+    val canonicalMode: String get() = canonicalModeWire ?: when (mode) {
+        CustomerDisplayMode.STANDBY -> "STANDBY"
+        CustomerDisplayMode.SALES -> "CART"
+        CustomerDisplayMode.SUBTOTAL -> "SUBTOTAL"
+        CustomerDisplayMode.ACCOUNTING -> "PAYMENT"
+        CustomerDisplayMode.COMPLETE -> if (changeAmount > 0L) "CHANGE" else "COMPLETE"
+        CustomerDisplayMode.DISCONNECTED -> "DISCONNECTED"
+    }
     fun toJson(): String = JSONObject().apply {
         put("schemaVersion", schemaVersion)
         put("sequence", sequence)
+        put("sessionId", sessionId ?: JSONObject.NULL)
+        put("messageType", messageType.name)
         put("serverInstanceId", serverInstanceId ?: JSONObject.NULL)
         put("sentAtMillis", sentAtMillis)
+        put("sentAt", if (sentAtMillis > 0L) java.time.Instant.ofEpochMilli(sentAtMillis).toString() else JSONObject.NULL)
         put("mode", mode.name)
+        put("canonicalMode", canonicalMode)
         put("transactionId", transactionId ?: JSONObject.NULL)
         put("storeName", storeName)
+        put("storeId", storeId ?: JSONObject.NULL)
+        put("registerTerminalId", registerTerminalId ?: JSONObject.NULL)
+        put("displayDeviceId", displayDeviceId ?: JSONObject.NULL)
         put("numberOfProducts", numberOfProducts)
+        put("itemCount", numberOfProducts)
+        put("latestLineId", orderItems.lastOrNull { it.latest }?.lineId ?: JSONObject.NULL)
         put("subtotalAmount", subtotalAmount)
         put("totalAmount", totalAmount)
         put("paymentMethod", paymentMethod ?: JSONObject.NULL)
         put("receivedAmount", receivedAmount)
         put("shortageAmount", shortageAmount)
+        put("remainingAmount", shortageAmount)
         put("changeAmount", changeAmount)
+        put("payment", paymentMethod?.let { name -> JSONObject().apply {
+            put("receiptName", name)
+            put("tenderedAmount", receivedAmount)
+            put("appliedAmount", (totalAmount - shortageAmount).coerceAtLeast(0L))
+        } } ?: JSONObject.NULL)
         put("message", message ?: JSONObject.NULL)
         put("presentation", presentation.toJsonObject())
         put("orderItems", JSONArray().apply {
             orderItems.forEach { item ->
                 put(JSONObject().apply {
                     put("productId", item.productId)
+                    put("lineId", item.lineId)
                     put("name", item.name)
                     put("quantity", item.quantity)
+                    put("quantityHundredths", item.quantityHundredths)
+                    put("quantityScaled", item.quantityHundredths)
+                    put("quantityScale", 2)
+                    put("quantityText", item.quantityText)
                     put("unitPrice", item.unitPrice)
                     put("amount", item.amount)
+                    put("lineAmount", item.amount)
                     put("latest", item.latest)
                     put("cancelled", item.cancelled)
+                    put("isVoided", item.cancelled)
                     put("taxSymbol", item.taxSymbol)
                 })
             }
         })
+        // v2.5 §30.6: canonical items; orderItems remains for older CD installations.
+        put("items", JSONArray(getJSONArray("orderItems").toString()))
     }.toString()
 
     companion object {
         fun parse(json: String): CustomerDisplaySnapshot {
             val root = JSONObject(json)
-            val schemaVersion = root.getInt("schemaVersion")
-            require(schemaVersion == CUSTOMER_DISPLAY_SCHEMA_VERSION) {
-                "未対応の通信形式です（schemaVersion=$schemaVersion）"
+            // Accept formal v2.5 string "1.0" and legacy numeric 1; reject unknown majors.
+            val rawSchema = root.get("schemaVersion").toString()
+            require(rawSchema == "1" || rawSchema == "1.0") {
+                "E-CD-005: 未対応の通信形式です（schemaVersion=$rawSchema）"
             }
-            val items = root.optJSONArray("orderItems")
+            val schemaVersion = CUSTOMER_DISPLAY_SCHEMA_VERSION
+            // Canonical v2.5 "items" takes precedence; keep legacy compatibility.
+            val items = if (root.has("items") && !root.isNull("items")) {
+                root.getJSONArray("items")
+            } else {
+                root.optJSONArray("orderItems")
+            }
+            require((items?.length() ?: 0) <= 200) { "items exceeds 200 lines" }
+            // Legacy numeric version 1 may contain partial canonical aliases from older senders.
+            // Require full v2.5 money fields only when the sender opts into string "1.0".
+            val strictCanonical = rawSchema == "1.0"
+            if (strictCanonical) {
+                require(root.has("items") && !root.isNull("items")) {
+                    "E-CD-005: canonical items is required"
+                }
+                require(root.has("itemCount") && !root.isNull("itemCount")) {
+                    "E-CD-005: canonical itemCount is required"
+                }
+                require(root.strictLong("itemCount") in 0L..Int.MAX_VALUE.toLong()) {
+                    "E-CD-005: itemCount out of range"
+                }
+            }
+            val latestLineId = root.optNullableString("latestLineId")
+            // Canonical payloads must never show a guessed zero for absent money values.
+            fun money(name: String): Long {
+                if (!root.has(name) || root.isNull(name)) {
+                    require(!strictCanonical) { "E-CD-005: $name is required" }
+                    return 0L // legacy wire only
+                }
+                return root.strictLong(name).also {
+                    require(it >= 0L) { "E-CD-005: $name must be nonnegative" }
+                }
+            }
+            val canonicalModeWire = root.optNullableString("canonicalMode")
+                ?: root.getString("mode").takeIf { it in setOf("CART", "PAYMENT", "CASH_RECEIVED", "CHANGE") }
+            require(canonicalModeWire == null || canonicalModeWire in setOf(
+                "STANDBY", "CART", "SUBTOTAL", "PAYMENT", "CASH_RECEIVED",
+                "CHANGE", "COMPLETE", "DISCONNECTED",
+            )) { "E-CD-005: unsupported canonicalMode" }
+            val payment = root.optJSONObject("payment")
+            if (payment != null) {
+                require(payment.strictLong("tenderedAmount") >= 0L) {
+                    "E-CD-005: tenderedAmount must be nonnegative"
+                }
+                require(payment.strictLong("appliedAmount") >= 0L) {
+                    "E-CD-005: appliedAmount must be nonnegative"
+                }
+            }
+            val seenLineIds = HashSet<String>()
             val orderItems = buildList {
                 if (items != null) {
                     for (index in 0 until items.length()) {
                         val item = items.getJSONObject(index)
+                        // The v2.5 scaled integer is authoritative whenever present.
+                        // Legacy v1 snapshots continue to support quantityHundredths/quantity.
+                        if (item.has("quantityScale") && !item.isNull("quantityScale")) {
+                            require(item.getInt("quantityScale") == 2) { "quantityScale must be 2" }
+                        }
+                        val scaled = when {
+                            item.has("quantityScaled") && !item.isNull("quantityScaled") ->
+                                item.strictLong("quantityScaled")
+                            item.has("quantityHundredths") && !item.isNull("quantityHundredths") ->
+                                item.strictLong("quantityHundredths")
+                            else -> Math.multiplyExact(item.optInt("quantity").toLong(), 100L)
+                        }
+                        if (item.has("quantityHundredths") && item.has("quantityScaled") &&
+                            !item.isNull("quantityHundredths") && !item.isNull("quantityScaled")
+                        ) {
+                            require(item.strictLong("quantityHundredths") == scaled) {
+                                "quantityScaled and quantityHundredths disagree"
+                            }
+                        }
+                        if (strictCanonical) {
+                            val lineId = item.optString("lineId")
+                            require(lineId.isNotBlank() && seenLineIds.add(lineId)) {
+                                "E-CD-005: lineId is required and must be unique"
+                            }
+                            require(item.optString("name").isNotBlank()) {
+                                "E-CD-005: item name is required"
+                            }
+                            require(scaled > 0L) {
+                                "E-CD-005: quantityScaled must be positive"
+                            }
+                            require(item.strictLong("unitPrice") >= 0L) {
+                                "E-CD-005: unitPrice must be nonnegative"
+                            }
+                            require(item.strictLong("lineAmount") >= 0L) {
+                                "E-CD-005: lineAmount must be nonnegative"
+                            }
+                        }
                         add(
                             CustomerDisplayOrderItem(
                                 productId = item.optString("productId"),
+                                lineId = item.optString("lineId").ifBlank { "legacy-line-${index + 1}" },
                                 name = item.optString("name"),
                                 quantity = item.optInt("quantity"),
-                                unitPrice = item.optLong("unitPrice"),
-                                amount = item.optLong("amount"),
-                                latest = item.optBoolean("latest"),
-                                cancelled = item.optBoolean("cancelled"),
+                                quantityHundredths = scaled,
+                                quantityText = item.optString("quantityText").ifBlank {
+                                    BigDecimal.valueOf(scaled, 2).stripTrailingZeros().toPlainString()
+                                },
+                                unitPrice = if (strictCanonical) item.strictLong("unitPrice") else item.optLong("unitPrice"),
+                                amount = if (item.has("lineAmount")) {
+                                    item.strictLong("lineAmount")
+                                } else item.optLong("amount"),
+                                latest = if (latestLineId != null) latestLineId == item.optString("lineId")
+                                    else item.optBoolean("latest"),
+                                cancelled = if (item.has("isVoided")) item.getBoolean("isVoided")
+                                    else item.optBoolean("cancelled"),
                                 taxSymbol = item.optString("taxSymbol"),
                             ),
                         )
@@ -107,19 +249,32 @@ data class CustomerDisplaySnapshot(
             }
             return CustomerDisplaySnapshot(
                 schemaVersion = schemaVersion,
-                sequence = root.getLong("sequence"),
+                sequence = root.strictLong("sequence"),
+                sessionId = root.optNullableString("sessionId"),
+                messageType = CustomerDisplayMessageType.valueOf(
+                    root.optString("messageType", "SNAPSHOT"),
+                ),
+                canonicalModeWire = canonicalModeWire,
                 serverInstanceId = root.optNullableString("serverInstanceId"),
                 sentAtMillis = root.optLong("sentAtMillis"),
-                mode = CustomerDisplayMode.valueOf(root.getString("mode")),
+                mode = when (root.getString("mode")) {
+                    "CART" -> CustomerDisplayMode.SALES
+                    "PAYMENT", "CASH_RECEIVED" -> CustomerDisplayMode.ACCOUNTING
+                    "CHANGE" -> CustomerDisplayMode.COMPLETE
+                    else -> CustomerDisplayMode.valueOf(root.getString("mode"))
+                },
                 transactionId = root.optNullableString("transactionId"),
+                storeId = root.optNullableString("storeId"),
+                registerTerminalId = root.optNullableString("registerTerminalId"),
+                displayDeviceId = root.optNullableString("displayDeviceId"),
                 storeName = root.optString("storeName", "つぐレジ"),
-                numberOfProducts = root.optInt("numberOfProducts"),
-                subtotalAmount = root.optLong("subtotalAmount"),
-                totalAmount = root.optLong("totalAmount"),
-                paymentMethod = root.optNullableString("paymentMethod"),
-                receivedAmount = root.optLong("receivedAmount"),
-                shortageAmount = root.optLong("shortageAmount"),
-                changeAmount = root.optLong("changeAmount"),
+                numberOfProducts = if (root.has("itemCount")) root.getInt("itemCount") else root.optInt("numberOfProducts"),
+                subtotalAmount = money("subtotalAmount"),
+                totalAmount = money("totalAmount"),
+                paymentMethod = root.optNullableString("paymentMethod") ?: payment?.optNullableString("receiptName"),
+                receivedAmount = if (root.has("receivedAmount")) money("receivedAmount") else payment?.strictLong("tenderedAmount") ?: 0L,
+                shortageAmount = if (root.has("remainingAmount")) money("remainingAmount") else money("shortageAmount"),
+                changeAmount = money("changeAmount").also { require(it >= 0L) { "E-CD-005: changeAmount must be nonnegative" } },
                 message = root.optNullableString("message"),
                 orderItems = orderItems,
                 presentation = CustomerDisplayPresentation.fromJsonObject(
@@ -150,6 +305,13 @@ data class CustomerDisplaySnapshot(
     }
 }
 
+// org.json getLong can silently truncate decimal numbers; exact quantities must not.
+private fun JSONObject.strictLong(name: String): Long {
+    val raw = get(name).toString()
+    require(Regex("-?[0-9]+").matches(raw)) { "$name must be an integer" }
+    return raw.toLong()
+}
+
 private fun JSONObject.optNullableString(name: String): String? =
     if (!has(name) || isNull(name)) null else optString(name).takeIf { it.isNotBlank() }
 
@@ -162,8 +324,10 @@ data class CustomerDisplayUiState(
 
 object CustomerDisplayStateReducer {
     fun connected(current: CustomerDisplayUiState): CustomerDisplayUiState = current.copy(
-        connected = true,
-        statusMessage = "接続中",
+        // Transport 101 handshake is not a verified business snapshot.
+        // The old on-disk / previous-session amount stays hidden until received().
+        connected = false,
+        statusMessage = "最新の表示データを受信中",
         lastError = null,
     )
 
@@ -178,7 +342,17 @@ object CustomerDisplayStateReducer {
         val incomingInstance = incoming.serverInstanceId
         val incomingIdentifiedServer = !incomingInstance.isNullOrBlank()
         val serverInstanceChanged = incomingIdentifiedServer && incomingInstance != currentInstance
-        if (!serverInstanceChanged && incoming.sequence <= current.snapshot.sequence) {
+        // Equal sequence is a fresh full snapshot on reconnect. It is authoritative
+        // even when an identical sequence was persisted before the transport failed.
+        // Strictly older data from the same server must never resurrect old totals.
+        val sessionChanged = !incoming.sessionId.isNullOrBlank() &&
+            incoming.sessionId != current.snapshot.sessionId
+        if (!serverInstanceChanged && !sessionChanged &&
+            incoming.sequence < current.snapshot.sequence) {
+            return current
+        }
+        if (!serverInstanceChanged && !sessionChanged &&
+            incoming.sequence == current.snapshot.sequence && current.connected) {
             return current
         }
         return current.copy(

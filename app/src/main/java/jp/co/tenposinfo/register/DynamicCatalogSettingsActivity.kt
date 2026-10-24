@@ -68,8 +68,11 @@ class DynamicCatalogSettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 DynamicCatalogSettingsApp(onClose = { finish() })
+            }
+        
             }
         }
     }

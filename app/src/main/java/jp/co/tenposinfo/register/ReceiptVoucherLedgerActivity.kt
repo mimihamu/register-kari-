@@ -69,6 +69,7 @@ class ReceiptVoucherLedgerActivity : ComponentActivity() {
         configureRegisterSystemBars(window)
         val requestedSaleId = ReceiptVoucherNavigation.requestedSaleId(intent)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 ReceiptVoucherLedgerRoute(
                     requestedSaleId = requestedSaleId,
@@ -76,6 +77,8 @@ class ReceiptVoucherLedgerActivity : ComponentActivity() {
                     onOpenIssuance = { saleId -> startActivity(ReceiptVoucherNavigation.issuanceIntent(this, saleId)) },
                     onClose = { finish() },
                 )
+            }
+        
             }
         }
     }
@@ -512,7 +515,8 @@ private fun printJobStatusColor(status: PrintJobStatus): Color = when (status) {
     PrintJobStatus.FAILED -> LedgerRed
     PrintJobStatus.RETRY -> LedgerOrange
     PrintJobStatus.PENDING -> LedgerBlue
-    PrintJobStatus.PRINTING -> LedgerBlue
+    PrintJobStatus.SENDING -> LedgerOrange
+    PrintJobStatus.PRINTING -> LedgerOrange
     PrintJobStatus.DISCARDED -> LedgerMuted
 }
 

@@ -68,8 +68,11 @@ class DynamicCatalogHubActivityV030 : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 DynamicCatalogHubRouteV030(onClose = { finish() })
+            }
+        
             }
         }
     }
@@ -247,11 +250,7 @@ private fun DynamicHubTileV030(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(screenId, color = DynamicHubBlueV030, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(5.dp))
             Text(title, fontSize = if (metrics.isCompact) 19.sp else 21.sp, fontWeight = FontWeight.Bold, color = DynamicHubNavyV030, textAlign = TextAlign.Center)
-            Spacer(Modifier.height(5.dp))
-            Text(description, color = Color.DarkGray, textAlign = TextAlign.Center)
         }
     }
 }

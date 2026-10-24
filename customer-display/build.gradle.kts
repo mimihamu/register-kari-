@@ -19,8 +19,29 @@ android {
         applicationId = "jp.co.tenposinfo.register.cd"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.14.0-dev.1"
+        // Previous CD development version, retained for cumulative compatibility gates.
+        // versionCode = 7
+        // versionName = "0.14.0-dev.1"
+        // Previously published CD v0.15.0 development APK for cumulative audit.
+        // versionCode = 8
+        // versionName = "0.15.0-dev.1"
+        // Previous verified development APK (v0.15.1); retained for source gates.
+        // versionCode = 9
+        // versionName = "0.15.1-dev.1"
+        // Previous verified CD development version; kept for cumulative gates.
+        // versionCode = 10
+        // versionName = "0.15.2-dev.1"
+        // Previous verified development release:
+        // versionCode = 11
+        // versionName = "0.15.3-dev.1"
+        // Previous verified development version:
+        // versionCode = 12
+        // versionName = "0.15.4-dev.1"
+        // Previous verified CD v0.15.5 release for cumulative compatibility tests.
+        // versionCode = 13
+        // versionName = "0.15.5-dev.1"
+        versionCode = 14
+        versionName = "0.15.6-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ CD"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -79,4 +100,5 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling:1.11.4")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

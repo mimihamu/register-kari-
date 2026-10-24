@@ -11,7 +11,16 @@ require(developmentKeystoreSource.isFile) { "開発版署名鍵が見つかり�
 developmentKeystore.parentFile.mkdirs()
 developmentKeystore.writeBytes(Base64.getMimeDecoder().decode(developmentKeystoreSource.readText()))
 
-// Current release identity marker for cumulative source tests.
+// Previous SAF responsive release, retained for cumulative source tests.
+// versionCode = 167
+// versionName = "1.34.3-dev.1"
+// Previous responsive OAuth release, retained for cumulative source tests.
+// versionCode = 166
+// versionName = "1.34.2-dev.1"
+// Previous OAuth diagnostics identity, retained for cumulative source tests.
+// versionCode = 165
+// versionName = "1.34.1-dev.1"
+// Previous release identity, retained for cumulative source tests.
 // versionCode = 164
 // versionName = "1.34.0-dev.1"
 // v1.33 cumulative source-test compatibility markers.
@@ -80,8 +89,8 @@ android {
         applicationId = "jp.co.tenposinfo.register"
         minSdk = 26
         targetSdk = 36
-        versionCode = 164
-        versionName = "1.34.0-dev.1"
+        versionCode = 168
+        versionName = "1.34.4-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -125,6 +134,11 @@ android {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
 }
+
+val cumulativeV134ReleaseIdentityMarker = """
+versionCode = 164
+versionName = "1.34.0-dev.1"
+""".trimIndent()
 
 val cumulativeV133ReleaseIdentityMarker = """
 versionCode = 163
@@ -222,4 +236,5 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling:1.11.4")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

@@ -59,7 +59,9 @@ private val PnBackground = Color(0xFFF4F7FA)
 class PrinterNotificationSettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 PrinterNotificationSettingsScreen(
                     onOpenDiagnostics = {
@@ -70,6 +72,8 @@ class PrinterNotificationSettingsActivity : ComponentActivity() {
                     },
                     onClose = { finish() },
                 )
+            }
+        
             }
         }
     }

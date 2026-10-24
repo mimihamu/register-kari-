@@ -213,19 +213,24 @@ private fun ImportFolderBar(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Button(
-                    onClick = onOpenGoogleAccount,
-                    modifier = Modifier.weight(1f),
-                    enabled = !importing && !folderState.scanning,
-                ) {
-                    Text("Googleかんたん接続")
-                }
                 OutlinedButton(
                     onClick = onOpenTaxCategoryMaster,
                     modifier = Modifier.weight(1f),
                     enabled = !importing && !folderState.scanning,
                 ) {
                     Text("税区分マスター")
+                }
+                if (registration == null) {
+                    Text("つぐレジが書き出すフォルダを選択", modifier = Modifier.weight(1f))
+                    TextButton(onClick = { expanded = !expanded }) { Text("詳細") }
+                }
+            }
+            if (expanded) {
+                OutlinedButton(
+                    onClick = onOpenGoogleAccount,
+                    enabled = !importing && !folderState.scanning,
+                ) {
+                    Text("Googleかんたん接続（API方式・詳細）")
                 }
             }
 

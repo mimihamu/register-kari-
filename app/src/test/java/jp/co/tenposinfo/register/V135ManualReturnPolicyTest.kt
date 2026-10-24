@@ -56,11 +56,11 @@ class V135ManualReturnPolicyTest {
     }
 
     @Test
-    fun sourceRequiresReversalPermissionAndManagerPin() {
+    fun sourceRequiresReversalPermissionAndManagerApproval() {
         val source = File("src/main/java/jp/co/tenposinfo/register/ManualReturnV135.kt").readText()
         assertTrue(source.contains("operator.allows(RegisterPermission.REVERSAL)"))
-        assertTrue(source.contains("managerNameForPin(managerPin)"))
-        assertTrue(source.contains("責任者PINを入力してください"))
+        assertTrue(source.contains("ManagerApprovalV145.resolve(appContext, managerPin)"))
+        assertTrue(source.contains("責任者の承認が必要です"))
         assertTrue(source.contains("event_type\", \"MANUAL_RETURN"))
     }
 
@@ -150,8 +150,15 @@ class V135ManualReturnPolicyTest {
         assertTrue(manualReturn.contains("put(\"document_type\", OperationDocumentType.REVERSAL_RECEIPT.name)"))
         assertTrue(manualReturn.contains("put(\"reference_id\", -id)"))
         assertTrue(manualReturn.contains("put(\"payload_text\", preview)"))
-        assertTrue(advanced.contains("gateway.send(TextEscPosEncoder.encode(job.payloadText))"))
+        assertTrue(advanced.contains("val renderedPayload = TextEscPosEncoder.encode(job.payloadText)"))
+        // SCR-720 preserves the stored payload route while allowing a frozen document stamp snapshot to wrap the rendered bytes.
+        assertTrue(advanced.contains("val stampSnapshot = DocumentStampJobSchemaV136.load(db, jobId)"))
+        assertTrue(advanced.contains("val finalPayload = stampSnapshot.applyToPayload(renderedPayload)"))
+        assertTrue(advanced.contains("gateway.send(finalPayload)"))
         assertTrue(unified.contains("OperationDocumentType.REVERSAL_RECEIPT -> UnifiedPrintJobType.REVERSAL_RECEIPT"))
-        assertTrue(worker.contains("operations.processDocumentPrint(candidate.sourceId, gateway).isSuccess"))
+        // v1.36 §16.9 keeps the stored payload path, but wraps the raw TCP gateway so delivery result is confirmed/persisted before completion.
+        assertTrue(worker.contains("kind = PrintDeliveryJobKindV136.DOCUMENT"))
+        assertTrue(worker.contains("delegate = rawGateway"))
+        assertTrue(worker.contains("operations.processDocumentPrint(candidate.sourceId, deliveryGateway).isSuccess"))
     }
 }

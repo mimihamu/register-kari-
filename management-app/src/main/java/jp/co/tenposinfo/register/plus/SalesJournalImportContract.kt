@@ -61,6 +61,7 @@ object SalesJournalImportContract {
         "BUSINESS_OPEN",
         "BUSINESS_STATE",
         "MENU_REVISION",
+        "MENU_APPLY_RESULT",
     )
 
     val supportedPayloadSchemas: Set<String> = setOf(
@@ -199,6 +200,9 @@ object SalesJournalImportContract {
                 "payloadSchemaとpayload.schemaが一致しません",
             )
         }
+        validateExactQuantityItems(payload, payloadSchema)?.let { message ->
+            return rejected(ImportRejectionCode.INVALID_FIELD, message)
+        }
 
         return JournalParseResult.Accepted(
             SalesJournalEnvelope(
@@ -247,6 +251,30 @@ object SalesJournalImportContract {
 
     private fun validIdentifier(value: String): Boolean =
         value.length in 1..160 && value.none(Char::isISOControl)
+
+    private fun validateExactQuantityItems(payload: JSONObject, payloadSchema: String): String? {
+        if (payloadSchema != "register.sale.v2" && payloadSchema != "register.reversal.v2") return null
+        val items = payload.optJSONArray("items") ?: return null
+        for (index in 0 until items.length()) {
+            val item = items.optJSONObject(index) ?: continue
+            if (!item.has("quantityScaled") || item.isNull("quantityScaled")) continue
+            val scaled = runCatching { item.getLong("quantityScaled") }.getOrNull()
+                ?: return "items[$index].quantityScaledは整数で指定してください"
+            if (scaled !in 1L..999_999L) return "items[$index].quantityScaledは1～999999で指定してください"
+            val scale = if (item.has("quantityScale") && !item.isNull("quantityScale")) {
+                runCatching { item.getInt("quantityScale") }.getOrNull()
+            } else null
+            if (scale != 2) return "items[$index].quantityScaleは2で指定してください"
+            val mode = item.optString("quantityMode", "").trim()
+            if (mode.isNotEmpty() && mode != "INTEGER" && mode != "DECIMAL") {
+                return "items[$index].quantityModeが不正です"
+            }
+            if (mode == "INTEGER" && scaled % 100L != 0L) {
+                return "items[$index]はINTEGER商品ですが小数数量です"
+            }
+        }
+        return null
+    }
 
     private fun extractTotalAmount(payload: JSONObject): Long? {
         for (field in listOf("totalAmount", "grossAmount", "amount")) {

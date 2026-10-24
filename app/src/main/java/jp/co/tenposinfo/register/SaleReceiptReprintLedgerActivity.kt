@@ -72,8 +72,11 @@ class SaleReceiptReprintLedgerActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 SaleReceiptReprintLedgerRoute(onClose = { finish() })
+            }
+        
             }
         }
     }

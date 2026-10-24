@@ -1,0 +1,92 @@
+name: Repack ChatGPT local build kit chunks
+
+on:
+  push:
+    branches:
+      - develop/v1.36
+    paths:
+      - ".github/workflows/repack-local-build-kit.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  repack:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    env:
+      SOURCE_ARTIFACT_ID: "11017249828"
+      SOURCE_ARTIFACT_SHA256: "5f3d095755a2b53338d0052c46998a47dfd120da96f1cf5c391114d3b3628417"
+    steps:
+      - name: Download existing local build kit artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail --location             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${SOURCE_ARTIFACT_ID}/zip"             -o "$RUNNER_TEMP/local-kit-artifact.zip"
+          echo "${SOURCE_ARTIFACT_SHA256}  $RUNNER_TEMP/local-kit-artifact.zip" | sha256sum -c -
+          ls -lh "$RUNNER_TEMP/local-kit-artifact.zip"
+
+      - name: Split below connector limit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/local-kit-parts"
+          split -b 200M -d -a 2             "$RUNNER_TEMP/local-kit-artifact.zip"             "$RUNNER_TEMP/local-kit-parts/TSUGUREGI-local-kit.zip.part-"
+          test -s "$RUNNER_TEMP/local-kit-parts/TSUGUREGI-local-kit.zip.part-00"
+          test -s "$RUNNER_TEMP/local-kit-parts/TSUGUREGI-local-kit.zip.part-01"
+          test -s "$RUNNER_TEMP/local-kit-parts/TSUGUREGI-local-kit.zip.part-02"
+          test -s "$RUNNER_TEMP/local-kit-parts/TSUGUREGI-local-kit.zip.part-03"
+          test ! -e "$RUNNER_TEMP/local-kit-parts/TSUGUREGI-local-kit.zip.part-04"
+          sha256sum "$RUNNER_TEMP"/local-kit-parts/* | tee "$RUNNER_TEMP/local-kit-parts/SHA256SUMS.txt"
+          cat > "$RUNNER_TEMP/local-kit-parts/REASSEMBLE.txt" <<EOF
+          SOURCE_ARTIFACT_ID=${SOURCE_ARTIFACT_ID}
+          SOURCE_ARTIFACT_SHA256=${SOURCE_ARTIFACT_SHA256}
+          ORDER=00,01,02,03
+          COMMAND=cat TSUGUREGI-local-kit.zip.part-00 TSUGUREGI-local-kit.zip.part-01 TSUGUREGI-local-kit.zip.part-02 TSUGUREGI-local-kit.zip.part-03 > TSUGUREGI-local-kit.zip
+          EOF
+          ls -lh "$RUNNER_TEMP"/local-kit-parts/*
+
+      - name: Upload part 00
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSUGUREGI-local-kit-part-00
+          path: ${{ runner.temp }}/local-kit-parts/TSUGUREGI-local-kit.zip.part-00
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload part 01
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSUGUREGI-local-kit-part-01
+          path: ${{ runner.temp }}/local-kit-parts/TSUGUREGI-local-kit.zip.part-01
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload part 02
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSUGUREGI-local-kit-part-02
+          path: ${{ runner.temp }}/local-kit-parts/TSUGUREGI-local-kit.zip.part-02
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload part 03
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSUGUREGI-local-kit-part-03
+          path: ${{ runner.temp }}/local-kit-parts/TSUGUREGI-local-kit.zip.part-03
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSUGUREGI-local-kit-manifest
+          path: |
+            ${{ runner.temp }}/local-kit-parts/SHA256SUMS.txt
+            ${{ runner.temp }}/local-kit-parts/REASSEMBLE.txt
+          retention-days: 7
