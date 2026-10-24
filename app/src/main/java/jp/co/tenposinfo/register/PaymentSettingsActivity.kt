@@ -54,11 +54,14 @@ class PaymentSettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 PaymentSettingsScreen(
                     actor = intent.getStringExtra(EXTRA_ACTOR).orEmpty().ifBlank { "責任者" },
                     onClose = { finish() },
                 )
+            }
+        
             }
         }
     }
