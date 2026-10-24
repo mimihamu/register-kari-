@@ -62,8 +62,11 @@ class OutboxDeliverySettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 OutboxDeliverySettingsScreen(onClose = { finish() })
+            }
+        
             }
         }
     }
