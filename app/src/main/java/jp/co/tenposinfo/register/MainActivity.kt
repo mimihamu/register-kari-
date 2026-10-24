@@ -1220,14 +1220,14 @@ private fun SalesScreen(
                 Spacer(Modifier.width(12.dp))
             }
             if (canOpenManagement) {
-      OutlinedButton(onClick = onOpenManagement, modifier = Modifier.height(40.dp)) { Text("レジ管理") }
+      OutlinedButton(onClick = onOpenManagement, modifier = Modifier.height(48.dp)) { Text("レジ管理") }
       Spacer(Modifier.width(8.dp))
   }
-  if (canOpenSettings) {
-      OutlinedButton(onClick = onOpenSettings, modifier = Modifier.height(40.dp)) { Text("設定") }
+  if (canOpenSettings && !canOpenManagement) {
+      OutlinedButton(onClick = onOpenSettings, modifier = Modifier.height(48.dp)) { Text("設定") }
       Spacer(Modifier.width(8.dp))
   }
-  OutlinedButton(onClick = onLogout, modifier = Modifier.height(40.dp)) { Text("担当者切替") }
+  OutlinedButton(onClick = onLogout, modifier = Modifier.height(48.dp)) { Text("担当者切替") }
         }
 
         Row(
@@ -1324,7 +1324,7 @@ private fun SalesScreen(
                     val keypad = RegisterResponsiveLayoutPolicy.keypadMetrics(
                         availableHeightDp = maxHeight.value.toInt(),
                         functionRows = 2,
-                        preferredMinKeyDp = 64,
+                        preferredMinKeyDp = 72,
                     )
                     val keypadScroll = rememberScrollState()
                     Column(
@@ -2520,7 +2520,7 @@ private fun PaymentScreen(
                         availableHeightDp = maxHeight.value.toInt(),
                         functionRows = ((enabledNonCashMethods.size + 2) / 3).coerceAtLeast(1),
                         reservedTopDp = if (responsive.isCompact) 104 else 126,
-                        preferredMinKeyDp = 64,
+                        preferredMinKeyDp = 72,
                     )
                     val keypadScroll = rememberScrollState()
                     Column(
@@ -3297,8 +3297,8 @@ private fun NumberPad(
     val rowGap = resolvedRowGapDp.dp
     val columnGap = if (compact) resolvedRowGapDp.dp else 8.dp
     val digitFontSize = when {
-        resolvedButtonHeightDp >= 72 -> 24.sp
-        resolvedButtonHeightDp >= 60 -> 21.sp
+        resolvedButtonHeightDp >= 72 -> 28.sp
+        resolvedButtonHeightDp >= 60 -> 24.sp
         resolvedButtonHeightDp >= 48 -> 18.sp
         else -> 16.sp
     }

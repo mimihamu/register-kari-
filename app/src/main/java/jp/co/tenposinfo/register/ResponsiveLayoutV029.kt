@@ -72,7 +72,7 @@ internal object RegisterProductGridPolicy {
 
 internal object RegisterResponsiveLayoutPolicy {
     const val MIN_TOUCH_DP = 48
-    const val MAX_KEY_HEIGHT_DP = 80
+    const val MAX_KEY_HEIGHT_DP = 96
     const val MAX_FUNCTION_HEIGHT_DP = 64
     const val MAX_VALUE_HEIGHT_DP = 68
 
@@ -149,18 +149,18 @@ internal object RegisterResponsiveLayoutPolicy {
         require(functionRows >= 0) { "functionRows must not be negative" }
 
         val gap = when {
-            availableHeightDp >= 700 -> 8
+            availableHeightDp >= 700 -> 6
             availableHeightDp >= 520 -> 6
             else -> 5
         }
         val functionHeight = when {
-            availableHeightDp >= 720 -> 60
-            availableHeightDp >= 560 -> 54
+            availableHeightDp >= 720 -> 54
+            availableHeightDp >= 560 -> 50
             else -> MIN_TOUCH_DP
         }.coerceAtMost(MAX_FUNCTION_HEIGHT_DP)
         val valueHeight = when {
-            availableHeightDp >= 720 -> 64
-            availableHeightDp >= 560 -> 56
+            availableHeightDp >= 720 -> 56
+            availableHeightDp >= 560 -> 50
             else -> MIN_TOUCH_DP
         }.coerceAtMost(MAX_VALUE_HEIGHT_DP)
 

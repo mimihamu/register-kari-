@@ -353,13 +353,6 @@ private fun AdminMenuScreen(
         ),
     )
     val maintenanceEntries = listOfNotNull(
-        if (CrashReportRuntimeV138.hasPending(context)) AdminMenuEntryV136(
-            title = "障害レポート",
-            description = "前回の障害情報を共有",
-            searchTerms = "障害 レポート クラッシュ エラー 共有",
-            background = AsPaleYellow,
-            onClick = onCrashReport,
-        ) else null,
         AdminMenuEntryV136(
             title = "データ保全",
             description = "整合性診断、バックアップ、復元",
@@ -381,6 +374,13 @@ private fun AdminMenuScreen(
             background = Color(0xFFE5F3FA),
             onClick = onPrinterTools,
         ),
+        if (CrashReportRuntimeV138.hasPending(context)) AdminMenuEntryV136(
+            title = "障害レポート",
+            description = "前回の障害情報を共有",
+            searchTerms = "障害 レポート クラッシュ エラー 共有",
+            background = AsPaleYellow,
+            onClick = onCrashReport,
+        ) else null,
         AdminMenuEntryV136(
             title = "監査ログ",
             description = "設定、返品、精算、入出金を確認",
