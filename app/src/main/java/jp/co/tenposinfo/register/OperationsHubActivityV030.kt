@@ -64,6 +64,7 @@ class OperationsHubActivityV030 : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 OperationsHubRouteV030(
                     onClose = { finish() },
@@ -84,6 +85,8 @@ class OperationsHubActivityV030 : ComponentActivity() {
                         startActivity(OperationsLegacyRouteV140.intent(this, destination))
                     },
                 )
+            }
+        
             }
         }
     }
@@ -527,22 +530,11 @@ private fun HubAmountV030(label: String, value: String, emphasized: Boolean = fa
 
 @Composable
 private fun HubHeaderV030(metrics: RegisterResponsiveMetrics, openSettings: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(metrics.headerHeightDp.dp)
-            .background(HubNavyV030)
-            .padding(horizontal = metrics.screenPaddingDp.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = if (metrics.isCompact) 19.sp else 23.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(if (metrics.isCompact) 12.dp else 24.dp))
-        Text("レジ管理", color = Color.White, fontSize = if (metrics.isCompact) 17.sp else 21.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
+    RegisterTopBarV141(title = "レジ管理", action = {
         OutlinedButton(onClick = openSettings, modifier = Modifier.heightIn(min = 48.dp)) {
             Text("各種設定", color = Color.White, fontWeight = FontWeight.Bold)
         }
-    }
+    })
 }
 
 @Composable
