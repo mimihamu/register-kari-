@@ -292,6 +292,7 @@ private fun AdminMenuScreen(
     onLock: () -> Unit,
     onClose: () -> Unit,
 ) {
+    val context = LocalContext.current
     var query by remember { mutableStateOf("") }
     val settingIssueCount = listOf(
         operatorCount <= 0,
