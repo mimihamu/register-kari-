@@ -66,8 +66,11 @@ class CatalogSettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 CatalogSettingsApp(onClose = { finish() })
+            }
+        
             }
         }
     }
