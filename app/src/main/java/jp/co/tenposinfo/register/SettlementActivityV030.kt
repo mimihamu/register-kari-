@@ -76,8 +76,11 @@ class SettlementActivityV030 : ComponentActivity() {
             SettlementReportType.valueOf(intent.getStringExtra(EXTRA_REPORT_TYPE).orEmpty())
         }.getOrDefault(SettlementReportType.X_INSPECTION)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 SettlementRouteV030(reportType = reportType, onClose = { finish() })
+            }
+        
             }
         }
     }
