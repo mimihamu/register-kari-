@@ -62,8 +62,11 @@ class ExternalBackupSettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 ExternalBackupSettingsScreen(onClose = { finish() })
+            }
+        
             }
         }
     }
