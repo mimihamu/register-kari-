@@ -1510,24 +1510,53 @@ private fun SalesScreen(
             }
         }
 
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .height(responsive.bottomBarHeightDp.dp)
-                .padding(horizontal = responsive.screenPaddingDp.dp, vertical = 7.dp),
-            horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
-        ) {
-            OutlinedButton(onClick = onTickets, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("伝票一覧", maxLines = 1) }
-            OutlinedButton(onClick = onHold, enabled = cart.isNotEmpty(), modifier = Modifier.weight(0.8f).fillMaxHeight()) { Text("保留", maxLines = 1) }
-            OutlinedButton(onClick = onSalesHistory, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("売上一覧", maxLines = 1) }
-            OutlinedButton(onClick = onPrinterStatus, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("プリンター", maxLines = 1) }
-            OutlinedButton(onClick = onPrintQueue, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("印刷管理", maxLines = 1) }
-            BlueButton(
-                "小計／会計  ${yen(summary.grossAmount)}",
-                onPayment,
-                Modifier.weight(if (responsive.isCompact) 2.2f else 2.8f).fillMaxHeight(),
-                cart.isNotEmpty(),
-            )
+        val twoRowActions = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 1_060
+        if (twoRowActions) {
+            Column(
+                Modifier.fillMaxWidth().height(122.dp)
+                    .padding(horizontal = responsive.screenPaddingDp.dp, vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Row(
+                    Modifier.weight(1f).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
+                ) {
+                    OutlinedButton(onClick = onTickets, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("伝票一覧", maxLines = 1) }
+                    OutlinedButton(onClick = onHold, enabled = cart.isNotEmpty(), modifier = Modifier.weight(1f).fillMaxHeight()) { Text("保留", maxLines = 1) }
+                    OutlinedButton(onClick = onSalesHistory, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("売上一覧", maxLines = 1) }
+                }
+                Row(
+                    Modifier.weight(1f).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
+                ) {
+                    OutlinedButton(onClick = onPrinterStatus, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("プリンター", maxLines = 1) }
+                    OutlinedButton(onClick = onPrintQueue, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("印刷管理", maxLines = 1) }
+                    BlueButton(
+                        "小計／会計  ${yen(summary.grossAmount)}",
+                        onPayment,
+                        Modifier.weight(1.7f).fillMaxHeight(),
+                        cart.isNotEmpty(),
+                    )
+                }
+            }
+        } else {
+            Row(
+                Modifier.fillMaxWidth().height(responsive.bottomBarHeightDp.dp)
+                    .padding(horizontal = responsive.screenPaddingDp.dp, vertical = 7.dp),
+                horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
+            ) {
+                OutlinedButton(onClick = onTickets, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("伝票一覧", maxLines = 1) }
+                OutlinedButton(onClick = onHold, enabled = cart.isNotEmpty(), modifier = Modifier.weight(0.8f).fillMaxHeight()) { Text("保留", maxLines = 1) }
+                OutlinedButton(onClick = onSalesHistory, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("売上一覧", maxLines = 1) }
+                OutlinedButton(onClick = onPrinterStatus, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("プリンター", maxLines = 1) }
+                OutlinedButton(onClick = onPrintQueue, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("印刷管理", maxLines = 1) }
+                BlueButton(
+                    "小計／会計  ${yen(summary.grossAmount)}",
+                    onPayment,
+                    Modifier.weight(2.8f).fillMaxHeight(),
+                    cart.isNotEmpty(),
+                )
+            }
         }
     }
 }
