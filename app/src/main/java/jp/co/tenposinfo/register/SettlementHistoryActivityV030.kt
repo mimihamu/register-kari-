@@ -70,8 +70,11 @@ class SettlementHistoryActivityV030 : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 SettlementHistoryRouteV030(onClose = { finish() })
+            }
+        
             }
         }
     }
