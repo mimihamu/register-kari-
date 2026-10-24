@@ -52,12 +52,12 @@ class V135Uc10CancelAuditTest {
         assertTrue(source.contains("返金合計"))
     }
 
-    @Test fun cancelRequiresReversalPermissionManagerPinReasonAndOpenBusinessSession() {
+    @Test fun cancelRequiresReversalPermissionManagerApprovalAndOpenBusinessSession() {
         val coordinator = File("src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt").readText()
         val store = File("src/main/java/jp/co/tenposinfo/register/OperationsStore.kt").readText()
         assertTrue(coordinator.contains("requireOperator(OperationsAction.REVERSAL)"))
         assertTrue(coordinator.contains("requireManagerName(managerPin)"))
-        assertTrue(store.contains("require(reason.isNotBlank())"))
+        assertFalse(store.contains("require(reason.isNotBlank())"))
         assertTrue(store.contains("queryActiveSession(this) ?: error(\"営業開始後に返品・取消を実行してください\")"))
         assertTrue(store.contains("check(BusinessSessionTransitionPolicy.mayOperate(session.status))"))
     }

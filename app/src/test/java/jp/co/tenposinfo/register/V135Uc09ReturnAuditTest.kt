@@ -54,7 +54,7 @@ class V135Uc09ReturnAuditTest {
         assertTrue(hub.contains("ManualReturnActivityV135::class.java"))
         assertTrue(hub.contains("RegisterPermission.REVERSAL in permissions"))
         assertTrue(source.contains("RegisterPermission.REVERSAL"))
-        assertTrue(source.contains("managerNameForPin(managerPin)"))
+        assertTrue(source.contains("ManagerApprovalV145.resolve(appContext, managerPin)"))
         assertTrue(source.contains("quantity INTEGER NOT NULL CHECK(quantity < 0)"))
         assertTrue(source.contains("amount INTEGER NOT NULL CHECK(amount < 0)"))
     }

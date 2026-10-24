@@ -45,7 +45,7 @@ class V135OriginalSaleReturnSafetyTest {
         val source = File("src/main/java/jp/co/tenposinfo/register/SecureOperationsCoordinator.kt").readText()
         assertTrue(source.contains("RegisterPermission.REVERSAL"))
         assertTrue(source.contains("requireManagerName(managerPin)"))
-        assertTrue(source.contains("managerNameForPin(pin)"))
+        assertTrue(source.contains("ManagerApprovalV145.resolve(appContext, pin)"))
         assertTrue(source.contains("OperationsIdempotencyPolicy.reversalKey(originalSaleId)"))
     }
 
