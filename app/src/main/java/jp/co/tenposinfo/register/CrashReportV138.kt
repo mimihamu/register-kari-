@@ -8,11 +8,8 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Process
 import android.os.SystemClock
-import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
-import android.widget.FrameLayout
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.Files
@@ -196,42 +193,23 @@ private object CrashReportLifecycleV138 : Application.ActivityLifecycleCallbacks
 }
 
 object CrashReportUiV138 {
+    // Report sharing now lives exclusively in manager-authenticated settings.
     private const val TAG = "v138-crash-report-share"
 
     fun ensurePendingButton(activity: Activity) {
         val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
-        val existing = content.findViewWithTag<View>(TAG)
-        if (!CrashReportRuntimeV138.hasPending(activity)) {
-            if (existing != null) content.removeView(existing)
-            return
-        }
-        if (existing != null) return
-        val button = Button(activity).apply {
-            tag = TAG
-            text = "障害レポート"
-            isAllCaps = false
-            setOnClickListener {
-                CrashReportRuntimeV138.markOperation("CRASH_REPORT_SHARE")
-                runCatching {
-                    val payload = CrashReportRuntimeV138.pendingJson(activity)
-                    val send = Intent(Intent.ACTION_SEND).apply {
-                        type = "application/json"
-                        putExtra(Intent.EXTRA_SUBJECT, CrashReportRuntimeV138.exportFileName(activity))
-                        putExtra(Intent.EXTRA_TEXT, payload)
-                    }
-                    activity.startActivity(Intent.createChooser(send, "障害調査レポートを共有"))
-                }.onFailure {
-                    text = "障害レポート出力失敗"
-                }
-            }
-        }
-        content.addView(
-            button,
-            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.END or Gravity.BOTTOM).apply {
-                val margin = (16 * activity.resources.displayMetrics.density).toInt()
-                marginEnd = margin
-                bottomMargin = margin
-            },
-        )
+        content.findViewWithTag<View>(TAG)?.let { content.removeView(it) }
     }
+
+    fun sharePending(activity: Activity): Boolean = runCatching {
+        CrashReportRuntimeV138.markOperation("CRASH_REPORT_SHARE")
+        val payload = CrashReportRuntimeV138.pendingJson(activity)
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "application/json"
+            putExtra(Intent.EXTRA_SUBJECT, CrashReportRuntimeV138.exportFileName(activity))
+            putExtra(Intent.EXTRA_TEXT, payload)
+        }
+        activity.startActivity(Intent.createChooser(send, "障害調査レポートを共有"))
+        true
+    }.getOrDefault(false)
 }

@@ -173,6 +173,12 @@ private fun AdminSettingsApp(onClose: () -> Unit) {
                     },
                     onCustomerDisplay = { context.startActivity(Intent(context, CustomerDisplaySettingsActivity::class.java)) },
                     onPrinterTools = { context.startActivity(Intent(context, PrinterToolsHubActivity::class.java)) },
+                    onCrashReport = {
+                        val activity = context as? android.app.Activity
+                        if (activity != null && !CrashReportUiV138.sharePending(activity)) {
+                            android.widget.Toast.makeText(context, "障害レポートを開けませんでした", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
                     onDataProtection = { context.startActivity(Intent(context, DataProtectionActivity::class.java)) },
                     onSync = { context.startActivity(Intent(context, SyncSettingsActivity::class.java)) },
                     onSecurity = { screen = AdminScreen.SECURITY },
@@ -278,6 +284,7 @@ private fun AdminMenuScreen(
     onReceiptSettings: () -> Unit,
     onCustomerDisplay: () -> Unit,
     onPrinterTools: () -> Unit,
+    onCrashReport: () -> Unit,
     onDataProtection: () -> Unit,
     onSync: () -> Unit,
     onSecurity: () -> Unit,
@@ -344,7 +351,14 @@ private fun AdminMenuScreen(
             onClick = onCustomerDisplay,
         ),
     )
-    val maintenanceEntries = listOf(
+    val maintenanceEntries = listOfNotNull(
+        if (CrashReportRuntimeV138.hasPending(context)) AdminMenuEntryV136(
+            title = "障害レポート",
+            description = "前回の障害情報を共有",
+            searchTerms = "障害 レポート クラッシュ エラー 共有",
+            background = AsPaleYellow,
+            onClick = onCrashReport,
+        ) else null,
         AdminMenuEntryV136(
             title = "データ保全",
             description = "整合性診断、バックアップ、復元",

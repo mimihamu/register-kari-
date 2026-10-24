@@ -34,6 +34,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -1108,6 +1109,34 @@ private fun SalesScreen(
     var unregisteredBarcode by remember { mutableStateOf<String?>(null) }
     val barcodeIndex = remember(products) { BarcodeProductIndexV136(products) }
     val responsive = rememberRegisterResponsiveMetrics()
+    var dismissedPrinterError by remember { mutableStateOf<String?>(null) }
+    val printerErrorKey = "${printerHealth.printerName}:${printerHealth.title}"
+    androidx.compose.runtime.LaunchedEffect(printerHealth.level) {
+        if (printerHealth.level != PrinterHealthLevel.ERROR) dismissedPrinterError = null
+    }
+    if (printerHealth.level == PrinterHealthLevel.ERROR && dismissedPrinterError != printerErrorKey) {
+        AlertDialog(
+            onDismissRequest = { dismissedPrinterError = printerErrorKey },
+            title = { Text("プリンターエラー", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text(printerHealth.title, fontWeight = FontWeight.SemiBold)
+                    Text(printerHealth.detail)
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    dismissedPrinterError = printerErrorKey
+                    onPrinterStatus()
+                }) { Text("状態を確認") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { dismissedPrinterError = printerErrorKey }) {
+                    Text("閉じる")
+                }
+            },
+        )
+    }
 
     fun registerProduct(product: Product): Boolean {
         val requested = pendingQuantityHundredths ?: QuantityV136.SCALE
@@ -1166,7 +1195,7 @@ private fun SalesScreen(
 
     Column(Modifier.fillMaxSize()) {
         Header("SCR-100", "販売画面")
-        PrinterHealthBanner(printerHealth, onPrinterStatus)
+        // Printer faults use a modal dialog instead of a banner that shifts the sales layout.
         Row(
             Modifier.fillMaxWidth().height(48.dp).background(Color.White).padding(horizontal = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1290,6 +1319,7 @@ private fun SalesScreen(
                     val keypad = RegisterResponsiveLayoutPolicy.keypadMetrics(
                         availableHeightDp = maxHeight.value.toInt(),
                         functionRows = 2,
+                        preferredMinKeyDp = 64,
                     )
                     val keypadScroll = rememberScrollState()
                     Column(

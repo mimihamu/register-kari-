@@ -98,9 +98,9 @@ internal object RegisterResponsiveLayoutPolicy {
             cardPaddingDp = 10,
             headerHeightDp = 56,
             bottomBarHeightDp = 72,
-            salesListWeight = 0.31f,
-            salesKeypadWeight = 0.34f,
-            salesProductsWeight = 0.35f,
+            salesListWeight = 0.26f,
+            salesKeypadWeight = 0.42f,
+            salesProductsWeight = 0.32f,
             paymentDetailWeight = 0.55f,
             paymentKeypadWeight = 0.45f,
         )
@@ -112,9 +112,9 @@ internal object RegisterResponsiveLayoutPolicy {
             cardPaddingDp = 14,
             headerHeightDp = 62,
             bottomBarHeightDp = 80,
-            salesListWeight = 0.34f,
-            salesKeypadWeight = 0.30f,
-            salesProductsWeight = 0.36f,
+            salesListWeight = 0.29f,
+            salesKeypadWeight = 0.39f,
+            salesProductsWeight = 0.32f,
             paymentDetailWeight = 0.60f,
             paymentKeypadWeight = 0.40f,
         )
@@ -126,9 +126,9 @@ internal object RegisterResponsiveLayoutPolicy {
             cardPaddingDp = 18,
             headerHeightDp = 68,
             bottomBarHeightDp = 88,
-            salesListWeight = 0.35f,
-            salesKeypadWeight = 0.29f,
-            salesProductsWeight = 0.36f,
+            salesListWeight = 0.31f,
+            salesKeypadWeight = 0.36f,
+            salesProductsWeight = 0.33f,
             paymentDetailWeight = 0.64f,
             paymentKeypadWeight = 0.36f,
         )
@@ -143,7 +143,9 @@ internal object RegisterResponsiveLayoutPolicy {
         availableHeightDp: Int,
         functionRows: Int,
         reservedTopDp: Int = 0,
+        preferredMinKeyDp: Int = MIN_TOUCH_DP,
     ): RegisterKeypadMetrics {
+        require(preferredMinKeyDp in MIN_TOUCH_DP..MAX_KEY_HEIGHT_DP) { "preferredMinKeyDp out of range" }
         require(functionRows >= 0) { "functionRows must not be negative" }
 
         val gap = when {
@@ -168,8 +170,8 @@ internal object RegisterResponsiveLayoutPolicy {
             functionRows * functionHeight +
             (functionRows + 5) * gap
         val rawKeyHeight = (availableHeightDp - fixedHeight - 3 * gap) / 4
-        val scrollRequired = rawKeyHeight < MIN_TOUCH_DP
-        val keyHeight = rawKeyHeight.coerceIn(MIN_TOUCH_DP, MAX_KEY_HEIGHT_DP)
+        val scrollRequired = rawKeyHeight < preferredMinKeyDp
+        val keyHeight = rawKeyHeight.coerceIn(preferredMinKeyDp, MAX_KEY_HEIGHT_DP)
         val allocationHeight = when {
             availableHeightDp >= 720 -> 112
             availableHeightDp >= 560 -> 76
