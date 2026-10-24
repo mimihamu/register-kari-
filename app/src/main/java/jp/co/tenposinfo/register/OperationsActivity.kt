@@ -71,10 +71,12 @@ class OperationsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         val requestedReversalSaleId = ReversalNavigation.requestedSaleId(intent)
+        val requestedLegacyRoute = OperationsLegacyRouteV140.requested(intent)
         setContent {
             MaterialTheme {
                 OperationsApp(
                     requestedReversalSaleId = requestedReversalSaleId,
+                    requestedLegacyRoute = requestedLegacyRoute,
                     onClose = { finish() },
                 )
             }
@@ -96,6 +98,7 @@ private enum class OperationsScreen {
 @Composable
 private fun OperationsApp(
     requestedReversalSaleId: Long?,
+    requestedLegacyRoute: String?,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -110,6 +113,29 @@ private fun OperationsApp(
     var activeOperator by remember { mutableStateOf(OperatorSessionRegistry.current(appContext)) }
     var reversalContextSaleId by remember { mutableStateOf<Long?>(null) }
     var requestedReversalHandled by remember(requestedReversalSaleId) { mutableStateOf(false) }
+    var requestedLegacyHandled by remember(requestedLegacyRoute) { mutableStateOf(false) }
+
+    androidx.compose.runtime.LaunchedEffect(requestedLegacyRoute) {
+        if (requestedLegacyRoute != null && requestedReversalSaleId == null && !requestedLegacyHandled) {
+            val required = OperationsLegacyRouteV140.requiredPermission(requestedLegacyRoute)
+            val destination = when (requestedLegacyRoute) {
+                OperationsLegacyRouteV140.DAILY_SALES -> OperationsScreen.DAILY_SALES
+                OperationsLegacyRouteV140.CASH_MOVEMENT -> OperationsScreen.CASH_MOVEMENT
+                OperationsLegacyRouteV140.REVERSAL -> OperationsScreen.REVERSAL
+                else -> OperationsScreen.MENU
+            }
+            val current = OperatorSessionRegistry.current(appContext)
+            activeOperator = current
+            if (required != null && current?.allows(required) == true) {
+                screen = destination
+                message = null
+            } else {
+                screen = OperationsScreen.MENU
+                message = "この管理操作を開く権限がありません"
+            }
+            requestedLegacyHandled = true
+        }
+    }
 
     androidx.compose.runtime.LaunchedEffect(requestedReversalSaleId) {
         val requested = requestedReversalSaleId
@@ -148,6 +174,10 @@ private fun OperationsApp(
             store.close()
             registerDatabase.close()
         }
+    }
+
+    fun returnToHubOrMenu() {
+        if (requestedLegacyRoute != null) onClose() else screen = OperationsScreen.MENU
     }
 
     fun openScreen(permission: RegisterPermission, destination: OperationsScreen) {
@@ -249,7 +279,7 @@ private fun OperationsApp(
                     if (result.isSuccess) revision++
                     activeOperator = OperatorSessionRegistry.current(appContext)
                 },
-                onBack = { screen = OperationsScreen.MENU },
+                onBack = { returnToHubOrMenu() },
             )
 
             OperationsScreen.DAILY_SALES -> DailySalesScreen(
@@ -259,7 +289,7 @@ private fun OperationsApp(
                         BusinessDateSalesLookupNavigation.intent(context, businessDate, businessSessionId),
                     )
                 },
-                onBack = { screen = OperationsScreen.MENU },
+                onBack = { returnToHubOrMenu() },
             )
 
             OperationsScreen.X_INSPECTION -> SettlementScreen(
@@ -283,7 +313,7 @@ private fun OperationsApp(
                     )
                 },
                 message = message,
-                onBack = { screen = OperationsScreen.MENU },
+                onBack = { returnToHubOrMenu() },
             )
 
             OperationsScreen.Z_SETTLEMENT -> SettlementScreen(
@@ -307,7 +337,7 @@ private fun OperationsApp(
                     )
                 },
                 message = message,
-                onBack = { screen = OperationsScreen.MENU },
+                onBack = { returnToHubOrMenu() },
             )
 
             OperationsScreen.SETTLEMENT_HISTORY -> SettlementHistoryScreenV027(
@@ -367,7 +397,7 @@ private fun OperationsApp(
                     if (result.isSuccess) revision++
                     activeOperator = OperatorSessionRegistry.current(appContext)
                 },
-                onBack = { screen = OperationsScreen.MENU },
+                onBack = { returnToHubOrMenu() },
             )
 
             OperationsScreen.CASH_MOVEMENT -> CashMovementScreen(
@@ -384,7 +414,7 @@ private fun OperationsApp(
                     if (result.isSuccess) revision++
                     activeOperator = OperatorSessionRegistry.current(appContext)
                 },
-                onBack = { screen = OperationsScreen.MENU },
+                onBack = { returnToHubOrMenu() },
             )
 
             OperationsScreen.REVERSAL -> ReversalScreen(
@@ -423,7 +453,7 @@ private fun OperationsApp(
                 },
                 onBack = {
                     reversalContextSaleId = null
-                    screen = OperationsScreen.MENU
+                    returnToHubOrMenu()
                 },
             )
         }
