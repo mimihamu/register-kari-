@@ -128,7 +128,7 @@ private fun AdminSettingsApp(onClose: () -> Unit) {
         if (!unlocked) {
             AdminUnlockScreen(
                 onVerify = { pin ->
-                    val name = store.managerNameForPin(pin)
+                    val name = ManagerApprovalV145.resolve(context.applicationContext, pin)
                     if (name == null) {
                         false
                     } else {
@@ -225,23 +225,25 @@ private fun AdminUnlockScreen(
 ) {
     var pin by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
+    val currentContext = LocalContext.current
+    val loggedInManagerNoPin = ManagerApprovalV145.canUseCurrentManagerSession(currentContext)
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         AsPanel(Modifier.width(520.dp).height(430.dp)) {
             Text("各種設定", fontSize = 31.sp, fontWeight = FontWeight.Bold, color = AsNavy)
             Spacer(Modifier.height(8.dp))
             Text("責任者認証", fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(20.dp))
-            OutlinedTextField(
-                value = pin,
-                onValueChange = { pin = it.filter(Char::isDigit).take(8) },
-                label = { Text("責任者PIN") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                visualTransformation = PasswordVisualTransformation(),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(10.dp))
-            Text("登録済みの責任者PINを入力してください", color = Color.Gray)
+            if (!loggedInManagerNoPin) {
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { pin = it.filter(Char::isDigit).take(8) },
+                    label = { Text("責任者PIN") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             if (message != null) {
                 Spacer(Modifier.height(10.dp))
                 Text(message.orEmpty(), color = AsDanger, fontWeight = FontWeight.Bold)
@@ -262,7 +264,7 @@ private fun AdminUnlockScreen(
                     },
                     modifier = Modifier.weight(1f).height(56.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = AsBlue),
-                ) { Text("認証", fontWeight = FontWeight.Bold) }
+                ) { Text(if (loggedInManagerNoPin) "設定を開く" else "認証", fontWeight = FontWeight.Bold) }
             }
         }
     }
@@ -691,7 +693,7 @@ private fun OperatorMasterScreen(
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(
                         checked = pinRequired,
-                        enabled = role == OperatorRole.CASHIER,
+                        enabled = true,
                         onCheckedChange = { pinRequired = it },
                     )
                     Text("ログイン時にPINを使う", fontWeight = FontWeight.Medium)

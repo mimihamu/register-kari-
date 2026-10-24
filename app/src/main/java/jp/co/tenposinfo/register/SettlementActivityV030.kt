@@ -237,7 +237,7 @@ private fun SettlementScreenV030(
                         showConfirmation = false
                         onExecute(actual, managerPin, pendingAcknowledged, backupFailureAcknowledged)
                     },
-                    enabled = managerPin.isNotBlank() && preflight.mayProceed,
+                    enabled = (managerPin.isNotBlank() || ManagerApprovalV145.canUseCurrentManagerSession(context)) && preflight.mayProceed,
                     colors = ButtonDefaults.buttonColors(containerColor = SettlementDangerV030),
                 ) { Text("Z精算して営業終了") }
             },

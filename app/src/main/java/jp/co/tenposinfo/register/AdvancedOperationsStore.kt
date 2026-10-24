@@ -576,7 +576,6 @@ class AdvancedOperationsStore(context: Context) {
     ): ReversalSaveResult {
         val session = activeSession() ?: error("営業開始後に返品・取消を実行してください")
         require(session.status == BusinessSessionStatus.OPEN) { "Z精算後は返品・取消できません" }
-        require(reason.isNotBlank()) { "理由を入力してください" }
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
         val printerConfiguration = PrinterRoutingV136.resolve(
             appContext,

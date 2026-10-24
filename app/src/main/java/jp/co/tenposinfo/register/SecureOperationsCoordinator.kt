@@ -228,7 +228,7 @@ class SecureOperationsCoordinator(
                 openContext = CashDrawerOpenContextV136.CASH_REFUND,
                 referenceId = result.reversalId,
                 eventKey = "REVERSAL:${result.reversalId}",
-                reason = reason,
+                reason = reason.ifBlank { "${type.displayName}（理由なし）" },
                 actor = actor,
                 hasCashPayment = store.reversalHasCashRefund(result.reversalId),
             )
@@ -261,9 +261,7 @@ class SecureOperationsCoordinator(
         return operator
     }
 
-    private fun requireManagerName(pin: String): String {
-        require(pin.isNotBlank()) { "責任者PINを入力してください" }
-        return AdminSettingsStore(appContext).use { it.managerNameForPin(pin) }
-            ?: throw SecurityException("責任者PINが違います")
-    }
+    private fun requireManagerName(pin: String): String =
+        ManagerApprovalV145.resolve(appContext, pin)
+            ?: throw SecurityException("責任者の承認が必要です。PINなし責任者でログインするか、責任者PINを入力してください")
 }

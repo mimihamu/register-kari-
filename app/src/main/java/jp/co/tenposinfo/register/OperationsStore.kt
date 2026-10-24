@@ -508,7 +508,6 @@ class OperationsStore(context: Context) {
         operatorName: String,
         requestId: String,
     ): PartialReversalResult {
-        require(reason.isNotBlank()) { "理由を入力してください" }
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
         val now = System.currentTimeMillis()
         val operationKey = OperationsIdempotencyPolicy.reversalRequestKey(type, originalSaleId, requestId)

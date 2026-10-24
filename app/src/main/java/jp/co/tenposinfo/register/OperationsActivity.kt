@@ -858,7 +858,8 @@ private fun SettlementScreen(
                         showZConfirmation = false
                         onExecute(actual, pin, pendingPrintsAcknowledged, backupFailureAcknowledged)
                     },
-                    enabled = pin.isNotBlank() && zPreflight.mayProceed,
+                    enabled = (pin.isNotBlank() || ManagerApprovalV145.canUseCurrentManagerSession(LocalContext.current)) &&
+                        zPreflight.mayProceed,
                     colors = ButtonDefaults.buttonColors(containerColor = OpDanger),
                 ) { Text("Z精算して営業終了") }
             },
@@ -1165,7 +1166,8 @@ private fun ReversalScreen(
     val canCancel = lines.isNotEmpty() && lines.all {
         it.returnedQuantityHundredths == 0L && it.remainingQuantityHundredths > 0L
     }
-    val canExecute = selected != null && reason.isNotBlank() && pin.isNotBlank() && when (type) {
+    val managerApproved = pin.isNotBlank() || ManagerApprovalV145.canUseCurrentManagerSession(LocalContext.current)
+    val canExecute = selected != null && managerApproved && when (type) {
         ReversalType.CANCEL -> canCancel
         ReversalType.RETURN -> selectedItems.isNotEmpty() && !hasQuantityInputError
     }
@@ -1511,20 +1513,22 @@ private fun ReversalScreen(
                 OutlinedTextField(
                     value = reason,
                     onValueChange = { reason = it.take(100) },
-                    label = { Text("理由（必須）") },
+                    label = { Text("理由（任意）") },
                     modifier = Modifier.fillMaxWidth().height(82.dp),
                 )
                 Spacer(Modifier.height(7.dp))
                 OpAuthenticatedOperator(operatorName)
                 Spacer(Modifier.height(7.dp))
-                OutlinedTextField(
-                    value = pin,
-                    onValueChange = { pin = it.filter(Char::isDigit).take(8) },
-                    label = { Text("責任者PIN") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (!ManagerApprovalV145.canUseCurrentManagerSession(LocalContext.current)) {
+                    OutlinedTextField(
+                        value = pin,
+                        onValueChange = { pin = it.filter(Char::isDigit).take(8) },
+                        label = { Text("責任者PIN") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
                 Button(
                     onClick = {

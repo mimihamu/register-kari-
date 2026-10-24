@@ -56,11 +56,11 @@ class V135ManualReturnPolicyTest {
     }
 
     @Test
-    fun sourceRequiresReversalPermissionAndManagerPin() {
+    fun sourceRequiresReversalPermissionAndManagerApproval() {
         val source = File("src/main/java/jp/co/tenposinfo/register/ManualReturnV135.kt").readText()
         assertTrue(source.contains("operator.allows(RegisterPermission.REVERSAL)"))
-        assertTrue(source.contains("managerNameForPin(managerPin)"))
-        assertTrue(source.contains("責任者PINを入力してください"))
+        assertTrue(source.contains("ManagerApprovalV145.resolve(appContext, managerPin)"))
+        assertTrue(source.contains("責任者の承認が必要です"))
         assertTrue(source.contains("event_type\", \"MANUAL_RETURN"))
     }
 

@@ -33,7 +33,6 @@ class ManualReturnActivityV135 : ComponentActivity() {
     private lateinit var reasonInput: EditText
     private lateinit var refundSpinner: Spinner
     private lateinit var managerPinInput: EditText
-    private lateinit var reasonRequiredCheck: CheckBox
     private lateinit var confirmButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -117,7 +116,7 @@ class ManualReturnActivityV135 : ComponentActivity() {
         }, matchWrap())
 
         reasonInput = EditText(this).apply {
-            hint = "返品理由"
+            hint = "返品理由（任意）"
             minLines = 2
         }
         root.addView(reasonInput, matchWrap(top = 14))
@@ -139,23 +138,13 @@ class ManualReturnActivityV135 : ComponentActivity() {
         root.addView(refundRow, matchWrap(top = 12))
 
         managerPinInput = EditText(this).apply {
-            hint = "責任者PIN（実行・設定変更時に必須）"
+            hint = "責任者PIN"
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
         }
-        root.addView(managerPinInput, matchWrap(top = 12))
-
-        val settingRow = horizontalRow()
-        reasonRequiredCheck = CheckBox(this).apply {
-            text = "返品理由を必須にする"
-            textSize = 16f
-            isChecked = coordinator.reasonRequired()
+        if (!ManagerApprovalV145.canUseCurrentManagerSession(applicationContext)) {
+            root.addView(managerPinInput, matchWrap(top = 12))
         }
-        settingRow.addView(reasonRequiredCheck, LinearLayout.LayoutParams(0, dp(52), 2f))
-        settingRow.addView(Button(this).apply {
-            text = "理由必須設定を保存"
-            setOnClickListener { saveReasonSetting() }
-        }, LinearLayout.LayoutParams(0, dp(52), 1.3f))
-        root.addView(settingRow, matchWrap(top = 8))
+
 
         root.addView(TextView(this).apply {
             text = "カード返金を選んだ場合、つぐレジ側には返金記録を残しますが、決済端末側の返金操作完了も必ず確認してください。"
@@ -169,7 +158,7 @@ class ManualReturnActivityV135 : ComponentActivity() {
             setOnClickListener { finish() }
         }, LinearLayout.LayoutParams(0, dp(58), 1f))
         confirmButton = Button(this).apply {
-            text = "責任者承認して返品確定"
+            text = "返品を確定"
             setOnClickListener { executeReturn() }
         }
         actionRow.addView(confirmButton, LinearLayout.LayoutParams(0, dp(58), 2f).apply { marginStart = dp(12) })
@@ -233,14 +222,6 @@ class ManualReturnActivityV135 : ComponentActivity() {
         }
         val total = TaxEngine.calculate(items).grossAmount
         totalText.text = "返金合計  -${yen(total)}"
-    }
-
-    private fun saveReasonSetting() {
-        runCatching {
-            coordinator.setReasonRequired(reasonRequiredCheck.isChecked, managerPinInput.text.toString())
-        }.onSuccess {
-            toastDialog("設定保存", if (reasonRequiredCheck.isChecked) "返品理由を必須にしました" else "返品理由を任意にしました")
-        }.onFailure { showError(it.message ?: "設定を保存できませんでした") }
     }
 
     private fun executeReturn() {

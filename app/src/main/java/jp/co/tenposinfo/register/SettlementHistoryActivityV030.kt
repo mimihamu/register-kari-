@@ -443,7 +443,8 @@ private fun HistoryPreviewV030(
                 enabled = SettlementHistoryPolicyV027.canReprint(
                     record = selected,
                     permissions = permissions,
-                    managerPinProvided = managerPin.isNotBlank(),
+                    managerPinProvided = managerPin.isNotBlank() ||
+                        ManagerApprovalV145.canUseCurrentManagerSession(LocalContext.current),
                 ),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 colors = ButtonDefaults.buttonColors(

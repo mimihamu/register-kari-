@@ -79,7 +79,7 @@ internal object ManualReturnPolicyV135 {
 internal class ManualReturnSettingsV135(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    fun isReasonRequired(): Boolean = prefs.getBoolean(KEY_REASON_REQUIRED, true)
+    fun isReasonRequired(): Boolean = false // 返品理由は常に任意（旧版の設定は参照しない）
 
     fun setReasonRequired(required: Boolean) {
         prefs.edit().putBoolean(KEY_REASON_REQUIRED, required).apply()
@@ -118,7 +118,7 @@ internal class ManualReturnStoreV135(context: Context) : AutoCloseable {
         require(operatorName.isNotBlank()) { "担当者を確認できません" }
         require(managerName.isNotBlank()) { "責任者を確認できません" }
         require(requestId.isNotBlank()) { "操作IDがありません" }
-        val items = ManualReturnPolicyV135.toPositiveCartItems(request, settings.isReasonRequired())
+        val items = ManualReturnPolicyV135.toPositiveCartItems(request, reasonRequired = false)
         val taxSummary = TaxEngine.calculate(items)
         val gross = taxSummary.grossAmount
         require(gross > 0) { "返金額が0円です" }
@@ -393,9 +393,8 @@ internal class ManualReturnCoordinatorV135(context: Context) : AutoCloseable {
         if (!operator.allows(RegisterPermission.REVERSAL)) {
             throw SecurityException("${RegisterPermission.REVERSAL.displayName}の権限がありません")
         }
-        require(managerPin.isNotBlank()) { "責任者PINを入力してください" }
-        val managerName = AdminSettingsStore(appContext).use { it.managerNameForPin(managerPin) }
-            ?: throw SecurityException("責任者PINが違います")
+        val managerName = ManagerApprovalV145.resolve(appContext, managerPin)
+            ?: throw SecurityException("責任者の承認が必要です。PINなし責任者でログインするか、責任者PINを入力してください")
         return operator to managerName
     }
 }

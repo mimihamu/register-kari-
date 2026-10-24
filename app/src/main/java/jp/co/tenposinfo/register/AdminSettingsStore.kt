@@ -243,9 +243,8 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
         require(cleanName.isNotBlank()) { "担当者名を入力してください" }
         val requestedPermissions = if (permissions.isEmpty()) OperatorPermissionPolicy.defaults(role) else permissions
         val effectivePermissions = RegisterPermissionCompatibilityV026.normalizeForSave(requestedPermissions)
-        val noPinPermissions = OperatorPermissionPolicy.defaults(OperatorRole.CASHIER)
-        require(pinRequired || (role == OperatorRole.CASHIER && effectivePermissions.all { it in noPinPermissions })) {
-            "PINなしは担当者の販売・保留・売上確認権限に限ります"
+        require(pinRequired || OperatorPinOptionalPolicyV144.canSaveWithoutPin(role, effectivePermissions)) {
+            "PINなしにできるのは責任者、または通常販売権限だけの担当者です"
         }
         if (pinRequired && id == null) require(!pin.isNullOrBlank()) { "新規登録時はPINが必要です" }
         if (pinRequired && id != null && !currentOperatorPinRequired(id)) {
@@ -357,6 +356,12 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
         }
         null
     }
+
+    /** Confirms a currently logged-in PIN-free manager in the database, not just the UI session. */
+    fun managerNameForPinFreeSession(operatorId: Long): String? = db.rawQuery(
+        "SELECT operator_name FROM register_operators WHERE id = ? AND role = ? AND enabled = 1 AND pin_required = 0",
+        arrayOf(operatorId.toString(), OperatorRole.MANAGER.name),
+    ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
 
     fun changeManagerPin(currentPin: String, newPin: String, actor: String): Long {
         PinSecurity.validate(newPin)
