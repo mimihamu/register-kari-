@@ -76,11 +76,14 @@ class BusinessDateSalesLookupActivity : ComponentActivity() {
         configureRegisterSystemBars(window)
         val requestedContext = BusinessDateSalesLookupNavigation.requestedContext(intent)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 BusinessDateSalesLookupRoute(
                     requestedContext = requestedContext,
                     onClose = { finish() },
                 )
+            }
+        
             }
         }
     }
