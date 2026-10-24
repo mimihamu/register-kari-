@@ -935,6 +935,7 @@ private fun LoginScreen(
     onLogin: (Long, String) -> Unit,
 ) {
     var selectedId by remember(operators) { mutableStateOf(operators.firstOrNull()?.id) }
+    val selectedOperator = operators.firstOrNull { it.id == selectedId }
     var pin by remember { mutableStateOf("") }
     val responsive = rememberRegisterResponsiveMetrics()
     val operatorScroll = rememberScrollState()
@@ -983,7 +984,11 @@ private fun LoginScreen(
                         for (index in rowStart until minOf(rowStart + 3, operators.size)) {
                             val operator = operators[index]
                             OutlinedButton(
-                                onClick = { selectedId = operator.id; pin = "" },
+                                onClick = {
+                                    selectedId = operator.id
+                                    pin = ""
+                                    if (!operator.pinRequired) onLogin(operator.id, "")
+                                },
                                 modifier = Modifier.weight(1f).height(operatorButtonHeightDp.dp),
                                 border = BorderStroke(
                                     if (selectedId == operator.id) 3.dp else 1.dp,
@@ -991,7 +996,7 @@ private fun LoginScreen(
                                 ),
                             ) {
                                 Text(
-                                    if (operator.name == operator.role.displayName) operator.name else "${operator.name}\n${operator.role.displayName}",
+                                    operator.name,
                                     fontSize = if (responsive.isCompact) 14.sp else 19.sp,
                                     textAlign = TextAlign.Center,
                                     fontWeight = FontWeight.Bold,
@@ -1006,6 +1011,25 @@ private fun LoginScreen(
                 }
             }
             CardPanel(Modifier.width(pinPanelWidthDp.dp).fillMaxHeight()) {
+                if (selectedOperator?.pinRequired == false) {
+                    Column(
+                        Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(selectedOperator.name, color = Navy, fontWeight = FontWeight.Bold, fontSize = 26.sp)
+                        Spacer(Modifier.height(20.dp))
+                        BlueButton(
+                            "ログイン",
+                            { selectedId?.let { onLogin(it, "") } },
+                            Modifier.fillMaxWidth().height(72.dp),
+                        )
+                        if (message != null) {
+                            Spacer(Modifier.height(12.dp))
+                            Text(message, color = Danger, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                } else {
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val keypad = RegisterResponsiveLayoutPolicy.keypadMetrics(
                         availableHeightDp = maxHeight.value.toInt(),
@@ -1052,6 +1076,7 @@ private fun LoginScreen(
                         rowGapDp = keypad.gapDp,
                     )
                     }
+                }
                 }
             }
         }

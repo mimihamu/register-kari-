@@ -66,7 +66,7 @@ class SecureOperationsCoordinator(
             openContext = openContext,
             referenceId = movementId,
             eventKey = "CASH_MOVEMENT:$movementId",
-            reason = reason,
+            reason = reason.ifBlank { "入出金（コメントなし）" },
             actor = actor,
         )
         return movementId

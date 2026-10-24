@@ -423,11 +423,14 @@ class InitialReleaseSettingsActivityV135 : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 InitialReleaseSettingsAppV135(
                     actor = intent.getStringExtra(EXTRA_ACTOR).orEmpty().ifBlank { "責任者" },
                     onClose = { finish() },
                 )
+            }
+        
             }
         }
     }

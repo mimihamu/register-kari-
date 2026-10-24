@@ -320,7 +320,6 @@ class AdvancedOperationsStore(context: Context) {
         val session = activeSession() ?: error("営業開始後に入出金を登録してください")
         require(session.status == BusinessSessionStatus.OPEN) { "Z精算後は入出金できません" }
         require(amount > 0) { "金額を入力してください" }
-        require(reason.isNotBlank()) { "理由を入力してください" }
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
         val now = System.currentTimeMillis()
         return db.transaction {

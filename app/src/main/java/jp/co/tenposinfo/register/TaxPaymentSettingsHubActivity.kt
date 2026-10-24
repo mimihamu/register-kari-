@@ -133,10 +133,7 @@ private fun HubTileV136(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Text(screenId, color = TpNavy, fontWeight = FontWeight.Bold)
             Text(title, color = TpNavy, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(12.dp))
-            Text(description, textAlign = TextAlign.Center, color = Color.DarkGray, lineHeight = 22.sp)
         }
     }
 }

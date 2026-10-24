@@ -242,11 +242,7 @@ private fun CatalogHubTileV030(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(screenId, color = CatalogHubBlueV030, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(5.dp))
             Text(title, fontSize = if (metrics.isCompact) 20.sp else 22.sp, fontWeight = FontWeight.Bold, color = CatalogHubNavyV030, textAlign = TextAlign.Center)
-            Spacer(Modifier.height(5.dp))
-            Text(description, color = Color.DarkGray, textAlign = TextAlign.Center)
         }
     }
 }

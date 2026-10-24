@@ -1043,7 +1043,7 @@ private fun CashMovementScreen(
                 OutlinedTextField(
                     value = reason,
                     onValueChange = { reason = it.take(100) },
-                    label = { Text("理由（必須）") },
+                    label = { Text("コメント（任意）") },
                     modifier = Modifier.fillMaxWidth().height(110.dp),
                 )
                 Spacer(Modifier.height(8.dp))
@@ -1090,7 +1090,7 @@ private fun CashMovementScreen(
                                 )
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text(record.reason, fontWeight = FontWeight.Medium)
+                                    if (record.reason.isNotBlank()) Text(record.reason, fontWeight = FontWeight.Medium)
                                     Text("${opDateTime(record.createdAt)} / ${record.operatorName}", color = Color.Gray)
                                 }
                                 Text(

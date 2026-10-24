@@ -577,7 +577,6 @@ internal fun settingsMenuMatchesV136(query: String, vararg texts: String): Boole
 private fun AsSettingsSectionHeaderV136(title: String, description: String) {
     Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp)) {
         Text(title, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = AsNavy)
-        Text(description, fontSize = 13.sp, color = Color.DarkGray)
     }
 }
 
@@ -596,6 +595,7 @@ private fun OperatorMasterScreen(
     var role by remember { mutableStateOf(OperatorRole.CASHIER) }
     var enabled by remember { mutableStateOf(true) }
     var pin by remember { mutableStateOf("") }
+    var pinRequired by remember { mutableStateOf(true) }
     var permissions by remember { mutableStateOf(OperatorPermissionPolicy.defaults(OperatorRole.CASHIER)) }
     var message by remember { mutableStateOf<String?>(null) }
 
@@ -606,6 +606,7 @@ private fun OperatorMasterScreen(
             role = OperatorRole.CASHIER
             enabled = true
             pin = ""
+            pinRequired = true
             permissions = OperatorPermissionPolicy.defaults(role)
         } else {
             code = selected.code
@@ -613,6 +614,7 @@ private fun OperatorMasterScreen(
             role = selected.role
             enabled = selected.enabled
             pin = ""
+            pinRequired = selected.pinRequired
             permissions = selected.permissions
         }
     }
@@ -678,6 +680,7 @@ private fun OperatorMasterScreen(
                     }
                     AsChoiceButton("責任者", role == OperatorRole.MANAGER, Modifier.weight(1f)) {
                         role = OperatorRole.MANAGER
+                        pinRequired = true
                         permissions = OperatorPermissionPolicy.defaults(role)
                     }
                 }
@@ -685,20 +688,34 @@ private fun OperatorMasterScreen(
                     Checkbox(checked = enabled, onCheckedChange = { enabled = it })
                     Text("有効")
                 }
-                OutlinedTextField(
-                    value = pin,
-                    onValueChange = { pin = it.filter(Char::isDigit).take(8) },
-                    label = { Text(if (selected == null) "PIN（必須）" else "PIN（変更時のみ入力）") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = pinRequired,
+                        enabled = role == OperatorRole.CASHIER,
+                        onCheckedChange = { pinRequired = it },
+                    )
+                    Text("ログイン時にPINを使う", fontWeight = FontWeight.Medium)
+                }
+                if (pinRequired) {
+                    OutlinedTextField(
+                        value = pin,
+                        onValueChange = { pin = it.filter(Char::isDigit).take(8) },
+                        label = { Text(if (selected == null || selected.pinRequired == false) "PIN（4～8桁）" else "PIN変更") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 Spacer(Modifier.weight(1f))
                 Button(
                     onClick = {
                         val result = runCatching {
-                            store.saveOperator(selected?.id, code, name, role, enabled, pin.ifBlank { null }, permissions, actorName)
+                            store.saveOperator(
+                                selected?.id, code, name, role, enabled,
+                                pin.takeIf { pinRequired && it.isNotBlank() },
+                                permissions, actorName, pinRequired = pinRequired,
+                            )
                         }
                         message = result.fold(
                             onSuccess = { "保存しました（ID $it）" },
@@ -1476,8 +1493,6 @@ private fun AsMenuTile(title: String, description: String, background: Color, mo
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(title, fontSize = 21.sp, fontWeight = FontWeight.Bold, color = AsNavy)
-            Spacer(Modifier.height(6.dp))
-            Text(description, textAlign = TextAlign.Center, color = Color.DarkGray, lineHeight = 18.sp, fontSize = 13.sp)
         }
     }
 }

@@ -343,7 +343,6 @@ class OperationsStore(context: Context) {
         operatorName: String,
     ): Long {
         require(amount > 0) { "金額を入力してください" }
-        require(reason.isNotBlank()) { "理由を入力してください" }
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
         val now = System.currentTimeMillis()
         return db.transaction {

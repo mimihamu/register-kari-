@@ -184,23 +184,26 @@ private fun CustomerDisplaySettingsScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFF4F7FA))
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+    Column(Modifier.fillMaxSize()) {
+        RegisterTopBarV141("顧客表示設定", action = {
+            Button(
+                onClick = onClose,
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = Color.White,
+                    contentColor = Color(0xFF173F6B),
+                ),
+            ) { Text("戻る", color = Color(0xFF173F6B)) }
+        })
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .background(Color(0xFFF4F7FA))
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("顧客表示", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            OutlinedButton(onClick = onClose) { Text("閉じる") }
-        }
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -458,6 +461,7 @@ private fun CustomerDisplaySettingsScreen(
             },
             modifier = Modifier.fillMaxWidth(),
         ) { Text("保存") }
+        }
     }
 }
 

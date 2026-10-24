@@ -39,6 +39,7 @@ data class OperatorRecord(
     val permissions: Set<RegisterPermission>,
     val createdAt: Long,
     val updatedAt: Long,
+    val pinRequired: Boolean = true,
 )
 
 data class PrinterConfiguration(
@@ -199,7 +200,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
         val operators = mutableListOf<OperatorRecord>()
         db.query(
             "register_operators",
-            arrayOf("id", "operator_code", "operator_name", "role", "enabled", "display_order", "created_at", "updated_at"),
+            arrayOf("id", "operator_code", "operator_name", "role", "enabled", "display_order", "created_at", "updated_at", "pin_required"),
             null,
             null,
             null,
@@ -218,6 +219,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
                     permissions = loadPermissions(id),
                     createdAt = cursor.getLong(6),
                     updatedAt = cursor.getLong(7),
+                    pinRequired = cursor.getInt(8) != 0,
                 )
             }
         }
@@ -233,19 +235,31 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
         pin: String?,
         permissions: Set<RegisterPermission>,
         actor: String,
+        pinRequired: Boolean = true,
     ): Long {
         val cleanCode = code.trim().uppercase()
         val cleanName = name.trim()
         require(cleanCode.matches(Regex("[A-Z0-9_-]{1,20}"))) { "担当者コードは英数字・_・-で20文字以内です" }
         require(cleanName.isNotBlank()) { "担当者名を入力してください" }
-        if (id == null) require(!pin.isNullOrBlank()) { "新規登録時はPINが必要です" }
+        val requestedPermissions = if (permissions.isEmpty()) OperatorPermissionPolicy.defaults(role) else permissions
+        val effectivePermissions = RegisterPermissionCompatibilityV026.normalizeForSave(requestedPermissions)
+        val noPinPermissions = OperatorPermissionPolicy.defaults(OperatorRole.CASHIER)
+        require(pinRequired || (role == OperatorRole.CASHIER && effectivePermissions.all { it in noPinPermissions })) {
+            "PINなしは担当者の販売・保留・売上確認権限に限ります"
+        }
+        if (pinRequired && id == null) require(!pin.isNullOrBlank()) { "新規登録時はPINが必要です" }
+        if (pinRequired && id != null && !currentOperatorPinRequired(id)) {
+            require(!pin.isNullOrBlank()) { "PINを有効にする場合は新しいPINを設定してください" }
+        }
         pin?.takeIf(String::isNotBlank)?.let(PinSecurity::validate)
         if (!enabled && id != null) ensureNotLastManager(id)
 
         val now = System.currentTimeMillis()
         return db.inTransaction {
             val operatorId = if (id == null) {
-                val encoded = PinSecurity.encode(requireNotNull(pin))
+                val effectivePin = pin?.takeIf(String::isNotBlank)
+                    ?: java.security.SecureRandom().nextInt(100_000_000).toString().padStart(8, '0')
+                val encoded = PinSecurity.encode(effectivePin)
                 insertOrThrow(
                     "register_operators",
                     null,
@@ -256,6 +270,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
                         put("enabled", if (enabled) 1 else 0)
                         put("pin_salt", encoded.salt)
                         put("pin_hash", encoded.hash)
+                        put("pin_required", if (pinRequired) 1 else 0)
                         put("display_order", nextDisplayOrder())
                         put("created_at", now)
                         put("updated_at", now)
@@ -267,6 +282,7 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
                     put("operator_name", cleanName)
                     put("role", role.name)
                     put("enabled", if (enabled) 1 else 0)
+                    put("pin_required", if (pinRequired) 1 else 0)
                     put("updated_at", now)
                     pin?.takeIf(String::isNotBlank)?.let {
                         val encoded = PinSecurity.encode(it)
@@ -279,9 +295,6 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             }
 
             delete("operator_permissions", "operator_id = ?", arrayOf(operatorId.toString()))
-            val effectivePermissions = RegisterPermissionCompatibilityV026.normalizeForSave(
-                if (permissions.isEmpty()) OperatorPermissionPolicy.defaults(role) else permissions,
-            )
             effectivePermissions.forEach { permission ->
                 insertOrThrow(
                     "operator_permissions",
@@ -295,13 +308,18 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
             insertAudit(
                 eventType = if (id == null) "OPERATOR_CREATED" else "OPERATOR_UPDATED",
                 referenceId = operatorId,
-                detail = "$cleanCode / $cleanName / ${role.displayName} / ${if (enabled) "有効" else "停止"}",
+                detail = "$cleanCode / $cleanName / ${role.displayName} / ${if (enabled) "有効" else "停止"} / ${if (pinRequired) "PIN必須" else "PINなし"}",
                 operatorName = actor,
                 createdAt = now,
             )
             operatorId
         }
     }
+
+    private fun currentOperatorPinRequired(operatorId: Long): Boolean =
+        db.rawQuery("SELECT pin_required FROM register_operators WHERE id = ?", arrayOf(operatorId.toString())).use {
+            it.moveToFirst() && it.getInt(0) != 0
+        }
 
     fun moveOperator(operatorId: Long, direction: Int, actor: String) {
         require(direction == -1 || direction == 1)
@@ -697,12 +715,24 @@ class AdminSettingsStore(context: Context) : AutoCloseable {
                 enabled INTEGER NOT NULL DEFAULT 1,
                 pin_salt TEXT NOT NULL,
                 pin_hash TEXT NOT NULL,
+                pin_required INTEGER NOT NULL DEFAULT 1,
                 display_order INTEGER NOT NULL,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             )
             """.trimIndent(),
         )
+        val hasOperatorPinColumn = db.rawQuery("PRAGMA table_info(register_operators)", null).use { cursor ->
+            val nameIndex = cursor.getColumnIndexOrThrow("name")
+            var found = false
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameIndex) == "pin_required") found = true
+            }
+            found
+        }
+        if (!hasOperatorPinColumn) {
+            db.execSQL("ALTER TABLE register_operators ADD COLUMN pin_required INTEGER NOT NULL DEFAULT 1")
+        }
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS operator_permissions (

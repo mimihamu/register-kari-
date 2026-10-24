@@ -62,8 +62,11 @@ class SettlementReconciliationAuditCsvExportActivityV082 : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 SettlementReconciliationAuditCsvExportRouteV082(onClose = { finish() })
+            }
+        
             }
         }
     }

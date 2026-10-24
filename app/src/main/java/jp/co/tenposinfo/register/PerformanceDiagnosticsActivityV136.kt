@@ -37,8 +37,11 @@ class PerformanceDiagnosticsActivityV136 : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 PerformanceDiagnosticsScreenV136(onClose = { finish() })
+            }
+        
             }
         }
     }
