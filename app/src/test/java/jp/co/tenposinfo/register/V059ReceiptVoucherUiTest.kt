@@ -46,7 +46,7 @@ class V059ReceiptVoucherUiTest {
         assertTrue(ui.contains("voucherStore.reprint"))
         assertTrue(manifest.contains(".ReceiptVoucherActivity"))
         assertTrue(hub.contains("ReceiptVoucherActivity::class.java"))
-        assertTrue(hub.contains("一部領収・複数枚・再発行"))
+        assertTrue(hub.contains("\"領収書発行\""))
         assertTrue(foundation.contains("receipt_voucher_reprints"))
         assertTrue(workflow.contains("V059ReceiptVoucherUiTest.kt"))
     }
