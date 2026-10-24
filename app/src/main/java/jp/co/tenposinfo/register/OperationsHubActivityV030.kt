@@ -79,7 +79,9 @@ class OperationsHubActivityV030 : ComponentActivity() {
                     openSalesLookup = { startActivity(Intent(this, BusinessDateSalesLookupActivity::class.java)) },
                     openReceiptReprintLedger = { startActivity(Intent(this, SaleReceiptReprintLedgerActivity::class.java)) },
                     openManualReturn = { startActivity(Intent(this, ManualReturnActivityV135::class.java)) },
-                    openLegacyManagement = { startActivity(Intent(this, OperationsActivity::class.java)) },
+                    openLegacyManagement = { destination ->
+                        startActivity(OperationsLegacyRouteV140.intent(this, destination))
+                    },
                 )
             }
         }
@@ -97,7 +99,7 @@ private fun OperationsHubRouteV030(
     openSalesLookup: () -> Unit,
     openReceiptReprintLedger: () -> Unit,
     openManualReturn: () -> Unit,
-    openLegacyManagement: () -> Unit,
+    openLegacyManagement: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val store = remember { OperationsStore(context.applicationContext) }
@@ -155,7 +157,7 @@ private fun OperationsHubScreenV030(
     openSalesLookup: () -> Unit,
     openReceiptReprintLedger: () -> Unit,
     openManualReturn: () -> Unit,
-    openLegacyManagement: () -> Unit,
+    openLegacyManagement: (String) -> Unit,
 ) {
     val metrics = rememberRegisterResponsiveMetrics()
     Column(Modifier.fillMaxSize()) {
@@ -250,7 +252,26 @@ private fun OperationsHubScreenV030(
                         openManualReturn,
                         Modifier.fillMaxWidth().heightIn(min = 112.dp),
                     )
-                    HubLegacyPanelV030(Modifier.fillMaxWidth(), permissions, openLegacyManagement)
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
+                    ) {
+                        HubLegacyActionTileV140(
+                            "当日売上", RegisterPermission.VIEW_SALES in permissions,
+                            OperationsLegacyRouteV140.DAILY_SALES,
+                            Modifier.weight(1f).heightIn(min = 112.dp), openLegacyManagement,
+                        )
+                        HubLegacyActionTileV140(
+                            "入出金", RegisterPermission.CASH_MOVEMENT in permissions,
+                            OperationsLegacyRouteV140.CASH_MOVEMENT,
+                            Modifier.weight(1f).heightIn(min = 112.dp), openLegacyManagement,
+                        )
+                        HubLegacyActionTileV140(
+                            "返品・取消", RegisterPermission.REVERSAL in permissions,
+                            OperationsLegacyRouteV140.REVERSAL,
+                            Modifier.weight(1f).heightIn(min = 112.dp), openLegacyManagement,
+                        )
+                    }
                 }
             } else {
                 Row(
@@ -345,10 +366,25 @@ private fun OperationsHubScreenV030(
                                 openManualReturn,
                                 Modifier.weight(1f).fillMaxHeight(),
                             )
-                            HubLegacyPanelV030(
-                                Modifier.weight(1f).fillMaxHeight(),
-                                permissions,
-                                openLegacyManagement,
+                        }
+                        Row(
+                            Modifier.weight(0.75f).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
+                        ) {
+                            HubLegacyActionTileV140(
+                                "当日売上", RegisterPermission.VIEW_SALES in permissions,
+                                OperationsLegacyRouteV140.DAILY_SALES,
+                                Modifier.weight(1f).fillMaxHeight(), openLegacyManagement,
+                            )
+                            HubLegacyActionTileV140(
+                                "入出金", RegisterPermission.CASH_MOVEMENT in permissions,
+                                OperationsLegacyRouteV140.CASH_MOVEMENT,
+                                Modifier.weight(1f).fillMaxHeight(), openLegacyManagement,
+                            )
+                            HubLegacyActionTileV140(
+                                "返品・取消", RegisterPermission.REVERSAL in permissions,
+                                OperationsLegacyRouteV140.REVERSAL,
+                                Modifier.weight(1f).fillMaxHeight(), openLegacyManagement,
                             )
                         }
                     }
@@ -407,23 +443,22 @@ private fun HubStatusPanelV030(
     }
 }
 
+// Historical "その他の管理機能" tile hid 当日売上・入出金・返品取消.
+// Each function is now one direct tile on the unified management screen.
 @Composable
-private fun HubLegacyPanelV030(
+private fun HubLegacyActionTileV140(
+    title: String,
+    enabled: Boolean,
+    destination: String,
     modifier: Modifier,
-    permissions: Set<RegisterPermission>,
-    onClick: () -> Unit,
+    openLegacyManagement: (String) -> Unit,
 ) {
-    val enabled = permissions.any {
-        it == RegisterPermission.VIEW_SALES ||
-            it == RegisterPermission.CASH_MOVEMENT ||
-            it == RegisterPermission.REVERSAL
-    }
     HubTileV030(
-        title = "その他の管理機能",
-        description = "当日売上・入出金・返品取消を開く",
+        title = title,
+        description = "",
         background = HubPaleYellowV030,
         enabled = enabled,
-        onClick = onClick,
+        onClick = { openLegacyManagement(destination) },
         modifier = modifier,
     )
 }
