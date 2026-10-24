@@ -86,8 +86,11 @@ class AdminSettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 AdminSettingsApp(onClose = { finish() })
+            }
+        
             }
         }
     }
@@ -1444,16 +1447,7 @@ private fun AsPinField(label: String, value: String, onValueChange: (String) -> 
 
 @Composable
 private fun AsHeader(screenId: String, title: String, status: String) {
-    Row(
-        Modifier.fillMaxWidth().height(62.dp).background(AsNavy).padding(horizontal = 20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(24.dp))
-        Text("$screenId  $title", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
-        Text(status, color = Color.White, fontSize = 14.sp)
-    }
+    RegisterTopBarV141(title)
 }
 
 @Composable
