@@ -325,6 +325,7 @@ class GoogleDriveDiagnosticsActivity : ComponentActivity() {
         configureRegisterSystemBars(window)
         refresh()
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GoogleDriveDiagnosticsScreen(
@@ -345,6 +346,8 @@ class GoogleDriveDiagnosticsActivity : ComponentActivity() {
                         onClose = ::finish,
                     )
                 }
+            }
+        
             }
         }
     }
