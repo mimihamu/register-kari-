@@ -1114,7 +1114,8 @@ private fun SalesScreen(
     val barcodeIndex = remember(products) { BarcodeProductIndexV136(products) }
     val responsive = rememberRegisterResponsiveMetrics()
     var dismissedPrinterError by remember { mutableStateOf<String?>(null) }
-    val printerErrorKey = "${printerHealth.printerName}:${printerHealth.title}"
+    // Persistent alert escalation changes the title; it must not reopen a dismissed dialog.
+    val printerErrorKey = printerHealth.printerName
     androidx.compose.runtime.LaunchedEffect(printerHealth.level) {
         if (printerHealth.level != PrinterHealthLevel.ERROR) dismissedPrinterError = null
     }
