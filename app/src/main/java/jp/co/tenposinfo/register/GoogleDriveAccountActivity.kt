@@ -237,6 +237,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
         connectionTest.value = GoogleDriveConnectionTestStore(this).load()
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GoogleDriveAccountScreen(
@@ -258,6 +259,8 @@ class GoogleDriveAccountActivity : ComponentActivity() {
                         onClose = ::finish,
                     )
                 }
+            }
+        
             }
         }
     }
