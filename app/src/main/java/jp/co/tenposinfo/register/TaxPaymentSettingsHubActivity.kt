@@ -41,6 +41,7 @@ class TaxPaymentSettingsHubActivity : ComponentActivity() {
         configureRegisterSystemBars(window)
         val actor = intent.getStringExtra(EXTRA_ACTOR).orEmpty().ifBlank { "責任者" }
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 TaxPaymentSettingsHub(
                     actor = actor,
@@ -53,6 +54,8 @@ class TaxPaymentSettingsHubActivity : ComponentActivity() {
                     },
                     onClose = { finish() },
                 )
+            }
+        
             }
         }
     }
