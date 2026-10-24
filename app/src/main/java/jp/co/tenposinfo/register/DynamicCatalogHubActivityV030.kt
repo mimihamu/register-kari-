@@ -68,8 +68,11 @@ class DynamicCatalogHubActivityV030 : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 DynamicCatalogHubRouteV030(onClose = { finish() })
+            }
+        
             }
         }
     }
