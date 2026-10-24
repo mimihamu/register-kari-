@@ -112,6 +112,7 @@ class GoogleDriveEasyConnectActivity : ComponentActivity() {
         configureRegisterSystemBars(window)
         refresh()
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GoogleDriveEasyConnectScreen(
@@ -128,6 +129,8 @@ class GoogleDriveEasyConnectActivity : ComponentActivity() {
                         onClose = ::finish,
                     )
                 }
+            }
+        
             }
         }
     }
