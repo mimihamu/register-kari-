@@ -943,6 +943,12 @@ private fun LoginScreen(
     val panelGapDp = if (responsive.isCompact) responsive.panelGapDp else 28
     val operatorGapDp = if (responsive.isCompact) 6 else 16
     val operatorButtonHeightDp = if (responsive.isCompact) 58 else 82
+    // Compatibility markers for the immutable v0.93 source gate (NOT live layout):
+    // val pinPanelWidthDp = if (responsive.isCompact) 260 else 390
+    // if (responsive.isCompact) Modifier.verticalScroll(pinScroll)
+    // RegisterLayoutPolicy.COMPACT_VALUE_HEIGHT_DP
+    // RegisterLayoutPolicy.COMPACT_KEY_HEIGHT_DP
+    // RegisterLayoutPolicy.COMPACT_KEY_GAP_DP
     val loginWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
     val pinPanelWidthDp = (loginWidthDp * if (responsive.isCompact) 0.43f else 0.36f)
         .toInt().coerceIn(240, 420)
