@@ -73,12 +73,15 @@ class OperationsActivity : ComponentActivity() {
         val requestedReversalSaleId = ReversalNavigation.requestedSaleId(intent)
         val requestedLegacyRoute = OperationsLegacyRouteV140.requested(intent)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 OperationsApp(
                     requestedReversalSaleId = requestedReversalSaleId,
                     requestedLegacyRoute = requestedLegacyRoute,
                     onClose = { finish() },
                 )
+            }
+        
             }
         }
     }
@@ -1602,16 +1605,7 @@ private fun OpAuthenticatedOperator(operatorName: String) {
 
 @Composable
 private fun OpHeader(screenId: String, title: String) {
-    Row(
-        Modifier.fillMaxWidth().height(62.dp).background(OpNavy).padding(horizontal = 20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(24.dp))
-        Text("$screenId  $title", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
-        Text("オフライン管理", color = Color.White, fontSize = 14.sp)
-    }
+    RegisterTopBarV141(title)
 }
 
 @Composable
