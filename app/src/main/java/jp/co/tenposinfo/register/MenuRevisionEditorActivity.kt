@@ -68,8 +68,11 @@ class MenuRevisionEditorActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 MenuRevisionEditorApp(onClose = { finish() })
+            }
+        
             }
         }
     }
