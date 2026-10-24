@@ -47,8 +47,11 @@ class TaxInvoiceSettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 TaxInvoiceSettingsScreen(onClose = { finish() })
+            }
+        
             }
         }
     }
