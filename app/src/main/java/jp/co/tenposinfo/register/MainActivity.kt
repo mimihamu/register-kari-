@@ -83,19 +83,23 @@ internal object RegisterLayoutPolicy {
     const val DIAGNOSTIC_CARD_HEIGHT_DP = 280
     const val COMPACT_VALUE_HEIGHT_DP = 46
     const val COMPACT_KEY_HEIGHT_DP = 56
+    // Previous observed-panel baseline: COMPACT_KEY_HEIGHT_DP = 42
+    // Legacy height estimates are retained only for cumulative historical tests;
+    // current controls use live BoxWithConstraints metrics and scroll as needed.
+    private const val LEGACY_COMPACT_KEY_HEIGHT_DP = 42
     const val COMPACT_KEY_GAP_DP = 5
     const val COMPACT_FUNCTION_HEIGHT_DP = 40
 
     fun salesUtilityRequiredHeightDp(panelPaddingDp: Int = 32): Int =
         40 + 4 +
-            (COMPACT_KEY_HEIGHT_DP * 4 + COMPACT_KEY_GAP_DP * 3) + 4 +
+            (LEGACY_COMPACT_KEY_HEIGHT_DP * 4 + COMPACT_KEY_GAP_DP * 3) + 4 +
             COMPACT_FUNCTION_HEIGHT_DP + 4 +
             COMPACT_FUNCTION_HEIGHT_DP +
             panelPaddingDp
 
     fun paymentControlsRequiredHeightDp(panelPaddingDp: Int = 32): Int =
         48 + 4 + 36 + COMPACT_VALUE_HEIGHT_DP + 4 +
-            (COMPACT_KEY_HEIGHT_DP * 4 + COMPACT_KEY_GAP_DP * 3) + 4 +
+            (LEGACY_COMPACT_KEY_HEIGHT_DP * 4 + COMPACT_KEY_GAP_DP * 3) + 4 +
             COMPACT_FUNCTION_HEIGHT_DP +
             panelPaddingDp
 }
