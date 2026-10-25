@@ -246,7 +246,7 @@ private fun SettlementScreenV030(
     }
 
     Column(Modifier.fillMaxSize()) {
-        SettlementHeaderV030(metrics, reportType)
+        SettlementHeaderV030(metrics, reportType, onClose)
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val compact = metrics.isCompact || maxWidth < 1_080.dp || maxHeight < 560.dp
             if (compact) {
@@ -561,19 +561,12 @@ private fun SettlementAmountV030(label: String, value: String, emphasized: Boole
 private fun SettlementHeaderV030(
     metrics: RegisterResponsiveMetrics,
     reportType: SettlementReportType,
+    onClose: () -> Unit,
 ) {
-    val title = if (reportType == SettlementReportType.Z_SETTLEMENT) "SCR-500-Z  Z精算・営業終了" else "SCR-500-X  X点検"
-    Row(
-        Modifier.fillMaxWidth().height(metrics.headerHeightDp.dp).background(SettlementNavyV030)
-            .padding(horizontal = metrics.screenPaddingDp.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = if (metrics.isCompact) 19.sp else 23.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(if (metrics.isCompact) 12.dp else 24.dp))
-        Text(title, color = Color.White, fontSize = if (metrics.isCompact) 17.sp else 21.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
-        if (!metrics.isCompact) Text("オフライン管理", color = Color.White, fontSize = 14.sp)
-    }
+    RegisterTopBarV141(
+        title = if (reportType == SettlementReportType.Z_SETTLEMENT) "Z精算・営業終了" else "X点検",
+        onBack = onClose,
+    )
 }
 
 @Composable
@@ -589,13 +582,10 @@ private fun SettlementBottomV030(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
     ) {
-        OutlinedButton(onClick = onClose, modifier = Modifier.weight(1f).fillMaxHeight()) {
-            Text("レジ管理へ戻る", fontWeight = FontWeight.Bold)
-        }
         Button(
             onClick = onPdfSave,
             enabled = pdfEnabled,
-            modifier = Modifier.weight(1f).fillMaxHeight(),
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(),
             colors = ButtonDefaults.buttonColors(containerColor = SettlementBlueV030),
         ) {
             Text("最新の保存履歴をPDF保存", fontWeight = FontWeight.Bold)
