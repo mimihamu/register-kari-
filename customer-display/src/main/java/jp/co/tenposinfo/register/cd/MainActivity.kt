@@ -12,6 +12,10 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.core.view.WindowCompat
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -71,6 +75,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppDistributionUpdateNoticeV147.maybeCheck(applicationContext, "cd")
+        @Suppress("DEPRECATION")
+        window.statusBarColor = android.graphics.Color.rgb(8, 21, 34)
+        @Suppress("DEPRECATION")
+        window.navigationBarColor = android.graphics.Color.rgb(8, 21, 34)
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
+        window.decorView.setBackgroundColor(android.graphics.Color.rgb(8, 21, 34))
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent {
             MaterialTheme {
@@ -152,7 +165,7 @@ class MainActivity : ComponentActivity() {
                     ),
                 ) {
                     Surface(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing),
                         color = presentation.backgroundColor(),
                     ) {
                     if (settingsOpen) {
