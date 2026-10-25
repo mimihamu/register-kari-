@@ -14,9 +14,13 @@ import android.view.Gravity
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import org.json.JSONObject
 import java.io.File
 import java.net.URL
@@ -45,15 +49,21 @@ class AppDistributionUpdateActivityV146 : Activity() {
         window.statusBarColor = Color.rgb(23, 63, 107)
         @Suppress("DEPRECATION")
         window.navigationBarColor = Color.rgb(23, 63, 107)
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(26), dp(24), dp(26), dp(24))
+            setPadding(dp(20), dp(16), dp(20), dp(20))
             setBackgroundColor(Color.rgb(247, 249, 252))
         }
         root.addView(TextView(this).apply {
             text = "アプリの更新"
-            textSize = 26f
-            setTextColor(Color.rgb(23, 63, 107))
+            textSize = 24f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.rgb(23, 63, 107))
+            setPadding(dp(16), dp(6), dp(16), dp(6))
             setTypeface(null, android.graphics.Typeface.BOLD)
         }, LinearLayout.LayoutParams(-1, dp(62)))
         info = TextView(this).apply {
@@ -98,7 +108,20 @@ class AppDistributionUpdateActivityV146 : Activity() {
             text = "戻る"
             setOnClickListener { finish() }
         }, LinearLayout.LayoutParams(-1, dp(56)).apply { topMargin = dp(12) })
-        setContentView(root)
+        // Android 15+ edge-to-edge and small landscape screens: the update form
+        // must remain scrollable and never overlap system icons or navigation.
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            setBackgroundColor(Color.rgb(23, 63, 107))
+            addView(root)
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(scroll) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            insets
+        }
+        setContentView(scroll)
+        ViewCompat.requestApplyInsets(scroll)
     }
 
     override fun onResume() {
