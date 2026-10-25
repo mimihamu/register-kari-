@@ -306,10 +306,12 @@ private fun UnifiedPrintQueueApp(onClose: () -> Unit) {
                                 OutlinedButton(
                                     onClick = { queuePanelV152 = 0 },
                                     modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                    border = BorderStroke(if (queuePanelV152 == 0) 2.dp else 1.dp, if (queuePanelV152 == 0) UqRed else UqBorder),
                                 ) { Text("ジョブ詳細") }
                                 OutlinedButton(
                                     onClick = { queuePanelV152 = 1 },
                                     modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                    border = BorderStroke(if (queuePanelV152 == 1) 2.dp else 1.dp, if (queuePanelV152 == 1) UqRed else UqBorder),
                                 ) { Text("プリンター") }
                             }
                             Spacer(Modifier.height(8.dp))
