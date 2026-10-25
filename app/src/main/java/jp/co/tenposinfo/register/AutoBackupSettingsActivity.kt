@@ -150,16 +150,7 @@ private fun AutoBackupSettingsScreen(onClose: () -> Unit) {
 
     Surface(Modifier.fillMaxSize(), color = AbsBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(64.dp).background(AbsNavy).padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(24.dp))
-                Text("定期バックアップ・通知設定", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                Text("毎日＋Z精算後は常時有効", color = Color.White)
-            }
+            RegisterTopBarV141(title = "定期バックアップ", onBack = onClose)
 
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                 val compact = maxWidth < 980.dp
@@ -272,9 +263,6 @@ private fun AutoBackupSettingsScreen(onClose: () -> Unit) {
                 Modifier.fillMaxWidth().height(76.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(onClick = onClose, modifier = Modifier.width(220.dp).fillMaxHeight()) {
-                    Text("戻る", fontWeight = FontWeight.Bold)
-                }
                 message?.let {
                     Spacer(Modifier.width(18.dp))
                     Text(it, color = if (it.startsWith("保存")) AbsGreen else AbsRed, fontWeight = FontWeight.Bold)
