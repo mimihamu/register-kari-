@@ -428,7 +428,7 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
 
     Surface(Modifier.fillMaxSize(), color = StBackground) {
         Column(Modifier.fillMaxSize()) {
-            RegisterTopBarV141(title = "プリンター連続印刷試験", onBack = onClose)
+            RegisterTopBarV141(title = "プリンター連続印刷試験", onBack = { if (!running) onClose() })
             Row(
                 Modifier.weight(1f).fillMaxWidth().padding(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -563,11 +563,7 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                OutlinedButton(
-                    onClick = onClose,
-                    enabled = !running,
-                    modifier = Modifier.width(220.dp).fillMaxHeight(),
-                ) { Text("閉じる", fontWeight = FontWeight.Bold) }
+
                 Button(
                     onClick = {
                         val result = lastResult ?: return@Button
