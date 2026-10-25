@@ -236,7 +236,7 @@ private fun OperationsHubScreenV030(
         ),
     )
     Column(Modifier.fillMaxSize()) {
-        HubHeaderV030(metrics, openSettings)
+        HubHeaderV030(metrics, openSettings, onClose)
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val twoPane = HubManagementLayoutV143.twoPane(maxWidth.value.toInt())
             if (twoPane) {
@@ -278,7 +278,7 @@ private fun OperationsHubScreenV030(
                 }
             }
         }
-        HubBottomV030(metrics, onClose)
+        // Back navigation now lives in the common upper-left app header.
     }
 }
 
@@ -446,7 +446,7 @@ private fun HubAmountV030(label: String, value: String, emphasized: Boolean = fa
 }
 
 @Composable
-private fun HubHeaderV030(metrics: RegisterResponsiveMetrics, openSettings: () -> Unit) {
+private fun HubHeaderV030(metrics: RegisterResponsiveMetrics, openSettings: () -> Unit, onClose: () -> Unit) {
     RegisterTopBarV141(title = "レジ管理", action = {
         Button(
             onClick = openSettings,
@@ -458,7 +458,7 @@ private fun HubHeaderV030(metrics: RegisterResponsiveMetrics, openSettings: () -
         ) {
             Text("各種設定", color = HubNavyV030, fontWeight = FontWeight.Bold)
         }
-    })
+    }, onBack = onClose)
 }
 
 @Composable
