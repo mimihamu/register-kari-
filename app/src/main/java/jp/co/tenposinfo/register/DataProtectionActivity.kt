@@ -241,26 +241,7 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
 
     Surface(Modifier.fillMaxSize(), color = DpBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .height(responsive.headerHeightDp.dp)
-                    .background(DpNavy)
-                    .padding(horizontal = responsive.screenPaddingDp.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("SCR-670", color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
-                Spacer(Modifier.width(if (responsive.isCompact) 10.dp else 18.dp))
-                Text(
-                    "データ保全・バックアップ・復元",
-                    modifier = Modifier.weight(1f),
-                    color = Color.White,
-                    fontSize = if (responsive.isCompact) 18.sp else 25.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                )
-                Text("v${BuildConfig.VERSION_NAME}", color = Color.White, maxLines = 1)
-            }
+            RegisterTopBarV141(title = "データ保全・バックアップ・復元", onBack = { if (!busy) onClose() })
             Row(
                 Modifier.weight(1f).padding(responsive.screenPaddingDp.dp),
                 horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
@@ -646,12 +627,6 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,
                 )
-                Spacer(Modifier.width(responsive.panelGapDp.dp))
-                OutlinedButton(
-                    onClick = onClose,
-                    enabled = !busy,
-                    modifier = Modifier.width(if (responsive.isCompact) 160.dp else 220.dp).fillMaxHeight(),
-                ) { Text("設定へ戻る", maxLines = 1) }
             }
         }
     }
