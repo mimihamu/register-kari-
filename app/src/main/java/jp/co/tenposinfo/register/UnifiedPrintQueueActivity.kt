@@ -493,7 +493,7 @@ private fun PrinterSummaryPanel(
                 }
             }
         }
-        Spacer(Modifier.weight(1f))
+        if (!scrollPanel) Spacer(Modifier.weight(1f))
         Button(
             onClick = onStatusCheck,
             enabled = !working && PrinterTransportPolicyV136.isConfigured(configuration) && PrinterTransportPolicyV136.supportsRealtimeStatus(configuration),
@@ -649,7 +649,8 @@ private fun JobDetailPanel(
         }
         Spacer(Modifier.height(8.dp))
         Card(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
+            modifier = if (scrollPanel) Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 300.dp)
+                else Modifier.weight(1f).fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = Color(0xFFFAFAFA)),
             border = BorderStroke(1.dp, UqBorder),
         ) {
