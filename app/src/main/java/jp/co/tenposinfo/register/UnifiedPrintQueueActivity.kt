@@ -216,6 +216,7 @@ private fun UnifiedPrintQueueApp(onClose: () -> Unit) {
                 actor = actor,
                 activeCount = summary.active,
                 actionRequired = summary.actionRequired,
+                onBack = { if (!working) onClose() },
             )
 
             BoxWithConstraints(
@@ -345,24 +346,30 @@ private fun UnifiedPrintQueueApp(onClose: () -> Unit) {
                 heightDp = responsive.bottomBarHeightDp,
                 message = message,
                 working = working,
-                onClose = onClose,
             )
         }
     }
 }
 
 @Composable
-private fun QueueHeader(heightDp: Int, actor: String, activeCount: Int, actionRequired: Int) {
-    Row(
-        Modifier.fillMaxWidth().height(heightDp.dp).background(UqNavy).padding(horizontal = 20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(24.dp))
-        Text("統合印刷キュー", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
-        Text("担当：$actor　未完了${activeCount}件　要対応${actionRequired}件", color = Color.White)
-    }
+private fun QueueHeader(
+    heightDp: Int,
+    actor: String,
+    activeCount: Int,
+    actionRequired: Int,
+    onBack: () -> Unit,
+) {
+    RegisterTopBarV141(
+        title = "統合印刷キュー",
+        onBack = onBack,
+        action = {
+            Text(
+                "未完了 ${activeCount}件・要対応 ${actionRequired}件",
+                color = if (actionRequired > 0) Color(0xFFFFE0E0) else Color.White,
+                maxLines = 1,
+            )
+        },
+    )
 }
 
 @Composable
@@ -686,15 +693,11 @@ private fun JobDetailPanel(
 }
 
 @Composable
-private fun QueueFooter(heightDp: Int, message: String?, working: Boolean, onClose: () -> Unit) {
+private fun QueueFooter(heightDp: Int, message: String?, working: Boolean) {
     Row(
         Modifier.fillMaxWidth().height(heightDp.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        OutlinedButton(onClick = onClose, enabled = !working, modifier = Modifier.width(220.dp).fillMaxHeight()) {
-            Text("閉じる", fontWeight = FontWeight.Bold)
-        }
-        Spacer(Modifier.width(16.dp))
         if (!message.isNullOrBlank()) {
             Text(message, color = queueMessageColor(message), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
         } else {
@@ -703,7 +706,7 @@ private fun QueueFooter(heightDp: Int, message: String?, working: Boolean, onClo
                 color = UqRed,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f),
-                textAlign = TextAlign.End,
+                textAlign = TextAlign.Start,
             )
         }
     }
