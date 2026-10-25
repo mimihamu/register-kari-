@@ -109,7 +109,9 @@ class GoogleDriveEasyConnectActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         refresh()
+        configurePlusSystemBarsV148(window)
         setContent {
+            PlusSafeAreaV148 {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GoogleDriveEasyConnectScreen(
@@ -126,6 +128,7 @@ class GoogleDriveEasyConnectActivity : ComponentActivity() {
                         onClose = ::finish,
                     )
                 }
+            }
             }
         }
     }
