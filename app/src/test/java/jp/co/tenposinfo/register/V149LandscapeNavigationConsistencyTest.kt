@@ -55,6 +55,9 @@ class V149LandscapeNavigationConsistencyTest {
             "AutoBackupSettingsActivity.kt",
             "InitialReleaseSettingsV135.kt",
             "SyncSettingsActivity.kt",
+            "DataProtectionActivity.kt",
+            "OutboxDeliverySettingsActivity.kt",
+            "PrinterToolsHubActivity.kt",
         )) {
             assertTrue(file, source(file).contains("onBack = "))
         }
