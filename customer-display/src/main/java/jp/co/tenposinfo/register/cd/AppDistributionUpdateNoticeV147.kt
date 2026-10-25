@@ -35,14 +35,31 @@ internal object AppDistributionUpdateNoticeV147 {
             .edit().putBoolean("auto_check", checked).apply()
     }
 
-    fun lastAvailable(context: Context): String? =
-        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString("available_name", null)
+    @Suppress("DEPRECATION")
+    private fun installedCode(context: Context): Long {
+        val installedInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+        return if (Build.VERSION.SDK_INT >= 28)
+            installedInfo.longVersionCode else installedInfo.versionCode.toLong()
+    }
+
+    fun lastAvailable(context: Context): String? {
+        val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val availableCode = prefs.getLong("available_code", 0)
+        val currentCode = runCatching { installedCode(context) }.getOrDefault(Long.MAX_VALUE)
+        return if (availableCode > currentCode) prefs.getString("available_name", null) else null
+    }
 
     fun maybeCheck(context: Context, app: String, permitted: Boolean = true) {
         if (!permitted || !enabled(context)) return
         val appContext = context.applicationContext
         val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val seenCode = prefs.getLong("available_code", 0)
+        val installed = runCatching { installedCode(appContext) }.getOrDefault(0L)
+        if (seenCode > 0 && seenCode <= installed) {
+            prefs.edit().remove("available_code").remove("available_name").apply()
+            (appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .cancel(NOTIFICATION_ID)
+        }
         val now = System.currentTimeMillis()
         val last = prefs.getLong("last_attempt", 0)
         val interval = if (prefs.getBoolean("last_succeeded", false)) SUCCESS_INTERVAL else RETRY_INTERVAL
@@ -89,11 +106,7 @@ internal object AppDistributionUpdateNoticeV147 {
                         code <= 0 || name.isBlank()) return@Thread
 
                     prefs.edit().putBoolean("last_succeeded", true).apply()
-                    @Suppress("DEPRECATION")
-                    val installedInfo = appContext.packageManager.getPackageInfo(appContext.packageName, 0)
-                    @Suppress("DEPRECATION")
-                    val installedCode = if (Build.VERSION.SDK_INT >= 28)
-                        installedInfo.longVersionCode else installedInfo.versionCode.toLong()
+                    val installedCode = installedCode(appContext)
                     if (code > installedCode) {
                         prefs.edit().putString("available_name", name)
                             .putLong("available_code", code).apply()

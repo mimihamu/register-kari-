@@ -29,7 +29,7 @@ class V146SelfUpdateDistributionTest {
             assertTrue(src.contains("MessageDigest.getInstance(\"SHA-256\")"))
             assertTrue(src.contains("PackageManager.GET_SIGNING_CERTIFICATES"))
             assertTrue(src.contains("getPackageArchiveInfo("))
-            assertTrue(src.contains("parsed.longVersionCode <= currentCode()"))
+            assertTrue(src.contains("incomingVersion <= currentCode()"))
             assertTrue(src.contains("existing.map { it.toCharsString() }.toSet()"))
             assertTrue(src.contains("FileProvider.getUriForFile"))
             assertTrue(src.contains("Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES"))
@@ -66,8 +66,8 @@ class V146SelfUpdateDistributionTest {
             assertTrue(gradle.contains("versionName = \"$name\""))
         }
         val gate = read("../ci/verify-apk-release-integrity.sh")
-        assertTrue(gate.contains("'15'"))
-        assertTrue(gate.contains("'0.15.7-dev.1'"))
+        assertTrue(gate.contains("'16'"))
+        assertTrue(gate.contains("'0.15.8-dev.1'"))
     }
 
     @Test fun updateActionsAreReachableFromAllThreeApps() {
