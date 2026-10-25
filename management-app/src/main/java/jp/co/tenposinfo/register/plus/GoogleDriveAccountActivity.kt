@@ -234,7 +234,9 @@ class GoogleDriveAccountActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         refreshState()
+        configurePlusSystemBarsV148(window)
         setContent {
+            PlusSafeAreaV148 {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GoogleDriveAccountScreen(
@@ -260,6 +262,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
                         onClose = ::finish,
                     )
                 }
+            }
             }
         }
     }
