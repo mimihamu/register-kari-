@@ -23,7 +23,7 @@ class V136SettingsScreenContractTest {
         assertTrue(admin.contains("AsHeader(\"SCR-660\", \"プリンター・ドロア設定\""))
         assertTrue(admin.contains("AsHeader(\"SCR-650\", \"責任者PIN設定\""))
         assertTrue(admin.contains("AsHeader(\"SCR-680\", \"監査ログ\""))
-        assertTrue(backup.contains("Text(\"SCR-670\""))
+        assertTrue(backup.contains("RegisterTopBarV141(title = \"データ保全・バックアップ・復元\""))
         assertTrue(sync.contains("RegisterTopBarV141(title = \"同期キュー・Google Drive\", onBack = onClose)"))
         assertTrue(tax.contains("RegisterTopBarV141(title = \"税計算・インボイス設定\", onBack = onClose)"))
         assertTrue(maintenance.contains("PrinterHubHeader(\"SCR-680  保守・診断\""))
