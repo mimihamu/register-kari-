@@ -556,6 +556,7 @@ private fun OperatorMasterScreen(
     var pinRequired by remember { mutableStateOf(true) }
     var permissions by remember { mutableStateOf(OperatorPermissionPolicy.defaults(OperatorRole.CASHIER)) }
     var message by remember { mutableStateOf<String?>(null) }
+    var showPermissionsV150 by remember { mutableStateOf(false) }
 
     LaunchedEffect(selected?.id, selected?.updatedAt) {
         if (selected == null) {
@@ -578,9 +579,18 @@ private fun OperatorMasterScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        AsHeader("SCR-650", "担当者・権限マスター", "有効 ${operators.count { it.enabled }}名", onBack = onBack)
+        AsHeader("SCR-650", "担当者・権限マスター", "有効 ${operators.count { it.enabled }}名", onBack = onBack, action = {
+            OutlinedButton(
+                onClick = { showPermissionsV150 = !showPermissionsV150 },
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = Color.White,
+                    contentColor = AsNavy,
+                ),
+            ) { Text(if (showPermissionsV150) "担当者の編集" else "権限の詳細", color = AsNavy) }
+        })
         Row(Modifier.weight(1f).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            AsPanel(Modifier.width(420.dp).fillMaxHeight()) {
+            if (!showPermissionsV150) {
+            AsPanel(Modifier.weight(0.9f).fillMaxHeight()) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("担当者一覧", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = AsNavy)
                     Spacer(Modifier.weight(1f))
@@ -624,7 +634,7 @@ private fun OperatorMasterScreen(
                 }
             }
 
-            AsPanel(Modifier.width(430.dp).fillMaxHeight()) {
+            AsPanel(Modifier.weight(1.1f).fillMaxHeight()) {
                 Text(if (selected == null) "担当者を追加" else "担当者を編集", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = AsNavy)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(code, { code = it.uppercase().take(20) }, label = { Text("担当者コード") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -694,10 +704,11 @@ private fun OperatorMasterScreen(
                 }
             }
 
-            AsPanel(Modifier.weight(1f).fillMaxHeight()) {
+            }
+            if (showPermissionsV150) AsPanel(Modifier.fillMaxSize()) {
                 Text("権限", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = AsNavy)
                 Spacer(Modifier.height(6.dp))
-                Text("担当者ごとに許可する機能を選択します。", color = Color.DarkGray)
+                Text("変更後は「担当者の編集」で保存してください。", color = AsNavy)
                 Spacer(Modifier.height(8.dp))
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     RegisterPermissionCompatibilityV026.selectablePermissions.forEach { permission ->
