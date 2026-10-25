@@ -428,17 +428,7 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
 
     Surface(Modifier.fillMaxSize(), color = StBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(64.dp).background(StNavy).padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(24.dp))
-                Text("プリンター連続印刷試験", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                Text("結果保存・CSV対応", color = Color.White, fontSize = 14.sp)
-            }
-
+            RegisterTopBarV141(title = "プリンター連続印刷試験", onBack = onClose)
             Row(
                 Modifier.weight(1f).fillMaxWidth().padding(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
