@@ -185,15 +185,7 @@ private fun CustomerDisplaySettingsScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        RegisterTopBarV141("顧客表示設定", action = {
-            Button(
-                onClick = onClose,
-                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = Color(0xFF173F6B),
-                ),
-            ) { Text("戻る", color = Color(0xFF173F6B)) }
-        })
+        RegisterTopBarV141(title = "顧客表示設定", onBack = onClose)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
