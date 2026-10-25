@@ -98,24 +98,7 @@ private fun ReceiptSettingsApp(
 
     Surface(Modifier.fillMaxSize(), color = RsBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .height(62.dp)
-                    .background(RsNavy)
-                    .padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("つぐレジ", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(22.dp))
-                Text("SCR-640  レシート設定", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.weight(1f))
-                Text("認証：${actor}", color = Color.White, fontSize = 13.sp)
-                Spacer(Modifier.width(12.dp))
-                OutlinedButton(onClick = onClose, border = BorderStroke(1.dp, Color.White)) {
-                    Text("戻る", color = Color.White)
-                }
-            }
+            RegisterTopBarV141(title = "レシート設定", onBack = onClose)
 
             Row(
                 Modifier.weight(1f).fillMaxWidth().padding(16.dp),
