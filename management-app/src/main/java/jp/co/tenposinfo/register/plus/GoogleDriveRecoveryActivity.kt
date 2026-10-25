@@ -120,7 +120,9 @@ class GoogleDriveRecoveryActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configurePlusSystemBarsV148(window)
         setContent {
+            PlusSafeAreaV148 {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GoogleDriveRecoveryScreen(
@@ -152,6 +154,7 @@ class GoogleDriveRecoveryActivity : ComponentActivity() {
                         onClose = ::finish,
                     )
                 }
+            }
             }
         }
         refresh()
