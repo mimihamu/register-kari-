@@ -98,8 +98,11 @@ android {
         // v1.49 verified build
         // versionCode = 40
         // versionName = "0.33.7-dev.1"
-        versionCode = 41
-        versionName = "0.33.8-dev.1"
+        // v1.50 verified
+        // versionCode = 41
+        // versionName = "0.33.8-dev.1"
+        versionCode = 42
+        versionName = "0.33.9-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ＋"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
