@@ -73,16 +73,7 @@ private fun TaxInvoiceSettingsScreen(onClose: () -> Unit) {
 
     Surface(Modifier.fillMaxSize(), color = TiBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(62.dp).background(TiNavy).padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("つぐレジ", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(22.dp))
-                Text("SCR-630A  税計算・インボイス設定", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.weight(1f))
-                OutlinedButton(onClick = onClose) { Text("閉じる", color = Color.White) }
-            }
+            RegisterTopBarV141(title = "税計算・インボイス設定", onBack = onClose)
 
             Row(
                 Modifier.weight(1f).fillMaxWidth().padding(20.dp),
