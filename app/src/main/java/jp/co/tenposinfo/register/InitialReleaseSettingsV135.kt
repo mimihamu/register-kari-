@@ -455,16 +455,7 @@ private fun InitialReleaseSettingsAppV135(actor: String, onClose: () -> Unit) {
     var screen by remember { mutableStateOf(InitialReleaseScreenV135.STORE) }
     Surface(Modifier.fillMaxSize(), color = IrBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(64.dp).background(IrNavy).padding(horizontal = 18.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(screen.id, color = Color.White, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(16.dp))
-                Text(screen.label + "設定", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.weight(1f))
-                Text("認証: $actor", color = Color.White)
-            }
+            RegisterTopBarV141(title = screen.label + "設定", onBack = onClose)
             Row(Modifier.weight(1f).padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.width(210.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     InitialReleaseScreenV135.entries.forEach { item ->
@@ -482,8 +473,6 @@ private fun InitialReleaseSettingsAppV135(actor: String, onClose: () -> Unit) {
                             ) { Text(item.label) }
                         }
                     }
-                    Spacer(Modifier.weight(1f))
-                    OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("戻る") }
                 }
                 Card(
                     modifier = Modifier.weight(1f).fillMaxHeight(),
