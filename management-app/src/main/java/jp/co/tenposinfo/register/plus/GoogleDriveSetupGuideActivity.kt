@@ -107,7 +107,9 @@ class GoogleDriveSetupGuideActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val clientInfo = GoogleDrivePlusAndroidClientInfoReader.read(this)
+        configurePlusSystemBarsV148(window)
         setContent {
+            PlusSafeAreaV148 {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GoogleDrivePlusSetupGuideScreen(
@@ -126,6 +128,7 @@ class GoogleDriveSetupGuideActivity : ComponentActivity() {
                         onClose = ::finish,
                     )
                 }
+            }
             }
         }
     }
