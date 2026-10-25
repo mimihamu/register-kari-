@@ -353,7 +353,9 @@ class GoogleDriveSyncVerificationActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configurePlusSystemBarsV148(window)
         setContent {
+            PlusSafeAreaV148 {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GoogleDriveSyncVerificationScreen(
@@ -370,6 +372,7 @@ class GoogleDriveSyncVerificationActivity : ComponentActivity() {
                         onClose = ::finish,
                     )
                 }
+            }
             }
         }
         refresh()
