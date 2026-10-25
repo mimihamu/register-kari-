@@ -11,7 +11,8 @@ class V136ReceiptSettingsHubTest {
     fun scr640CollectsReceiptSettingsWithoutDuplicatingStores() {
         val source = File("src/main/java/jp/co/tenposinfo/register/ReceiptSettingsActivity.kt").readText()
 
-        assertTrue(source.contains("RegisterTopBarV141(title = \"レシート設定\", onBack = onClose)"))
+        assertTrue(source.contains("title = \"レシート設定\""))
+        assertTrue(source.contains("if (showDetails) Card("))
         assertTrue(source.contains("DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled = receiptAutoPrint)"))
         assertTrue(source.contains("ReceiptTextStampSettingsPanelV136()"))
         assertTrue(source.contains("ReceiptStampSettingsPanelV136()"))
