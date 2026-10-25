@@ -513,20 +513,7 @@ private fun formatEpoch(value: Long): String = SimpleDateFormat("yyyy/MM/dd HH:m
 
 @Composable
 private fun DcHeader(screenId: String, title: String, onBack: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().height(62.dp).background(DcNavy).padding(horizontal = 20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 23.sp)
-        Spacer(Modifier.width(22.dp))
-        Text("$screenId  $title", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 21.sp)
-        Spacer(Modifier.weight(1f))
-        OutlinedButton(
-            onClick = onBack,
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-            border = BorderStroke(1.dp, Color.White),
-        ) { Text("戻る") }
-    }
+    RegisterTopBarV141(title = title, onBack = onBack)
 }
 
 @Composable
