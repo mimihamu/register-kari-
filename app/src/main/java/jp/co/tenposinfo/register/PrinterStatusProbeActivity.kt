@@ -151,17 +151,7 @@ private fun PrinterStatusProbeScreen(onClose: () -> Unit) {
 
     Surface(Modifier.fillMaxSize(), color = PpBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(64.dp).background(PpNavy).padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(24.dp))
-                Text("プリンター状態RAWプローブ", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                Text("印刷・カット・ドロア送信なし", color = Color.White, fontSize = 14.sp)
-            }
-
+            RegisterTopBarV141(title = "プリンター状態RAWプローブ", onBack = { if (!running) onClose() })
             Row(
                 Modifier.weight(1f).fillMaxWidth().padding(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -257,9 +247,7 @@ private fun PrinterStatusProbeScreen(onClose: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                OutlinedButton(onClick = onClose, enabled = !running, modifier = Modifier.width(220.dp).fillMaxHeight()) {
-                    Text("閉じる", fontWeight = FontWeight.Bold)
-                }
+
                 Button(
                     onClick = {
                         val current = result ?: return@Button
