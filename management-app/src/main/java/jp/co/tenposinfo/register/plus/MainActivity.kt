@@ -62,6 +62,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppDistributionUpdateNoticeV147.maybeCheck(applicationContext, "plus")
         uiState.value = uiState.value.copy(
             importFolder = ImportFolderUiState(
                 registration = folderPreferences.registration(),

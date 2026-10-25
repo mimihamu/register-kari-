@@ -125,9 +125,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
-        DeviceAppRuntimeV135.applyWindowPolicy(
-            window,
-            InitialReleaseSettingsStoreV135(applicationContext).loadDevice(),
+        val deviceSettings = InitialReleaseSettingsStoreV135(applicationContext).loadDevice()
+        DeviceAppRuntimeV135.applyWindowPolicy(window, deviceSettings)
+        AppDistributionUpdateNoticeV147.maybeCheck(
+            applicationContext, "pos", deviceSettings.automaticUpdateCheck,
         )
         setContent {
             RegisterSafeAreaV141 {

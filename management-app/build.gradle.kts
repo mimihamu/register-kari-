@@ -86,8 +86,11 @@ android {
         // v1.45 manual-distribution baseline
         // versionCode = 36
         // versionName = "0.33.3-dev.1"
-        versionCode = 37
-        versionName = "0.33.4-dev.1"
+        // Previous verified in-app manual update build:
+        // versionCode = 37
+        // versionName = "0.33.4-dev.1"
+        versionCode = 38
+        versionName = "0.33.5-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ＋"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

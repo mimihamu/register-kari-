@@ -92,8 +92,11 @@ android {
         // v1.45 manual-distribution baseline (previous build)
         // versionCode = 168
         // versionName = "1.34.4-dev.1"
-        versionCode = 169
-        versionName = "1.34.5-dev.1"
+        // Previous verified in-app manual update build:
+        // versionCode = 169
+        // versionName = "1.34.5-dev.1"
+        versionCode = 170
+        versionName = "1.34.6-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

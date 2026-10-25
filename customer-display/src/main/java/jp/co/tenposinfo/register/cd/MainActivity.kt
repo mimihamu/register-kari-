@@ -70,6 +70,7 @@ private val Border = Color(0xFF36556E)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppDistributionUpdateNoticeV147.maybeCheck(applicationContext, "cd")
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent {
             MaterialTheme {

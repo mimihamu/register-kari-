@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** 明示操作で更新し、公式HTTPS、ハッシュ、APK ID、版、署名を照合してからOSに引き渡す。 */
 class AppDistributionUpdateActivityV146 : Activity() {
     private val running = AtomicBoolean(false)
+    private var pendingAfterPermission: File? = null
     private lateinit var info: TextView
     private lateinit var check: Button
     private lateinit var progress: ProgressBar
@@ -56,7 +57,11 @@ class AppDistributionUpdateActivityV146 : Activity() {
             setTypeface(null, android.graphics.Typeface.BOLD)
         }, LinearLayout.LayoutParams(-1, dp(62)))
         info = TextView(this).apply {
-            text = "現在のバージョン：" + currentName()
+            text = buildString {
+                append("現在のバージョン：").append(currentName())
+                AppDistributionUpdateNoticeV147.lastAvailable(this@AppDistributionUpdateActivityV146)
+                    ?.let { append("\n更新候補：").append(it) }
+            }
             textSize = 17f
             setTextColor(Color.rgb(35, 55, 75))
             setPadding(0, dp(14), 0, dp(20))
@@ -71,6 +76,24 @@ class AppDistributionUpdateActivityV146 : Activity() {
             setOnClickListener { checkUpdate() }
         }
         root.addView(check, LinearLayout.LayoutParams(-1, dp(60)))
+        if (appKey != "pos") {
+            root.addView(android.widget.CheckBox(this).apply {
+                text = "起動時に更新を確認"
+                isChecked = AppDistributionUpdateNoticeV147.enabled(this@AppDistributionUpdateActivityV146)
+                setOnCheckedChangeListener { _, checked ->
+                    AppDistributionUpdateNoticeV147.setEnabled(this@AppDistributionUpdateActivityV146, checked)
+                }
+            }, LinearLayout.LayoutParams(-1, dp(52)))
+        }
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            root.addView(Button(this).apply {
+                text = "更新通知を許可"
+                setOnClickListener {
+                    requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 147)
+                }
+            }, LinearLayout.LayoutParams(-1, dp(52)))
+        }
         root.addView(Button(this).apply {
             text = "戻る"
             setOnClickListener { finish() }
@@ -78,11 +101,23 @@ class AppDistributionUpdateActivityV146 : Activity() {
         setContentView(root)
     }
 
+    override fun onResume() {
+        super.onResume()
+        val pending = pendingAfterPermission
+        if (pending != null && pending.isFile && packageManager.canRequestPackageInstalls()) {
+            pendingAfterPermission = null
+            launchInstaller(pending)
+        }
+    }
+
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
     @Suppress("DEPRECATION")
     private fun selfInfo(flags: Int = 0) = packageManager.getPackageInfo(packageName, flags)
     private fun currentName() = selfInfo().versionName.orEmpty()
-    private fun currentCode() = selfInfo().longVersionCode
+    @Suppress("DEPRECATION")
+    private fun currentCode(): Long = selfInfo().let {
+        if (Build.VERSION.SDK_INT >= 28) it.longVersionCode else it.versionCode.toLong()
+    }
     private fun track() = if (packageName.endsWith(".dev")) "dev" else "stable"
     private fun display(value: String, busy: Boolean) {
         if (isFinishing || isDestroyed) return
@@ -244,7 +279,9 @@ class AppDistributionUpdateActivityV146 : Activity() {
         if (parsed.packageName != packageName || parsed.packageName != item.packageName) {
             error("別アプリのAPKです")
         }
-        if (parsed.longVersionCode != item.code || parsed.longVersionCode <= currentCode()) {
+        @Suppress("DEPRECATION")
+        val incomingVersion = if (Build.VERSION.SDK_INT >= 28) parsed.longVersionCode else parsed.versionCode.toLong()
+        if (incomingVersion != item.code || incomingVersion <= currentCode()) {
             error("APKのバージョンが不正です")
         }
         val installed = selfInfo(flags)
@@ -260,15 +297,17 @@ class AppDistributionUpdateActivityV146 : Activity() {
 
     private fun launchInstaller(apk: File) {
         if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
+            pendingAfterPermission = apk
             AlertDialog.Builder(this)
                 .setTitle("アプリのインストールを許可")
-                .setMessage("Android設定でこのアプリからのインストールを許可して、もう一度更新してください")
+                .setMessage("Android設定でこのアプリからのインストールを許可してください。戻るとインストーラーを開きます")
                 .setPositiveButton("設定を開く") { _, _ ->
                     startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + packageName)))
                 }
                 .setNegativeButton("戻る", null).show()
             return
         }
+        pendingAfterPermission = null
         runCatching {
             val uri = FileProvider.getUriForFile(this, packageName + ".updates", apk)
             startActivity(Intent(Intent.ACTION_VIEW).apply {
