@@ -137,9 +137,10 @@ private fun CatalogHubScreenV030(
 ) {
     val metrics = rememberRegisterResponsiveMetrics()
     Column(Modifier.fillMaxSize()) {
-        CatalogHubHeaderV030(metrics)
+        CatalogHubHeaderV030(metrics, onClose)
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-            val compact = metrics.isCompact || maxWidth < 1_080.dp || maxHeight < 600.dp
+            val compact = maxWidth < 700.dp
+            val twoColumn = maxWidth < 1_080.dp
             val contentModifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
@@ -159,6 +160,20 @@ private fun CatalogHubScreenV030(
                     CatalogHubTileV030("SCR-620", "商品ボタン配置", "最大9ページ・各24ボタン", Color(0xFFE8EAF6), onLayout, Modifier.fillMaxWidth())
                     CatalogHubTileV030("SCR-630A", "税区分マスター", "非課税・標準税率・軽減税率・内外税", Color(0xFFFFE8E8), onTaxes, Modifier.fillMaxWidth())
                     CatalogHubTileV030("SCR-631", "販売プロファイル", "時間帯別価格・税区分", Color(0xFFEDE7F6), onProfiles, Modifier.fillMaxWidth())
+                } else if (twoColumn) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp)) {
+                        CatalogHubSummaryV030(Modifier.weight(1f), productCount, departmentCount, groupCount, activeProfileName)
+                        CatalogHubTileV030("SCR-600", "商品マスター", "", CatalogHubPaleBlueV030, onProducts, Modifier.weight(1f))
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp)) {
+                        CatalogHubTileV030("SCR-610", "部門マスター", "", CatalogHubPaleGreenV030, onDepartments, Modifier.weight(1f))
+                        CatalogHubTileV030("SCR-610", "グループマスター", "", CatalogHubPaleYellowV030, onGroups, Modifier.weight(1f))
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp)) {
+                        CatalogHubTileV030("SCR-620", "商品ボタン配置", "", Color(0xFFE8EAF6), onLayout, Modifier.weight(1f))
+                        CatalogHubTileV030("SCR-630A", "税区分マスター", "", Color(0xFFFFE8E8), onTaxes, Modifier.weight(1f))
+                    }
+                    CatalogHubTileV030("SCR-631", "販売プロファイル", "", Color(0xFFEDE7F6), onProfiles, Modifier.fillMaxWidth())
                 } else {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp)) {
                         CatalogHubSummaryV030(
@@ -185,13 +200,10 @@ private fun CatalogHubScreenV030(
                 ) {
                     Text("SCR-270  任意税率・メニュー改定", fontWeight = FontWeight.Bold)
                 }
-                Text(
-                    "編集画面は対象マスターを直接開きます。保存後、販売画面へ戻ると商品ボタンと現在時刻の販売プロファイルが自動反映されます。",
-                    color = Color.DarkGray,
-                )
+
             }
         }
-        CatalogHubBottomV030(metrics, onClose)
+        // Back is in the common top-left header.
     }
 }
 
@@ -256,15 +268,8 @@ private fun CatalogHubValueV030(label: String, value: String) {
 }
 
 @Composable
-private fun CatalogHubHeaderV030(metrics: RegisterResponsiveMetrics) {
-    Row(
-        Modifier.fillMaxWidth().height(metrics.headerHeightDp.dp).background(CatalogHubNavyV030).padding(horizontal = metrics.screenPaddingDp.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = if (metrics.isCompact) 19.sp else 23.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(if (metrics.isCompact) 12.dp else 24.dp))
-        Text("商品・部門・税・販売条件", color = Color.White, fontSize = if (metrics.isCompact) 16.sp else 20.sp, fontWeight = FontWeight.SemiBold)
-    }
+private fun CatalogHubHeaderV030(metrics: RegisterResponsiveMetrics, onClose: () -> Unit) {
+    RegisterTopBarV141(title = "商品・部門・税・販売条件", onBack = onClose)
 }
 
 @Composable
