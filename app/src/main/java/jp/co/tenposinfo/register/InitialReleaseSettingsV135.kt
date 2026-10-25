@@ -465,7 +465,7 @@ private fun InitialReleaseSettingsAppV135(actor: String, onClose: () -> Unit) {
                                 onClick = { screen = item },
                                 modifier = Modifier.fillMaxWidth().height(52.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = IrBlue),
-                            ) { Text("${item.id} ${item.label}") }
+                            ) { Text(item.label) }
                         } else {
                             OutlinedButton(
                                 onClick = { screen = item },
@@ -496,6 +496,7 @@ private fun InitialReleaseSettingsAppV135(actor: String, onClose: () -> Unit) {
 private fun StoreBasicScreenV135(store: InitialReleaseSettingsStoreV135, actor: String) {
     var value by remember { mutableStateOf(store.loadStore()) }
     var message by remember { mutableStateOf<String?>(null) }
+    var showAdvanced by remember { mutableStateOf(false) }
     val scroll = rememberScrollState()
     Column(Modifier.fillMaxSize().padding(18.dp).verticalScroll(scroll), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("店舗情報・適格請求書・店名スタンプ", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = IrNavy)
@@ -507,12 +508,15 @@ private fun StoreBasicScreenV135(store: InitialReleaseSettingsStoreV135, actor: 
         SettingTextFieldV135("住所2", value.address2, { value = value.copy(address2 = it) })
         SettingTextFieldV135("電話番号", value.phone, { value = value.copy(phone = it) })
         SettingTextFieldV135("適格請求書登録番号", value.registrationNumber, { value = value.copy(registrationNumber = it) }, "空欄またはT+13桁")
-        Text("通貨: ${value.currency}（固定） / タイムゾーン: ${value.timeZone}（固定）")
-        EnumCycleRowV135("店名スタンプ", value.receiptHeaderMode) { value = value.copy(receiptHeaderMode = it) }
-        value.footerLines.forEachIndexed { index, line ->
-            SettingTextFieldV135("レシート末尾 ${index + 1}", line, { updated ->
-                value = value.copy(footerLines = value.footerLines.toMutableList().apply { set(index, updated) })
-            })
+        SettingDetailsToggleV150(showAdvanced) { showAdvanced = !showAdvanced }
+        if (showAdvanced) {
+            Text("通貨: ${value.currency} / タイムゾーン: ${value.timeZone}（変更不可）")
+            EnumCycleRowV135("店名スタンプ", value.receiptHeaderMode) { value = value.copy(receiptHeaderMode = it) }
+            value.footerLines.forEachIndexed { index, line ->
+                SettingTextFieldV135("レシート末尾 ${index + 1}", line, { updated ->
+                    value = value.copy(footerLines = value.footerLines.toMutableList().apply { set(index, updated) })
+                })
+            }
         }
         SaveRowV135(message) {
             runCatching { store.saveStore(value, actor) }
@@ -526,12 +530,17 @@ private fun StoreBasicScreenV135(store: InitialReleaseSettingsStoreV135, actor: 
 private fun SalesOperationScreenV135(store: InitialReleaseSettingsStoreV135, actor: String) {
     var value by remember { mutableStateOf(store.loadSales()) }
     var message by remember { mutableStateOf<String?>(null) }
+    var showAdvanced by remember { mutableStateOf(false) }
     val scroll = rememberScrollState()
     Column(Modifier.fillMaxSize().padding(18.dp).verticalScroll(scroll), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("置数・行統合・訂正・値引・会計完了動作", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = IrNavy)
         EnumCycleRowV135("置数方式", value.quantityInputMode) { value = value.copy(quantityInputMode = it) }
         BoolRowV135("同一商品を行統合", value.mergeSameItem) { value = value.copy(mergeSameItem = it) }
         BoolRowV135("リピートキー", value.repeatKeyEnabled) { value = value.copy(repeatKeyEnabled = it) }
+        BoolRowV135("現金クイック", value.quickCashEnabled) { value = value.copy(quickCashEnabled = it) }
+        BoolRowV135("万円キー", value.tenThousandKey) { value = value.copy(tenThousandKey = it) }
+        SettingDetailsToggleV150(showAdvanced) { showAdvanced = !showAdvanced }
+        if (showAdvanced) {
         EnumCycleRowV135("単価上書き", value.priceOverridePolicy) { value = value.copy(priceOverridePolicy = it) }
         EnumCycleRowV135("0円商品", value.zeroPricePolicy) { value = value.copy(zeroPricePolicy = it) }
         EnumCycleRowV135("マイナス商品", value.negativeProductPolicy) { value = value.copy(negativeProductPolicy = it) }
@@ -539,12 +548,11 @@ private fun SalesOperationScreenV135(store: InitialReleaseSettingsStoreV135, act
         EnumCycleRowV135("取引中止", value.transactionCancelPolicy) { value = value.copy(transactionCancelPolicy = it) }
         NumericSettingV135("値引率上限（0.01%単位）", value.discountLimitBasisPoints) { value = value.copy(discountLimitBasisPoints = it) }
         Text("客数既定値: 即時会計 0 / 保留伝票 1（仕様固定）")
-        BoolRowV135("現金クイック", value.quickCashEnabled) { value = value.copy(quickCashEnabled = it) }
-        BoolRowV135("万円キー", value.tenThousandKey) { value = value.copy(tenThousandKey = it) }
         NumericSettingV135("会計完了表示秒数", value.completeScreenSeconds) { value = value.copy(completeScreenSeconds = it) }
         EnumCycleRowV135("異常終了カート復元", value.restoreWorkCart) { value = value.copy(restoreWorkCart = it) }
         BoolRowV135("取引中の担当者切替", value.operatorSwitchInCart) { value = value.copy(operatorSwitchInCart = it) }
         NumericSettingV135("操作音量", value.soundLevel) { value = value.copy(soundLevel = it) }
+        }
         SaveRowV135(message) {
             runCatching { store.saveSales(value, actor) }
                 .onSuccess { value = it; message = "保存しました" }
@@ -557,15 +565,19 @@ private fun SalesOperationScreenV135(store: InitialReleaseSettingsStoreV135, act
 private fun BusinessSettingsScreenV135(store: InitialReleaseSettingsStoreV135, actor: String) {
     var value by remember { mutableStateOf(store.loadBusiness()) }
     var message by remember { mutableStateOf<String?>(null) }
+    var showAdvanced by remember { mutableStateOf(false) }
     val scroll = rememberScrollState()
     Column(Modifier.fillMaxSize().padding(18.dp).verticalScroll(scroll), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("伝票・営業日・点検精算", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = IrNavy)
         BoolRowV135("伝票番号自動採番", value.checkAutoNumber) { value = value.copy(checkAutoNumber = it) }
+        EnumCycleRowV135("営業日決定", value.businessDateMode) { value = value.copy(businessDateMode = it) }
+        BoolRowV135("Z精算後の自動バックアップ", value.autoBackupAfterSettlement) { value = value.copy(autoBackupAfterSettlement = it) }
+        SettingDetailsToggleV150(showAdvanced) { showAdvanced = !showAdvanced }
+        if (showAdvanced) {
         NumericSettingV135("伝票番号上限", value.checkNumberMax) { value = value.copy(checkNumberMax = it) }
         Text("同一営業日の伝票番号重複: 禁止（固定）")
         NumericSettingV135("長時間伝票警告（分、0=無効）", value.longOpenMinutes) { value = value.copy(longOpenMinutes = it) }
         EnumCycleRowV135("保留時自動印刷", value.printOnHold) { value = value.copy(printOnHold = it) }
-        EnumCycleRowV135("営業日決定", value.businessDateMode) { value = value.copy(businessDateMode = it) }
         SettingTextFieldV135("営業日境界", value.boundaryTime, { value = value.copy(boundaryTime = it) }, "HH:mm")
         Card(colors = CardDefaults.cardColors(containerColor = IrPaleYellow), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp)) {
@@ -574,8 +586,8 @@ private fun BusinessSettingsScreenV135(store: InitialReleaseSettingsStoreV135, a
                 Text("精算の安全条件は、この設定画面から弱めることはできません。", fontSize = 13.sp)
             }
         }
-        BoolRowV135("Z精算後の自動バックアップ", value.autoBackupAfterSettlement) { value = value.copy(autoBackupAfterSettlement = it) }
         EnumCycleRowV135("0円項目印字", value.zeroItemsPrint) { value = value.copy(zeroItemsPrint = it) }
+        }
         SaveRowV135(message) {
             runCatching { store.saveBusiness(value, actor) }
                 .onSuccess { value = it; message = "保存しました" }
@@ -589,18 +601,24 @@ private fun DeviceSettingsScreenV135(store: InitialReleaseSettingsStoreV135, act
     val context = LocalContext.current
     var value by remember { mutableStateOf(store.loadDevice()) }
     var message by remember { mutableStateOf<String?>(null) }
+    var showAdvanced by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("キオスク・画面・音・更新・容量警告", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = IrNavy)
         BoolRowV135("販売中は画面を消灯しない", value.keepScreenOn) { value = value.copy(keepScreenOn = it) }
-        BoolRowV135("キオスク運用を要求", value.kioskModeRequested) { value = value.copy(kioskModeRequested = it) }
-        Text("※ Androidの端末固定モードは、端末管理者（Device Owner）などの端末側許可がある場合のみ有効になります。", fontSize = 13.sp)
         BoolRowV135("操作音を有効", value.operationSoundEnabled) { value = value.copy(operationSoundEnabled = it) }
         BoolRowV135("更新確認を有効", value.automaticUpdateCheck) { value = value.copy(automaticUpdateCheck = it) }
         OutlinedButton(
             onClick = { context.startActivity(Intent(context, AppDistributionUpdateActivityV146::class.java)) },
             modifier = Modifier.fillMaxWidth(),
         ) { Text("アプリの更新を確認") }
-        NumericSettingV135("空き容量警告しきい値（MB）", value.storageWarningMb) { value = value.copy(storageWarningMb = it) }
+        SettingDetailsToggleV150(showAdvanced) { showAdvanced = !showAdvanced }
+        if (showAdvanced) {
+            BoolRowV135("キオスク運用を要求", value.kioskModeRequested) { value = value.copy(kioskModeRequested = it) }
+            if (value.kioskModeRequested) {
+                Text("端末固定にはAndroidの端末管理者許可が必要です。", color = IrNavy)
+            }
+            NumericSettingV135("空き容量警告しきい値（MB）", value.storageWarningMb) { value = value.copy(storageWarningMb = it) }
+        }
         OutlinedButton(
             onClick = { context.startActivity(Intent(context, DataProtectionActivity::class.java)) },
             modifier = Modifier.fillMaxWidth(),
@@ -664,6 +682,13 @@ private fun SetupWizardScreenV135(store: InitialReleaseSettingsStoreV135, actor:
             colors = ButtonDefaults.buttonColors(containerColor = IrBlue),
         ) { Text(if (progress.setupCompleted) "設定完了済み" else "設定完了") }
         message?.let { Text(it, color = IrNavy, fontWeight = FontWeight.Bold) }
+    }
+}
+
+@Composable
+private fun SettingDetailsToggleV150(expanded: Boolean, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+        Text(if (expanded) "詳細を閉じる" else "詳細設定")
     }
 }
 
