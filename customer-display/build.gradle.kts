@@ -40,8 +40,11 @@ android {
         // Previous verified CD v0.15.5 release for cumulative compatibility tests.
         // versionCode = 13
         // versionName = "0.15.5-dev.1"
-        versionCode = 14
-        versionName = "0.15.6-dev.1"
+        // Previous verified v1.45 CD version; retained for audit.
+        // versionCode = 14
+        // versionName = "0.15.6-dev.1"
+        versionCode = 15
+        versionName = "0.15.7-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ CD"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
