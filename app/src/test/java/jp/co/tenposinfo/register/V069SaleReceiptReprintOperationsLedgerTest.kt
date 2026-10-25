@@ -102,7 +102,7 @@ class V069SaleReceiptReprintOperationsLedgerTest {
         assertFalse(store.contains("retryPrintJob"))
         assertFalse(store.contains("discardPrintJob"))
 
-        assertTrue(activity.contains("通常レシート再印字 運用台帳"))
+        assertTrue(activity.contains("RegisterTopBarV141(title = \"レシート再印字履歴\", onBack = onClose)"))
         assertTrue(activity.contains("current.allows(RegisterPermission.VIEW_SALES)"))
         assertTrue(activity.contains("統合印刷キューで確認・対応"))
         assertTrue(activity.contains("この台帳では再試行・破棄・強制印刷・履歴削除を行いません"))
