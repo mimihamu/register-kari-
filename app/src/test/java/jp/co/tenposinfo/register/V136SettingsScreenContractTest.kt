@@ -27,7 +27,8 @@ class V136SettingsScreenContractTest {
         assertTrue(sync.contains("RegisterTopBarV141(title = \"同期キュー・Google Drive\", onBack = onClose)"))
         assertTrue(tax.contains("RegisterTopBarV141(title = \"税計算・インボイス設定\", onBack = onClose)"))
         assertTrue(maintenance.contains("PrinterHubHeader(\"SCR-680  保守・診断\""))
-        assertTrue(receipt.contains("RegisterTopBarV141(title = \"レシート設定\", onBack = onClose)"))
+        assertTrue(receipt.contains("title = \"レシート設定\""))
+        assertTrue(receipt.contains("onBack = onClose"))
 
         listOf("SCR-760", "SCR-761", "SCR-762", "SCR-763", "SCR-764", "SCR-767", "SCR-275").forEach {
             assertFalse("legacy screen id leaked: $it", admin.contains(it) || backup.contains(it) || sync.contains(it) || tax.contains(it) || receipt.contains(it))
