@@ -8,6 +8,7 @@ import androidx.core.view.WindowCompat
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -1268,6 +1269,11 @@ private fun SalesScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .background(if (selected) PaleBlue else Color.Transparent, RoundedCornerShape(6.dp))
+                                .border(
+                                    width = if (selected) 2.dp else 0.dp,
+                                    color = if (selected) Danger else Color.Transparent,
+                                    shape = RoundedCornerShape(6.dp),
+                                )
                                 .combinedClickable(onClick = { onSelect(index) }, onLongClick = { onEdit(index) })
                                 .padding(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
