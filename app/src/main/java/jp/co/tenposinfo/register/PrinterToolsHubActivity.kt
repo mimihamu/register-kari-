@@ -124,7 +124,7 @@ private fun PrinterToolsHubScreen(
     Surface(Modifier.fillMaxSize(), color = PhBackground) {
         if (!unlocked) {
             Column(Modifier.fillMaxSize()) {
-                PrinterHubHeader("SCR-680  保守・診断", "責任者認証")
+                PrinterHubHeader("SCR-680  保守・診断", "責任者認証", onClose)
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     PrinterHubPanel(Modifier.width(540.dp).height(430.dp)) {
                         Text("保守・診断を開く", fontSize = 29.sp, fontWeight = FontWeight.Bold, color = PhNavy)
@@ -146,7 +146,6 @@ private fun PrinterToolsHubScreen(
                         }
                         Spacer(Modifier.weight(1f))
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            OutlinedButton(onClick = onClose, modifier = Modifier.weight(1f).height(56.dp)) { Text("閉じる") }
                             Button(
                                 onClick = {
                                     val manager = settingsStore.managerNameForPin(pin)
@@ -175,7 +174,7 @@ private fun PrinterToolsHubScreen(
             val notification = remember(revision) { PrinterNotificationPermissionStatus.read(context) }
             val recent = remember(revision) { resultStore.listRecent(10) }
             Column(Modifier.fillMaxSize()) {
-                PrinterHubHeader("SCR-680  保守・診断", "認証：$actor")
+                PrinterHubHeader("SCR-680  保守・診断", "認証：$actor", onClose)
                 Row(
                     Modifier.weight(1f).fillMaxWidth().padding(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -268,7 +267,6 @@ private fun PrinterToolsHubScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    OutlinedButton(onClick = onClose, modifier = Modifier.width(220.dp).fillMaxHeight()) { Text("閉じる", fontWeight = FontWeight.Bold) }
                     OutlinedButton(
                         onClick = { unlocked = false; actor = "責任者" },
                         modifier = Modifier.width(220.dp).fillMaxHeight(),
@@ -282,17 +280,8 @@ private fun PrinterToolsHubScreen(
 }
 
 @Composable
-private fun PrinterHubHeader(title: String, status: String) {
-    Row(
-        Modifier.fillMaxWidth().height(64.dp).background(PhNavy).padding(horizontal = 20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(24.dp))
-        Text(title, color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
-        Text(status, color = Color.White, fontSize = 14.sp)
-    }
+private fun PrinterHubHeader(title: String, status: String, onBack: () -> Unit) {
+    RegisterTopBarV141(title = "保守・診断", onBack = onBack)
 }
 
 @Composable
