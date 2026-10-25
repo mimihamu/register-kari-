@@ -8,6 +8,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -74,20 +75,9 @@ private fun TaxPaymentSettingsHub(
 ) {
     Surface(Modifier.fillMaxSize(), color = TpBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(62.dp).background(TpNavy).padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("つぐレジ", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.padding(horizontal = 10.dp))
-                Text("SCR-630  税・支払設定", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.weight(1f))
-                Text("認証：$actor", color = Color.White, fontSize = 13.sp)
-            }
-            Row(
-                Modifier.weight(1f).fillMaxWidth().padding(28.dp),
-                horizontalArrangement = Arrangement.spacedBy(20.dp),
-            ) {
+            RegisterTopBarV141(title = "税・支払設定", onBack = onClose)
+            Box(Modifier.weight(1f).fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
+                Row(Modifier.fillMaxWidth().height(180.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                 HubTileV136(
                     title = "税設定",
                     screenId = "SCR-630A",
@@ -102,14 +92,9 @@ private fun TaxPaymentSettingsHub(
                     modifier = Modifier.weight(1f),
                     onClick = onPayment,
                 )
-            }
-            Row(
-                Modifier.fillMaxWidth().height(72.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
-            ) {
-                OutlinedButton(onClick = onClose, modifier = Modifier.height(54.dp)) {
-                    Text("各種設定へ戻る", fontWeight = FontWeight.Bold)
                 }
             }
+
         }
     }
 }
