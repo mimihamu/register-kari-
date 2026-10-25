@@ -424,10 +424,15 @@ private fun AdminMenuScreen(
                 maxWidth < 1_050.dp -> 3
                 else -> 4
             }
-            if (settingIssueCount > 0 || driveSyncHasError || backupHasError) {
-                // Important failures remain visible inside the category list below.
-            }
             Column(Modifier.fillMaxSize()) {
+                if (settingIssueCount > 0 || driveSyncHasError || backupHasError) {
+                    Text(
+                        "設定異常：${settingIssueCount}件。バックアップ・同期・機器設定を確認してください。",
+                        color = AsDanger,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                }
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it.take(40) },
