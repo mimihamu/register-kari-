@@ -188,17 +188,7 @@ private fun PrinterStatusValidationScreen(onClose: () -> Unit) {
 
     Surface(Modifier.fillMaxSize(), color = PvBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(64.dp).background(PvNavy).padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(24.dp))
-                Text("プリンター検証", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                Text("最終検証・承認候補（runtime未適用）", color = Color.White, fontSize = 14.sp)
-            }
-
+            RegisterTopBarV141(title = "プリンター検証", onBack = onClose)
             Row(
                 Modifier.weight(1f).fillMaxWidth().padding(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -426,10 +416,6 @@ private fun PrinterStatusValidationScreen(onClose: () -> Unit) {
                     .padding(horizontal = 18.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(onClick = onClose, modifier = Modifier.width(220.dp).fillMaxHeight()) {
-                    Text("閉じる", fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.width(16.dp))
                 Text(message, color = messageColor, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Text(
                     "この画面は保存済みデータの閲覧・CSV・候補審査専用",
