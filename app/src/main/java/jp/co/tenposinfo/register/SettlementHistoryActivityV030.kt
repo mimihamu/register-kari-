@@ -145,6 +145,7 @@ private fun SettlementHistoryScreenV030(
     var selectedType by remember { mutableStateOf<SettlementReportType?>(null) }
     var selectedReportId by remember { mutableStateOf<Long?>(settlements.firstOrNull()?.id) }
     var managerPin by remember { mutableStateOf("") }
+    var detailPaneV152 by remember { mutableStateOf(0) }
 
     val filtered = SettlementHistoryPolicyV027.filter(
         records = settlements,
@@ -163,7 +164,8 @@ private fun SettlementHistoryScreenV030(
     Column(Modifier.fillMaxSize()) {
         HistoryHeaderV030(metrics, onClose)
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-            val compact = metrics.isCompact || maxWidth < 1_100.dp || maxHeight < 560.dp
+            val compact = maxWidth < 700.dp
+            val twoPane = maxWidth < 1_100.dp
             if (compact) {
                 Column(
                     Modifier
@@ -206,6 +208,60 @@ private fun SettlementHistoryScreenV030(
                         onManagerPinChanged = { managerPin = it.filter(Char::isDigit).take(8) },
                         onReprint = onReprint,
                     )
+                }
+            } else if (twoPane) {
+                Row(
+                    Modifier.fillMaxSize().padding(metrics.screenPaddingDp.dp),
+                    horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
+                ) {
+                    HistoryFilterAndListV030(
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        sessions = sessions,
+                        filtered = filtered,
+                        selectedSessionId = selectedSessionId,
+                        selectedType = selectedType,
+                        selectedReportId = selected?.id,
+                        onSessionChanged = {
+                            selectedSessionId = it
+                            selectedReportId = null
+                            managerPin = ""
+                        },
+                        onTypeChanged = {
+                            selectedType = it
+                            selectedReportId = null
+                            managerPin = ""
+                        },
+                        onReportSelected = {
+                            selectedReportId = it
+                            managerPin = ""
+                        },
+                    )
+                    Column(Modifier.weight(1f).fillMaxHeight()) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { detailPaneV152 = 0 }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("保存内容") }
+                            OutlinedButton(onClick = { detailPaneV152 = 1 }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("印字・再印字") }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        if (detailPaneV152 == 0) {
+                            HistoryDetailV030(
+                                Modifier.weight(1f).fillMaxWidth(), selected, operatorName,
+                                scrollPanel = true,
+                            )
+                        } else {
+                            HistoryPreviewV030(
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                selected = selected,
+                                permissions = permissions,
+                                printerPaperWidthMm = printerPaperWidthMm,
+                                managerPin = managerPin,
+                                message = message,
+                                previewLoader = previewLoader,
+                                onManagerPinChanged = { managerPin = it.filter(Char::isDigit).take(8) },
+                                onReprint = onReprint,
+                                scrollPanel = true,
+                            )
+                        }
+                    }
                 }
             } else {
                 Row(
@@ -339,8 +395,9 @@ private fun HistoryDetailV030(
     modifier: Modifier,
     selected: SettlementRecord?,
     operatorName: String,
+    scrollPanel: Boolean = false,
 ) {
-    HistoryPanelV030(modifier) {
+    HistoryPanelV030(modifier, scrollable = scrollPanel) {
         Text("保存内容", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = HistoryNavyV030)
         Spacer(Modifier.height(8.dp))
         if (selected == null) {
@@ -380,8 +437,9 @@ private fun HistoryPreviewV030(
     previewLoader: (Long) -> String,
     onManagerPinChanged: (String) -> Unit,
     onReprint: (SettlementRecord, String) -> Unit,
+    scrollPanel: Boolean = false,
 ) {
-    HistoryPanelV030(modifier) {
+    HistoryPanelV030(modifier, scrollable = scrollPanel) {
         Text("印字プレビュー・再印字", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = HistoryNavyV030)
         Spacer(Modifier.height(8.dp))
         if (selected == null) {
@@ -400,7 +458,6 @@ private fun HistoryPreviewV030(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .weight(1f, fill = false)
                     .heightIn(min = 180.dp, max = 420.dp)
                     .verticalScroll(rememberScrollState())
                     .padding(8.dp),
@@ -465,6 +522,7 @@ private fun HistoryPreviewV030(
 @Composable
 private fun HistoryPanelV030(
     modifier: Modifier,
+    scrollable: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val metrics = rememberRegisterResponsiveMetrics()
@@ -474,7 +532,11 @@ private fun HistoryPanelV030(
         border = BorderStroke(1.dp, HistoryBorderV030),
         shape = RoundedCornerShape(10.dp),
     ) {
-        Column(Modifier.fillMaxSize().padding(metrics.cardPaddingDp.dp), content = content)
+        Column(
+            Modifier.fillMaxSize().padding(metrics.cardPaddingDp.dp)
+                .then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier),
+            content = content,
+        )
     }
 }
 
