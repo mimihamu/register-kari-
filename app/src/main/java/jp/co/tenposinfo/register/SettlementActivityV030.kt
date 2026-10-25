@@ -292,10 +292,18 @@ private fun SettlementScreenV030(
                             Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            OutlinedButton(onClick = { rightPanelV152 = 0 }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                            OutlinedButton(
+                                onClick = { rightPanelV152 = 0 },
+                                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                border = BorderStroke(if (rightPanelV152 == 0) 2.dp else 1.dp, if (rightPanelV152 == 0) SettlementDangerV030 else SettlementBorderV030),
+                            ) {
                                 Text("プレビュー")
                             }
-                            OutlinedButton(onClick = { rightPanelV152 = 1 }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                            OutlinedButton(
+                                onClick = { rightPanelV152 = 1 },
+                                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                border = BorderStroke(if (rightPanelV152 == 1) 2.dp else 1.dp, if (rightPanelV152 == 1) SettlementDangerV030 else SettlementBorderV030),
+                            ) {
                                 Text("保存履歴")
                             }
                         }
