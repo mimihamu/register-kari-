@@ -26,6 +26,6 @@ class V136SettingsUiJapaneseLabelsTest {
         assertFalse(initialSettings.contains("未会計伝票: BLOCK"))
         assertTrue(initialSettings.contains("精算の安全条件は、この設定画面から弱めることはできません。"))
         assertFalse(initialSettings.contains("REP-003で確定済みの安全条件"))
-        assertTrue(initialSettings.contains("端末管理者（Device Owner）"))
+        assertTrue(initialSettings.contains("端末固定にはAndroidの端末管理者許可が必要です。"))
     }
 }
