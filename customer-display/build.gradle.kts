@@ -45,8 +45,11 @@ android {
         // versionName = "0.15.6-dev.1"
         // versionCode = 15
         // versionName = "0.15.7-dev.1"
-        versionCode = 16
-        versionName = "0.15.8-dev.1"
+        // v1.47 signed CI build retained for upgrade history.
+        // versionCode = 16
+        // versionName = "0.15.8-dev.1"
+        versionCode = 17
+        versionName = "0.15.9-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ CD"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
