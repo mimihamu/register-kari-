@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -47,6 +49,7 @@ internal fun RegisterSafeAreaV141(content: @Composable () -> Unit) {
 internal fun RegisterTopBarV141(
     title: String,
     action: (@Composable () -> Unit)? = null,
+    onBack: (() -> Unit)? = null,
 ) {
     val metrics = rememberRegisterResponsiveMetrics()
     Row(
@@ -56,6 +59,16 @@ internal fun RegisterTopBarV141(
             .padding(horizontal = metrics.screenPaddingDp.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (onBack != null) {
+            OutlinedButton(
+                onClick = onBack,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = Color.White,
+                    contentColor = RegisterTopBarColorV141,
+                ),
+            ) { Text("戻る", fontWeight = FontWeight.Bold, maxLines = 1) }
+            Spacer(Modifier.width(if (metrics.isCompact) 8.dp else 12.dp))
+        }
         Text(
             "つぐレジ",
             color = Color.White,
