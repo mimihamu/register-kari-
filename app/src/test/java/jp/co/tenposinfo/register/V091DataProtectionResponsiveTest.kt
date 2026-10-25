@@ -41,7 +41,7 @@ class V091DataProtectionResponsiveTest {
         assertTrue(source.contains("if (responsive.isCompact) Modifier.verticalScroll(rightScroll)"))
         assertTrue(source.contains("Modifier.width(if (responsive.isCompact) 360.dp else 470.dp)"))
         assertTrue(source.contains("heightIn(min = 80.dp, max = 150.dp)"))
-        assertTrue(source.contains("responsive.headerHeightDp.dp"))
+        assertTrue(source.contains("RegisterTopBarV141(title = \"データ保全・バックアップ・復元\""))
         assertTrue(source.contains("responsive.bottomBarHeightDp.dp"))
         assertTrue(source.contains("responsive.screenPaddingDp.dp"))
         assertTrue(source.contains("responsive.cardPaddingDp.dp"))
