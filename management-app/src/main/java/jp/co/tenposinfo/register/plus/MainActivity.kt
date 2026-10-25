@@ -5,6 +5,13 @@ import android.os.Bundle
 import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.ui.graphics.Color
+import androidx.core.view.WindowCompat
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -62,6 +69,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        @Suppress("DEPRECATION")
+        window.statusBarColor = android.graphics.Color.rgb(23, 63, 107)
+        @Suppress("DEPRECATION")
+        window.navigationBarColor = android.graphics.Color.rgb(23, 63, 107)
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
         AppDistributionUpdateNoticeV147.maybeCheck(applicationContext, "plus")
         uiState.value = uiState.value.copy(
             importFolder = ImportFolderUiState(
@@ -71,8 +86,9 @@ class MainActivity : ComponentActivity() {
         )
         setContent {
             MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    TsuguRegiPlusFolderSyncScreen(
+                Box(Modifier.fillMaxSize().background(Color(0xFF173F6B))) {
+                    Surface(modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+                        TsuguRegiPlusFolderSyncScreen(
                         state = uiState,
                         onImport = ::importUris,
                         onRefresh = ::refresh,
@@ -80,7 +96,8 @@ class MainActivity : ComponentActivity() {
                         onRegisterImportFolder = ::registerImportFolder,
                         onImportRegisteredFolder = ::importRegisteredFolder,
                         onClearImportFolder = ::clearImportFolder,
-                    )
+                        )
+                    }
                 }
             }
         }
