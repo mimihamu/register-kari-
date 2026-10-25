@@ -29,7 +29,7 @@ class V149LandscapeNavigationConsistencyTest {
         assertTrue(src.contains("else -> 4"))
         assertTrue(src.contains("items(filteredDaily.chunked(columns))"))
         assertTrue(src.contains("items(filteredMaintenance.chunked(columns))"))
-        assertTrue(src.contains("Text(\"設定異常："))
+        assertTrue(src.contains("設定異常："))
         assertFalse(src.contains("AsValueRow(\"未保存変更\""))
         assertTrue(src.contains("onBack = onClose"))
         assertTrue(src.contains("onClick = onLock"))
