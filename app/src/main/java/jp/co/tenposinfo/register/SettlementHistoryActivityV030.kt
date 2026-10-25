@@ -238,8 +238,16 @@ private fun SettlementHistoryScreenV030(
                     )
                     Column(Modifier.weight(1f).fillMaxHeight()) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { detailPaneV152 = 0 }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("保存内容") }
-                            OutlinedButton(onClick = { detailPaneV152 = 1 }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("印字・再印字") }
+                            OutlinedButton(
+                                onClick = { detailPaneV152 = 0 },
+                                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                border = BorderStroke(if (detailPaneV152 == 0) 2.dp else 1.dp, if (detailPaneV152 == 0) HistoryDangerV030 else HistoryBorderV030),
+                            ) { Text("保存内容") }
+                            OutlinedButton(
+                                onClick = { detailPaneV152 = 1 },
+                                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                border = BorderStroke(if (detailPaneV152 == 1) 2.dp else 1.dp, if (detailPaneV152 == 1) HistoryDangerV030 else HistoryBorderV030),
+                            ) { Text("印字・再印字") }
                         }
                         Spacer(Modifier.height(8.dp))
                         if (detailPaneV152 == 0) {
