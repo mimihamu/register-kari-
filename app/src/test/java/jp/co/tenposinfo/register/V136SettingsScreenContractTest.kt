@@ -24,10 +24,10 @@ class V136SettingsScreenContractTest {
         assertTrue(admin.contains("AsHeader(\"SCR-650\", \"責任者PIN設定\""))
         assertTrue(admin.contains("AsHeader(\"SCR-680\", \"監査ログ\""))
         assertTrue(backup.contains("Text(\"SCR-670\""))
-        assertTrue(sync.contains("Text(\"SCR-672  同期キュー・Google Drive\""))
-        assertTrue(tax.contains("Text(\"SCR-630A  税計算・インボイス設定\""))
+        assertTrue(sync.contains("RegisterTopBarV141(title = \"同期キュー・Google Drive\", onBack = onClose)"))
+        assertTrue(tax.contains("RegisterTopBarV141(title = \"税計算・インボイス設定\", onBack = onClose)"))
         assertTrue(maintenance.contains("PrinterHubHeader(\"SCR-680  保守・診断\""))
-        assertTrue(receipt.contains("Text(\"SCR-640  レシート設定\""))
+        assertTrue(receipt.contains("RegisterTopBarV141(title = \"レシート設定\", onBack = onClose)"))
 
         listOf("SCR-760", "SCR-761", "SCR-762", "SCR-763", "SCR-764", "SCR-767", "SCR-275").forEach {
             assertFalse("legacy screen id leaked: $it", admin.contains(it) || backup.contains(it) || sync.contains(it) || tax.contains(it) || receipt.contains(it))
