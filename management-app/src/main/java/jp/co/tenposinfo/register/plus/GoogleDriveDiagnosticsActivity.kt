@@ -243,7 +243,9 @@ class GoogleDriveDiagnosticsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         refresh()
+        configurePlusSystemBarsV148(window)
         setContent {
+            PlusSafeAreaV148 {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GoogleDrivePlusDiagnosticsScreen(
@@ -260,6 +262,7 @@ class GoogleDriveDiagnosticsActivity : ComponentActivity() {
                         onClose = ::finish,
                     )
                 }
+            }
             }
         }
     }
