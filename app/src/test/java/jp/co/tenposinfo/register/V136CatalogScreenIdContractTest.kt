@@ -28,7 +28,7 @@ class V136CatalogScreenIdContractTest {
 
         assertTrue(hub.contains("商品・部門・税・販売条件"))
         assertTrue(settings.contains("CatalogHeader(\"\", \"商品・部門・税・販売条件\""))
-        assertTrue(settings.contains("if (screenId.isBlank()) title else \"\$screenId  \$title\""))
+        assertTrue(settings.contains("RegisterTopBarV141(title = title, onBack = onBack)"))
     }
 
     @Test
