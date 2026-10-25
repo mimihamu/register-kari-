@@ -66,8 +66,8 @@ class V146SelfUpdateDistributionTest {
             assertTrue(gradle.contains("versionName = \"$name\""))
         }
         val gate = read("../ci/verify-apk-release-integrity.sh")
-        assertTrue(gate.contains("'17'"))
-        assertTrue(gate.contains("'0.15.9-dev.1'"))
+        assertTrue(gate.contains("'18'"))
+        assertTrue(gate.contains("'0.15.10-dev.1'"))
     }
 
     @Test fun updateActionsAreReachableFromAllThreeApps() {
