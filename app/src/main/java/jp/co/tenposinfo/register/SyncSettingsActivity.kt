@@ -264,18 +264,7 @@ private fun SyncSettingsApp(onClose: () -> Unit) {
 
 @Composable
 private fun SyHeader(onClose: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().height(62.dp).background(SyNavy).padding(horizontal = 20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(22.dp))
-        Text("SCR-672  同期キュー・Google Drive", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
-        Text("営業日 ${BusinessDateResolver.current(LocalContext.current)}", color = Color.White, fontSize = 13.sp)
-        Spacer(Modifier.width(12.dp))
-        OutlinedButton(onClick = onClose, border = BorderStroke(1.dp, Color.White)) { Text("戻る", color = Color.White) }
-    }
+    RegisterTopBarV141(title = "同期キュー・Google Drive", onBack = onClose)
 }
 
 @Composable
