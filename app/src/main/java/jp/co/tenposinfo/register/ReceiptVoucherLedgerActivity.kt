@@ -118,7 +118,7 @@ private fun ReceiptVoucherLedgerRoute(
         val selected = allEntries.firstOrNull { it.receipt.id == activeSelectedId }
 
         Column(Modifier.fillMaxSize()) {
-            ReceiptVoucherLedgerHeader(summary)
+            ReceiptVoucherLedgerHeader(summary, onClose)
             ReceiptVoucherLedgerFilters(
                 criteria = criteria,
                 onCriteriaChange = {
@@ -187,21 +187,18 @@ private fun ReceiptVoucherLedgerRoute(
 }
 
 @Composable
-private fun ReceiptVoucherLedgerHeader(summary: ReceiptVoucherLedgerSummary) {
-    Row(
-        Modifier.fillMaxWidth().height(62.dp).background(LedgerNavy).padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(22.dp))
-        Text("領収書運用台帳", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
-        Text(
-            "領収書 ${summary.receiptCount}枚　要対応 ${summary.actionRequiredReceipts + summary.missingPrintJobs}枚　再発行 ${summary.reprintEvents}回",
-            color = Color.White,
-            fontWeight = FontWeight.Medium,
-        )
-    }
+private fun ReceiptVoucherLedgerHeader(summary: ReceiptVoucherLedgerSummary, onClose: () -> Unit) {
+    RegisterTopBarV141(
+        title = "領収書運用台帳",
+        onBack = onClose,
+        action = {
+            Text(
+                "要対応 ${summary.actionRequiredReceipts + summary.missingPrintJobs}件",
+                color = Color.White,
+                maxLines = 1,
+            )
+        },
+    )
 }
 
 @Composable
@@ -478,12 +475,8 @@ private fun ReceiptVoucherLedgerFooter(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("履歴は読取専用です。再試行などの印刷操作は統合印刷キューへ一本化しています。", modifier = Modifier.weight(1f), color = LedgerMuted, fontSize = 12.sp)
         OutlinedButton(onClick = onOpenIssuance, modifier = Modifier.heightIn(min = 46.dp)) { Text("発行・再発行") }
         OutlinedButton(onClick = onOpenPrintQueue, modifier = Modifier.heightIn(min = 46.dp)) { Text("統合印刷キュー") }
-        Button(onClick = onClose, modifier = Modifier.heightIn(min = 46.dp), colors = ButtonDefaults.buttonColors(containerColor = LedgerBlue)) {
-            Text("戻る")
-        }
     }
 }
 
