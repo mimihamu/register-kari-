@@ -893,10 +893,11 @@ private fun PrinterSettingsScreen(
         }
     }
 
+    var showRoutesV150 by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         AsHeader("SCR-660", "プリンター・ドロア設定", profile.displayName, onBack = onBack)
         Row(Modifier.weight(1f).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            AsPanel(Modifier.width(650.dp).fillMaxHeight()) {
+            AsPanel(Modifier.fillMaxSize()) {
                 Text("接続・機種設定", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AsNavy)
                 Spacer(Modifier.height(8.dp))
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
@@ -947,6 +948,11 @@ private fun PrinterSettingsScreen(
                         ) { Text("選択プリンター削除") }
                     }
                     Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { showRoutesV150 = !showRoutesV150 },
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                    ) { Text(if (showRoutesV150) "文書別出力先を閉じる" else "文書別出力先の詳細") }
+                    if (showRoutesV150) {
                     Text("文書別の既定出力先", fontWeight = FontWeight.Bold, color = AsNavy)
                     Text(
                         "58mmと80mmを同時登録できます。文書ごとに送信先を選択してください。",
@@ -982,6 +988,8 @@ private fun PrinterSettingsScreen(
                                 if (rowProfiles.size == 1) Spacer(Modifier.weight(1f))
                             }
                         }
+                    }
+
                     }
                     Spacer(Modifier.height(10.dp))
                     OutlinedTextField(name, { name = it.take(40) }, label = { Text("プリンター名") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -1254,44 +1262,7 @@ private fun PrinterSettingsScreen(
                 }
             }
 
-            AsPanel(Modifier.weight(1f).fillMaxHeight()) {
-                Text("適用内容", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AsNavy)
-                Spacer(Modifier.height(14.dp))
-                AsValueRow("プリンターID", selectedPrinterId)
-                AsValueRow("機種", profile.displayName)
-                AsValueRow("接続方式", connectionType.displayName)
-                AsValueRow(
-                    "接続先",
-                    PrinterTransportPolicyV136.endpointDisplay(currentConfiguration()).ifBlank { "未設定" },
-                )
-                AsValueRow("用紙", "${paperWidth}mm")
-                AsValueRow("印字可能幅", "${printableDotWidth.ifBlank { "－" }}dot")
-                AsValueRow("カット前紙送り", "${feedLines.ifBlank { "－" }}行")
-                AsValueRow("レシート自動発行", if (receiptAutoPrint) "ON" else "OFF（後レシート可）")
-                AsValueRow("カット", cutMode.displayName)
-                AsValueRow("ドロア", if (drawerEnabled) "DK${drawerPort + 1}" else "無効")
-                AsValueRow(
-                    "自動オープン",
-                    if (!drawerEnabled) "なし" else listOfNotNull(
-                        "現金会計".takeIf { drawerOpenOnCash },
-                        "現金返金".takeIf { drawerOpenOnCashRefund },
-                        "入出金".takeIf { drawerOpenOnCashMovement },
-                        "両替".takeIf { drawerOpenOnExchange },
-                    ).joinToString("・").ifBlank { "なし" },
-                )
-                Spacer(Modifier.height(12.dp))
-                AsFlowStep("1", "会計・精算・返品をSQLiteへ確定")
-                AsFlowStep("2", "印刷キューへ登録")
-                AsFlowStep("3", "選択プロファイルでESC/POS生成")
-                AsFlowStep("4", "設定した接続方式でプリンターへ送信")
-                AsFlowStep("5", "送信結果不明時は自動再印刷を停止")
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    "ドロア開放は印刷から分離し、現金会計・現金返金・入出金・両替の業務確定後だけ実行します。同じ業務イベントは再送・再印字されても再開放しません。単独開放は無効です。",
-                    color = Color.DarkGray,
-                    lineHeight = 22.sp,
-                )
-            }
+
         }
     }
 }
