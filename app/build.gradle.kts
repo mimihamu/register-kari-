@@ -95,8 +95,11 @@ android {
         // Previous verified in-app manual update build:
         // versionCode = 169
         // versionName = "1.34.5-dev.1"
-        versionCode = 170
-        versionName = "1.34.6-dev.1"
+        // v1.47 signed CI build retained for upgrade history.
+        // versionCode = 170
+        // versionName = "1.34.6-dev.1"
+        versionCode = 171
+        versionName = "1.34.7-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
