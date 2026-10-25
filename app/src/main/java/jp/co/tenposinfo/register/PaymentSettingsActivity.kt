@@ -81,6 +81,7 @@ private fun PaymentSettingsScreen(
     val initial = remember { store.load() }
     var rows by remember { mutableStateOf(initial.methods) }
     var message by remember { mutableStateOf<String?>(null) }
+    var expandedMethod by remember { mutableStateOf<PaymentMethod?>(null) }
 
     fun normalizeOrder(input: List<PaymentMethodSettingV136>): List<PaymentMethodSettingV136> =
         input.mapIndexed { index, row -> row.copy(displayOrder = index * 10) }
@@ -118,11 +119,7 @@ private fun PaymentSettingsScreen(
                 ) {
                     Column(Modifier.fillMaxSize().padding(16.dp)) {
                         Text("支払方法・表示順", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = PsNavy)
-                        Text(
-                            "現金は常時有効です。表示順、レシート表示名、過入金・釣銭、ドロア開放、決済端末連携を支払方法ごとに設定します。",
-                            color = Color.DarkGray,
-                            fontSize = 13.sp,
-                        )
+                        Text("現金は常時有効です。", color = PsNavy)
                         Spacer(Modifier.height(10.dp))
                         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                             items(rows, key = { it.method.name }) { row ->
@@ -162,6 +159,14 @@ private fun PaymentSettingsScreen(
                                                 enabled = row.method != PaymentMethod.CASH && rows.indexOf(row) in 1 until rows.lastIndex,
                                             ) { Text("下へ") }
                                         }
+                                        OutlinedButton(
+                                            onClick = {
+                                                expandedMethod = if (expandedMethod == row.method) null else row.method
+                                            },
+                                        ) {
+                                            Text(if (expandedMethod == row.method) "詳細を閉じる" else "詳細")
+                                        }
+                                        if (expandedMethod == row.method) {
                                         OutlinedTextField(
                                             value = row.receiptName,
                                             onValueChange = { value ->
@@ -260,6 +265,8 @@ private fun PaymentSettingsScreen(
                                             fontSize = 12.sp,
                                             color = Color.DarkGray,
                                         )
+
+                                        }
                                     }
                                 }
                             }
@@ -268,24 +275,9 @@ private fun PaymentSettingsScreen(
                 }
 
                 Column(
-                    Modifier.width(360.dp).fillMaxHeight(),
+                    Modifier.width(256.dp).fillMaxHeight(),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = PsPaleGreen),
-                        border = BorderStroke(1.dp, PsBorder),
-                    ) {
-                        Column(Modifier.fillMaxWidth().padding(14.dp)) {
-                            Text("複合支払", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = PsNavy)
-                            Text(
-                                "有効な支払方法を複数回追加して、1会計を複数支払へ分割できます。",
-                                fontSize = 13.sp,
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            Text("状態：利用可能", color = PsNavy, fontWeight = FontWeight.Bold)
-                        }
-                    }
-
                     Card(
                         colors = CardDefaults.cardColors(containerColor = Color.White),
                         border = BorderStroke(1.dp, PsBorder),
@@ -295,7 +287,7 @@ private fun PaymentSettingsScreen(
                             Text("現在：${initial.terminalAdapter.displayName}", fontWeight = FontWeight.Bold)
                             Spacer(Modifier.height(6.dp))
                             Text(
-                                "自動決済端末連携は未接続です。カード・電子マネー・QRは、外部端末側で決済結果を確認してからレジへ支払を登録してください。",
+                                "カード・電子マネー・QRは外部端末で決済結果を確認してください。",
                                 fontSize = 13.sp,
                                 color = Color.DarkGray,
                             )
