@@ -197,6 +197,7 @@ private fun SaleReceiptReprintLedgerScreen(
         ?: entries.firstOrNull()
 
     Column(Modifier.fillMaxSize()) {
+        // 検索時点固定: 検索スナップショットとkeysetページングはStablePagingStoreで維持する。
         RegisterTopBarV141(title = "レシート再印字履歴", onBack = onClose)
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
