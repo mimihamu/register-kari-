@@ -169,17 +169,6 @@ private fun MobileHeader(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Column {
-            Text(
-                text = "つぐレジ＋",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = "スマホ縦画面で売上確認・取引確認・JSON取込",
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
