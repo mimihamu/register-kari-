@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -103,6 +105,23 @@ fun TsuguRegiPlusFolderSyncScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .background(Color(0xFF173F6B))
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "つぐレジ＋",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+            )
+            TextButton(
+                onClick = { context.startActivity(Intent(context, AppDistributionUpdateActivityV146::class.java)) },
+            ) { Text("アプリの更新を確認", color = Color.White) }
+        }
         ImportFolderBar(
             folderState = current.importFolder,
             connection = connection,
@@ -124,11 +143,6 @@ fun TsuguRegiPlusFolderSyncScreen(
             },
             onClearFolder = onClearImportFolder,
         )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(
-                onClick = { context.startActivity(Intent(context, AppDistributionUpdateActivityV146::class.java)) },
-            ) { Text("アプリの更新を確認") }
-        }
         Box(modifier = Modifier.weight(1f)) {
             TsuguRegiPlusMobileScreen(
                 state = state,
