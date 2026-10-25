@@ -270,17 +270,7 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
 
     Surface(Modifier.fillMaxSize(), color = PlBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(64.dp).background(PlNavy).padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(24.dp))
-                Text("プリンター状態ラボ", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                Text("条件別RAW採取・履歴・最大4件比較", color = Color.White, fontSize = 14.sp)
-            }
-
+            RegisterTopBarV141(title = "プリンター状態ラボ", onBack = { if (!running) onClose() })
             Row(
                 Modifier.weight(1f).fillMaxWidth().padding(14.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -722,10 +712,6 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                 Modifier.fillMaxWidth().height(68.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(onClick = onClose, enabled = !running, modifier = Modifier.width(220.dp).fillMaxHeight()) {
-                    Text("閉じる", fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.weight(1f))
                 Text(
                     "条件ラベルは試験時の人による記録です。STAR／汎用の互換性確認完了を意味しません",
                     color = PlRed,
