@@ -791,18 +791,7 @@ private fun MasterSplitScreen(
 
 @Composable
 private fun CatalogHeader(screenId: String, title: String, onBack: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().height(62.dp).background(CmNavy).padding(horizontal = 18.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(18.dp))
-        Text(if (screenId.isBlank()) title else "$screenId  $title", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
-        OutlinedButton(onClick = onBack, border = BorderStroke(1.dp, Color.White)) {
-            Text("戻る", color = Color.White)
-        }
-    }
+    RegisterTopBarV141(title = title, onBack = onBack)
 }
 
 @Composable
