@@ -201,7 +201,7 @@ private fun ReceiptVoucherOperationsScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        VoucherHeader()
+        VoucherHeader(onClose)
         Row(
             Modifier.weight(1f).fillMaxWidth().padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -542,17 +542,14 @@ private fun ReceiptVoucherOperationsScreen(
             }
         }
         Row(
-            Modifier.fillMaxWidth().height(64.dp).background(Color.White).padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.End,
         ) {
-            Text("領収書履歴は削除せず、再発行も履歴へ追記します", color = Color.DarkGray)
-            Spacer(Modifier.weight(1f))
-            OutlinedButton(
-                onClick = { context.startActivity(ReceiptVoucherNavigation.ledgerIntent(context, selectedSaleId)) },
-                modifier = Modifier.heightIn(min = 46.dp),
-            ) { Text("運用台帳・印刷状態") }
-            Spacer(Modifier.width(8.dp))
-            OutlinedButton(onClick = onClose, modifier = Modifier.heightIn(min = 46.dp)) { Text("管理メニューへ戻る") }
+        OutlinedButton(
+            onClick = { context.startActivity(ReceiptVoucherNavigation.ledgerIntent(context, selectedSaleId)) },
+            modifier = Modifier.heightIn(min = 46.dp),
+        ) { Text("運用台帳・印刷状態") }
+
         }
     }
 }
@@ -571,15 +568,8 @@ private fun VoucherAmountRow(label: String, value: String, emphasized: Boolean =
 }
 
 @Composable
-private fun VoucherHeader() {
-    Row(
-        Modifier.fillMaxWidth().height(58.dp).background(VoucherNavy).padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(20.dp))
-        Text("領収書発行・再発行", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-    }
+private fun VoucherHeader(onClose: () -> Unit) {
+    RegisterTopBarV141(title = "領収書発行・再発行", onBack = onClose)
 }
 
 @Composable
