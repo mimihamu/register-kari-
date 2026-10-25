@@ -91,6 +91,7 @@ private fun ReceiptSettingsApp(
     var showProductCode by remember(revision) { mutableStateOf(layout.showProductCode) }
     var reprintAuth by remember(revision) { mutableStateOf(layout.reprintAuth) }
     var message by remember { mutableStateOf<String?>(null) }
+    var showDetails by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         onDispose { store.close() }
@@ -98,14 +99,26 @@ private fun ReceiptSettingsApp(
 
     Surface(Modifier.fillMaxSize(), color = RsBackground) {
         Column(Modifier.fillMaxSize()) {
-            RegisterTopBarV141(title = "レシート設定", onBack = onClose)
+            RegisterTopBarV141(
+                title = "レシート設定",
+                onBack = onClose,
+                action = {
+                    OutlinedButton(
+                        onClick = { showDetails = !showDetails },
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = Color.White,
+                            contentColor = RsNavy,
+                        ),
+                    ) { Text(if (showDetails) "基本設定" else "詳細設定") }
+                },
+            )
 
             Row(
                 Modifier.weight(1f).fillMaxWidth().padding(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Card(
-                    modifier = Modifier.width(330.dp).fillMaxSize(),
+                if (!showDetails) Card(
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
                     border = BorderStroke(1.dp, RsBorder),
                     shape = RoundedCornerShape(10.dp),
@@ -129,11 +142,6 @@ private fun ReceiptSettingsApp(
                                     )
                                     Text(if (receiptAutoPrint) "会計確定時に自動発行する" else "自動発行しない")
                                 }
-                                Text(
-                                    "OFFでも会計は確定し、売上一覧・会計完了から後レシートを発行できます。",
-                                    fontSize = 12.sp,
-                                    color = Color.DarkGray,
-                                )
                                 Spacer(Modifier.height(8.dp))
                                 Button(
                                     onClick = {
@@ -250,11 +258,6 @@ private fun ReceiptSettingsApp(
                         Text("印字幅：${printer.printableDotWidth}dot")
                         Text("プリンター：${printer.profile.displayName}")
                         Spacer(Modifier.height(6.dp))
-                        Text(
-                            "用紙幅や接続先の変更は「周辺機器設定」で行います。",
-                            fontSize = 12.sp,
-                            color = Color.DarkGray,
-                        )
 
                         message?.let {
                             Spacer(Modifier.height(12.dp))
@@ -267,8 +270,8 @@ private fun ReceiptSettingsApp(
                     }
                 }
 
-                Card(
-                    modifier = Modifier.weight(1f).fillMaxSize(),
+                if (showDetails) Card(
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
                     border = BorderStroke(1.dp, RsBorder),
                     shape = RoundedCornerShape(10.dp),
@@ -285,11 +288,7 @@ private fun ReceiptSettingsApp(
                             fontWeight = FontWeight.Bold,
                             color = RsNavy,
                         )
-                        Text(
-                            "レシート・領収書等の文書別設定、58mm／80mmプレビュー、文字・画像スタンプをまとめて設定します。",
-                            color = Color.DarkGray,
-                            fontSize = 13.sp,
-                        )
+                        Text("58mm／80mmプレビュー・スタンプ", color = RsNavy)
                         Spacer(Modifier.height(8.dp))
                         DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled = receiptAutoPrint)
                         ReceiptTextStampSettingsPanelV136()
