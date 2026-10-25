@@ -1210,36 +1210,56 @@ private fun SalesScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        Header("SCR-100", "販売画面")
-        // Printer faults use a modal dialog instead of a banner that shifts the sales layout.
-        Row(
-            Modifier.fillMaxWidth().height(48.dp).background(Color.White).padding(horizontal = 18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                if (responsive.isCompact) "担当：$operatorName" else "店舗：サンプル居酒屋  |  担当：$operatorName",
-                color = Navy,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-            )
-            Spacer(Modifier.weight(1f))
+        // 販売操作・担当者切替は紺色の共通バーへ統合。白い第二バーは使わない。
+        RegisterTopBarV141(title = "販売", action = {
             if (accessMessage != null) {
-                Text(accessMessage, color = Danger, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(12.dp))
-            } else if (!responsive.isCompact) {
-                Text("SQLite保存・オフライン販売", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(12.dp))
+                Text(
+                    accessMessage,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.width(10.dp))
+            } else {
+                Text(
+                    "担当：$operatorName",
+                    color = Color.White,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.width(10.dp))
             }
             if (canOpenManagement) {
-      OutlinedButton(onClick = onOpenManagement, modifier = Modifier.height(48.dp)) { Text("レジ管理") }
-      Spacer(Modifier.width(8.dp))
-  }
-  if (canOpenSettings && !canOpenManagement) {
-      OutlinedButton(onClick = onOpenSettings, modifier = Modifier.height(48.dp)) { Text("設定") }
-      Spacer(Modifier.width(8.dp))
-  }
-  OutlinedButton(onClick = onLogout, modifier = Modifier.height(48.dp)) { Text("担当者切替") }
-        }
+                OutlinedButton(
+                    onClick = onOpenManagement,
+                    modifier = Modifier.height(48.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = Color.White,
+                        contentColor = Navy,
+                    ),
+                ) { Text("レジ管理", maxLines = 1) }
+                Spacer(Modifier.width(8.dp))
+            }
+            if (canOpenSettings && !canOpenManagement) {
+                OutlinedButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.height(48.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = Color.White,
+                        contentColor = Navy,
+                    ),
+                ) { Text("設定", maxLines = 1) }
+                Spacer(Modifier.width(8.dp))
+            }
+            OutlinedButton(
+                onClick = onLogout,
+                modifier = Modifier.height(48.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = Color.White,
+                    contentColor = Navy,
+                ),
+            ) { Text("担当切替", maxLines = 1) }
+        })
 
         Row(
             Modifier.weight(1f).padding(responsive.screenPaddingDp.dp),
