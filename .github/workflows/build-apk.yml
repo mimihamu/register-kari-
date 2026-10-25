@@ -493,10 +493,10 @@ jobs:
       - name: Verify built APK release identity and integrity
         shell: bash
         env:
-          POS_VERSION_CODE: 170
-          POS_VERSION_NAME: 1.34.6-dev.1
-          PLUS_VERSION_CODE: 38
-          PLUS_VERSION_NAME: 0.33.5-dev.1
+          POS_VERSION_CODE: 171
+          POS_VERSION_NAME: 1.34.7-dev.1
+          PLUS_VERSION_CODE: 39
+          PLUS_VERSION_NAME: 0.33.6-dev.1
           BUILD_TOOLS_VERSION: 36.0.0
         run: |
           set -euo pipefail
@@ -509,9 +509,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v1.34.6_dev1_auto_update_check_debug.apk
-          plus_apk=artifacts/TSUGUREGI_PLUS_v0.33.5_dev1_auto_update_check_debug.apk
-          cd_apk=artifacts/TSUGUREGI_CD_v0.15.8_dev1_auto_update_check_debug.apk
+          register_apk=artifacts/TSUGUREGI_v1.34.7_dev1_ui_audit_debug.apk
+          plus_apk=artifacts/TSUGUREGI_PLUS_v0.33.6_dev1_ui_audit_debug.apk
+          cd_apk=artifacts/TSUGUREGI_CD_v0.15.9_dev1_ui_audit_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
           cp management-app/build/outputs/apk/debug/management-app-debug.apk "$plus_apk"
           cp customer-display/build/outputs/apk/debug/customer-display-debug.apk "$cd_apk"
@@ -522,12 +522,12 @@ jobs:
           stat --printf='MANAGEMENT_APP_APK_SIZE_BYTES=%s\n' "$plus_apk" | tee -a artifacts/build-summary.txt
           stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' "$cd_apk" | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=1.34.6-dev.1
-          REGISTER_VERSION_CODE=170
-          MANAGEMENT_APP_VERSION_NAME=0.33.5-dev.1
-          MANAGEMENT_APP_VERSION_CODE=38
-          CUSTOMER_DISPLAY_VERSION_NAME=0.15.8-dev.1
-          CUSTOMER_DISPLAY_VERSION_CODE=16
+          REGISTER_VERSION_NAME=1.34.7-dev.1
+          REGISTER_VERSION_CODE=171
+          MANAGEMENT_APP_VERSION_NAME=0.33.6-dev.1
+          MANAGEMENT_APP_VERSION_CODE=39
+          CUSTOMER_DISPLAY_VERSION_NAME=0.15.9-dev.1
+          CUSTOMER_DISPLAY_VERSION_CODE=17
           DRIVE_REMOTE_VERSION_FINGERPRINT=true
           DRIVE_PAGINATION_COMPLETE=true
           DRIVE_SYNC_SINGLE_FLIGHT=true
@@ -578,7 +578,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v1.34.6-dev1-auto-updater-apks
+          name: TSUGUREGI-v1.34.7-dev1-ui-audit-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
