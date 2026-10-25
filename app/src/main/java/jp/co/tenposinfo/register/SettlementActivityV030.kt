@@ -183,6 +183,7 @@ private fun SettlementScreenV030(
     var backupFailureAcknowledged by remember { mutableStateOf(false) }
     var showConfirmation by remember { mutableStateOf(false) }
     var pdfMessage by remember { mutableStateOf<String?>(null) }
+    var rightPanelV152 by remember { mutableStateOf(0) }
     val latestRecord = history.firstOrNull()
     val pdfLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument(SettlementPdfExportPolicyV135.MIME_TYPE),
@@ -248,7 +249,8 @@ private fun SettlementScreenV030(
     Column(Modifier.fillMaxSize()) {
         SettlementHeaderV030(metrics, reportType, onClose)
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-            val compact = metrics.isCompact || maxWidth < 1_080.dp || maxHeight < 560.dp
+            val compact = maxWidth < 700.dp
+            val twoPane = maxWidth < 1_080.dp
             if (compact) {
                 Column(
                     Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(metrics.screenPaddingDp.dp),
@@ -268,6 +270,46 @@ private fun SettlementScreenV030(
                         Modifier.fillMaxWidth(), summary, rep001Totals, taxBreakdown, previewActual, variance, preflight, isZ,
                     )
                     SettlementHistoryPanelV030(Modifier.fillMaxWidth().heightIn(min = 180.dp), history, pdfMessage)
+                }
+            } else if (twoPane) {
+                Row(
+                    Modifier.fillMaxSize().padding(metrics.screenPaddingDp.dp),
+                    horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
+                ) {
+                    SettlementInputPanelV030(
+                        Modifier.weight(1f).fillMaxHeight(), reportType, session, summary, operatorName,
+                        actualCash, managerPin, pendingAcknowledged, backupFailureAcknowledged,
+                        preflight, message,
+                        { actualCash = it.filter(Char::isDigit).take(12) },
+                        { managerPin = it.filter(Char::isDigit).take(8) },
+                        { pendingAcknowledged = it },
+                        { backupFailureAcknowledged = it },
+                        { if (isZ) { if (preflight.mayProceed) showConfirmation = true } else onExecute(actual, "", false, false) },
+                        scrollPanel = true,
+                    )
+                    Column(Modifier.weight(1f).fillMaxHeight()) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            OutlinedButton(onClick = { rightPanelV152 = 0 }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                                Text("プレビュー")
+                            }
+                            OutlinedButton(onClick = { rightPanelV152 = 1 }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                                Text("保存履歴")
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        if (rightPanelV152 == 0) {
+                            SettlementPreviewPanelV030(
+                                Modifier.weight(1f).fillMaxWidth(),
+                                summary, rep001Totals, taxBreakdown, previewActual, variance, preflight, isZ,
+                                scrollPanel = true,
+                            )
+                        } else {
+                            SettlementHistoryPanelV030(Modifier.weight(1f).fillMaxWidth(), history, pdfMessage)
+                        }
+                    }
                 }
             } else {
                 Row(
@@ -322,10 +364,11 @@ private fun SettlementInputPanelV030(
     onPendingAcknowledgedChanged: (Boolean) -> Unit,
     onBackupFailureAcknowledgedChanged: (Boolean) -> Unit,
     onExecute: () -> Unit,
+    scrollPanel: Boolean = false,
 ) {
     val isZ = reportType == SettlementReportType.Z_SETTLEMENT
     val actualCashMaySubmit = SettlementActualCashSafetyV105.maySubmit(reportType, actualCash.toLongOrNull())
-    SettlementPanelV030(modifier) {
+    SettlementPanelV030(modifier, scrollable = scrollPanel) {
         Text(
             if (isZ) "Z精算・営業終了" else "X点検",
             fontSize = 22.sp,
@@ -430,11 +473,12 @@ private fun SettlementPreviewPanelV030(
     variance: Long?,
     preflight: ZSettlementPreflightResult,
     isZ: Boolean,
+    scrollPanel: Boolean = false,
 ) {
     val netTax = taxBreakdown.sumOf { it.taxAmountYen }
     val cashSales = summary.paymentTotals.firstOrNull { it.method == PaymentMethod.CASH.name }?.amount ?: 0L
     val nonCashSales = summary.paymentTotals.filterNot { it.method == PaymentMethod.CASH.name }.sumOf { it.amount }
-    SettlementPanelV030(modifier) {
+    SettlementPanelV030(modifier, scrollable = scrollPanel) {
         Text("プレビュー", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = SettlementNavyV030)
         Spacer(Modifier.height(10.dp))
         SettlementAmountV030("営業セッション", if (summary.businessSessionId > 0) "No.${summary.businessSessionId}" else "未開始")
@@ -526,6 +570,7 @@ private fun SettlementHistoryPanelV030(
 @Composable
 private fun SettlementPanelV030(
     modifier: Modifier,
+    scrollable: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val metrics = rememberRegisterResponsiveMetrics()
@@ -535,7 +580,11 @@ private fun SettlementPanelV030(
         border = BorderStroke(1.dp, SettlementBorderV030),
         shape = RoundedCornerShape(10.dp),
     ) {
-        Column(Modifier.fillMaxSize().padding(metrics.cardPaddingDp.dp), content = content)
+        Column(
+            Modifier.fillMaxSize().padding(metrics.cardPaddingDp.dp)
+                .then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier),
+            content = content,
+        )
     }
 }
 
