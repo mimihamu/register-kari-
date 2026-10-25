@@ -104,16 +104,7 @@ private fun PaymentSettingsScreen(
 
     Surface(Modifier.fillMaxSize(), color = PsBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(62.dp).background(PsNavy).padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("つぐレジ", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(22.dp))
-                Text("SCR-630B  支払設定", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.weight(1f))
-                Text("認証：$actor", color = Color.White, fontSize = 13.sp)
-            }
+            RegisterTopBarV141(title = "支払設定", onBack = onClose)
 
             Row(
                 Modifier.weight(1f).fillMaxWidth().padding(16.dp),
@@ -344,12 +335,7 @@ private fun PaymentSettingsScreen(
                     ) {
                         Text("保存", fontWeight = FontWeight.Bold)
                     }
-                    OutlinedButton(
-                        onClick = onClose,
-                        modifier = Modifier.fillMaxWidth().height(50.dp),
-                    ) {
-                        Text("戻る")
-                    }
+
                 }
             }
         }
