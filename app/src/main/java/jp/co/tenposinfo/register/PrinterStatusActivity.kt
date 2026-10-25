@@ -145,17 +145,7 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
 
     Surface(Modifier.fillMaxSize(), color = PsBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(64.dp).background(PsNavy).padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(24.dp))
-                Text("プリンター状態診断", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                Text("EPSON確認済み／STAR・汎用は手動互換試行", color = Color.White, fontSize = 14.sp)
-            }
-
+            RegisterTopBarV141(title = "プリンター状態診断", onBack = onClose)
             Row(
                 Modifier.weight(1f).fillMaxWidth().padding(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -389,9 +379,7 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
                 Modifier.fillMaxWidth().height(72.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(onClick = onClose, modifier = Modifier.width(240.dp).fillMaxHeight()) {
-                    Text("閉じる", fontWeight = FontWeight.Bold)
-                }
+
                 Spacer(Modifier.weight(1f))
                 Text(
                     if (capability.automaticQueryAllowed) {
