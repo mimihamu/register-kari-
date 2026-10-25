@@ -57,7 +57,7 @@ class V140SalesUsabilityTest {
         assertTrue(hub.contains("\"返品・取消\""))
         assertFalse(hub.contains("private fun HubLegacyPanelV030("))
         assertTrue(hub.contains("OperationsLegacyRouteV140.intent(this, destination)"))
-        assertTrue(hub.contains("HubHeaderV030(metrics, openSettings)"))
+        assertTrue(hub.contains("HubHeaderV030(metrics, openSettings, onClose)"))
         assertTrue(hub.contains("Intent(this, AdminSettingsActivity::class.java)"))
         assertTrue(hub.contains("RegisterPermission.BUSINESS_START in permissions"))
         assertTrue(hub.contains("openBusiness,"))
