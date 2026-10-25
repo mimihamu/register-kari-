@@ -20,6 +20,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -410,70 +411,27 @@ private fun AdminMenuScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        AsHeader("SCR-690", "各種設定", "認証：$actorName")
-        Row(Modifier.weight(1f).padding(20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-            AsPanel(Modifier.width(360.dp).fillMaxHeight()) {
-                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                    Text("設定状態", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AsNavy)
-                    Spacer(Modifier.height(18.dp))
-                    AsValueRow("有効担当者", "${operatorCount}名")
-                    AsValueRow("プリンター", if (printer.usable) "接続設定済み" else "未設定")
-                    AsValueRow("接続方式", printer.connectionType.displayName)
-                    AsValueRow("接続先", PrinterTransportPolicyV136.endpointDisplay(printer).ifBlank { "－" })
-                    AsValueRow("機種", printer.profile.displayName)
-                    AsValueRow("用紙幅", "${printer.paperWidthMm}mm")
-                    AsValueRow("監査ログ", "${auditCount}件")
-                    AsValueRow("未保存変更", "0件（ホーム）")
-                    AsValueRow(
-                        "最終バックアップ",
-                        lastBackupAt?.let(::asDateTime) ?: "未実行",
-                    )
-                    AsValueRow(
-                        "Drive同期",
-                        when {
-                            driveSyncRunning -> "送信中"
-                            driveSyncHasError -> "要確認"
-                            driveSyncAt != null -> "最終 " + asDateTime(driveSyncAt)
-                            else -> "未実行"
-                        },
-                    )
-                    AsValueRow(
-                        "設定異常",
-                        if (settingIssueCount == 0) "なし" else "${settingIssueCount}件 要確認",
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (settingIssueCount == 0) AsPaleGreen else AsPaleYellow,
-                        ),
-                        border = BorderStroke(1.dp, AsBorder),
-                    ) {
-                        Text(
-                            if (settingIssueCount == 0) {
-                                "主要な設定状態に異常はありません。右側から目的の設定を選択してください。"
-                            } else {
-                                "担当者・プリンター・バックアップ・Drive同期状態に要確認項目があります。該当カテゴリから確認してください。"
-                            },
-                            modifier = Modifier.padding(12.dp),
-                            color = Color.DarkGray,
-                            lineHeight = 20.sp,
-                        )
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        "設定名や関連語で検索できます。例：プリンター、バックアップ、担当者、Drive",
-                        color = Color.DarkGray,
-                        lineHeight = 21.sp,
-                    )
-                }
+        AsHeader("SCR-690", "各種設定", "認証：$actorName", onBack = onClose, action = {
+            OutlinedButton(
+                onClick = onLock,
+                colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White, contentColor = AsNavy),
+            ) { Text("ロック", color = AsNavy) }
+        })
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(16.dp)) {
+            // 横800×480でも3列。文字倍率・高さによって縦1列へは落とさない。
+            val columns = when {
+                maxWidth < 540.dp -> 1
+                maxWidth < 1_050.dp -> 3
+                else -> 4
             }
-
-            Column(Modifier.weight(1f)) {
+            if (settingIssueCount > 0 || driveSyncHasError || backupHasError) {
+                // Important failures remain visible inside the category list below.
+            }
+            Column(Modifier.fillMaxSize()) {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it.take(40) },
                     label = { Text("設定を検索") },
-                    placeholder = { Text("設定名・機能名・関連語") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -489,9 +447,9 @@ private fun AdminMenuScreen(
                                 description = "店舗運用で日常的に使う設定",
                             )
                         }
-                        items(filteredDaily.chunked(3)) { rowEntries ->
+                        items(filteredDaily.chunked(columns)) { rowEntries ->
                             Row(
-                                Modifier.fillMaxWidth().height(132.dp),
+                                Modifier.fillMaxWidth().height(104.dp),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
                                 rowEntries.forEach { entry ->
@@ -503,7 +461,7 @@ private fun AdminMenuScreen(
                                         entry.onClick,
                                     )
                                 }
-                                repeat(3 - rowEntries.size) {
+                                repeat(columns - rowEntries.size) {
                                     Spacer(Modifier.weight(1f))
                                 }
                             }
@@ -517,9 +475,9 @@ private fun AdminMenuScreen(
                                 description = "バックアップ、同期、監査、診断など管理・保守向け",
                             )
                         }
-                        items(filteredMaintenance.chunked(3)) { rowEntries ->
+                        items(filteredMaintenance.chunked(columns)) { rowEntries ->
                             Row(
-                                Modifier.fillMaxWidth().height(132.dp),
+                                Modifier.fillMaxWidth().height(104.dp),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
                                 rowEntries.forEach { entry ->
@@ -531,7 +489,7 @@ private fun AdminMenuScreen(
                                         entry.onClick,
                                     )
                                 }
-                                repeat(3 - rowEntries.size) {
+                                repeat(columns - rowEntries.size) {
                                     Spacer(Modifier.weight(1f))
                                 }
                             }
@@ -557,14 +515,7 @@ private fun AdminMenuScreen(
                     }
                 }
             }
-        }
-        Row(
-            Modifier.fillMaxWidth().height(74.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            OutlinedButton(onClick = onClose, modifier = Modifier.width(220.dp).fillMaxHeight()) { Text("販売へ戻る") }
-            Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = onLock, modifier = Modifier.width(220.dp).fillMaxHeight()) { Text("設定をロック") }
+
         }
     }
 }
@@ -622,7 +573,7 @@ private fun OperatorMasterScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        AsHeader("SCR-650", "担当者・権限マスター", "有効 ${operators.count { it.enabled }}名")
+        AsHeader("SCR-650", "担当者・権限マスター", "有効 ${operators.count { it.enabled }}名", onBack = onBack)
         Row(Modifier.weight(1f).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             AsPanel(Modifier.width(420.dp).fillMaxHeight()) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -765,7 +716,6 @@ private fun OperatorMasterScreen(
                 }
             }
         }
-        AsBottomBar("各種設定へ戻る", onBack)
     }
 }
 
@@ -939,7 +889,7 @@ private fun PrinterSettingsScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        AsHeader("SCR-660", "プリンター・ドロア設定", profile.displayName)
+        AsHeader("SCR-660", "プリンター・ドロア設定", profile.displayName, onBack = onBack)
         Row(Modifier.weight(1f).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             AsPanel(Modifier.width(650.dp).fillMaxHeight()) {
                 Text("接続・機種設定", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AsNavy)
@@ -1338,7 +1288,6 @@ private fun PrinterSettingsScreen(
                 )
             }
         }
-        AsBottomBar("各種設定へ戻る", onBack)
     }
 }
 
@@ -1355,7 +1304,7 @@ private fun ManagerPinScreen(
     var message by remember { mutableStateOf<String?>(null) }
 
     Column(Modifier.fillMaxSize()) {
-        AsHeader("SCR-650", "責任者PIN設定", "認証：$actorName")
+        AsHeader("SCR-650", "責任者PIN設定", "認証：$actorName", onBack = onBack)
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             AsPanel(Modifier.width(600.dp).height(520.dp)) {
                 Text("責任者PINを変更", fontSize = 27.sp, fontWeight = FontWeight.Bold, color = AsNavy)
@@ -1399,7 +1348,6 @@ private fun ManagerPinScreen(
                 }
             }
         }
-        AsBottomBar("各種設定へ戻る", onBack)
     }
 }
 
@@ -1413,7 +1361,7 @@ private fun AuditLogScreen(
     val logs = remember(query, revision) { store.listAuditLogs(query = query) }
 
     Column(Modifier.fillMaxSize()) {
-        AsHeader("SCR-680", "監査ログ", "${logs.size}件表示")
+        AsHeader("SCR-680", "監査ログ", "${logs.size}件表示", onBack = onBack)
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1447,7 +1395,6 @@ private fun AuditLogScreen(
                 }
             }
         }
-        AsBottomBar("各種設定へ戻る", onBack)
     }
 }
 
@@ -1465,8 +1412,14 @@ private fun AsPinField(label: String, value: String, onValueChange: (String) -> 
 }
 
 @Composable
-private fun AsHeader(screenId: String, title: String, status: String) {
-    RegisterTopBarV141(title)
+private fun AsHeader(
+    screenId: String,
+    title: String,
+    status: String,
+    onBack: (() -> Unit)? = null,
+    action: (@Composable () -> Unit)? = null,
+) {
+    RegisterTopBarV141(title = title, action = action, onBack = onBack)
 }
 
 @Composable
@@ -1486,11 +1439,10 @@ private fun AsMenuTile(title: String, description: String, background: Color, mo
     Card(
         modifier = modifier.fillMaxHeight().clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = background),
-        border = BorderStroke(1.dp, AsBorder),
         shape = RoundedCornerShape(12.dp),
     ) {
         Column(
-            Modifier.fillMaxSize().padding(20.dp),
+            Modifier.fillMaxSize().padding(12.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
