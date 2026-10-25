@@ -161,7 +161,7 @@ private fun SettlementHistoryScreenV030(
     }
 
     Column(Modifier.fillMaxSize()) {
-        HistoryHeaderV030(metrics)
+        HistoryHeaderV030(metrics, onClose)
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val compact = metrics.isCompact || maxWidth < 1_100.dp || maxHeight < 560.dp
             if (compact) {
@@ -249,7 +249,6 @@ private fun SettlementHistoryScreenV030(
                 }
             }
         }
-        HistoryBottomV030(metrics, onClose)
     }
 }
 
@@ -512,37 +511,8 @@ private fun HistoryAmountV030(label: String, value: String, emphasized: Boolean 
 }
 
 @Composable
-private fun HistoryHeaderV030(metrics: RegisterResponsiveMetrics) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(metrics.headerHeightDp.dp)
-            .background(HistoryNavyV030)
-            .padding(horizontal = metrics.screenPaddingDp.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = if (metrics.isCompact) 19.sp else 23.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(if (metrics.isCompact) 12.dp else 24.dp))
-        Text("SCR-520  点検・精算履歴", color = Color.White, fontSize = if (metrics.isCompact) 17.sp else 21.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
-        if (!metrics.isCompact) Text("オフライン管理", color = Color.White, fontSize = 14.sp)
-    }
-}
-
-@Composable
-private fun HistoryBottomV030(metrics: RegisterResponsiveMetrics, onClose: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(metrics.bottomBarHeightDp.dp)
-            .background(Color.White)
-            .padding(horizontal = metrics.screenPaddingDp.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        OutlinedButton(onClick = onClose, modifier = Modifier.weight(1f).fillMaxHeight()) {
-            Text("レジ管理へ戻る", fontWeight = FontWeight.Bold)
-        }
-    }
+private fun HistoryHeaderV030(metrics: RegisterResponsiveMetrics, onClose: () -> Unit) {
+    RegisterTopBarV141(title = "点検・精算履歴", onBack = onClose)
 }
 
 @Composable
