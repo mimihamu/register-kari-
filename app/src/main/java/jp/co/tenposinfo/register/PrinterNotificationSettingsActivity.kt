@@ -142,17 +142,7 @@ private fun PrinterNotificationSettingsScreen(
 
     Surface(Modifier.fillMaxSize(), color = PnBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(64.dp).background(PnNavy).padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(24.dp))
-                Text("プリンター通知・試験", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                Text("管理者通知と実機検証", color = Color.White, fontSize = 14.sp)
-            }
-
+            RegisterTopBarV141(title = "プリンター通知・試験", onBack = onClose)
             Column(
                 Modifier.weight(1f).fillMaxWidth().padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -231,9 +221,7 @@ private fun PrinterNotificationSettingsScreen(
                 Modifier.fillMaxWidth().height(72.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(onClick = onClose, modifier = Modifier.width(240.dp).fillMaxHeight()) {
-                    Text("閉じる", fontWeight = FontWeight.Bold)
-                }
+
                 Spacer(Modifier.weight(1f))
                 Text("連続印刷試験は実機確認用です。開始前にロール紙と排紙口を確認してください", color = PnRed, fontWeight = FontWeight.Bold)
             }
