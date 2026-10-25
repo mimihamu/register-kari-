@@ -722,8 +722,13 @@ private fun CustomerDisplayConnectionSettingsScreen(
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF173F6B),
                 )
-                if (initial.isConfigured) {
-                    OutlinedButton(onClick = onCancel) { Text("戻る") }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { context.startActivity(android.content.Intent(context, AppDistributionUpdateActivityV146::class.java)) },
+                    ) { Text("アプリ更新") }
+                    if (initial.isConfigured) {
+                        OutlinedButton(onClick = onCancel) { Text("戻る") }
+                    }
                 }
             }
 

@@ -124,6 +124,11 @@ fun TsuguRegiPlusFolderSyncScreen(
             },
             onClearFolder = onClearImportFolder,
         )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(
+                onClick = { context.startActivity(Intent(context, AppDistributionUpdateActivityV146::class.java)) },
+            ) { Text("アプリの更新を確認") }
+        }
         Box(modifier = Modifier.weight(1f)) {
             TsuguRegiPlusMobileScreen(
                 state = state,

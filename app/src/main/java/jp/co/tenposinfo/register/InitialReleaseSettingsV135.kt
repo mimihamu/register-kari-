@@ -607,6 +607,10 @@ private fun DeviceSettingsScreenV135(store: InitialReleaseSettingsStoreV135, act
         Text("※ Androidの端末固定モードは、端末管理者（Device Owner）などの端末側許可がある場合のみ有効になります。", fontSize = 13.sp)
         BoolRowV135("操作音を有効", value.operationSoundEnabled) { value = value.copy(operationSoundEnabled = it) }
         BoolRowV135("更新確認を有効", value.automaticUpdateCheck) { value = value.copy(automaticUpdateCheck = it) }
+        OutlinedButton(
+            onClick = { context.startActivity(Intent(context, AppDistributionUpdateActivityV146::class.java)) },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("アプリの更新を確認") }
         NumericSettingV135("空き容量警告しきい値（MB）", value.storageWarningMb) { value = value.copy(storageWarningMb = it) }
         OutlinedButton(
             onClick = { context.startActivity(Intent(context, DataProtectionActivity::class.java)) },
