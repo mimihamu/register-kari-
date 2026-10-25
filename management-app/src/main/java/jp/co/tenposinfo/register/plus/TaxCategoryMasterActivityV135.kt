@@ -39,7 +39,9 @@ class TaxCategoryMasterActivityV135 : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configurePlusSystemBarsV148(window)
         setContent {
+            PlusSafeAreaV148 {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     var rules by remember { mutableStateOf(store.listAll()) }
@@ -81,6 +83,7 @@ class TaxCategoryMasterActivityV135 : ComponentActivity() {
                         )
                     }
                 }
+            }
             }
         }
     }
