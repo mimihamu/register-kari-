@@ -57,6 +57,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -1217,7 +1218,9 @@ private fun SalesScreen(
                     accessMessage,
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
+                    modifier = Modifier.width(if (responsive.isCompact) 120.dp else 200.dp),
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.width(10.dp))
             } else {
@@ -1225,7 +1228,9 @@ private fun SalesScreen(
                     "担当：$operatorName",
                     color = Color.White,
                     fontWeight = FontWeight.Medium,
+                    modifier = Modifier.width(if (responsive.isCompact) 94.dp else 150.dp),
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.width(10.dp))
             }
