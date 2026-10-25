@@ -232,17 +232,11 @@ private fun SaleReceiptReprintScreen(
     val receiptText = ReceiptRenderer.render(receiptData, paper)
 
     Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().height(58.dp).background(SaleReceiptNavy).padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.width(20.dp))
-            Text("SCR-647  売上指定 レシート確認・再印字", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.weight(1f))
-            Text("売上No.${detail.summary.id} 固定", color = Color.White, fontWeight = FontWeight.Bold)
-        }
-
+        RegisterTopBarV141(
+            title = "レシート確認・再印字",
+            onBack = onClose,
+            action = { Text("売上No.${detail.summary.id}", color = Color.White, maxLines = 1) },
+        )
         Row(
             Modifier.weight(1f).fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -400,21 +394,6 @@ private fun SaleReceiptReprintScreen(
             }
         }
 
-        Row(
-            Modifier.fillMaxWidth().height(68.dp).background(Color.White).padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedButton(onClick = onClose, modifier = Modifier.width(220.dp).fillMaxHeight()) {
-                Text("元画面へ戻る", fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.weight(1f))
-            Text(
-                "構造化売上からプレビュー / 再印字要求は冪等・追記専用監査",
-                color = SaleReceiptGreen,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.End,
-            )
-        }
     }
 }
 
