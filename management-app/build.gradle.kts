@@ -92,8 +92,11 @@ android {
         // v1.47 signed CI build retained for upgrade history.
         // versionCode = 38
         // versionName = "0.33.5-dev.1"
-        versionCode = 39
-        versionName = "0.33.6-dev.1"
+        // v1.48 verified build
+        // versionCode = 39
+        // versionName = "0.33.6-dev.1"
+        versionCode = 40
+        versionName = "0.33.7-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ＋"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
