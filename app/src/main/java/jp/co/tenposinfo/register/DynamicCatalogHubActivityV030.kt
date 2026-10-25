@@ -149,9 +149,10 @@ private fun DynamicCatalogHubScreenV030(
 ) {
     val metrics = rememberRegisterResponsiveMetrics()
     Column(Modifier.fillMaxSize()) {
-        DynamicHubHeaderV030(metrics)
+        DynamicHubHeaderV030(metrics, onClose)
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-            val compact = metrics.isCompact || maxWidth < 1_080.dp || maxHeight < 600.dp
+            val compact = maxWidth < 700.dp
+            val twoColumn = maxWidth < 1_080.dp
             Column(
                 Modifier
                     .fillMaxSize()
@@ -169,6 +170,15 @@ private fun DynamicCatalogHubScreenV030(
                     DynamicHubTileV030("SCR-271", "任意税率マスター", "第3税率、内税・外税・非課税、税記号", DynamicHubPaleBlueV030, onTaxRules, Modifier.fillMaxWidth())
                     DynamicHubTileV030("SCR-272", "商品への税区分割当", "商品ごとの標準税区分・追加税率", DynamicHubPaleGreenV030, onAssignments, Modifier.fillMaxWidth())
                     DynamicHubTileV030("SCR-273", "メニュー改定予約", "適用営業日を指定した不変スナップショット", DynamicHubPaleYellowV030, onRevisions, Modifier.fillMaxWidth())
+                } else if (twoColumn) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp)) {
+                        DynamicHubSummaryV030(Modifier.weight(1f), activeTaxRuleCount, scheduledRevisionCount, activeRevisionName)
+                        DynamicHubTileV030("SCR-271", "任意税率マスター", "", DynamicHubPaleBlueV030, onTaxRules, Modifier.weight(1f))
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp)) {
+                        DynamicHubTileV030("SCR-272", "商品への税区分割当", "", DynamicHubPaleGreenV030, onAssignments, Modifier.weight(1f))
+                        DynamicHubTileV030("SCR-273", "メニュー改定予約", "", DynamicHubPaleYellowV030, onRevisions, Modifier.weight(1f))
+                    }
                 } else {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp)) {
                         DynamicHubSummaryV030(
@@ -187,21 +197,10 @@ private fun DynamicCatalogHubScreenV030(
                     DynamicHubActionV030("改定内容編集", onRevisionEditor, Modifier.weight(1f))
                     DynamicHubActionV030("同期基盤", onSync, Modifier.weight(1f))
                 }
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = BorderStroke(1.dp, DynamicHubBorderV030),
-                    shape = RoundedCornerShape(10.dp),
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(metrics.cardPaddingDp.dp)) {
-                        Text("適用ルール", fontWeight = FontWeight.Bold, color = DynamicHubNavyV030, fontSize = 19.sp)
-                        Spacer(Modifier.height(8.dp))
-                        Text("税率は0～100%の整数で追加し、1インボイス・税率単位で合算後に一度だけ端数処理します。")
-                        Text("予約した改定は適用営業日まで現在のメニューへ影響せず、適用後は予約時点の商品名・価格・税区分・配置を使用します。")
-                    }
-                }
+
             }
         }
-        DynamicHubBottomV030(metrics, onClose)
+        // Back is in the common top-left header.
     }
 }
 
@@ -271,15 +270,9 @@ private fun DynamicHubValueV030(label: String, value: String) {
 }
 
 @Composable
-private fun DynamicHubHeaderV030(metrics: RegisterResponsiveMetrics) {
-    Row(
-        Modifier.fillMaxWidth().height(metrics.headerHeightDp.dp).background(DynamicHubNavyV030).padding(horizontal = metrics.screenPaddingDp.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = if (metrics.isCompact) 19.sp else 23.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(if (metrics.isCompact) 12.dp else 24.dp))
-        Text("SCR-270  任意税率・メニュー改定", color = Color.White, fontSize = if (metrics.isCompact) 17.sp else 21.sp, fontWeight = FontWeight.SemiBold)
-    }
+private fun DynamicHubHeaderV030(metrics: RegisterResponsiveMetrics, onClose: () -> Unit) {
+    // SCR-270  任意税率・メニュー改定
+    RegisterTopBarV141(title = "任意税率・メニュー改定", onBack = onClose)
 }
 
 @Composable
