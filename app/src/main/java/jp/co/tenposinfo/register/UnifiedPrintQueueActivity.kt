@@ -100,6 +100,7 @@ private fun UnifiedPrintQueueApp(onClose: () -> Unit) {
     var message by remember { mutableStateOf<String?>(null) }
     var working by remember { mutableStateOf(false) }
     var lastPrinterStatus by remember { mutableStateOf<PrinterRealtimeStatus?>(null) }
+    var queuePanelV152 by remember { mutableStateOf(0) }
     var managerPin by remember { mutableStateOf("") }
     var discardReason by remember { mutableStateOf("") }
     var forceConfirmed by remember { mutableStateOf(false) }
@@ -222,7 +223,8 @@ private fun UnifiedPrintQueueApp(onClose: () -> Unit) {
             BoxWithConstraints(
                 Modifier.weight(1f).fillMaxWidth().padding(responsive.screenPaddingDp.dp),
             ) {
-                val stacked = responsive.isCompact || maxWidth < 1_180.dp || maxHeight < 620.dp
+                val stacked = maxWidth < 700.dp
+                val twoPane = maxWidth < 1_180.dp
                 if (stacked) {
                     Column(
                         Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
@@ -280,6 +282,83 @@ private fun UnifiedPrintQueueApp(onClose: () -> Unit) {
                             onResolveUncertain = ::executeResolveUncertain,
                             onReprintUncertain = ::executeReprintUncertain,
                         )
+                    }
+                } else if (twoPane) {
+                    Row(
+                        Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
+                    ) {
+                        JobListPanel(
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            jobs = jobs,
+                            criteria = criteria,
+                            selectedKey = selectedKey,
+                            onCriteriaChange = { criteria = it },
+                            onSelect = {
+                                selectedKey = it.key
+                                message = null
+                                resetApprovalInputs()
+                                queuePanelV152 = 0
+                            },
+                        )
+                        Column(Modifier.weight(1f).fillMaxHeight()) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(
+                                    onClick = { queuePanelV152 = 0 },
+                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                ) { Text("ジョブ詳細") }
+                                OutlinedButton(
+                                    onClick = { queuePanelV152 = 1 },
+                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                ) { Text("プリンター") }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            if (queuePanelV152 == 0) {
+                                JobDetailPanel(
+                                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                                    selected = selected,
+                                    working = working,
+                                    managerPin = managerPin,
+                                    discardReason = discardReason,
+                                    forceConfirmed = forceConfirmed,
+                                    onManagerPinChanged = { managerPin = it.filter(Char::isDigit).take(8) },
+                                    onDiscardReasonChanged = { discardReason = it.take(200) },
+                                    onForceConfirmedChanged = { forceConfirmed = it },
+                                    onRetry = ::executeRetry,
+                                    onSafePrint = { executePrint(it, safe = true) },
+                                    onForcePrint = { executePrint(it, safe = false) },
+                                    onDiscard = ::executeDiscard,
+                                    onResolveUncertain = ::executeResolveUncertain,
+                                    onReprintUncertain = ::executeReprintUncertain,
+                                    scrollPanel = true,
+                                )
+                            } else {
+                                PrinterSummaryPanel(
+                                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                                    configuration = configuration,
+                                    summary = summary,
+                                    status = lastPrinterStatus,
+                                    working = working,
+                                    onStatusCheck = {
+                                        working = true
+                                        message = "プリンター状態を確認しています…"
+                                        scope.launch {
+                                            val result = withContext(Dispatchers.IO) { controller.queryPrinterStatus(configuration) }
+                                            result.onSuccess {
+                                                lastPrinterStatus = it
+                                                message = "状態確認：${it.summary}"
+                                            }.onFailure {
+                                                lastPrinterStatus = null
+                                                message = it.message ?: "状態確認に失敗しました"
+                                            }
+                                            working = false
+                                        }
+                                    },
+                                    onRefresh = { refresh() },
+                                    scrollPanel = true,
+                                )
+                            }
+                        }
                     }
                 } else {
                     Row(
@@ -381,8 +460,9 @@ private fun PrinterSummaryPanel(
     working: Boolean,
     onStatusCheck: () -> Unit,
     onRefresh: () -> Unit,
+    scrollPanel: Boolean = false,
 ) {
-    QueuePanel(modifier) {
+    QueuePanel(modifier, scrollable = scrollPanel) {
         Text("プリンターと件数", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = UqNavy)
         Spacer(Modifier.height(10.dp))
         QueueValue("プリンター", configuration.name)
@@ -530,8 +610,9 @@ private fun JobDetailPanel(
     onDiscard: (UnifiedPrintJob) -> Unit,
     onResolveUncertain: (UnifiedPrintJob) -> Unit,
     onReprintUncertain: (UnifiedPrintJob) -> Unit,
+    scrollPanel: Boolean = false,
 ) {
-    QueuePanel(modifier) {
+    QueuePanel(modifier, scrollable = scrollPanel) {
         Text("ジョブ詳細", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = UqNavy)
         Spacer(Modifier.height(8.dp))
         if (selected == null) {
@@ -713,14 +794,22 @@ private fun QueueFooter(heightDp: Int, message: String?, working: Boolean) {
 }
 
 @Composable
-private fun QueuePanel(modifier: Modifier = Modifier, content: @Composable Column.() -> Unit) {
+private fun QueuePanel(
+    modifier: Modifier = Modifier,
+    scrollable: Boolean = false,
+    content: @Composable Column.() -> Unit,
+) {
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = Color.White),
         border = BorderStroke(1.dp, UqBorder),
         shape = RoundedCornerShape(10.dp),
     ) {
-        Column(Modifier.fillMaxSize().padding(14.dp), content = content)
+        Column(
+            Modifier.fillMaxSize().padding(14.dp)
+                .then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier),
+            content = content,
+        )
     }
 }
 
