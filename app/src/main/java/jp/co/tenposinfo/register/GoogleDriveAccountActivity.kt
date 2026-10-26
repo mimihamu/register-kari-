@@ -576,6 +576,7 @@ private fun GoogleDriveAccountScreen(
         }
     }
 }
+}
 
 @Composable
 private fun AccountCard(state: GoogleDriveAccountState, modifier: Modifier) {
