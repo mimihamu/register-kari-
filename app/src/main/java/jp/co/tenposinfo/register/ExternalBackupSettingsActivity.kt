@@ -170,16 +170,7 @@ private fun ExternalBackupSettingsScreen(onClose: () -> Unit) {
 
     Surface(Modifier.fillMaxSize(), color = EbsBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(64.dp).background(EbsNavy).padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(24.dp))
-                Text("外部自動バックアップ設定", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                Text("内部バックアップを正本として維持", color = Color.White)
-            }
+            RegisterTopBarV141(title = "外部自動バックアップ", onBack = onClose)
 
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                 val compact = maxWidth < 980.dp
@@ -212,7 +203,7 @@ private fun ExternalBackupSettingsScreen(onClose: () -> Unit) {
                                 },
                                 color = if (destinationPermission) EbsGreen else EbsRed,
                             )
-                            treeUriText?.let { Text(it, color = Color.DarkGray, fontSize = 12.sp) }
+                            // 保存先URIは機密を含む場合があるため、通常画面には表示しない。
                             Row(
                                 Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -387,10 +378,6 @@ private fun ExternalBackupSettingsScreen(onClose: () -> Unit) {
                     .padding(horizontal = 18.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(
-                    onClick = onClose,
-                    modifier = Modifier.width(220.dp).fillMaxHeight(),
-                ) { Text("戻る", fontWeight = FontWeight.Bold) }
                 message?.let {
                     Spacer(Modifier.width(18.dp))
                     Text(
