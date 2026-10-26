@@ -471,6 +471,8 @@ private fun GoogleDriveDiagnosticsScreen(
                     Button(onClick = onRefresh, modifier = Modifier.weight(1f).height(50.dp)) { Text("再取得") }
                     OutlinedButton(onClick = onCopy, modifier = Modifier.weight(1f).height(50.dp)) { Text("コピー") }
                     OutlinedButton(onClick = onShare, modifier = Modifier.weight(1f).height(50.dp)) { Text("共有") }
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f).height(50.dp)) { Text("イベント消去") }
                     OutlinedButton(onClick = onOpenAccount, modifier = Modifier.weight(1f).height(50.dp)) { Text("アカウント設定") }
                     Button(onClick = onUpload, modifier = Modifier.weight(1f).height(50.dp)) { Text("送信テスト") }
