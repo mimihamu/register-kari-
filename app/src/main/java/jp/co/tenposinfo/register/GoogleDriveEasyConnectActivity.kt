@@ -343,23 +343,20 @@ private fun GoogleDriveEasyConnectScreen(
             }
         }
 
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Button(
             onClick = onConnect,
             enabled = !state.busy,
-            modifier = Modifier.fillMaxWidth().height(56.dp),
+            modifier = Modifier.weight(1f).height(56.dp),
         ) {
             Text(if (state.account.email == null) "Googleと連携" else "Googleアカウントを変更")
         }
         Button(
             onClick = onSync,
             enabled = state.account.email != null && !state.busy,
-            modifier = Modifier.fillMaxWidth().height(56.dp),
+            modifier = Modifier.weight(1f).height(56.dp),
         ) { Text("今すぐ同期") }
-        OutlinedButton(
-            onClick = onDisconnect,
-            enabled = state.account.email != null && !state.busy,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-        ) { Text("連携を解除") }
+        }
         if (state.account.status == GoogleDriveAccountStatus.CLOUD_CONFIGURATION_REQUIRED ||
             state.account.status == GoogleDriveAccountStatus.AUTHORIZATION_FAILED) {
             OutlinedButton(
@@ -368,11 +365,19 @@ private fun GoogleDriveEasyConnectScreen(
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) { Text("Google Cloudの初期設定") }
         }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlinedButton(
-            onClick = onOpenAdvanced,
-            enabled = !state.busy,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-        ) { Text("保守・復旧") }
+            onClick = onDisconnect,
+            enabled = state.account.email != null && !state.busy,
+            modifier = Modifier.weight(1f).height(52.dp),
+        ) { Text("連携を解除") }
+
+            OutlinedButton(
+                onClick = onOpenAdvanced,
+                enabled = !state.busy,
+                modifier = Modifier.weight(1f).height(52.dp),
+            ) { Text("保守・復旧") }
+        }
 
         }
     }
