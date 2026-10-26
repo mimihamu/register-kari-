@@ -404,19 +404,12 @@ private fun GoogleDriveDiagnosticsScreen(
     onUpload: () -> Unit,
     onClose: () -> Unit,
 ) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Google Drive診断・ログ", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Text("認証、通信、Outbox、Drive API送信状態をまとめて確認します")
-                }
-                OutlinedButton(onClick = onClose) { Text("戻る") }
-            }
-        }
+    Column(Modifier.fillMaxSize()) {
+        RegisterTopBarV141(title = "Google Drive診断", onBack = onClose)
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth().padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
 
         if (snapshot == null) {
             item { Card(Modifier.fillMaxWidth()) { Text("診断情報を取得しています", Modifier.padding(16.dp)) } }
@@ -493,6 +486,7 @@ private fun GoogleDriveDiagnosticsScreen(
                     }
                 }
             }
+        }
         }
     }
 }
