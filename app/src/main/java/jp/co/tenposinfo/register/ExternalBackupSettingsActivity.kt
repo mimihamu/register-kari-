@@ -88,6 +88,7 @@ private fun ExternalBackupSettingsScreen(onClose: () -> Unit) {
     var failureNotifications by remember { mutableStateOf(initial.failureNotificationsEnabled) }
     var status by remember { mutableStateOf(statusStore.load()) }
     var message by remember { mutableStateOf<String?>(null) }
+    var showAdvancedV153 by remember { mutableStateOf(false) }
     var permissionRevision by remember { mutableIntStateOf(0) }
     val notificationPermission = remember(permissionRevision) {
         PrinterNotificationPermissionStatus.read(appContext)
@@ -244,10 +245,6 @@ private fun ExternalBackupSettingsScreen(onClose: () -> Unit) {
                                     fontWeight = FontWeight.Bold,
                                 )
                             }
-                            Text(
-                                "Z精算後・定期・手動で作成された内部バックアップを検出し、選択した外部フォルダへ複製します。失敗しても内部バックアップ、売上、Z精算結果は変更しません。",
-                                color = Color.DarkGray,
-                            )
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Switch(
                                     checked = unmeteredOnly,
@@ -258,14 +255,17 @@ private fun ExternalBackupSettingsScreen(onClose: () -> Unit) {
                                     fontWeight = FontWeight.Bold,
                                 )
                             }
-                            Text(
-                                "Google Driveを保存先にする場合は、Wi-Fi等で通信可能な状態が必要です。USB・端末フォルダではネットワーク不要です。",
-                                color = Color.DarkGray,
-                                fontSize = 13.sp,
-                            )
                         }
                     }
 
+                    if (status.lastError != null) {
+                        Text("外部バックアップ：${status.lastError}", color = EbsRed, fontWeight = FontWeight.Bold)
+                    }
+                    OutlinedButton(
+                        onClick = { showAdvancedV153 = !showAdvancedV153 },
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                    ) { Text(if (showAdvancedV153) "詳細を閉じる" else "実行状態・通知の詳細") }
+                    if (showAdvancedV153) {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = Color.White),
                         modifier = Modifier.fillMaxWidth(),
@@ -369,6 +369,7 @@ private fun ExternalBackupSettingsScreen(onClose: () -> Unit) {
                                 ) { Text("Androidの通知設定を開く") }
                             }
                         }
+                    }
                     }
                 }
             }
