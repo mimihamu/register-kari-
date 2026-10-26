@@ -144,19 +144,12 @@ private fun GoogleDriveSetupGuideScreen(
     onOpenAccount: () -> Unit,
     onClose: () -> Unit,
 ) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Google Drive初期設定ガイド", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Text("Google Cloudへ登録する値を、このAPKから自動取得しています")
-                }
-                OutlinedButton(onClick = onClose) { Text("戻る") }
-            }
-        }
+    Column(Modifier.fillMaxSize()) {
+        RegisterTopBarV141(title = "Google Drive初期設定", onBack = onClose)
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth().padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
 
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -203,6 +196,7 @@ private fun GoogleDriveSetupGuideScreen(
             }
             Spacer(Modifier.height(8.dp))
             Text("Google Cloud設定はブラウザで行います。アプリ側へパスワード、アクセストークン、更新トークンは保存しません。")
+        }
         }
     }
 }
