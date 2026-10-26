@@ -316,23 +316,13 @@ private fun GoogleDriveEasyConnectScreen(
     onClose: () -> Unit,
 ) {
     val ready = GoogleDriveEasyConnectPolicy.isReady(state)
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+    Column(Modifier.fillMaxSize()) {
+        RegisterTopBarV141(title = "Google Drive かんたん接続", onBack = onClose)
+        Column(
+            modifier = Modifier.weight(1f).fillMaxWidth()
+                .verticalScroll(rememberScrollState()).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Googleかんたん接続", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("Googleアカウントを選ぶだけで、接続確認と自動同期を設定します")
-            }
-            OutlinedButton(onClick = onClose) { Text("戻る") }
-        }
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -384,15 +374,7 @@ private fun GoogleDriveEasyConnectScreen(
             modifier = Modifier.fillMaxWidth().height(52.dp),
         ) { Text("保守・復旧") }
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("通常はこの画面だけで設定できます", fontWeight = FontWeight.Bold)
-                Text("Drive API、接続テスト、定期送信は自動設定します。")
-                Text("互換フォルダ、全件再処理、詳細ログは「保守・復旧」にまとめています。")
-                Text("アクセストークンと更新トークンは保存しません。SQLiteの売上を原本として維持します。")
-            }
         }
-        Spacer(Modifier.height(8.dp))
     }
 }
 
