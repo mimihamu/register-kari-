@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.remember
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -484,25 +487,14 @@ private fun GoogleDriveAccountScreen(
     onDisconnect: () -> Unit,
     onClose: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+    val showAdvanced = remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize()) {
+        RegisterTopBarV141(title = "Google Driveアカウント", onBack = onClose)
+        Column(
+            modifier = Modifier.weight(1f).fillMaxWidth()
+                .verticalScroll(rememberScrollState()).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Google Driveアカウント連携",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text("つぐレジが売上ジャーナルJSONをDrive APIで直接送信します")
-            }
-            OutlinedButton(onClick = onClose) { Text("戻る") }
-        }
-
         if (state.status == GoogleDriveAccountStatus.CLOUD_CONFIGURATION_REQUIRED ||
             state.status == GoogleDriveAccountStatus.AUTHORIZATION_FAILED) {
             OutlinedButton(onClick = onOpenSetupGuide) { Text("Google Cloudの初期設定") }
@@ -531,18 +523,24 @@ private fun GoogleDriveAccountScreen(
                 enabled = state.email != null && !uploadStatus.running,
                 modifier = Modifier.weight(1f).height(52.dp),
             ) { Text("今すぐアップロード") }
-            OutlinedButton(
-                onClick = onRetry,
-                enabled = state.email != null && !uploadStatus.running,
-                modifier = Modifier.weight(1f).height(52.dp),
-            ) { Text("失敗を再試行") }
-            OutlinedButton(
-                onClick = onDisconnect,
-                enabled = state.email != null && state.status != GoogleDriveAccountStatus.CONNECTING,
-                modifier = Modifier.weight(1f).height(52.dp),
-            ) { Text("連携解除") }
         }
-
+        OutlinedButton(
+            onClick = { showAdvanced.value = !showAdvanced.value },
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+        ) { Text(if (showAdvanced.value) "詳細操作を閉じる" else "詳細操作") }
+        if (showAdvanced.value) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                    onClick = onRetry,
+                    enabled = state.email != null && !uploadStatus.running,
+                    modifier = Modifier.weight(1f).height(52.dp),
+                ) { Text("失敗を再試行") }
+                OutlinedButton(
+                    onClick = onDisconnect,
+                    enabled = state.email != null && state.status != GoogleDriveAccountStatus.CONNECTING,
+                    modifier = Modifier.weight(1f).height(52.dp),
+                ) { Text("連携解除") }
+            }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedButton(
                 onClick = onDiagnostics,
@@ -575,7 +573,7 @@ private fun GoogleDriveAccountScreen(
                 Text("互換用フォルダ送信は削除せず、USB・端末フォルダ・Driveアプリ経由の運用として併存します。")
             }
         }
-        Spacer(Modifier.weight(1f))
+        }
     }
 }
 
