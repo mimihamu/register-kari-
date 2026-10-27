@@ -112,9 +112,10 @@ class V136BarcodeInputSafetyTest {
         assertTrue(scanner.contains("fun stop()"))
         assertTrue(scanner.contains("fun barcodeScanned(event: BarcodeScannedV136)"))
         assertTrue(dialog.contains("canOpenProductSettings"))
-        assertTrue(dialog.contains("Text(\"仮商品\")"))
+        assertTrue(dialog.contains("RegisterModalConfirmV154("))
+        assertTrue(dialog.contains("label = \"仮商品\""))
         assertTrue(dialog.contains("Text(\"商品登録\")"))
-        assertTrue(dialog.contains("Text(\"キャンセル\")"))
+        assertTrue(dialog.contains("RegisterModalCancelV154(onClick = onDismiss)"))
         assertTrue(catalog.contains("EXTRA_PREFILL_BARCODE"))
         assertTrue(settings.contains("initialBarcode"))
     }
