@@ -31,7 +31,7 @@ internal fun UnregisteredBarcodeDialogV136(
     var taxCategory by remember(code) { mutableStateOf<TaxCategory?>(null) }
     var error by remember(code) { mutableStateOf<String?>(null) }
 
-    AlertDialog(
+    RegisterModalV154(
         onDismissRequest = onDismiss,
         title = { Text("未登録バーコード") },
         text = {
@@ -65,7 +65,8 @@ internal fun UnregisteredBarcodeDialogV136(
         },
         confirmButton = {
             Row {
-                Button(
+                RegisterModalConfirmV154(
+                    label = "仮商品",
                     enabled = unitPriceText.toLongOrNull()?.let { it in 1..TemporaryBarcodeProductPolicyV136.MAX_UNIT_PRICE } == true && taxCategory != null,
                     onClick = {
                         runCatching {
@@ -81,7 +82,7 @@ internal fun UnregisteredBarcodeDialogV136(
                             error = throwable.message ?: "仮商品を作成できません"
                         }
                     },
-                ) { Text("仮商品") }
+                )
                 if (canOpenProductSettings) {
                     Spacer(Modifier.width(8.dp))
                     OutlinedButton(
@@ -94,7 +95,7 @@ internal fun UnregisteredBarcodeDialogV136(
             }
         },
         dismissButton = {
-            OutlinedButton(onClick = onDismiss) { Text("キャンセル") }
+            RegisterModalCancelV154(onClick = onDismiss)
         },
     )
 }
