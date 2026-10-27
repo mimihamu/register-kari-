@@ -673,7 +673,7 @@ private fun GoogleDriveSyncVerificationScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        PlusTopBarV155(title = "売上同期検証・復旧", onBack = onClose)
+        PlusTopBarV155(title = "同期運用ダッシュボード", onBack = onClose)
         Column(
             modifier = Modifier.weight(1f).fillMaxWidth()
                 .verticalScroll(rememberScrollState()).padding(18.dp),
