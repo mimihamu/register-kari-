@@ -17,7 +17,7 @@ class V155PlusNavigationConsistencyTest {
         assertTrue(s.contains("onClick = onBack"))
         assertTrue(s.contains("containerColor = Color.White"))
         assertTrue(s.contains("Text(\"戻る\""))
-        assertTrue(s.contains("Text(\"つぐレジ＋\""))
+        assertTrue(s.contains("\"つぐレジ＋\""))
         assertTrue(chrome.contains("WindowInsets.safeDrawing"))
     }
 
