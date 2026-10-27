@@ -340,28 +340,13 @@ private fun GoogleDriveRecoveryScreen(
     )
     val healthy = GoogleDriveOperationsPolicy.currentConfigurationHealthy(snapshot)
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+    Column(Modifier.fillMaxSize()) {
+        PlusTopBarV155(title = "Google Drive運用・復旧", onBack = onClose)
+        Column(
+            modifier = Modifier.weight(1f).fillMaxWidth()
+                .verticalScroll(rememberScrollState()).padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Google Drive運用セットアップ・復旧",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text("接続確認、方式選択、自動同期、実機確認を一画面で完了します")
-            }
-            OutlinedButton(onClick = onClose) { Text("戻る") }
-        }
-
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -551,6 +536,7 @@ private fun GoogleDriveRecoveryScreen(
             }
         }
         Spacer(Modifier.height(12.dp))
+        }
     }
 }
 
