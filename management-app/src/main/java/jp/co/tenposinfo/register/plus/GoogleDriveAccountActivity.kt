@@ -464,6 +464,7 @@ private fun GoogleDriveAccountScreen(
     onOpenRecovery: () -> Unit,
     onClose: () -> Unit,
 ) {
+    val advancedV155 = androidx.compose.runtime.remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         PlusTopBarV155(title = "Google Driveアカウント", onBack = onClose)
         Column(
@@ -513,6 +514,27 @@ private fun GoogleDriveAccountScreen(
             }
         }
 
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Button(
+            onClick = onConnect,
+            enabled = state.status != GoogleDriveAccountStatus.CONNECTING && !syncStatus.running,
+            modifier = Modifier.weight(1f).height(52.dp),
+        ) {
+            Text(if (state.email == null) "Googleアカウントを登録" else "別アカウントへ変更")
+        }
+
+        Button(
+            onClick = onSync,
+            enabled = state.email != null && !syncStatus.running,
+            modifier = Modifier.weight(1f).height(52.dp),
+        ) { Text("今すぐ差分同期") }
+
+        }
+        OutlinedButton(
+            onClick = { advancedV155.value = !advancedV155.value },
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+        ) { Text(if (advancedV155.value) "詳細操作を閉じる" else "詳細設定・診断") }
+        if (advancedV155.value) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -563,23 +585,11 @@ private fun GoogleDriveAccountScreen(
             )
         }
 
-        Button(
-            onClick = onConnect,
-            enabled = state.status != GoogleDriveAccountStatus.CONNECTING && !syncStatus.running,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-        ) {
-            Text(if (state.email == null) "Googleアカウントを登録" else "別アカウントへ変更")
-        }
         OutlinedButton(
             onClick = onVerify,
             enabled = state.email != null && state.status != GoogleDriveAccountStatus.CONNECTING && !syncStatus.running,
             modifier = Modifier.fillMaxWidth().height(52.dp),
         ) { Text("接続確認") }
-        Button(
-            onClick = onSync,
-            enabled = state.email != null && !syncStatus.running,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-        ) { Text("今すぐ差分同期") }
         OutlinedButton(
             onClick = onForceSync,
             enabled = state.email != null && !syncStatus.running,
@@ -599,6 +609,7 @@ private fun GoogleDriveAccountScreen(
                 Text("不正JSONは隔離します。Drive上の削除とローカル売上削除は自動連動しません。")
                 Text("フォルダ方式はUSB・端末フォルダ・Driveアプリ経由の互換用として残します。")
             }
+        }
         }
         Spacer(Modifier.height(12.dp))
         }
