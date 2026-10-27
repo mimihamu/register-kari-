@@ -464,24 +464,13 @@ private fun GoogleDriveAccountScreen(
     onOpenRecovery: () -> Unit,
     onClose: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+    Column(Modifier.fillMaxSize()) {
+        PlusTopBarV155(title = "Google Driveアカウント", onBack = onClose)
+        Column(
+            modifier = Modifier.weight(1f).fillMaxWidth()
+                .verticalScroll(rememberScrollState()).padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Google Driveアカウント", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("つぐレジ＋がDrive APIから売上JSONを差分取得します")
-            }
-            OutlinedButton(onClick = onClose) { Text("戻る") }
-        }
-
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -612,6 +601,7 @@ private fun GoogleDriveAccountScreen(
             }
         }
         Spacer(Modifier.height(12.dp))
+        }
     }
 }
 
