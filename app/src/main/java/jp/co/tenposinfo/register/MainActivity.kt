@@ -1132,7 +1132,7 @@ private fun SalesScreen(
         if (printerHealth.level != PrinterHealthLevel.ERROR) dismissedPrinterError = null
     }
     if (printerHealth.level == PrinterHealthLevel.ERROR && dismissedPrinterError != printerErrorKey) {
-        AlertDialog(
+        RegisterModalV154(
             onDismissRequest = { dismissedPrinterError = printerErrorKey },
             title = { Text("プリンターエラー", fontWeight = FontWeight.Bold) },
             text = {
@@ -1142,15 +1142,16 @@ private fun SalesScreen(
                 }
             },
             confirmButton = {
-                Button(onClick = {
+                RegisterModalConfirmV154(label = "状態を確認", onClick = {
                     dismissedPrinterError = printerErrorKey
                     onPrinterStatus()
-                }) { Text("状態を確認") }
+                })
             },
             dismissButton = {
-                OutlinedButton(onClick = { dismissedPrinterError = printerErrorKey }) {
-                    Text("閉じる")
-                }
+                RegisterModalCancelV154(
+                    onClick = { dismissedPrinterError = printerErrorKey },
+                    label = "閉じる",
+                )
             },
         )
     }
