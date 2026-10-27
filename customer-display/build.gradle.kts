@@ -66,8 +66,11 @@ android {
         // v1.53 verified
         // versionCode = 22
         // versionName = "0.15.14-dev.1"
-        versionCode = 23
-        versionName = "0.15.15-dev.1"
+        // v1.54 verified
+        // versionCode = 23
+        // versionName = "0.15.15-dev.1"
+        versionCode = 24
+        versionName = "0.15.16-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ CD"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
