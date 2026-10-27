@@ -838,7 +838,8 @@ private fun SettlementScreen(
     }
 
     if (showZConfirmation && previewActual != null && variance != null) {
-        AlertDialog(
+        RegisterModalV154(
+            destructive = true,
             onDismissRequest = { showZConfirmation = false },
             title = { Text("Z精算して営業を終了しますか？", fontWeight = FontWeight.Bold) },
             text = {
@@ -853,18 +854,19 @@ private fun SettlementScreen(
                 }
             },
             confirmButton = {
-                Button(
+                RegisterModalConfirmV154(
+                    label = "Z精算して営業終了",
+                    destructive = true,
                     onClick = {
                         showZConfirmation = false
                         onExecute(actual, pin, pendingPrintsAcknowledged, backupFailureAcknowledged)
                     },
                     enabled = (pin.isNotBlank() || ManagerApprovalV145.canUseCurrentManagerSession(LocalContext.current)) &&
                         zPreflight.mayProceed,
-                    colors = ButtonDefaults.buttonColors(containerColor = OpDanger),
-                ) { Text("Z精算して営業終了") }
+                )
             },
             dismissButton = {
-                OutlinedButton(onClick = { showZConfirmation = false }) { Text("戻る") }
+                RegisterModalCancelV154(onClick = { showZConfirmation = false })
             },
         )
     }
