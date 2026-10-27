@@ -150,24 +150,13 @@ private fun GoogleDrivePlusSetupGuideScreen(
     onOpenDiagnostics: () -> Unit,
     onClose: () -> Unit,
 ) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "つぐレジ＋ Google Drive初期設定",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text("Google Cloudへ登録する値を、このAPKから自動取得しています")
-                }
-                OutlinedButton(onClick = onClose) { Text("戻る") }
-            }
-        }
-
+    Column(Modifier.fillMaxSize()) {
+        PlusTopBarV155(title = "Google Drive初期設定", onBack = onClose)
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
@@ -226,6 +215,7 @@ private fun GoogleDrivePlusSetupGuideScreen(
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) { Text("診断・ログを開く") }
             Text("パスワード、アクセストークン、更新トークンは診断レポートへ出力しません。")
+        }
         }
     }
 }
