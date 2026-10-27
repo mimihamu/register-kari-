@@ -174,8 +174,8 @@ verify_apk \
     CUSTOMER_DISPLAY \
     "$CD_APK" \
     'jp.co.tenposinfo.register.cd.dev' \
-    '23' \
-    '0.15.15-dev.1' \
+    '24' \
+    '0.15.16-dev.1' \
     '26' \
     '36'
 
