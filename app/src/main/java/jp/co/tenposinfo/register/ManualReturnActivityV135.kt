@@ -63,11 +63,23 @@ class ManualReturnActivityV135 : ComponentActivity() {
         }
         scroll.addView(root, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
-        root.addView(TextView(this).apply {
-            text = "元取引なし返品（レシートなし返品）"
-            textSize = 26f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-        })
+        val topBarV155 = horizontalRow().apply {
+            setBackgroundColor(0xFF173F6B.toInt())
+            addView(Button(this@ManualReturnActivityV135).apply {
+                text = "戻る"
+                setOnClickListener { finish() }
+                contentDescription = "返品画面を閉じる"
+            }, LinearLayout.LayoutParams(dp(104), dp(54)))
+            addView(TextView(this@ManualReturnActivityV135).apply {
+                text = "つぐレジ  元取引なし返品"
+                textSize = 21f
+                setTextColor(android.graphics.Color.WHITE)
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(dp(14), 0, dp(6), 0)
+            }, LinearLayout.LayoutParams(0, dp(60), 1f))
+        }
+        root.addView(topBarV155, matchWrap())
+
         root.addView(TextView(this).apply {
             text = "元の売上No.を特定できない場合だけ使用します。返品数量・返品金額は負数取引として保存されます。責任者承認が必須です。"
             textSize = 15f
@@ -153,15 +165,11 @@ class ManualReturnActivityV135 : ComponentActivity() {
         })
 
         val actionRow = horizontalRow()
-        actionRow.addView(Button(this).apply {
-            text = "戻る"
-            setOnClickListener { finish() }
-        }, LinearLayout.LayoutParams(0, dp(58), 1f))
         confirmButton = Button(this).apply {
             text = "返品を確定"
             setOnClickListener { showReturnConfirmationV155() }
         }
-        actionRow.addView(confirmButton, LinearLayout.LayoutParams(0, dp(58), 2f).apply { marginStart = dp(12) })
+        actionRow.addView(confirmButton, LinearLayout.LayoutParams(0, dp(58), 1f))
         root.addView(actionRow, matchWrap(top = 8))
         return scroll
     }
