@@ -159,7 +159,7 @@ class ManualReturnActivityV135 : ComponentActivity() {
         }, LinearLayout.LayoutParams(0, dp(58), 1f))
         confirmButton = Button(this).apply {
             text = "返品を確定"
-            setOnClickListener { executeReturn() }
+            setOnClickListener { showReturnConfirmationV155() }
         }
         actionRow.addView(confirmButton, LinearLayout.LayoutParams(0, dp(58), 2f).apply { marginStart = dp(12) })
         root.addView(actionRow, matchWrap(top = 8))
@@ -222,6 +222,25 @@ class ManualReturnActivityV135 : ComponentActivity() {
         }
         val total = TaxEngine.calculate(items).grossAmount
         totalText.text = "返金合計  -${yen(total)}"
+    }
+
+    private fun showReturnConfirmationV155() {
+        if (lines.isEmpty() || !submissionGate.isIdle()) return
+        val refund = ManualRefundMethodV135.entries[refundSpinner.selectedItemPosition]
+        val items = lines.map { CartItem(it.product, quantity = it.quantity, quantityHundredths = it.quantityHundredths) }
+        val total = TaxEngine.calculate(items).grossAmount
+        val confirm = AlertDialog.Builder(this)
+            .setTitle("返品を確定しますか？")
+            .setMessage("返品商品 ${lines.size}件\\n返金合計 -${yen(total)}\\n返金方法：${refund.displayName}\\n確定後は返品履歴と印刷ジョブを作成します。")
+            .setCancelable(false)
+            .setNegativeButton("キャンセル", null)
+            .setPositiveButton("返品を確定") { _, _ -> executeReturn() }
+            .create()
+        confirm.setCanceledOnTouchOutside(false)
+        confirm.setOnShowListener {
+            confirm.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(android.graphics.Color.rgb(180, 35, 24))
+        }
+        confirm.show()
     }
 
     private fun executeReturn() {
