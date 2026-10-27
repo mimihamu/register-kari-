@@ -347,24 +347,13 @@ private fun GoogleDriveEasyConnectScreen(
     onClose: () -> Unit,
 ) {
     val ready = GoogleDriveEasyConnectPolicy.isReady(state)
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(13.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+    Column(Modifier.fillMaxSize()) {
+        PlusTopBarV155(title = "Googleかんたん接続", onBack = onClose)
+        Column(
+            modifier = Modifier.weight(1f).fillMaxWidth()
+                .verticalScroll(rememberScrollState()).padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Googleかんたん接続", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("Googleアカウントを選ぶだけで、つぐレジとの接続確認と自動同期を設定します")
-            }
-            OutlinedButton(onClick = onClose) { Text("戻る") }
-        }
-
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -425,6 +414,7 @@ private fun GoogleDriveEasyConnectScreen(
             }
         }
         Spacer(Modifier.height(8.dp))
+        }
     }
 }
 
