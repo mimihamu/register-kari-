@@ -225,10 +225,18 @@ class ManualReturnActivityV135 : ComponentActivity() {
     }
 
     private fun showReturnConfirmationV155() {
-        if (lines.isEmpty() || !submissionGate.isIdle()) return
+        if (submissionGate.isSubmitting()) return
         val refund = ManualRefundMethodV135.entries[refundSpinner.selectedItemPosition]
-        val items = lines.map { CartItem(it.product, quantity = it.quantity, quantityHundredths = it.quantityHundredths) }
-        val total = TaxEngine.calculate(items).grossAmount
+        val total = runCatching {
+            val items = ManualReturnPolicyV135.toPositiveCartItems(
+                ManualReturnRequestV135(lines.toList(), reasonInput.text.toString(), refund),
+                reasonRequired = false,
+            )
+            TaxEngine.calculate(items).grossAmount.also { require(it > 0) { "返金額が0円です" } }
+        }.getOrElse {
+            showError(it.message ?: "返品対象と金額を確認してください")
+            return
+        }
         val confirm = AlertDialog.Builder(this)
             .setTitle("返品を確定しますか？")
             .setMessage("返品商品 ${lines.size}件\\n返金合計 -${yen(total)}\\n返金方法：${refund.displayName}\\n確定後は返品履歴と印刷ジョブを作成します。")
