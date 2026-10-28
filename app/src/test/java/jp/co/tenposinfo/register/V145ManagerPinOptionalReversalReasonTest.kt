@@ -61,7 +61,7 @@ class V145ManagerPinOptionalReversalReasonTest {
         val history = src("SettlementHistoryActivityV030.kt")
         assertTrue(history.contains("ManagerApprovalV145.canUseCurrentManagerSession(LocalContext.current)"))
         val ui = src("ManualReturnActivityV135.kt")
-        assertTrue(ui.contains("返品理由（任意）"))
+        assertTrue(ui.contains("label = { Text(\"理由（任意）\") }"))
         assertFalse(ui.contains("理由必須設定を保存"))
         assertTrue(src("SecureOperationsCoordinator.kt").contains("reason.ifBlank"))
     }

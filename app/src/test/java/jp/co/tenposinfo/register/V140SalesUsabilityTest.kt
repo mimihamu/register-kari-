@@ -36,7 +36,7 @@ class V140SalesUsabilityTest {
 
     @Test fun printerErrorDialogReplacesLayoutShiftingBanner() {
         val main = source("MainActivity.kt")
-        val sales = main.substring(main.indexOf("private fun SalesScreen("), main.indexOf("private fun LineEditScreen("))
+        val sales = main.substring(main.indexOf("internal fun SalesScreen("), main.indexOf("private fun LineEditScreen("))
         assertTrue(sales.contains("RegisterModalV154("))
         assertTrue(sales.contains("RegisterModalCancelV154("))
         assertTrue(sales.contains("プリンターエラー"))

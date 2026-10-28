@@ -34,14 +34,14 @@ class V139SafFirstProductGridTest {
 
     @Test fun salesUsesActualPaneConstraintsAndTwoRowActionBar() {
         val source = File("src/main/java/jp/co/tenposinfo/register/MainActivity.kt").readText()
-        val sales = source.substring(source.indexOf("private fun SalesScreen("), source.indexOf("private fun LineEditScreen("))
+        val sales = source.substring(source.indexOf("internal fun SalesScreen("), source.indexOf("private fun LineEditScreen("))
         assertTrue(sales.contains("RegisterProductGridPolicy.metrics("))
         assertTrue(sales.contains("heightDp = maxHeight.value.toInt()"))
         assertTrue(sales.contains("val slot = row * grid.columns + column + 1"))
         assertTrue(sales.contains("grid.buttonHeightDp.dp"))
         assertTrue(sales.contains("Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()))"))
         assertTrue(sales.contains("val twoRowActions ="))
-        assertTrue(sales.contains("if (twoRowActions)"))
+        assertTrue(sales.contains("else if (twoRowActions)"))
         assertTrue(sales.contains("height(122.dp)"))
         assertTrue(sales.contains("onPayment"))
         assertFalse(sales.contains("DELETE FROM sales", ignoreCase = true))

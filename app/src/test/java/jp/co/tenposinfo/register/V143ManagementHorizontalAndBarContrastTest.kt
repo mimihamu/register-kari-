@@ -37,7 +37,7 @@ class V143ManagementHorizontalAndBarContrastTest {
         for (label in listOf(
             "営業開始・状態", "当日売上", "入出金", "X点検", "Z精算",
             "返品・取消", "点検・精算履歴", "営業日別 売上検索",
-            "領収書発行", "レシート再印字台帳", "元取引なし返品"
+            "領収書発行", "レシート再印字台帳", "レジマイナス"
         )) {
             assertTrue("Missing management action: $label", hub.contains("\"$label\""))
         }
@@ -55,7 +55,7 @@ class V143ManagementHorizontalAndBarContrastTest {
         assertTrue(hub.contains("HubHeaderV030(metrics, openSettings, onClose)"))
         assertTrue(hub.contains("onBack = onClose"))
         assertTrue(hub.contains(".background(HubNavyV030)"))
-        assertTrue(safeArea.contains("Box(Modifier.fillMaxSize().background(RegisterTopBarColorV141))"))
+        assertTrue(safeArea.contains("Box(Modifier.fillMaxSize().background(topBarColor))") &&\n            safeArea.contains("topBarColor: Color = RegisterTopBarColorV141"))
         assertTrue(safeArea.contains("WindowInsets.safeDrawing"))
         assertTrue(chrome.contains("isAppearanceLightNavigationBars = false"))
         assertTrue(chrome.contains("window.navigationBarColor = Color.rgb(23, 63, 107)"))
