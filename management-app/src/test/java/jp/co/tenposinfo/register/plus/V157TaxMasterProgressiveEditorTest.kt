@@ -11,7 +11,7 @@ class V157TaxMasterProgressiveEditorTest {
         assertTrue(s.contains("if (showAdvanced) {"))
         assertTrue(s.contains("value = symbol"))
         assertTrue(s.contains("value = effectiveTo"))
-        assertTrue(s.contains("onValueChange = { enabled = it }"))
+        assertTrue(s.contains("onCheckedChange = { enabled = it }"))
         assertTrue(s.contains("value = effectiveFrom"))
         assertTrue(s.contains("onSave("))
         assertTrue(s.contains("effectiveFromBusinessDate = effectiveFrom"))
