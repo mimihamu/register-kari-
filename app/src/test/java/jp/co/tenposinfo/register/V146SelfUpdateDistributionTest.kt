@@ -56,18 +56,18 @@ class V146SelfUpdateDistributionTest {
 
     @Test fun installedVersionCodeMustIncreaseToAllowNextPublishedRelease() {
         val builds = listOf(
-            Triple(".", "169", "1.34.5-dev.1"),
-            Triple("../management-app", "37", "0.33.4-dev.1"),
-            Triple("../customer-display", "15", "0.15.7-dev.1"),
+            Triple(".", "179", "1.34.15-dev.1"),
+            Triple("../management-app", "47", "0.33.14-dev.1"),
+            Triple("../customer-display", "25", "0.15.17-dev.1"),
         )
         for ((dir, code, name) in builds) {
             val gradle = read("$dir/build.gradle.kts")
-            assertTrue(gradle.contains("versionCode = $code"))
-            assertTrue(gradle.contains("versionName = \"$name\""))
+            assertTrue(gradle.contains("        versionCode = $code"))
+            assertTrue(gradle.contains("        versionName = \"$name\""))
         }
         val gate = read("../ci/verify-apk-release-integrity.sh")
-        assertTrue(gate.contains("'24'"))
-        assertTrue(gate.contains("'0.15.16-dev.1'"))
+        assertTrue(gate.contains("'25'"))
+        assertTrue(gate.contains("'0.15.17-dev.1'"))
     }
 
     @Test fun updateActionsAreReachableFromAllThreeApps() {
