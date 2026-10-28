@@ -231,7 +231,7 @@ private fun OperationsHubScreenV030(
             RegisterPermission.VIEW_SALES in permissions, openReceiptReprintLedger,
         ),
         HubManagementActionV143(
-            "元取引なし返品", Color(0xFFFFE9E9),
+            "レジマイナス", Color(0xFFFFE9E9),
             RegisterPermission.REVERSAL in permissions, openManualReturn,
         ),
     )

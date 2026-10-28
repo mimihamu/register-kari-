@@ -32,17 +32,12 @@ class V142SystemBarSafeAreaTest {
         }
     }
 
-    @Test fun nativeManualReturnsRespectSystemInsets() {
+    @Test fun registerMinusUsesRedStatusBarAndSafeComposeInsets() {
         val src = source("ManualReturnActivityV135.kt")
         assertTrue(src.contains("configureRegisterSystemBars(window)"))
-        assertTrue(src.contains("WindowInsetsCompat.Type.systemBars()"))
-        // v1.56 keeps the navy header pinned while scrolling the form only.
-        // Insets must protect the parent screen, not just the scroll body.
-        assertTrue(src.contains("ViewCompat.setOnApplyWindowInsetsListener(screen)"))
-        assertTrue(src.contains("ViewCompat.requestApplyInsets(screen)"))
-        assertTrue(src.contains("screen.addView(topBarV155,"))
-        assertTrue(src.contains("screen.addView(scroll,"))
-        assertTrue(src.contains("coordinator.create(request, managerPinInput.text.toString())"))
+        assertTrue(src.contains("window.statusBarColor = android.graphics.Color.rgb(180, 35, 24)"))
+        assertTrue(src.contains("RegisterSafeAreaV141(topBarColor = Color(0xFFB42318))"))
+        assertTrue(src.contains("coordinator.create(request, managerPin)"))
     }
 
     @Test fun sharedSafeAreaMaintainsHeaderColorAndSystemPadding() {

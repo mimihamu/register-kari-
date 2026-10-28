@@ -1,316 +1,298 @@
 package jp.co.tenposinfo.register
 
-import android.app.AlertDialog
 import android.os.Bundle
-import android.text.InputType
-import android.view.Gravity
-import android.view.ViewGroup
-import android.widget.ArrayAdapter
-import android.widget.Button
-import android.widget.CheckBox
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.Spinner
-import android.widget.TextView
 import androidx.activity.ComponentActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import java.text.NumberFormat
-import java.util.Locale
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.unit.dp
 
-/** COR-005: 元レシート・元売上No.を特定できない返品。 */
+/**
+ * レジマイナス。販売と同じ商品グリッド/テンキーを再利用するが、
+ * 通常販売カートとは完全分離して ManualReturnStore に負数を確定する。
+ */
 class ManualReturnActivityV135 : ComponentActivity() {
     private lateinit var coordinator: ManualReturnCoordinatorV135
-    private lateinit var products: List<Product>
-    private val lines = mutableListOf<ManualReturnLineRequestV135>()
-    private val submissionGate = ManualReturnSubmissionGateV135()
 
-    private lateinit var productSpinner: Spinner
-    private lateinit var quantityInput: EditText
-    private lateinit var linesText: TextView
-    private lateinit var totalText: TextView
-    private lateinit var reasonInput: EditText
-    private lateinit var refundSpinner: Spinner
-    private lateinit var managerPinInput: EditText
-    private lateinit var confirmButton: Button
-
+    @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
+        window.statusBarColor = android.graphics.Color.rgb(180, 35, 24)
+        window.navigationBarColor = android.graphics.Color.rgb(180, 35, 24)
         coordinator = ManualReturnCoordinatorV135(applicationContext)
-        products = coordinator.products()
-        setContentView(buildContent())
-        refreshLines()
+        setContent {
+            RegisterSafeAreaV141(topBarColor = Color(0xFFB42318)) {
+                MaterialTheme {
+                    RegisterMinusSalesV158(coordinator = coordinator, onExit = ::finish)
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
         coordinator.close()
         super.onDestroy()
     }
+}
 
-    private fun buildContent(): LinearLayout {
-        val screen = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val scroll = ScrollView(this)
-        ViewCompat.setOnApplyWindowInsetsListener(screen) { view, windowInsets ->
-            val bars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-            windowInsets
-        }
-        ViewCompat.requestApplyInsets(screen)
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(18), dp(24), dp(24))
-        }
-        scroll.addView(root, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+@Composable
+private fun RegisterMinusSalesV158(
+    coordinator: ManualReturnCoordinatorV135,
+    onExit: () -> Unit,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val products = remember { coordinator.products() }
+    val cart = remember { mutableStateListOf<CartItem>() }
+    var selectedIndex by remember { mutableStateOf<Int?>(null) }
+    var showCheckout by remember { mutableStateOf(false) }
+    var showExit by remember { mutableStateOf(false) }
+    var refundMethod by remember { mutableStateOf(ManualRefundMethodV135.CASH) }
+    var reason by remember { mutableStateOf("") }
+    var managerPin by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var completed by remember { mutableStateOf<ManualReturnResultV135?>(null) }
+    val submissionGate = remember { ManualReturnSubmissionGateV135() }
+    val session = OperatorSessionRegistry.current(context.applicationContext)
+    val canApproveWithoutPin = ManagerApprovalV145.canUseCurrentManagerSession(context.applicationContext)
+    val total = remember(cart.toList()) { TaxEngine.calculate(cart.toList()).grossAmount }
 
-        val topBarV155 = horizontalRow().apply {
-            setBackgroundColor(0xFF173F6B.toInt())
-            addView(Button(this@ManualReturnActivityV135).apply {
-                text = "戻る"
-                setOnClickListener { finish() }
-                contentDescription = "返品画面を閉じる"
-            }, LinearLayout.LayoutParams(dp(104), dp(54)))
-            addView(TextView(this@ManualReturnActivityV135).apply {
-                text = "つぐレジ  元取引なし返品"
-                textSize = 21f
-                setTextColor(android.graphics.Color.WHITE)
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setPadding(dp(14), 0, dp(6), 0)
-            }, LinearLayout.LayoutParams(0, dp(60), 1f))
-        }
-        screen.addView(topBarV155, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(60)))
-
-        root.addView(TextView(this).apply {
-            text = "元の売上No.を特定できない場合だけ使用します。返品数量・返品金額は負数取引として保存されます。責任者承認が必須です。"
-            textSize = 15f
-            setPadding(0, dp(6), 0, dp(16))
-        })
-
-        val productRow = horizontalRow()
-        productSpinner = Spinner(this)
-        val labels = if (products.isEmpty()) listOf("商品が登録されていません") else products.map { "${it.name}  ${yen(it.unitPrice)}  ${it.taxSymbol}" }
-        productSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, labels)
-        productRow.addView(productSpinner, LinearLayout.LayoutParams(0, dp(54), 4f))
-        quantityInput = EditText(this).apply {
-            hint = "数量"
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            setText("1")
-            gravity = Gravity.CENTER
-        }
-        productRow.addView(quantityInput, LinearLayout.LayoutParams(0, dp(54), 1f))
-        productRow.addView(Button(this).apply {
-            text = "返品商品に追加"
-            setOnClickListener { addLine() }
-        }, LinearLayout.LayoutParams(0, dp(54), 1.5f))
-        root.addView(productRow)
-
-        linesText = TextView(this).apply {
-            textSize = 17f
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-            setBackgroundColor(0xFFF3F5F7.toInt())
-        }
-        root.addView(linesText, matchWrap(top = 12))
-
-        totalText = TextView(this).apply {
-            textSize = 24f
-            gravity = Gravity.END
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(0, dp(8), 0, dp(8))
-        }
-        root.addView(totalText, matchWrap())
-
-        root.addView(Button(this).apply {
-            text = "返品商品をすべてクリア"
-            setOnClickListener {
-                lines.clear()
-                refreshLines()
-            }
-        }, matchWrap())
-
-        reasonInput = EditText(this).apply {
-            hint = "返品理由（任意）"
-            minLines = 2
-        }
-        root.addView(reasonInput, matchWrap(top = 14))
-
-        refundSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(
-                this@ManualReturnActivityV135,
-                android.R.layout.simple_spinner_dropdown_item,
-                ManualRefundMethodV135.entries.map { it.displayName },
-            )
-        }
-        val refundRow = horizontalRow()
-        refundRow.addView(TextView(this).apply {
-            text = "返金方法"
-            textSize = 17f
-            gravity = Gravity.CENTER_VERTICAL
-        }, LinearLayout.LayoutParams(0, dp(54), 1f))
-        refundRow.addView(refundSpinner, LinearLayout.LayoutParams(0, dp(54), 3f))
-        root.addView(refundRow, matchWrap(top = 12))
-
-        managerPinInput = EditText(this).apply {
-            hint = "責任者PIN"
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
-        }
-        if (!ManagerApprovalV145.canUseCurrentManagerSession(applicationContext)) {
-            root.addView(managerPinInput, matchWrap(top = 12))
-        }
-
-
-        root.addView(TextView(this).apply {
-            text = "カード返金を選んだ場合、つぐレジ側には返金記録を残しますが、決済端末側の返金操作完了も必ず確認してください。"
-            textSize = 14f
-            setPadding(0, dp(8), 0, dp(12))
-        })
-
-        val actionRow = horizontalRow()
-        confirmButton = Button(this).apply {
-            text = "返品を確定"
-            setOnClickListener { showReturnConfirmationV155() }
-        }
-        actionRow.addView(confirmButton, LinearLayout.LayoutParams(0, dp(58), 1f))
-        root.addView(actionRow, matchWrap(top = 8))
-        screen.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-        return screen
+    fun exitSafely() {
+        if (cart.isNotEmpty()) showExit = true else onExit()
     }
 
-    private fun addLine() {
-        if (products.isEmpty()) return showError("返品対象の商品が登録されていません")
-        val rawQuantity = quantityInput.text.toString().trim()
-        val quantityHundredths = runCatching { QuantityV136.parse(rawQuantity).hundredths }
-            .getOrElse { return showError(it.message ?: "数量を入力してください") }
-        val product = products[productSpinner.selectedItemPosition.coerceIn(products.indices)]
-        runCatching { product.quantityMode.requireAllowed(quantityHundredths) }
-            .exceptionOrNull()
-            ?.let { return showError(it.message ?: "数量を確認してください") }
-        val existing = lines.indexOfFirst { it.product.id == product.id }
-        val combinedHundredths = if (existing >= 0) {
-            Math.addExact(lines[existing].quantityHundredths, quantityHundredths)
-        } else {
-            quantityHundredths
-        }
-        runCatching { product.quantityMode.requireAllowed(combinedHundredths) }
-            .exceptionOrNull()
-            ?.let { return showError(it.message ?: "数量を確認してください") }
-        val legacyQuantity = ((combinedHundredths + QuantityV136.SCALE - 1L) / QuantityV136.SCALE)
-            .coerceAtLeast(1L)
-            .coerceAtMost(Int.MAX_VALUE.toLong())
-            .toInt()
-        if (existing >= 0) {
-            lines[existing] = lines[existing].copy(
-                quantity = legacyQuantity,
-                quantityHundredths = combinedHundredths,
-            )
-        } else {
-            lines += ManualReturnLineRequestV135(
-                product = product,
-                quantity = legacyQuantity,
-                quantityHundredths = quantityHundredths,
-            )
-        }
-        quantityInput.setText("1")
-        refreshLines()
+    BackHandler(enabled = cart.isNotEmpty() && !showCheckout && completed == null) {
+        exitSafely()
     }
 
-    private fun refreshLines() {
-        if (lines.isEmpty()) {
-            linesText.text = "返品商品はまだありません"
-            totalText.text = "返金合計  ¥0"
-            return
-        }
-        linesText.text = lines.joinToString("\n") { line ->
-            "${line.product.name} ${line.product.taxSymbol}   -${line.quantityText} × ${yen(line.product.unitPrice)}"
-        }
-        val items = lines.map {
-            CartItem(
-                product = it.product,
-                quantity = it.quantity,
-                quantityHundredths = it.quantityHundredths,
-            )
-        }
-        val total = TaxEngine.calculate(items).grossAmount
-        totalText.text = "返金合計  -${yen(total)}"
-    }
-
-    private fun showReturnConfirmationV155() {
-        if (submissionGate.isSubmitting()) return
-        val refund = ManualRefundMethodV135.entries[refundSpinner.selectedItemPosition]
-        val total = runCatching {
-            val items = ManualReturnPolicyV135.toPositiveCartItems(
-                ManualReturnRequestV135(lines.toList(), reasonInput.text.toString(), refund),
-                reasonRequired = false,
-            )
-            TaxEngine.calculate(items).grossAmount.also { require(it > 0) { "返金額が0円です" } }
-        }.getOrElse {
-            showError(it.message ?: "返品対象と金額を確認してください")
-            return
-        }
-        val confirm = AlertDialog.Builder(this)
-            .setTitle("返品を確定しますか？")
-            .setMessage("返品商品 ${lines.size}件\\n返金合計 -${yen(total)}\\n返金方法：${refund.displayName}\\n確定後は返品履歴と印刷ジョブを作成します。")
-            .setCancelable(false)
-            .setNegativeButton("キャンセル", null)
-            .setPositiveButton("返品を確定") { _, _ -> executeReturn() }
-            .create()
-        confirm.setCanceledOnTouchOutside(false)
-        confirm.setOnShowListener {
-            confirm.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(android.graphics.Color.rgb(180, 35, 24))
-        }
-        confirm.show()
-    }
-
-    private fun executeReturn() {
-        if (!submissionGate.tryStart()) return
-        confirmButton.isEnabled = false
-
-        val method = ManualRefundMethodV135.entries[refundSpinner.selectedItemPosition]
-        val request = ManualReturnRequestV135(
-            lines = lines.toList(),
-            reason = reasonInput.text.toString(),
-            refundMethod = method,
+    if (session == null || !session.allows(RegisterPermission.REVERSAL)) {
+        RegisterModalV154(
+            onDismissRequest = {},
+            title = { Text("レジマイナスを利用できません") },
+            text = { Text("担当者の返品・取消権限とログイン状態を確認してください") },
+            confirmButton = { RegisterModalConfirmV154("販売に戻る", onExit) },
+            dismissButton = {},
+            destructive = true,
         )
-        runCatching {
-            coordinator.create(request, managerPinInput.text.toString())
-        }.onSuccess { result ->
-            AlertDialog.Builder(this)
-                .setTitle("返品を確定しました")
-                .setMessage("返品No. MR-${result.manualReturnId}\n返金額 ${yen(result.signedGrossAmount)}\n印刷ジョブ No.${result.printJobId}")
-                .setCancelable(false)
-                .setPositiveButton("OK") { _, _ ->
-                    lines.clear()
-                    reasonInput.text.clear()
-                    managerPinInput.text.clear()
-                    refreshLines()
-                    submissionGate.release()
-                    confirmButton.isEnabled = true
+        return
+    }
+
+    SalesScreen(
+        operatorName = session.name,
+        products = products,
+        cart = cart,
+        corrections = emptyList(),
+        selectedIndex = selectedIndex,
+        printerHealth = PrinterHealthSnapshot.checking(),
+        onSelect = { selectedIndex = it },
+        onEdit = { selectedIndex = it },
+        onAddProduct = { product, requested ->
+            runCatching {
+                product.quantityMode.requireAllowed(requested)
+                val index = cart.indexOfFirst { it.product.id == product.id }
+                val newQty = Math.addExact(if (index >= 0) cart[index].quantityHundredths else 0L, requested)
+                product.quantityMode.requireAllowed(newQty)
+                val newLine = CartItem(
+                    product = product,
+                    quantity = QuantityCompatibilityV136.legacyPositiveInt(newQty),
+                    quantityHundredths = newQty,
+                    lineId = if (index >= 0) cart[index].lineId else CartLineIdentityV135.newId(),
+                )
+                if (index >= 0) cart[index] = newLine else cart.add(newLine)
+                selectedIndex = null
+            }.onFailure { error = it.message ?: "商品を追加できませんでした" }
+        },
+        onChangeQuantity = { requested ->
+            selectedIndex?.let { index ->
+                cart.getOrNull(index)?.let { line ->
+                    runCatching {
+                        line.product.quantityMode.requireAllowed(requested)
+                        cart[index] = line.copy(
+                            quantity = QuantityCompatibilityV136.legacyPositiveInt(requested),
+                            quantityHundredths = requested,
+                        )
+                    }.onFailure { error = it.message ?: "数量を変更できませんでした" }
                 }
-                .show()
-        }.onFailure {
-            submissionGate.release()
-            confirmButton.isEnabled = true
-            showError(it.message ?: "返品を確定できませんでした")
-        }
+            }
+        },
+        onRemove = {
+            if (cart.isNotEmpty()) cart.removeAt(cart.lastIndex)
+            selectedIndex = null
+        },
+        onCancelSelected = { requested ->
+            selectedIndex?.let { index ->
+                cart.getOrNull(index)?.let { line ->
+                    val remaining = line.quantityHundredths - requested
+                    if (remaining < 0L) {
+                        error = "取消数量が登録数量を超えています"
+                    } else if (remaining == 0L) {
+                        cart.removeAt(index)
+                    } else {
+                        runCatching {
+                            line.product.quantityMode.requireAllowed(remaining)
+                            cart[index] = line.copy(
+                                quantity = QuantityCompatibilityV136.legacyPositiveInt(remaining),
+                                quantityHundredths = remaining,
+                            )
+                        }.onFailure { error = it.message ?: "数量を変更できませんでした" }
+                    }
+                }
+            }
+            selectedIndex = null
+        },
+        onCancelTransaction = { cart.clear(); selectedIndex = null },
+        onDiscount = {},
+        onTickets = {},
+        onHold = {},
+        onPayment = { if (cart.isNotEmpty()) showCheckout = true },
+        onSalesHistory = {},
+        onPrintQueue = {},
+        onPrinterStatus = {},
+        canOpenSettings = false,
+        canOpenManagement = false,
+        onOpenSettings = {},
+        onOpenCatalogSettings = {},
+        onOpenManagement = {},
+        accessMessage = error,
+        onLogout = ::exitSafely,
+        minusMode = true,
+    )
+
+    if (showCheckout) {
+        RegisterModalV154(
+            onDismissRequest = {},
+            title = { Text("レジマイナス会計", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(
+                    modifier = Modifier.heightIn(max = 310.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text("商品 " + cart.size + "種類 ／ マイナス数量 " +
+                        QuantityCompatibilityV136.textOrZero(cart.sumOf { it.quantityHundredths }) + "点")
+                    Text("返金額  -" + java.text.NumberFormat.getCurrencyInstance(java.util.Locale.JAPAN).format(total),
+                        color = Color(0xFFB42318), fontWeight = FontWeight.Bold)
+                    Text("返金方法", fontWeight = FontWeight.Bold)
+                    ManualRefundMethodV135.entries.forEach { method ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = refundMethod == method, onClick = { refundMethod = method })
+                            Text(method.displayName)
+                        }
+                    }
+                    OutlinedTextField(
+                        value = reason, onValueChange = { reason = it },
+                        label = { Text("理由（任意）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (!canApproveWithoutPin) {
+                        OutlinedTextField(
+                            value = managerPin, onValueChange = { managerPin = it },
+                            label = { Text("責任者PIN") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    if (refundMethod != ManualRefundMethodV135.CASH) {
+                        Text("外部決済端末の返金操作は別途必要です。端末側の返金完了を確認してください。",
+                            color = Color(0xFFB42318))
+                    }
+                    if (error != null) Text(error.orEmpty(), color = Color(0xFFB42318))
+                }
+            },
+            confirmButton = {
+                RegisterModalConfirmV154(
+                    label = "マイナスを確定",
+                    destructive = true,
+                    enabled = !submissionGate.isSubmitting() && total > 0L,
+                    onClick = {
+                        if (submissionGate.tryStart()) {
+                            runCatching {
+                                val lines = cart.toList().map { line ->
+                                    ManualReturnLineRequestV135(
+                                        product = line.product,
+                                        quantity = line.quantity,
+                                        quantityHundredths = line.quantityHundredths,
+                                    )
+                                }
+                                val request = ManualReturnRequestV135(lines, reason, refundMethod)
+                                ManualReturnPolicyV135.toPositiveCartItems(request, reasonRequired = false)
+                                coordinator.create(request, managerPin)
+                            }.onSuccess {
+                                completed = it
+                                showCheckout = false
+                                cart.clear()
+                                selectedIndex = null
+                                error = null
+                            }.onFailure {
+                                error = it.message ?: "マイナスを確定できませんでした"
+                                submissionGate.release()
+                            }
+                        }
+                    },
+                )
+            },
+            dismissButton = {
+                RegisterModalCancelV154(onClick = { showCheckout = false; error = null })
+            },
+            destructive = true,
+        )
     }
 
-    private fun showError(message: String) = toastDialog("確認", message)
-
-    private fun toastDialog(title: String, message: String) {
-        AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("OK", null).show()
+    if (showExit) {
+        RegisterModalV154(
+            onDismissRequest = {},
+            title = { Text("レジマイナスを終了しますか？") },
+            text = { Text("入力途中の商品は破棄されます。通常販売のカートは変更しません。") },
+            confirmButton = {
+                RegisterModalConfirmV154(label = "終了する", destructive = true, onClick = onExit)
+            },
+            dismissButton = { RegisterModalCancelV154(onClick = { showExit = false }) },
+            destructive = true,
+        )
     }
 
-    private fun horizontalRow() = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
+    completed?.let { result ->
+        RegisterModalV154(
+            onDismissRequest = {},
+            title = { Text("レジマイナス完了") },
+            text = {
+                Text(
+                    "マイナスNo. MR-" + result.manualReturnId +
+                    "\n返金額 " + java.text.NumberFormat.getCurrencyInstance(java.util.Locale.JAPAN)
+                        .format(result.signedGrossAmount) +
+                    "\n印刷ジョブ No." + result.printJobId +
+                    "\n外部端末への返金操作は別途確認してください。"
+                )
+            },
+            confirmButton = {
+                RegisterModalConfirmV154(label = "販売へ戻る", onClick = onExit)
+            },
+            dismissButton = {},
+            destructive = true,
+        )
     }
-
-    private fun matchWrap(top: Int = 0) = LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.WRAP_CONTENT,
-    ).apply { topMargin = dp(top) }
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-
-    private fun yen(value: Long): String = NumberFormat.getCurrencyInstance(Locale.JAPAN).format(value)
 }

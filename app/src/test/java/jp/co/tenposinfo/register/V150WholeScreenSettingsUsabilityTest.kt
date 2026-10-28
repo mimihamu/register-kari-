@@ -12,17 +12,17 @@ class V150WholeScreenSettingsUsabilityTest {
 
     @Test fun salesHasOneNavyToolbarAndNoWhiteSecondActionBar() {
         val sales = src("MainActivity.kt")
-        val start = sales.indexOf("RegisterTopBarV141(title = \"販売\"")
+        val start = sales.indexOf("RegisterTopBarV141(title = if (minusMode) \"レジマイナス\" else \"販売\"")
         assertTrue(start > 0)
         val toolbar = sales.substring(start).take(2_700)
         assertTrue(toolbar.contains("onClick = onOpenManagement"))
         assertTrue(toolbar.contains("onClick = onLogout"))
         assertTrue(toolbar.contains("onClick = onOpenSettings"))
-        assertTrue(toolbar.contains("containerColor = Color.White"))
+        assertTrue(toolbar.contains("containerColor = Color.Transparent"))
         assertFalse(toolbar.contains(".height(48.dp).background(Color.White)"))
         assertFalse(toolbar.contains("サンプル居酒屋"))
         val chrome = src("RegisterTopBarV141.kt")
-        assertTrue(chrome.contains(".background(RegisterTopBarColorV141)"))
+        assertTrue(chrome.contains(".background(backgroundColor)"))
     }
 
     @Test fun receiptShowsBasicOrAdvancedWithoutLosingEditorsOrSave() {

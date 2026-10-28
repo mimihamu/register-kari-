@@ -11,7 +11,7 @@ class V141RegisterUiConsistencyTest {
 
     @Test fun operatorAndActivePaymentKeypadsUseResponsiveSizing() {
         val main = source("MainActivity.kt")
-        val login = main.substring(main.indexOf("private fun LoginScreen("), main.indexOf("private fun SalesScreen("))
+        val login = main.substring(main.indexOf("private fun LoginScreen("), main.indexOf("internal fun SalesScreen("))
         val payment = source("PaymentScreenV135.kt")
         assertTrue(login.contains("preferredMinKeyDp = 72"))
         assertTrue(login.contains("buttonHeightDp = keypad.keyHeightDp"))

@@ -522,6 +522,9 @@ private fun RegisterApp() {
                     context.startActivity(CatalogNavigationContractV030.productRegistrationIntent(context, scannedCode))
                 },
                 onOpenManagement = { context.startActivity(Intent(context, OperationsHubActivityV030::class.java)) },
+                onRegisterMinus = if (currentOperator?.allows(RegisterPermission.REVERSAL) == true) {
+                    { context.startActivity(Intent(context, ManualReturnActivityV135::class.java)) }
+                } else null,
                 accessMessage = accessMessage,
                 onLogout = {
                     OperatorSessionRegistry.logout(context.applicationContext)
@@ -1088,7 +1091,7 @@ private fun LoginScreen(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SalesScreen(
+internal fun SalesScreen(
     operatorName: String,
     products: List<Product>,
     cart: List<CartItem>,
@@ -1116,6 +1119,8 @@ private fun SalesScreen(
     onOpenManagement: () -> Unit,
     accessMessage: String?,
     onLogout: () -> Unit,
+    onRegisterMinus: (() -> Unit)? = null,
+    minusMode: Boolean = false,
 ) {
     val summary = TaxEngine.calculate(cart)
     var numericInput by remember { mutableStateOf("") }
@@ -1175,8 +1180,12 @@ private fun SalesScreen(
         val listener: (BarcodeScannedV136) -> Unit = { event ->
             val product = barcodeIndex.findExact(event.code)
             if (product == null) {
-                unregisteredBarcode = event.code
-                lookupMessage = null
+                if (minusMode) {
+                    lookupMessage = "登録済みの商品を選択してください"
+                } else {
+                    unregisteredBarcode = event.code
+                    lookupMessage = null
+                }
             } else {
                 registerProduct(product)
             }
@@ -1211,60 +1220,51 @@ private fun SalesScreen(
         )
     }
 
-    Column(Modifier.fillMaxSize()) {
-        // 販売操作・担当者切替は紺色の共通バーへ統合。白い第二バーは使わない。
-        RegisterTopBarV141(title = "販売", action = {
-            if (accessMessage != null) {
-                Text(
-                    accessMessage,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.width(if (responsive.isCompact) 120.dp else 200.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.width(10.dp))
-            } else {
-                Text(
-                    "担当：$operatorName",
-                    color = Color.White,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.width(if (responsive.isCompact) 94.dp else 150.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.width(10.dp))
+    Column(Modifier.fillMaxSize().background(if (minusMode) Color(0xFFFFE5E5) else Background)) {
+        // レジマイナスは通常販売カートと分離し、全操作を赤で識別する。
+        RegisterTopBarV141(title = if (minusMode) "レジマイナス" else "販売", backgroundColor = if (minusMode) Danger else Navy, action = {
+            Text(
+                if (accessMessage != null) accessMessage else "担当：$operatorName",
+                color = Color.White,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.width(if (responsive.isCompact) 92.dp else 150.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.width(6.dp))
+            if (!minusMode && onRegisterMinus != null) {
+                OutlinedButton(
+                    onClick = onRegisterMinus,
+                    modifier = Modifier.height(48.dp),
+                    border = BorderStroke(1.dp, Color.White),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.Transparent, contentColor = Color.White),
+                ) { Text("レジマイナス", maxLines = 1) }
+                Spacer(Modifier.width(6.dp))
             }
-            if (canOpenManagement) {
+            if (!minusMode && canOpenManagement) {
                 OutlinedButton(
                     onClick = onOpenManagement,
                     modifier = Modifier.height(48.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = Color.White,
-                        contentColor = Navy,
-                    ),
+                    border = BorderStroke(1.dp, Color.White),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.Transparent, contentColor = Color.White),
                 ) { Text("レジ管理", maxLines = 1) }
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(6.dp))
             }
-            if (canOpenSettings && !canOpenManagement) {
+            if (!minusMode && canOpenSettings && !canOpenManagement) {
                 OutlinedButton(
                     onClick = onOpenSettings,
                     modifier = Modifier.height(48.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = Color.White,
-                        contentColor = Navy,
-                    ),
+                    border = BorderStroke(1.dp, Color.White),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.Transparent, contentColor = Color.White),
                 ) { Text("設定", maxLines = 1) }
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(6.dp))
             }
             OutlinedButton(
                 onClick = onLogout,
                 modifier = Modifier.height(48.dp),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = Color.White,
-                    contentColor = Navy,
-                ),
-            ) { Text("担当切替", maxLines = 1) }
+                border = BorderStroke(1.dp, Color.White),
+                colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.Transparent, contentColor = Color.White),
+            ) { Text(if (minusMode) "販売へ戻る" else "担当切替", maxLines = 1) }
         })
 
         Row(
@@ -1316,13 +1316,13 @@ private fun SalesScreen(
                                 }
                                 Text(item.product.name, fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    "${item.quantityText} × ${yen(item.unitPrice)}  ${item.product.taxSymbol}",
+                                    "${if (minusMode) "-" else ""}${item.quantityText} × ${yen(item.unitPrice)}  ${item.product.taxSymbol}",
                                     fontSize = 13.sp,
                                     color = Color.Gray,
                                 )
                                 if (item.discountAmount > 0) Text("値引 -${yen(item.discountAmount)}", color = Danger, fontSize = 12.sp)
                             }
-                            Text(yen(item.baseAmount), fontWeight = FontWeight.Bold)
+                            Text(if (minusMode) "-${yen(item.baseAmount)}" else yen(item.baseAmount), fontWeight = FontWeight.Bold, color = if (minusMode) Danger else Color.Unspecified)
                         }
                     }
                     if (corrections.isNotEmpty()) {
@@ -1355,9 +1355,9 @@ private fun SalesScreen(
                 }
                 Row(verticalAlignment = Alignment.Bottom) {
                     val totalQuantityHundredths = cart.sumOf { it.quantityHundredths }
-                    Text("${QuantityCompatibilityV136.textOrZero(totalQuantityHundredths)}点")
+                    Text("${if (minusMode) "-" else ""}${QuantityCompatibilityV136.textOrZero(totalQuantityHundredths)}点")
                     Spacer(Modifier.weight(1f))
-                    Text("合計 ${yen(summary.grossAmount)}", fontSize = if (responsive.isCompact) 24.sp else 28.sp, fontWeight = FontWeight.Bold, color = Navy)
+                    Text("合計 ${if (minusMode) "-" else ""}${yen(summary.grossAmount)}", fontSize = if (responsive.isCompact) 24.sp else 28.sp, fontWeight = FontWeight.Bold, color = if (minusMode) Danger else Navy)
                 }
             }
 
@@ -1486,7 +1486,7 @@ private fun SalesScreen(
                                 ) { Text("行取消", fontSize = 13.sp, maxLines = 1) }
                                 OutlinedButton(
                                     onClick = { selectedIndex?.let(onEdit) },
-                                    enabled = selectedIndex != null,
+                                    enabled = selectedIndex != null && !minusMode,
                                     modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
                                 ) { Text("行編集", fontSize = 13.sp, maxLines = 1) }
                             }
@@ -1497,18 +1497,26 @@ private fun SalesScreen(
                             ) {
                                 OutlinedButton(
                                     onClick = onDiscount,
-                                    enabled = cart.isNotEmpty(),
+                                    enabled = cart.isNotEmpty() && !minusMode,
                                     modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
                                 ) { Text("値引・割引", fontSize = 13.sp, maxLines = 1) }
                                 OutlinedButton(
                                     onClick = { showProductSearch = true; lookupMessage = null },
                                     modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
                                 ) { Text("商品検索", fontSize = 13.sp, maxLines = 1) }
-                                TransactionAbortButtonV135(
-                                    items = cart,
-                                    modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
-                                    onAbortCommitted = onCancelTransaction,
-                                )
+                                if (minusMode) {
+                                    OutlinedButton(
+                                        onClick = onCancelTransaction,
+                                        enabled = cart.isNotEmpty(),
+                                        modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                    ) { Text("全消去", maxLines = 1) }
+                                } else {
+                                    TransactionAbortButtonV135(
+                                        items = cart,
+                                        modifier = Modifier.weight(1f).height(keypad.functionHeightDp.dp),
+                                        onAbortCommitted = onCancelTransaction,
+                                    )
+                                }
                             }
                         }
                     }
@@ -1588,7 +1596,25 @@ private fun SalesScreen(
         }
 
         val twoRowActions = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 1_060
-        if (twoRowActions) {
+        if (minusMode) {
+            Row(
+                Modifier.fillMaxWidth().height(responsive.bottomBarHeightDp.dp)
+                    .padding(horizontal = responsive.screenPaddingDp.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
+            ) {
+                OutlinedButton(onClick = onLogout, modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    Text("販売に戻る", maxLines = 1)
+                }
+                Button(
+                    onClick = onPayment,
+                    enabled = cart.isNotEmpty(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Danger),
+                    modifier = Modifier.weight(2f).fillMaxHeight(),
+                ) {
+                    Text("会計（レジマイナス） -${yen(summary.grossAmount)}", maxLines = 1)
+                }
+            }
+        } else if (twoRowActions) {
             Column(
                 Modifier.fillMaxWidth().height(122.dp)
                     .padding(horizontal = responsive.screenPaddingDp.dp, vertical = 6.dp),

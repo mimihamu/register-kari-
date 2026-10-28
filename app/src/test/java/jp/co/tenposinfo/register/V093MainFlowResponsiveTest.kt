@@ -17,7 +17,7 @@ class V093MainFlowResponsiveTest {
 
     private fun functionSource(name: String, nextName: String): String {
         val start = mainSource.indexOf("private fun $name(")
-        val end = mainSource.indexOf("private fun $nextName(", start + 1)
+        val end = mainSource.indexOf(if (nextName == "SalesScreen") "internal fun SalesScreen(" else "private fun $nextName(", start + 1)
         assertTrue("$name source not found", start >= 0)
         assertTrue("$nextName source not found", end > start)
         return mainSource.substring(start, end)

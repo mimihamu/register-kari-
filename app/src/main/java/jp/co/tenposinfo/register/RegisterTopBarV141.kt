@@ -31,12 +31,15 @@ internal val RegisterTopBarColorV141 = Color(0xFF173F6B)
 
 /** システムアイコンと画面操作を重ねず、ステータスバー背景も揃える。 */
 @Composable
-internal fun RegisterSafeAreaV141(content: @Composable () -> Unit) {
-    Box(Modifier.fillMaxSize().background(RegisterTopBarColorV141)) {
+internal fun RegisterSafeAreaV141(
+    topBarColor: Color = RegisterTopBarColorV141,
+    content: @Composable () -> Unit,
+) {
+    Box(Modifier.fillMaxSize().background(topBarColor)) {
         Spacer(
             Modifier.fillMaxWidth()
                 .windowInsetsTopHeight(WindowInsets.statusBars)
-                .background(RegisterTopBarColorV141)
+                .background(topBarColor)
         )
         Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
             content()

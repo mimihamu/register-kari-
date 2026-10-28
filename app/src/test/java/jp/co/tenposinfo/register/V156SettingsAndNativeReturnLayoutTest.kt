@@ -10,15 +10,17 @@ class V156SettingsAndNativeReturnLayoutTest {
     private fun source(name: String) =
         File("src/main/java/jp/co/tenposinfo/register", name).readText()
 
-    @Test fun returnToolbarRemainsOutsideScrollableContent() {
+    @Test fun minusScreenReusesSalesLayoutAndIsolatesReturnCart() {
         val screen = source("ManualReturnActivityV135.kt")
-        assertTrue(screen.contains("private fun buildContent(): LinearLayout"))
-        assertTrue(screen.contains("setOnApplyWindowInsetsListener(screen)"))
-        assertTrue(screen.contains("screen.addView(topBarV155,"))
-        assertTrue(screen.contains("screen.addView(scroll,"))
-        assertFalse(screen.contains("root.addView(topBarV155,"))
-        assertTrue(screen.contains("setOnClickListener { showReturnConfirmationV155() }"))
-        assertTrue(screen.contains("coordinator.create(request, managerPinInput.text.toString())"))
+        val main = source("MainActivity.kt")
+        assertTrue(screen.contains("RegisterSafeAreaV141(topBarColor = Color(0xFFB42318))"))
+        assertTrue(screen.contains("SalesScreen("))
+        assertTrue(screen.contains("minusMode = true"))
+        assertTrue(screen.contains("val cart = remember { mutableStateListOf<CartItem>() }"))
+        assertTrue(main.contains("onRegisterMinus = if (currentOperator?.allows(RegisterPermission.REVERSAL)"))
+        assertTrue(main.contains("if (minusMode) Danger else Navy"))
+        assertTrue(screen.contains("ManualReturnRequestV135(lines, reason, refundMethod)"))
+        assertFalse(screen.contains("database.saveSale("))
     }
 
     @Test fun paymentSettingsUseAvailableWidthAndKeepFixedSaveAction() {
