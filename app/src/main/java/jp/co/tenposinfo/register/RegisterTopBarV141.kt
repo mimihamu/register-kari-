@@ -53,12 +53,13 @@ internal fun RegisterTopBarV141(
     title: String,
     action: (@Composable () -> Unit)? = null,
     onBack: (() -> Unit)? = null,
+    backgroundColor: Color = RegisterTopBarColorV141,
 ) {
     val metrics = rememberRegisterResponsiveMetrics()
     Row(
         Modifier.fillMaxWidth()
             .height(metrics.headerHeightDp.dp)
-            .background(RegisterTopBarColorV141)
+            .background(backgroundColor)
             .padding(horizontal = metrics.screenPaddingDp.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

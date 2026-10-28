@@ -265,7 +265,7 @@ private fun OperationsHubScreenV030(
                 ) {
                     HubStatusPanelV030(
                         Modifier.weight(0.85f).fillMaxHeight(),
-                        operatorName, session, summary,
+                        operatorName, session, summary, minusCount,
                     )
                     BoxWithConstraints(Modifier.weight(1.55f).fillMaxHeight()) {
                         HubManagementGridV143(
@@ -285,7 +285,7 @@ private fun OperationsHubScreenV030(
                 ) {
                     HubStatusPanelV030(
                         Modifier.fillMaxWidth().height(208.dp),
-                        operatorName, session, summary,
+                        operatorName, session, summary, minusCount,
                     )
                     HubManagementGridV143(
                         actions = actions,
@@ -342,6 +342,7 @@ private fun HubStatusPanelV030(
     operatorName: String,
     session: BusinessSessionRecord?,
     summary: DailyOperationsSummary?,
+    minusCount: Int,
 ) {
     val metrics = rememberRegisterResponsiveMetrics()
     Card(
