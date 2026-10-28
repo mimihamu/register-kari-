@@ -167,13 +167,18 @@ private fun RegisterMinusSalesV158(
             }
             selectedIndex = null
         },
-        onCancelTransaction = { cart.clear(); selectedIndex = null },
+        onCancelTransaction = {
+            cart.clear()
+            selectedIndex = null
+            checkoutRequestId = UUID.randomUUID().toString()
+        },
         onDiscount = {},
         onTickets = {},
         onHold = {},
         onPayment = {
             if (cart.isNotEmpty()) {
-                checkoutRequestId = UUID.randomUUID().toString()
+                // Reopening a failed/uncertain checkout must retry the same operation.
+                // A new ID is created only when the operator explicitly clears the cart.
                 showCheckout = true
             }
         },
