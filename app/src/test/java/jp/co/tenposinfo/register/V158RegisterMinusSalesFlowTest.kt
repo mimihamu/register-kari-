@@ -43,9 +43,9 @@ class V158RegisterMinusSalesFlowTest {
         val renderer = source("ManualReturnV135.kt")
         assertTrue(hub.contains("ManualReturnStoreV135(context.applicationContext)"))
         assertTrue(hub.contains("it.accountingContribution(session.id).returnCount"))
-        assertTrue(hub.contains("HubAmountV030(\"レジマイナス\", \"-${minusCount}件\")"))
+        assertTrue(hub.contains("HubAmountV030(\"レジマイナス\", \"-\${minusCount}件\")"))
         assertTrue(renderer.contains("appendLine(\"      レジマイナス\")"))
-        assertTrue(renderer.contains("appendLine(\"レジマイナスNo. MR-$manualReturnId\")"))
+        assertTrue(renderer.contains("appendLine(\"レジマイナスNo. MR-\$manualReturnId\")"))
     }
 
     @Test fun commonTopBarSupportsRedModeWithoutChangingDefault() {
