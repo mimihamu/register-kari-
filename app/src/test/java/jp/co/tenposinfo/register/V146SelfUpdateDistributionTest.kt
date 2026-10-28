@@ -8,9 +8,9 @@ import org.junit.Test
 class V146SelfUpdateDistributionTest {
     private fun read(path: String) = File(path).readText()
     private val modules = listOf(
-        Triple(".", "pos", "169"),
-        Triple("../management-app", "plus", "37"),
-        Triple("../customer-display", "cd", "15"),
+        Triple(".", "pos", "180"),
+        Triple("../management-app", "plus", "48"),
+        Triple("../customer-display", "cd", "26"),
     )
 
     @Test fun updaterUsesOnlyOfficialHttpsAndChecksPackageVersionHashAndSignature() {
@@ -56,9 +56,9 @@ class V146SelfUpdateDistributionTest {
 
     @Test fun installedVersionCodeMustIncreaseToAllowNextPublishedRelease() {
         val builds = listOf(
-            Triple(".", "179", "1.34.15-dev.1"),
-            Triple("../management-app", "47", "0.33.14-dev.1"),
-            Triple("../customer-display", "25", "0.15.17-dev.1"),
+            Triple(".", "180", "1.34.16-dev.1"),
+            Triple("../management-app", "48", "0.33.15-dev.1"),
+            Triple("../customer-display", "26", "0.15.18-dev.1"),
         )
         for ((dir, code, name) in builds) {
             val gradle = read("$dir/build.gradle.kts")
@@ -66,8 +66,8 @@ class V146SelfUpdateDistributionTest {
             assertTrue(gradle.contains("        versionName = \"$name\""))
         }
         val gate = read("../ci/verify-apk-release-integrity.sh")
-        assertTrue(gate.contains("'25'"))
-        assertTrue(gate.contains("'0.15.17-dev.1'"))
+        assertTrue(gate.contains("'26'"))
+        assertTrue(gate.contains("'0.15.18-dev.1'"))
     }
 
     @Test fun updateActionsAreReachableFromAllThreeApps() {

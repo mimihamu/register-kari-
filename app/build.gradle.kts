@@ -119,8 +119,9 @@ android {
         // v1.54 verified
         // versionCode = 177
         // versionName = "1.34.13-dev.1"
-        versionCode = 179
-        versionName = "1.34.15-dev.1"
+        // v1.57: versionCode 179, versionName 1.34.15-dev.1
+        versionCode = 180
+        versionName = "1.34.16-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
