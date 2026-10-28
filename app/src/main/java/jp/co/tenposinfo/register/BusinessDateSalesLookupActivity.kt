@@ -64,7 +64,7 @@ private val BusinessLookupDanger = Color(0xFFC62828)
 private val BusinessLookupGreen = Color(0xFF2E7D32)
 
 /**
- * v0.66 営業日別売上DB直接検索。
+ * v0.66 SQLite直接検索。売上DBの読取専用検索を維持し、画面上の重複説明は表示しない。
  *
  * salesのbusiness_date/business_session_idは読み取りのみ。旧DBに列がない場合も
  * SchemaMigration.hasColumn()による存在確認だけを行い、ALTER/BACKFILLは実行しない。
