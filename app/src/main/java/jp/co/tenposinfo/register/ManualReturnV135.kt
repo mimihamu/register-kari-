@@ -443,9 +443,9 @@ internal object ManualReturnDocumentRendererV135 {
         val timestamp = SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.JAPAN).format(Date(createdAt))
         return buildString {
             appendLine("================================")
-            appendLine("      返品（元取引不明）")
+            appendLine("      レジマイナス")
             appendLine("================================")
-            appendLine("返品No. MR-$manualReturnId")
+            appendLine("レジマイナスNo. MR-$manualReturnId")
             appendLine("営業日 $businessDate")
             appendLine("日時   $timestamp")
             appendLine("--------------------------------")

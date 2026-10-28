@@ -60,6 +60,13 @@ private val HubPaleYellowV030 = Color(0xFFFFF4D9)
 
 /** v0.30のレスポンシブなレジ管理入口。 */
 class OperationsHubActivityV030 : ComponentActivity() {
+    private val refreshTickV158 = androidx.compose.runtime.mutableIntStateOf(0)
+
+    override fun onResume() {
+        super.onResume()
+        refreshTickV158.intValue++
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
@@ -67,6 +74,7 @@ class OperationsHubActivityV030 : ComponentActivity() {
             RegisterSafeAreaV141 {
             MaterialTheme {
                 OperationsHubRouteV030(
+                    refreshTickV158 = refreshTickV158.intValue,
                     onClose = { finish() },
                     openBusiness = { startActivity(Intent(this, BusinessStartActivityV030::class.java)) },
                     openXInspection = {
@@ -94,6 +102,7 @@ class OperationsHubActivityV030 : ComponentActivity() {
 
 @Composable
 private fun OperationsHubRouteV030(
+    refreshTickV158: Int,
     onClose: () -> Unit,
     openBusiness: () -> Unit,
     openXInspection: () -> Unit,
@@ -121,18 +130,27 @@ private fun OperationsHubRouteV030(
             return@Surface
         }
         OperatorSessionRegistry.touch(context.applicationContext)
-        val summary = if (
-            current.allows(RegisterPermission.VIEW_SALES) ||
-            current.allows(RegisterPermission.X_INSPECTION) ||
-            current.allows(RegisterPermission.Z_SETTLEMENT)
-        ) {
-            store.dailySummary()
-        } else null
+        val session = remember(refreshTickV158) { store.activeBusinessSession() }
+        val summary = remember(refreshTickV158) {
+            if (
+                current.allows(RegisterPermission.VIEW_SALES) ||
+                current.allows(RegisterPermission.X_INSPECTION) ||
+                current.allows(RegisterPermission.Z_SETTLEMENT)
+            ) store.dailySummary() else null
+        }
+        val minusCount = remember(refreshTickV158, session?.id) {
+            if (summary != null && session != null) {
+                ManualReturnStoreV135(context.applicationContext).use {
+                    it.accountingContribution(session.id).returnCount
+                }
+            } else 0
+        }
         OperationsHubScreenV030(
             operatorName = current.name,
             permissions = current.permissions,
-            session = store.activeBusinessSession(),
+            session = session,
             summary = summary,
+            minusCount = minusCount,
             onClose = onClose,
             openBusiness = openBusiness,
             openXInspection = openXInspection,
@@ -172,6 +190,7 @@ private fun OperationsHubScreenV030(
     permissions: Set<RegisterPermission>,
     session: BusinessSessionRecord?,
     summary: DailyOperationsSummary?,
+    minusCount: Int,
     onClose: () -> Unit,
     openBusiness: () -> Unit,
     openXInspection: () -> Unit,
@@ -358,6 +377,7 @@ private fun HubStatusPanelV030(
                 HubAmountV030("開始釣銭", hubYenV030(summary.openingCash))
                 HubAmountV030("純売上", hubYenV030(summary.netSales), true)
                 HubAmountV030("取引件数", "${summary.transactionCount}件")
+                HubAmountV030("レジマイナス", "-${minusCount}件")
                 HubAmountV030("現金理論残高", hubYenV030(summary.expectedCash))
                 HubAmountV030("未印刷", "${summary.pendingPrints}件")
                 HubAmountV030("未会計伝票", "${summary.heldTickets}件")

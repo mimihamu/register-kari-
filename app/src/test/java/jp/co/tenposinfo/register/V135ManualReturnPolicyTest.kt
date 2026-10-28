@@ -107,7 +107,7 @@ class V135ManualReturnPolicyTest {
     fun hubExposesReceiptlessReturnOnlyWithReversalPermission() {
         val source = File("src/main/java/jp/co/tenposinfo/register/OperationsHubActivityV030.kt").readText()
         assertTrue(source.contains("ManualReturnActivityV135::class.java"))
-        assertTrue(source.contains("\"元取引なし返品\""))
+        assertTrue(source.contains("\"レジマイナス\""))
         assertTrue(source.contains("RegisterPermission.REVERSAL in permissions"))
     }
 
@@ -133,11 +133,12 @@ class V135ManualReturnPolicyTest {
     @Test
     fun activityKeepsConfirmationLockedUntilFailureOrSuccessAcknowledgement() {
         val source = File("src/main/java/jp/co/tenposinfo/register/ManualReturnActivityV135.kt").readText()
-        assertTrue(source.contains("if (!submissionGate.tryStart()) return"))
-        assertTrue(source.contains("confirmButton.isEnabled = false"))
-        assertTrue(source.contains(".setCancelable(false)"))
+        assertTrue(source.contains("if (submissionGate.tryStart())"))
+        assertTrue(source.contains("RegisterModalV154("))
+        assertTrue(source.contains("destructive = true"))
+        assertTrue(source.contains("label = \"マイナスを確定\""))
         assertTrue(source.contains("submissionGate.release()"))
-        assertTrue(source.contains("confirmButton.isEnabled = true"))
+        assertTrue(source.contains("completed = it"))
     }
 
     @Test

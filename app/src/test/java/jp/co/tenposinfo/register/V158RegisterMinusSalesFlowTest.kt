@@ -38,6 +38,16 @@ class V158RegisterMinusSalesFlowTest {
         assertFalse(s.contains("database.saveSale("))
     }
 
+    @Test fun minusCountIsIndependentOfSaleCountAndReceiptUsesMinusName() {
+        val hub = source("OperationsHubActivityV030.kt")
+        val renderer = source("ManualReturnV135.kt")
+        assertTrue(hub.contains("ManualReturnStoreV135(context.applicationContext)"))
+        assertTrue(hub.contains("it.accountingContribution(session.id).returnCount"))
+        assertTrue(hub.contains("HubAmountV030(\"レジマイナス\", \"-${minusCount}件\")"))
+        assertTrue(renderer.contains("appendLine(\"      レジマイナス\")"))
+        assertTrue(renderer.contains("appendLine(\"レジマイナスNo. MR-$manualReturnId\")"))
+    }
+
     @Test fun commonTopBarSupportsRedModeWithoutChangingDefault() {
         val s = source("RegisterTopBarV141.kt")
         assertTrue(s.contains("backgroundColor: Color = RegisterTopBarColorV141"))
