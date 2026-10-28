@@ -17,7 +17,7 @@ class V155ManualReturnModalContractTest {
         assertTrue(s.contains("label = \"マイナスを確定\""))
         assertTrue(s.contains("destructive = true"))
         assertTrue(s.contains("ManualReturnPolicyV135.toPositiveCartItems(request, reasonRequired = false)"))
-        assertTrue(s.contains("coordinator.create(request, managerPin)"))
+        assertTrue(s.contains("coordinator.create(request, managerPin, checkoutRequestId)"))
         assertTrue(s.contains("if (submissionGate.tryStart())"))
         assertTrue(s.contains("submissionGate.release()"))
         assertTrue(s.contains("ManagerApprovalV145.canUseCurrentManagerSession"))

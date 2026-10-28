@@ -76,6 +76,23 @@ internal object ManualReturnPolicyV135 {
     }
 }
 
+/** Exact request identity used when replaying a checkout whose database commit is uncertain. */
+internal data class ManualReturnReplayFingerprintV160(
+    val signedAmount: Long,
+    val refundMethod: String,
+    val reason: String,
+    val operator: String,
+    val manager: String,
+    val lines: List<List<String>>,
+)
+
+internal object ManualReturnReplaySafetyV160 {
+    fun isSameCommittedOperation(
+        original: ManualReturnReplayFingerprintV160,
+        requested: ManualReturnReplayFingerprintV160,
+    ): Boolean = original == requested
+}
+
 internal class ManualReturnSettingsV135(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -123,6 +140,9 @@ internal class ManualReturnStoreV135(context: Context) : AutoCloseable {
         val gross = taxSummary.grossAmount
         require(gross > 0) { "返金額が0円です" }
         val signedGross = ManualReturnPolicyV135.signedAmount(gross)
+        // A commit may have succeeded even if the caller lost its response.
+        // Reusing the same approval ID must recover that receipt, never insert a second refund.
+        recoverCommittedReturn(requestId, signedGross, request, items, operatorName, managerName)?.let { return it }
         val now = System.currentTimeMillis()
         val printerConfiguration = PrinterRoutingV136.resolve(
             appContext,
@@ -231,6 +251,82 @@ internal class ManualReturnStoreV135(context: Context) : AutoCloseable {
         } finally {
             db.endTransaction()
         }
+    }
+
+    /**
+     * Recover an already committed negative transaction for the same UI confirmation.
+     * The UNIQUE approval_request_id is the final database fence against concurrent inserts.
+     * Verify the complete original request before returning the prior receipt to avoid a
+     * changed cart/method accidentally inheriting an unrelated refund.
+     */
+    private fun recoverCommittedReturn(
+        requestId: String,
+        signedGross: Long,
+        request: ManualReturnRequestV135,
+        items: List<CartItem>,
+        operatorName: String,
+        managerName: String,
+    ): ManualReturnResultV135? {
+        data class SavedHeader(
+            val id: Long, val amount: Long, val method: String,
+            val reason: String, val operator: String, val manager: String,
+        )
+        val saved = db.rawQuery(
+            "SELECT id, gross_amount, refund_method, reason, operator_name, manager_name " +
+                "FROM manual_return_transactions WHERE approval_request_id = ? LIMIT 1",
+            arrayOf(requestId.trim()),
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) null else SavedHeader(
+                cursor.getLong(0), cursor.getLong(1), cursor.getString(2),
+                cursor.getString(3), cursor.getString(4), cursor.getString(5),
+            )
+        } ?: return null
+
+        val persistedLines = db.rawQuery(
+            "SELECT product_id, product_name, unit_price, quantity_hundredths " +
+                "FROM manual_return_items WHERE manual_return_id = ? ORDER BY line_no ASC",
+            arrayOf(saved.id.toString()),
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(
+                        listOf(
+                            cursor.getString(0),
+                            cursor.getString(1),
+                            cursor.getLong(2).toString(),
+                            cursor.getLong(3).toString(),
+                        ),
+                    )
+                }
+            }
+        }
+        val expectedLines = items.map {
+            listOf(
+                it.product.id, it.product.name, it.unitPrice.toString(),
+                (-it.quantityHundredths).toString(),
+            )
+        }
+        val original = ManualReturnReplayFingerprintV160(
+            saved.amount, saved.method, saved.reason, saved.operator, saved.manager, persistedLines,
+        )
+        val requested = ManualReturnReplayFingerprintV160(
+            signedGross, request.refundMethod.name, request.reason.trim(),
+            operatorName.trim(), managerName.trim(), expectedLines,
+        )
+        require(ManualReturnReplaySafetyV160.isSameCommittedOperation(original, requested)) {
+            "この操作IDは別の商品・金額・担当者または責任者で確定済みです。取引履歴を確認してください"
+        }
+
+        val job = db.rawQuery(
+            "SELECT id, payload_text FROM document_print_jobs " +
+                "WHERE document_type = ? AND reference_id = ? ORDER BY id LIMIT 1",
+            arrayOf(OperationDocumentType.REVERSAL_RECEIPT.name, (-saved.id).toString()),
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) null else cursor.getLong(0) to cursor.getString(1)
+        } ?: throw IllegalStateException(
+            "レジマイナスは登録済みですが印刷情報を取得できません。管理画面の取引履歴を確認してください",
+        )
+        return ManualReturnResultV135(saved.id, saved.amount, job.first, job.second)
     }
 
     fun accountingContribution(sessionId: Long): ManualReturnAccountingContributionV135 {
@@ -362,16 +458,22 @@ internal class ManualReturnCoordinatorV135(context: Context) : AutoCloseable {
         store.setReasonRequired(required)
     }
 
-    fun create(request: ManualReturnRequestV135, managerPin: String): ManualReturnResultV135 {
+    fun create(
+        request: ManualReturnRequestV135,
+        managerPin: String,
+        requestId: String = UUID.randomUUID().toString(),
+    ): ManualReturnResultV135 {
         val (operator, managerName) = requireAuthorizedActor(managerPin)
         val result = store.create(
             request = request,
             operatorName = operator.name,
             managerName = managerName,
-            requestId = UUID.randomUUID().toString(),
+            requestId = requestId,
         )
+        // The negative ledger is already committed. A drawer dispatch failure must never
+        // surface as "checkout failed", because repeating checkout could refund twice.
         if (request.refundMethod == ManualRefundMethodV135.CASH) {
-            CashDrawerRuntimeV136.dispatchAsync(
+            runCatching { CashDrawerRuntimeV136.dispatchAsync(
                 context = appContext,
                 openContext = CashDrawerOpenContextV136.CASH_REFUND,
                 referenceId = result.manualReturnId,
@@ -379,7 +481,9 @@ internal class ManualReturnCoordinatorV135(context: Context) : AutoCloseable {
                 reason = request.reason.trim().ifBlank { "元取引なし現金返品" },
                 actor = operator.name,
                 hasCashPayment = true,
-            )
+            ) }.onFailure {
+                android.util.Log.e("RegisterMinus", "Committed refund drawer dispatch failed: ${result.manualReturnId}", it)
+            }
         }
         runCatching { AutomaticPrintScheduler.enqueueNow(appContext) }
         return result
