@@ -55,7 +55,8 @@ class V143ManagementHorizontalAndBarContrastTest {
         assertTrue(hub.contains("HubHeaderV030(metrics, openSettings, onClose)"))
         assertTrue(hub.contains("onBack = onClose"))
         assertTrue(hub.contains(".background(HubNavyV030)"))
-        assertTrue(safeArea.contains("Box(Modifier.fillMaxSize().background(topBarColor))") &&\n            safeArea.contains("topBarColor: Color = RegisterTopBarColorV141"))
+        assertTrue(safeArea.contains("Box(Modifier.fillMaxSize().background(topBarColor))") &&
+            safeArea.contains("topBarColor: Color = RegisterTopBarColorV141"))
         assertTrue(safeArea.contains("WindowInsets.safeDrawing"))
         assertTrue(chrome.contains("isAppearanceLightNavigationBars = false"))
         assertTrue(chrome.contains("window.navigationBarColor = Color.rgb(23, 63, 107)"))
