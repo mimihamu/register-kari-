@@ -30,7 +30,7 @@ class V158RegisterMinusSalesFlowTest {
         assertTrue(s.contains("BackHandler(enabled = cart.isNotEmpty()"))
         assertTrue(s.contains("ManagerApprovalV145.canUseCurrentManagerSession"))
         assertTrue(s.contains("ManualReturnPolicyV135.toPositiveCartItems(request, reasonRequired = false)"))
-        assertTrue(s.contains("coordinator.create(request, managerPin)"))
+        assertTrue(s.contains("coordinator.create(request, managerPin, checkoutRequestId)"))
         assertTrue(s.contains("submissionGate.tryStart()"))
         assertTrue(s.contains("refundMethod != ManualRefundMethodV135.CASH"))
         assertTrue(policy.contains("ManualReturnPolicyV135.signedQuantityHundredths"))

@@ -37,7 +37,7 @@ class V142SystemBarSafeAreaTest {
         assertTrue(src.contains("configureRegisterSystemBars(window)"))
         assertTrue(src.contains("window.statusBarColor = android.graphics.Color.rgb(180, 35, 24)"))
         assertTrue(src.contains("RegisterSafeAreaV141(topBarColor = Color(0xFFB42318))"))
-        assertTrue(src.contains("coordinator.create(request, managerPin)"))
+        assertTrue(src.contains("coordinator.create(request, managerPin, checkoutRequestId)"))
     }
 
     @Test fun sharedSafeAreaMaintainsHeaderColorAndSystemPadding() {
