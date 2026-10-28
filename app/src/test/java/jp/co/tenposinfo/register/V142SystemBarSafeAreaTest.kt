@@ -36,8 +36,12 @@ class V142SystemBarSafeAreaTest {
         val src = source("ManualReturnActivityV135.kt")
         assertTrue(src.contains("configureRegisterSystemBars(window)"))
         assertTrue(src.contains("WindowInsetsCompat.Type.systemBars()"))
-        assertTrue(src.contains("ViewCompat.setOnApplyWindowInsetsListener(scroll)"))
-        assertTrue(src.contains("ViewCompat.requestApplyInsets(scroll)"))
+        // v1.56 keeps the navy header pinned while scrolling the form only.
+        // Insets must protect the parent screen, not just the scroll body.
+        assertTrue(src.contains("ViewCompat.setOnApplyWindowInsetsListener(screen)"))
+        assertTrue(src.contains("ViewCompat.requestApplyInsets(screen)"))
+        assertTrue(src.contains("screen.addView(topBarV155,"))
+        assertTrue(src.contains("screen.addView(scroll,"))
         assertTrue(src.contains("coordinator.create(request, managerPinInput.text.toString())"))
     }
 
