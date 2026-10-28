@@ -636,7 +636,7 @@ private fun SettlementBottomV030(
     onClose: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().height(metrics.bottomBarHeightDp.dp).background(Color.White)
+        Modifier.fillMaxWidth().height(metrics.bottomBarHeightDp.dp).background(RegisterSecondaryActionBarColorV159)
             .padding(horizontal = metrics.screenPaddingDp.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),

@@ -419,7 +419,7 @@ private fun BusinessBottomBarV030(
         Modifier
             .fillMaxWidth()
             .height(metrics.bottomBarHeightDp.dp)
-            .background(Color.White)
+            .background(RegisterSecondaryActionBarColorV159)
             .padding(horizontal = metrics.screenPaddingDp.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
         verticalAlignment = Alignment.CenterVertically,

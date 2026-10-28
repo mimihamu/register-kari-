@@ -471,7 +471,7 @@ private fun ReceiptVoucherLedgerFooter(
     onClose: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().height(64.dp).background(Color.White).padding(horizontal = 12.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().height(64.dp).background(RegisterSecondaryActionBarColorV159).padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

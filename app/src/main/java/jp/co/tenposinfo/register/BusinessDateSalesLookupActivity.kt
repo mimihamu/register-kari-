@@ -299,7 +299,7 @@ private fun BusinessDateSalesLookupScreen(
     val resultTo = page.offset + page.records.size
 
     Column(Modifier.fillMaxSize()) {
-        BusinessDateLookupHeader()
+        BusinessDateLookupHeader(onClose)
         Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
             if (contextLocked && requestedContext != null) {
                 Row(
@@ -623,7 +623,7 @@ private fun BusinessDateSalesLookupScreen(
         }
 
         Row(
-            Modifier.fillMaxWidth().height(68.dp).background(Color.White).padding(horizontal = 14.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().height(68.dp).background(RegisterSecondaryActionBarColorV159).padding(horizontal = 14.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             OutlinedButton(onClick = onClose, modifier = Modifier.width(220.dp).fillMaxHeight()) {
@@ -649,17 +649,8 @@ private fun BusinessDateLookupAmountRow(label: String, value: Long, emphasized: 
 }
 
 @Composable
-private fun BusinessDateLookupHeader() {
-    Row(
-        Modifier.fillMaxWidth().height(58.dp).background(BusinessLookupNavy).padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(20.dp))
-        Text("SCR-415  営業日別 売上検索", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.weight(1f))
-        Text("SQLite直接検索 / business_date基準", color = Color.White)
-    }
+private fun BusinessDateLookupHeader(onBack: () -> Unit) {
+    RegisterTopBarV141(title = "営業日別 売上検索", onBack = onBack)
 }
 
 @Composable

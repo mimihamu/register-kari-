@@ -29,6 +29,9 @@ import androidx.compose.ui.unit.sp
 /** つぐレジ共通のタイトルバー色。 */
 internal val RegisterTopBarColorV141 = Color(0xFF173F6B)
 
+/** Bottom action rows are clearly separated from white content cards without a white stripe. */
+internal val RegisterSecondaryActionBarColorV159 = Color(0xFFE3EDF7)
+
 /** システムアイコンと画面操作を重ねず、ステータスバー背景も揃える。 */
 @Composable
 internal fun RegisterSafeAreaV141(

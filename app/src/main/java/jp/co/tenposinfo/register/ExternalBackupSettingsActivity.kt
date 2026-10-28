@@ -375,7 +375,7 @@ private fun ExternalBackupSettingsScreen(onClose: () -> Unit) {
             }
 
             Row(
-                Modifier.fillMaxWidth().height(76.dp).background(Color.White)
+                Modifier.fillMaxWidth().height(76.dp).background(RegisterSecondaryActionBarColorV159)
                     .padding(horizontal = 18.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

@@ -106,9 +106,10 @@ private fun ReceiptSettingsApp(
                 action = {
                     OutlinedButton(
                         onClick = { showDetails = !showDetails },
+                        border = BorderStroke(1.dp, Color.White),
                         colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = Color.White,
-                            contentColor = RsNavy,
+                            containerColor = Color.Transparent,
+                            contentColor = Color.White,
                         ),
                     ) { Text(if (showDetails) "基本設定" else "詳細設定") }
                 },

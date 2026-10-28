@@ -376,7 +376,7 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
             }
 
             Row(
-                Modifier.fillMaxWidth().height(72.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
+                Modifier.fillMaxWidth().height(72.dp).background(RegisterSecondaryActionBarColorV159).padding(horizontal = 18.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
 

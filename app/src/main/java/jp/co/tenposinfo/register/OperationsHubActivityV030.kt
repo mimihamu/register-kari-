@@ -469,15 +469,16 @@ private fun HubAmountV030(label: String, value: String, emphasized: Boolean = fa
 @Composable
 private fun HubHeaderV030(metrics: RegisterResponsiveMetrics, openSettings: () -> Unit, onClose: () -> Unit) {
     RegisterTopBarV141(title = "レジ管理", action = {
-        Button(
+        OutlinedButton(
             onClick = openSettings,
             modifier = Modifier.heightIn(min = 48.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color.White,
-                contentColor = HubNavyV030,
+            border = BorderStroke(1.dp, Color.White),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = Color.Transparent,
+                contentColor = Color.White,
             ),
         ) {
-            Text("各種設定", color = HubNavyV030, fontWeight = FontWeight.Bold)
+            Text("各種設定", color = Color.White, fontWeight = FontWeight.Bold)
         }
     }, onBack = onClose)
 }
