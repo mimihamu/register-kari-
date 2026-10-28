@@ -779,7 +779,7 @@ private fun JobDetailPanel(
 @Composable
 private fun QueueFooter(heightDp: Int, message: String?, working: Boolean) {
     Row(
-        Modifier.fillMaxWidth().height(heightDp.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().height(heightDp.dp).background(RegisterSecondaryActionBarColorV159).padding(horizontal = 18.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (!message.isNullOrBlank()) {

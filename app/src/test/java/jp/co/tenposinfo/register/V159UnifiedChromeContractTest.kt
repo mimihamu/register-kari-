@@ -10,7 +10,7 @@ class V159UnifiedChromeContractTest {
     private val root = File("src/main/java/jp/co/tenposinfo/register")
     private fun source(name: String) = File(root, name).readText()
 
-    @Test fun elevenOperationsAndSettingsScreensUseSharedActionBarTint() {
+    @Test fun fifteenOperationsAndSettingsScreensUseSharedActionBarTint() {
         val files = listOf(
             "OperationsActivity.kt",
             "AdminSettingsActivity.kt",
@@ -23,6 +23,10 @@ class V159UnifiedChromeContractTest {
             "OutboxDeliverySettingsActivity.kt",
             "ExternalBackupSettingsActivity.kt",
             "PrinterToolsHubActivity.kt",
+            "CatalogHubActivityV030.kt",
+            "DynamicCatalogHubActivityV030.kt",
+            "DataProtectionActivity.kt",
+            "UnifiedPrintQueueActivity.kt",
         )
         for (name in files) {
             val s = source(name)

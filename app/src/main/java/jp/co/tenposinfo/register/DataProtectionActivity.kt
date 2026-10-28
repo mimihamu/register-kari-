@@ -616,7 +616,7 @@ private fun DataProtectionScreen(onClose: () -> Unit) {
                 Modifier
                     .fillMaxWidth()
                     .height(responsive.bottomBarHeightDp.dp)
-                    .background(Color.White)
+                    .background(RegisterSecondaryActionBarColorV159)
                     .padding(horizontal = responsive.screenPaddingDp.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

@@ -275,7 +275,7 @@ private fun CatalogHubHeaderV030(metrics: RegisterResponsiveMetrics, onClose: ()
 @Composable
 private fun CatalogHubBottomV030(metrics: RegisterResponsiveMetrics, onClose: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().height(metrics.bottomBarHeightDp.dp).background(Color.White).padding(horizontal = metrics.screenPaddingDp.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().height(metrics.bottomBarHeightDp.dp).background(RegisterSecondaryActionBarColorV159).padding(horizontal = metrics.screenPaddingDp.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         OutlinedButton(onClick = onClose, modifier = Modifier.weight(1f).fillMaxHeight()) {
