@@ -107,12 +107,11 @@ private fun PaymentSettingsScreen(
         Column(Modifier.fillMaxSize()) {
             RegisterTopBarV141(title = "支払設定", onBack = onClose)
 
-            Row(
+            Column(
                 Modifier.weight(1f).fillMaxWidth().padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Card(
-                    Modifier.weight(1f).fillMaxHeight(),
+                    Modifier.weight(1f).fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
                     border = BorderStroke(1.dp, PsBorder),
                     shape = RoundedCornerShape(10.dp),
@@ -274,40 +273,30 @@ private fun PaymentSettingsScreen(
                     }
                 }
 
-                Column(
-                    Modifier.width(256.dp).fillMaxHeight(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        border = BorderStroke(1.dp, PsBorder),
-                    ) {
-                        Column(Modifier.fillMaxWidth().padding(14.dp)) {
-                            Text("決済端末アダプタ", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = PsNavy)
-                            Text("現在：${initial.terminalAdapter.displayName}", fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.height(6.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "カード・電子マネー・QRは外部端末の決済結果を確認してください",
+                            fontSize = 12.sp,
+                            color = PsNavy,
+                        )
+                        Text(
+                            "未実装の端末連携を有効として扱いません",
+                            fontSize = 12.sp,
+                            color = PsDanger,
+                        )
+                        message?.let {
                             Text(
-                                "カード・電子マネー・QRは外部端末で決済結果を確認してください。",
-                                fontSize = 13.sp,
-                                color = Color.DarkGray,
-                            )
-                            Text(
-                                "未実装の端末連携を有効として扱いません。",
-                                fontSize = 12.sp,
-                                color = PsDanger,
+                                it,
+                                color = if (it.startsWith("保存")) PsNavy else PsDanger,
                                 fontWeight = FontWeight.Bold,
                             )
                         }
                     }
-
-                    message?.let {
-                        Text(
-                            it,
-                            color = if (it.startsWith("保存")) PsNavy else PsDanger,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
                     Button(
                         onClick = {
                             runCatching {
@@ -322,12 +311,11 @@ private fun PaymentSettingsScreen(
                                 message = it.message ?: "保存できませんでした"
                             }
                         },
-                        modifier = Modifier.fillMaxWidth().height(54.dp),
+                        modifier = Modifier.width(128.dp).height(54.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = PsBlue),
                     ) {
                         Text("保存", fontWeight = FontWeight.Bold)
                     }
-
                 }
             }
         }

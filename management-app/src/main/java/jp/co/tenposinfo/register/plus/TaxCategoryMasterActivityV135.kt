@@ -23,6 +23,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -101,35 +102,28 @@ private fun TaxCategoryMasterScreenV135(
     onAdd: () -> Unit,
     onRevise: (ManagementTaxCategoryV135) -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
+    Column(Modifier.fillMaxSize()) {
+        PlusTopBarV155(title = "税区分マスター", onBack = onBack)
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(onClick = onBack) { Text("戻る") }
-            Column(modifier = Modifier.weight(1f)) {
-                Text("税区分マスター", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(
-                    "非課税・内税・外税を営業日単位で管理します。過去行は削除せず、変更は改定として追加します。",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
+            Text(
+                "税区分",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
             Button(onClick = onAdd) { Text("新規追加") }
         }
-
         Text(
-            "初期5区分に加え、第3税率以降も追加できます。適用開始は暦日0時ではなく営業日です。",
+            "変更は履歴を残して改定します。適用日は営業日で指定してください。",
+            modifier = Modifier.padding(horizontal = 16.dp),
             style = MaterialTheme.typography.bodySmall,
         )
-
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(rules, key = { it.id }) { rule ->
@@ -193,6 +187,10 @@ private fun TaxCategoryEditorDialogV135(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+        ),
         title = { Text(if (initial.taxKey.isBlank()) "税区分を追加" else "税区分を改定") },
         text = {
             Column(

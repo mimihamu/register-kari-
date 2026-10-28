@@ -49,14 +49,15 @@ class ManualReturnActivityV135 : ComponentActivity() {
         super.onDestroy()
     }
 
-    private fun buildContent(): ScrollView {
+    private fun buildContent(): LinearLayout {
+        val screen = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val scroll = ScrollView(this)
-        ViewCompat.setOnApplyWindowInsetsListener(scroll) { view, windowInsets ->
+        ViewCompat.setOnApplyWindowInsetsListener(screen) { view, windowInsets ->
             val bars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             windowInsets
         }
-        ViewCompat.requestApplyInsets(scroll)
+        ViewCompat.requestApplyInsets(screen)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(24), dp(18), dp(24), dp(24))
@@ -78,7 +79,7 @@ class ManualReturnActivityV135 : ComponentActivity() {
                 setPadding(dp(14), 0, dp(6), 0)
             }, LinearLayout.LayoutParams(0, dp(60), 1f))
         }
-        root.addView(topBarV155, matchWrap())
+        screen.addView(topBarV155, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(60)))
 
         root.addView(TextView(this).apply {
             text = "元の売上No.を特定できない場合だけ使用します。返品数量・返品金額は負数取引として保存されます。責任者承認が必須です。"
@@ -171,7 +172,8 @@ class ManualReturnActivityV135 : ComponentActivity() {
         }
         actionRow.addView(confirmButton, LinearLayout.LayoutParams(0, dp(58), 1f))
         root.addView(actionRow, matchWrap(top = 8))
-        return scroll
+        screen.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        return screen
     }
 
     private fun addLine() {
