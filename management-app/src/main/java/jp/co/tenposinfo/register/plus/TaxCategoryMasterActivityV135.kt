@@ -184,6 +184,7 @@ private fun TaxCategoryEditorDialogV135(
     var effectiveFrom by remember(initial) { mutableStateOf(initial.effectiveFromBusinessDate) }
     var effectiveTo by remember(initial) { mutableStateOf(initial.effectiveToBusinessDate) }
     var enabled by remember(initial) { mutableStateOf(initial.enabled) }
+    var showAdvanced by remember(initial) { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -238,36 +239,13 @@ private fun TaxCategoryEditorDialogV135(
                         Text(candidate.displayName)
                     }
                 }
-                OutlinedTextField(
-                    value = symbol,
-                    onValueChange = { symbol = it.take(4) },
-                    label = { Text("税記号") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("軽減税率")
-                        Text("レシート記号等で利用", style = MaterialTheme.typography.labelSmall)
-                    }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("軽減税率", modifier = Modifier.weight(1f))
                     Switch(
                         checked = reduced,
                         onCheckedChange = { reduced = it },
                         enabled = mode != ManagementTaxModeV135.NON_TAXABLE,
                     )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("使用状態")
-                        Text("OFFも履歴として保存", style = MaterialTheme.typography.labelSmall)
-                    }
-                    Switch(checked = enabled, onCheckedChange = { enabled = it })
                 }
                 OutlinedTextField(
                     value = effectiveFrom,
@@ -276,13 +254,29 @@ private fun TaxCategoryEditorDialogV135(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(
-                    value = effectiveTo,
-                    onValueChange = { effectiveTo = it.take(10) },
-                    label = { Text("適用終了営業日（任意）") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                TextButton(onClick = { showAdvanced = !showAdvanced }) {
+                    Text(if (showAdvanced) "詳細を閉じる" else "詳細設定")
+                }
+                if (showAdvanced) {
+                    OutlinedTextField(
+                        value = symbol,
+                        onValueChange = { symbol = it.take(4) },
+                        label = { Text("税記号") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("使用状態", modifier = Modifier.weight(1f))
+                        Switch(checked = enabled, onCheckedChange = { enabled = it })
+                    }
+                    OutlinedTextField(
+                        value = effectiveTo,
+                        onValueChange = { effectiveTo = it.take(10) },
+                        label = { Text("適用終了営業日（任意）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 errorMessage?.let { message ->
                     Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }

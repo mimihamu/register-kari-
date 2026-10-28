@@ -22,6 +22,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -144,26 +148,26 @@ private fun PrinterNotificationSettingsScreen(
         Column(Modifier.fillMaxSize()) {
             RegisterTopBarV141(title = "プリンター通知・試験", onBack = onClose)
             Column(
-                Modifier.weight(1f).fillMaxWidth().padding(24.dp),
+                Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Card(
-                    modifier = Modifier.width(760.dp),
+                    modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
                     border = BorderStroke(2.dp, stateColor),
                     shape = RoundedCornerShape(12.dp),
                 ) {
                     Column(
-                        Modifier.fillMaxWidth().padding(26.dp),
+                        Modifier.fillMaxWidth().padding(16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Text(title, color = stateColor, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                        Text(title, color = stateColor, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(14.dp))
                         Text(
                             description,
-                            fontSize = 18.sp,
-                            lineHeight = 28.sp,
+                            fontSize = 15.sp,
+                            lineHeight = 22.sp,
                             textAlign = TextAlign.Center,
                         )
                         Spacer(Modifier.height(20.dp))
@@ -171,7 +175,7 @@ private fun PrinterNotificationSettingsScreen(
                             PrinterNotificationPermissionState.ENABLED -> {
                                 Button(
                                     onClick = ::openSystemNotificationSettings,
-                                    modifier = Modifier.width(360.dp).height(54.dp),
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = PnGreen),
                                 ) { Text("Androidの通知設定を確認", fontWeight = FontWeight.Bold) }
                             }
@@ -184,14 +188,14 @@ private fun PrinterNotificationSettingsScreen(
                                             openSystemNotificationSettings()
                                         }
                                     },
-                                    modifier = Modifier.width(360.dp).height(54.dp),
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = PnBlue),
                                 ) { Text("通知を許可する", fontWeight = FontWeight.Bold) }
                             }
                             PrinterNotificationPermissionState.SYSTEM_DISABLED -> {
                                 Button(
                                     onClick = ::openSystemNotificationSettings,
-                                    modifier = Modifier.width(360.dp).height(54.dp),
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = PnRed),
                                 ) { Text("Androidの通知設定を開く", fontWeight = FontWeight.Bold) }
                             }
@@ -205,20 +209,20 @@ private fun PrinterNotificationSettingsScreen(
                     }
                 }
                 Spacer(Modifier.height(16.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedButton(
                         onClick = onOpenDiagnostics,
-                        modifier = Modifier.width(320.dp).height(52.dp),
-                    ) { Text("プリンター診断を開く", fontWeight = FontWeight.Bold) }
+                        modifier = Modifier.weight(1f).heightIn(min = 52.dp),
+                    ) { Text("プリンター診断", fontWeight = FontWeight.Bold) }
                     OutlinedButton(
                         onClick = onOpenSoakTest,
-                        modifier = Modifier.width(320.dp).height(52.dp),
-                    ) { Text("連続印刷試験を開く", fontWeight = FontWeight.Bold) }
+                        modifier = Modifier.weight(1f).heightIn(min = 52.dp),
+                    ) { Text("連続印刷試験", fontWeight = FontWeight.Bold) }
                 }
             }
 
             Row(
-                Modifier.fillMaxWidth().height(72.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
+                Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
 

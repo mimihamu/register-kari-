@@ -45,7 +45,6 @@ class TaxPaymentSettingsHubActivity : ComponentActivity() {
             RegisterSafeAreaV141 {
             MaterialTheme {
                 TaxPaymentSettingsHub(
-                    actor = actor,
                     onTax = { startActivity(Intent(this, TaxInvoiceSettingsActivity::class.java)) },
                     onPayment = {
                         startActivity(
@@ -68,7 +67,6 @@ class TaxPaymentSettingsHubActivity : ComponentActivity() {
 
 @Composable
 private fun TaxPaymentSettingsHub(
-    actor: String,
     onTax: () -> Unit,
     onPayment: () -> Unit,
     onClose: () -> Unit,
@@ -80,15 +78,11 @@ private fun TaxPaymentSettingsHub(
                 Row(Modifier.fillMaxWidth().height(180.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                 HubTileV136(
                     title = "税設定",
-                    screenId = "SCR-630A",
-                    description = "税区分、内税・外税混在、インボイス集計基準を設定します。",
                     modifier = Modifier.weight(1f),
                     onClick = onTax,
                 )
                 HubTileV136(
                     title = "支払設定",
-                    screenId = "SCR-630B",
-                    description = "現金・カード・電子マネー・QR・商品券・掛売などの有効/無効と表示順を設定します。",
                     modifier = Modifier.weight(1f),
                     onClick = onPayment,
                 )
@@ -102,8 +96,6 @@ private fun TaxPaymentSettingsHub(
 @Composable
 private fun HubTileV136(
     title: String,
-    screenId: String,
-    description: String,
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
