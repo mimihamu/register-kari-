@@ -53,19 +53,37 @@ class AppDistributionUpdateActivityV146 : Activity() {
             isAppearanceLightStatusBars = false
             isAppearanceLightNavigationBars = false
         }
+        // Pin the full-bleed navy bar above the scroll body. Never inset the bar
+        // with form padding: on compact tablets it looks like a white toolbar.
+        val screen = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.rgb(23, 63, 107))
+        }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(Color.rgb(23, 63, 107))
+        }
+        header.addView(Button(this).apply {
+            text = "戻る"
+            contentDescription = "アプリ更新画面を閉じる"
+            setOnClickListener { finish() }
+        }, LinearLayout.LayoutParams(dp(102), dp(52)).apply { leftMargin = dp(10) })
+        header.addView(TextView(this).apply {
+            text = "アプリの更新"
+            textSize = 23f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), 0, dp(12), 0)
+            setTypeface(null, android.graphics.Typeface.BOLD)
+        }, LinearLayout.LayoutParams(0, dp(62), 1f))
+        screen.addView(header, LinearLayout.LayoutParams(-1, dp(62)))
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(16), dp(20), dp(20))
             setBackgroundColor(Color.rgb(247, 249, 252))
         }
-        root.addView(TextView(this).apply {
-            text = "アプリの更新"
-            textSize = 24f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.rgb(23, 63, 107))
-            setPadding(dp(16), dp(6), dp(16), dp(6))
-            setTypeface(null, android.graphics.Typeface.BOLD)
-        }, LinearLayout.LayoutParams(-1, dp(62)))
         info = TextView(this).apply {
             text = buildString {
                 append("現在のバージョン：").append(currentName())
@@ -104,24 +122,21 @@ class AppDistributionUpdateActivityV146 : Activity() {
                 }
             }, LinearLayout.LayoutParams(-1, dp(52)))
         }
-        root.addView(Button(this).apply {
-            text = "戻る"
-            setOnClickListener { finish() }
-        }, LinearLayout.LayoutParams(-1, dp(56)).apply { topMargin = dp(12) })
-        // Android 15+ edge-to-edge and small landscape screens: the update form
-        // must remain scrollable and never overlap system icons or navigation.
+        // Android 15+ system insets belong on the screen shell so the pinned
+        // header remains below system icons while only the form can scroll.
         val scroll = ScrollView(this).apply {
             isFillViewport = true
-            setBackgroundColor(Color.rgb(23, 63, 107))
+            setBackgroundColor(Color.rgb(247, 249, 252))
             addView(root)
         }
-        ViewCompat.setOnApplyWindowInsetsListener(scroll) { view, insets ->
+        screen.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        ViewCompat.setOnApplyWindowInsetsListener(screen) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             insets
         }
-        setContentView(scroll)
-        ViewCompat.requestApplyInsets(scroll)
+        setContentView(screen)
+        ViewCompat.requestApplyInsets(screen)
     }
 
     override fun onResume() {
