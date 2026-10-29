@@ -26,7 +26,7 @@ class V148CrossAppUiFormalSpecTest {
                     "RegisterSafeAreaV141(topBarColor = Color(0xFFB42318))" else "RegisterSafeAreaV141 {"))
             } else if (screen.name == "AppDistributionUpdateActivityV146.kt") {
                 assertTrue(src.contains("WindowInsetsCompat.Type.systemBars()"))
-                assertTrue(src.contains("ViewCompat.setOnApplyWindowInsetsListener(scroll)"))
+                assertTrue(src.contains("ViewCompat.setOnApplyWindowInsetsListener(screen)"))
                 assertTrue(src.contains("isAppearanceLightStatusBars = false"))
             } else {
                 assertTrue("${screen.name} native insets", src.contains("WindowInsetsCompat.Type.systemBars()"))
@@ -50,7 +50,7 @@ class V148CrossAppUiFormalSpecTest {
         }
         val updater = text(plus, "AppDistributionUpdateActivityV146.kt")
         assertTrue(updater.contains("WindowInsetsCompat.Type.systemBars()"))
-        assertTrue(updater.contains("setContentView(scroll)"))
+        assertTrue(updater.contains("setContentView(screen)"))
         val folder = text(plus, "ManagementFolderSyncScreen.kt")
         assertTrue(folder.contains("Color(0xFF173F6B)"))
         assertTrue(folder.contains("text = \"つぐレジ＋\""))
@@ -72,7 +72,7 @@ class V148CrossAppUiFormalSpecTest {
         listOf(pos, plus, cd).forEach { dir ->
             val src = text(dir, "AppDistributionUpdateActivityV146.kt")
             assertTrue(src.contains("ScrollView(this)"))
-            assertTrue(src.contains("ViewCompat.requestApplyInsets(scroll)"))
+            assertTrue(src.contains(if (dir == cd) "ViewCompat.requestApplyInsets(scroll)" else "ViewCompat.requestApplyInsets(screen)"))
             assertTrue(src.contains("isAppearanceLightNavigationBars = false"))
             assertTrue(src.contains("verifyApk(partial, item)"))
             assertTrue(src.contains("packageManager.canRequestPackageInstalls()"))
