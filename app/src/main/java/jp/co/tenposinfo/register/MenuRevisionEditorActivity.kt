@@ -413,23 +413,42 @@ private fun MenuRevisionEditorApp(onClose: () -> Unit) {
     var selectedProductId by remember { mutableStateOf<String?>(null) }
     val selectedRow = rows.firstOrNull { it.productId == selectedProductId }
     var message by remember { mutableStateOf<String?>(null) }
+    val layout = rememberRegisterResponsiveMetrics()
+    // Three fixed panes were unusable on 800x480 tablets: 285dp + 390dp
+    // left almost no width for the product comparison pane.
+    val threePanels = layout.windowClass == RegisterWindowClass.EXPANDED
+    var showEditor by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) { onDispose { store.close() } }
     LaunchedEffect(selectedRevisionId) { selectedProductId = rows.firstOrNull()?.productId }
 
     Surface(Modifier.fillMaxSize(), color = MrBackground) {
         Column(Modifier.fillMaxSize()) {
-            MrHeader(
-                title = "SCR-274  メニュー改定内容編集・比較",
-                subtitle = "判定営業日 ${store.businessDate()}",
-                onClose = onClose,
+            RegisterTopBarV141(
+                title = "メニュー改定",
+                onBack = onClose,
+                action = {
+                    if (!threePanels) {
+                        OutlinedButton(
+                            onClick = { showEditor = !showEditor },
+                            border = BorderStroke(1.dp, Color.White),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = Color.Transparent, contentColor = Color.White,
+                            ),
+                        ) { Text(if (showEditor) "一覧・比較" else "商品編集") }
+                    }
+                },
             )
             if (message != null) {
                 Text(message!!, modifier = Modifier.fillMaxWidth().background(MrSame).padding(8.dp), color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
             }
-            Row(Modifier.fillMaxSize().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                Modifier.fillMaxSize().padding(if (layout.isCompact) 8.dp else 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (layout.isCompact) 8.dp else 12.dp),
+            ) {
+                if (threePanels || !showEditor) {
                 Card(
-                    Modifier.width(285.dp).fillMaxHeight(),
+                    Modifier.width(if (layout.isCompact) 210.dp else 285.dp).fillMaxHeight(),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
                     border = BorderStroke(1.dp, MrBorder),
                 ) {
@@ -442,7 +461,7 @@ private fun MenuRevisionEditorApp(onClose: () -> Unit) {
                                 Column(
                                     Modifier.fillMaxWidth()
                                         .background(if (selectedRevisionId == revision.id) MrSelected else Color.Transparent, RoundedCornerShape(6.dp))
-                                        .clickable { selectedRevisionId = revision.id }
+                                        .clickable { selectedRevisionId = revision.id; showEditor = false }
                                         .padding(10.dp),
                                 ) {
                                     Text(revision.name, fontWeight = FontWeight.Bold, color = MrNavy)
@@ -488,7 +507,10 @@ private fun MenuRevisionEditorApp(onClose: () -> Unit) {
                                             },
                                             RoundedCornerShape(5.dp),
                                         )
-                                        .clickable { selectedProductId = row.productId }
+                                        .clickable {
+                                            selectedProductId = row.productId
+                                            if (!threePanels) showEditor = true
+                                        }
                                         .padding(9.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
@@ -508,7 +530,11 @@ private fun MenuRevisionEditorApp(onClose: () -> Unit) {
                     }
                 }
 
+                }
+                if (threePanels || showEditor) {
                 RevisionProductEditor(
+                    modifier = if (threePanels) Modifier.width(390.dp).fillMaxHeight()
+                        else Modifier.weight(1f).fillMaxHeight(),
                     store = store,
                     revision = selectedRevision,
                     row = selectedRow,
@@ -518,6 +544,7 @@ private fun MenuRevisionEditorApp(onClose: () -> Unit) {
                         message = text
                     },
                 )
+                }
             }
         }
     }
@@ -525,6 +552,7 @@ private fun MenuRevisionEditorApp(onClose: () -> Unit) {
 
 @Composable
 private fun RevisionProductEditor(
+    modifier: Modifier,
     store: MenuRevisionEditorStore,
     revision: MenuRevisionRecord?,
     row: RevisionComparisonRow?,
@@ -555,7 +583,7 @@ private fun RevisionProductEditor(
     }
 
     Card(
-        Modifier.width(390.dp).fillMaxHeight(),
+        modifier,
         colors = CardDefaults.cardColors(containerColor = Color.White),
         border = BorderStroke(1.dp, MrBorder),
     ) {
@@ -577,9 +605,9 @@ private fun RevisionProductEditor(
                 Checkbox(enabled, { enabled = it }, enabled = editable)
                 Text("有効")
             }
-            MrCycle("税区分", rules.firstOrNull { it.key == taxKey }?.let { "${it.label} ${it.ratePercent}%" } ?: taxKey, editable) {
+            MrCycle("税区分", rules.firstOrNull { it.key == taxKey }?.let { "${it.label} ${it.ratePercent}%" } ?: taxKey, editable && rules.isNotEmpty()) {
                 val index = rules.indexOfFirst { it.key == taxKey }
-                taxKey = rules[(index + 1).mod(rules.size.coerceAtLeast(1))].key
+                if (rules.isNotEmpty()) taxKey = rules[(index + 1).mod(rules.size)].key
             }
             MrCycle("ボタン色", color, editable) {
                 val colors = BUTTON_COLORS.toList().sorted()
@@ -634,22 +662,6 @@ private fun RevisionProductEditor(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun MrHeader(title: String, subtitle: String, onClose: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().height(62.dp).background(MrNavy).padding(horizontal = 18.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(20.dp))
-        Text(title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
-        Text(subtitle, color = Color.White, fontSize = 13.sp)
-        Spacer(Modifier.width(12.dp))
-        OutlinedButton(onClick = onClose, border = BorderStroke(1.dp, Color.White)) { Text("戻る", color = Color.White) }
     }
 }
 

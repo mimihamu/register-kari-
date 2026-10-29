@@ -123,8 +123,9 @@ android {
         // v1.58: versionCode 180, versionName 1.34.16-dev.1
         // v1.59: versionCode 181, versionName 1.34.17-dev.1
         // v1.60: versionCode 182, versionName 1.34.18-dev.1
-        versionCode = 183
-        versionName = "1.34.19-dev.1"
+        // v1.61: versionCode 183, versionName 1.34.19-dev.1
+        versionCode = 184
+        versionName = "1.34.20-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

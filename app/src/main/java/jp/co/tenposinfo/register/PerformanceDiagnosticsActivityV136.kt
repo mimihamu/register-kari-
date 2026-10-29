@@ -7,11 +7,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -38,10 +38,9 @@ class PerformanceDiagnosticsActivityV136 : ComponentActivity() {
         configureRegisterSystemBars(window)
         setContent {
             RegisterSafeAreaV141 {
-            MaterialTheme {
-                PerformanceDiagnosticsScreenV136(onClose = { finish() })
-            }
-        
+                MaterialTheme {
+                    PerformanceDiagnosticsScreenV136(onClose = { finish() })
+                }
             }
         }
     }
@@ -55,15 +54,19 @@ private fun PerformanceDiagnosticsScreenV136(onClose: () -> Unit) {
 
     Surface(Modifier.fillMaxSize(), color = Color(0xFFF4F7FA)) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(62.dp).background(Color(0xFF173F6B)).padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+            RegisterTopBarV141(
+                title = "性能診断",
+                onBack = onClose,
+                action = {
+                    Button(onClick = { revision++ }) { Text("再計測") }
+                },
+            )
+            Column(
+                Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text("つぐレジ  DIAG-001 / DIAG-002 性能診断", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                Text("Android API " + snapshot.sdkInt, color = Color.White)
-            }
-            Column(Modifier.weight(1f).fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("現在の端末状態", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Color(0xFF173F6B))
+                Text("現在の端末状態  ·  Android API " + snapshot.sdkInt,
+                    fontSize = 20.sp, fontWeight = FontWeight.Bold, color = RegisterTopBarColorV141)
                 Text(
                     "計測時刻 " + SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.JAPAN).format(Date(snapshot.capturedAt)) +
                         " / メモリ取得 " + snapshot.memorySource,
@@ -77,11 +80,7 @@ private fun PerformanceDiagnosticsScreenV136(onClose: () -> Unit) {
                     "取得できない値は「取得不可」と表示します。Android 12以降はPSSを優先し、取得不能時もRuntime値へフォールバックします。",
                     color = Color.DarkGray,
                 )
-                Spacer(Modifier.weight(1f))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = onClose, modifier = Modifier.weight(1f).height(54.dp)) { Text("戻る") }
-                    Button(onClick = { revision++ }, modifier = Modifier.weight(1f).height(54.dp)) { Text("再計測") }
-                }
+ 
             }
         }
     }
