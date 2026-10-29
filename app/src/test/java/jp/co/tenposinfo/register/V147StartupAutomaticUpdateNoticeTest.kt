@@ -70,16 +70,16 @@ class V147StartupAutomaticUpdateNoticeTest {
 
     @Test fun releaseIdentityHasAdvancedFromV146() {
         for ((base, code, name) in listOf(
-            Triple("", "184", "1.34.20-dev.1"),
-            Triple("../management-app/", "52", "0.33.19-dev.1"),
-            Triple("../customer-display/", "30", "0.15.22-dev.1"),
+            Triple("", "185", "1.34.21-dev.1"),
+            Triple("../management-app/", "53", "0.33.20-dev.1"),
+            Triple("../customer-display/", "31", "0.15.23-dev.1"),
         )) {
             val build = File(base + "build.gradle.kts").readText()
             assertTrue(build.contains("        versionCode = $code"))
             assertTrue(build.contains("        versionName = \"$name\""))
         }
         val integrity = File("../ci/verify-apk-release-integrity.sh").readText()
-        assertTrue(integrity.contains("'30'"))
-        assertTrue(integrity.contains("'0.15.22-dev.1'"))
+        assertTrue(integrity.contains("'31'"))
+        assertTrue(integrity.contains("'0.15.23-dev.1'"))
     }
 }

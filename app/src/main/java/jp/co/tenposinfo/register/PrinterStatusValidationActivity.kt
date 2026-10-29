@@ -412,7 +412,7 @@ private fun PrinterStatusValidationScreen(onClose: () -> Unit) {
             }
 
             Row(
-                Modifier.fillMaxWidth().height(72.dp).background(Color.White)
+                Modifier.fillMaxWidth().height(72.dp).background(RegisterSecondaryActionBarColorV159)
                     .padding(horizontal = 18.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

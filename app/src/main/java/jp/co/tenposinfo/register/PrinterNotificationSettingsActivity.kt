@@ -222,7 +222,7 @@ private fun PrinterNotificationSettingsScreen(
             }
 
             Row(
-                Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
+                Modifier.fillMaxWidth().background(RegisterSecondaryActionBarColorV159).padding(horizontal = 18.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
 

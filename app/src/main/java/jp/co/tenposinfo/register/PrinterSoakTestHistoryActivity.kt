@@ -371,7 +371,7 @@ private fun PrinterSoakTestHistoryScreen(onClose: () -> Unit) {
             }
 
             Row(
-                Modifier.fillMaxWidth().height(72.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
+                Modifier.fillMaxWidth().height(72.dp).background(RegisterSecondaryActionBarColorV159).padding(horizontal = 18.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("送信結果不明の試験は、用紙を確認してから新しい試験を開始してください", color = HsRed, fontWeight = FontWeight.Bold)

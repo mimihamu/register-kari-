@@ -709,7 +709,7 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
             }
 
             Row(
-                Modifier.fillMaxWidth().height(68.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 8.dp),
+                Modifier.fillMaxWidth().height(68.dp).background(RegisterSecondaryActionBarColorV159).padding(horizontal = 18.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(

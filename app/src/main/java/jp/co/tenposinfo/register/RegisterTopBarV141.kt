@@ -1,5 +1,6 @@
 package jp.co.tenposinfo.register
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -69,9 +70,10 @@ internal fun RegisterTopBarV141(
         if (onBack != null) {
             OutlinedButton(
                 onClick = onBack,
+                border = BorderStroke(1.dp, Color.White),
                 colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = Color.White,
-                    contentColor = RegisterTopBarColorV141,
+                    containerColor = Color.Transparent,
+                    contentColor = Color.White,
                 ),
             ) { Text("戻る", fontWeight = FontWeight.Bold, maxLines = 1) }
             Spacer(Modifier.width(if (metrics.isCompact) 8.dp else 12.dp))

@@ -118,8 +118,9 @@ android {
         // v1.59: versionCode 49, versionName 0.33.16-dev.1
         // v1.60: versionCode 50, versionName 0.33.17-dev.1
         // v1.61: versionCode 51, versionName 0.33.18-dev.1
-        versionCode = 52
-        versionName = "0.33.19-dev.1"
+        // v1.62 versionCode 52 / 0.33.19-dev.1
+        versionCode = 53
+        versionName = "0.33.20-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ＋"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
