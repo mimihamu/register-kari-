@@ -1,5 +1,6 @@
 package jp.co.tenposinfo.register.plus
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -36,9 +37,10 @@ internal fun PlusTopBarV155(
         OutlinedButton(
             onClick = onBack,
             modifier = Modifier.height(48.dp),
+            border = BorderStroke(1.dp, Color.White),
             colors = ButtonDefaults.outlinedButtonColors(
-                containerColor = Color.White,
-                contentColor = PlusNavyV148,
+                containerColor = Color.Transparent,
+                contentColor = Color.White,
             ),
         ) { Text("戻る", fontWeight = FontWeight.Bold, maxLines = 1) }
         Text(

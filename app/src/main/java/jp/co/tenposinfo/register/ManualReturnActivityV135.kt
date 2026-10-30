@@ -195,18 +195,24 @@ private fun RegisterMinusSalesV158(
     )
 
     if (showCheckout) {
+        val refundOptionsMaxHeightDp =
+            (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp - 220)
+                .coerceIn(100, 260)
         RegisterModalV154(
             onDismissRequest = {},
             title = { Text("レジマイナス会計", fontWeight = FontWeight.Bold) },
             text = {
-                Column(
-                    modifier = Modifier.heightIn(max = 310.dp).verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // Refund total must remain visible while the options scroll.
                     Text("商品 " + cart.size + "種類 ／ マイナス数量 " +
                         QuantityCompatibilityV136.textOrZero(cart.sumOf { it.quantityHundredths }) + "点")
                     Text("返金額  -" + java.text.NumberFormat.getCurrencyInstance(java.util.Locale.JAPAN).format(total),
                         color = Color(0xFFB42318), fontWeight = FontWeight.Bold)
+                    Column(
+                        modifier = Modifier.heightIn(max = refundOptionsMaxHeightDp.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                     Text("返金方法", fontWeight = FontWeight.Bold)
                     ManualRefundMethodV135.entries.chunked(2).forEach { methods ->
                         Row(
@@ -221,6 +227,10 @@ private fun RegisterMinusSalesV158(
                                     border = androidx.compose.foundation.BorderStroke(
                                         if (refundMethod == method) 2.dp else 1.dp,
                                         if (refundMethod == method) Color(0xFFB42318) else Color(0xFFD5DEE7),
+                                    ),
+                                    colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                                        containerColor = if (refundMethod == method) Color(0xFFFFEBEE) else Color.White,
+                                        contentColor = if (refundMethod == method) Color(0xFFB42318) else Color(0xFF173F6B),
                                     ),
                                 ) { Text(method.displayName, maxLines = 1) }
                             }
@@ -247,6 +257,7 @@ private fun RegisterMinusSalesV158(
                             color = Color(0xFFB42318))
                     }
                     if (error != null) Text(error.orEmpty(), color = Color(0xFFB42318))
+                    }
                 }
             },
             confirmButton = {
