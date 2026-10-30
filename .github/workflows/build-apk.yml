@@ -578,7 +578,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v1.34.21-dev1-printer-chrome-apks
+          name: TSUGUREGI-v1.34.22-dev1-printer-chrome-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30

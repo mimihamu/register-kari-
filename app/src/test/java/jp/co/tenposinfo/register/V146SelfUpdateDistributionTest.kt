@@ -88,6 +88,13 @@ class V146SelfUpdateDistributionTest {
             val artifact = "${prefix}_v${name.removeSuffix("-dev.1")}_dev1_printer_chrome_debug.apk"
             assertTrue("$key standard APK name mismatch", standard.contains(artifact))
             assertTrue("$key fallback APK name mismatch", fallback.contains(artifact))
+            if (key == "pos") {
+                val release = name.removeSuffix("-dev.1")
+                assertTrue("standard artifact label mismatches POS release",
+                    standard.contains("name: TSUGUREGI-v${release}-dev1-printer-chrome-apks"))
+                assertTrue("fallback artifact label mismatches POS release",
+                    fallback.contains("name: TSUGUREGI-v${release}-dev1-printer-chrome-fallback-apks"))
+            }
         }
     }
 
