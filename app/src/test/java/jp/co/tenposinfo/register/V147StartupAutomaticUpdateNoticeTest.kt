@@ -69,17 +69,25 @@ class V147StartupAutomaticUpdateNoticeTest {
     }
 
     @Test fun releaseIdentityHasAdvancedFromV146() {
-        for ((base, code, name) in listOf(
-            Triple("", "185", "1.34.21-dev.1"),
-            Triple("../management-app/", "53", "0.33.20-dev.1"),
-            Triple("../customer-display/", "31", "0.15.23-dev.1"),
+        // Check active Gradle identity and generated build metadata, not a fixed older build.
+        val standard = File("../.github/workflows/build-apk.yml").readText()
+        for ((base, previousCode, summaryPrefix) in listOf(
+            Triple("", 170, "REGISTER"),
+            Triple("../management-app/", 38, "MANAGEMENT_APP"),
+            Triple("../customer-display/", 16, "CUSTOMER_DISPLAY"),
         )) {
             val build = File(base + "build.gradle.kts").readText()
-            assertTrue(build.contains("        versionCode = $code"))
-            assertTrue(build.contains("        versionName = \"$name\""))
+            val code = Regex("""(?m)^        versionCode = ([0-9]+)$""")
+                .find(build)?.groupValues?.get(1)?.toInt()
+                ?: error("No active versionCode in $base")
+            val name = Regex("""(?m)^        versionName = "([^"]+)"$""")
+                .find(build)?.groupValues?.get(1)
+                ?: error("No active versionName in $base")
+            assertTrue("$summaryPrefix was not advanced from v1.47", code > previousCode)
+            assertTrue("$summaryPrefix build-summary versionCode mismatch",
+                standard.contains("${summaryPrefix}_VERSION_CODE=$code"))
+            assertTrue("$summaryPrefix build-summary versionName mismatch",
+                standard.contains("${summaryPrefix}_VERSION_NAME=$name"))
         }
-        val integrity = File("../ci/verify-apk-release-integrity.sh").readText()
-        assertTrue(integrity.contains("'31'"))
-        assertTrue(integrity.contains("'0.15.23-dev.1'"))
     }
 }

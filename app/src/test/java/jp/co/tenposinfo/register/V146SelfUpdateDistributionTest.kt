@@ -55,20 +55,42 @@ class V146SelfUpdateDistributionTest {
     }
 
     @Test fun installedVersionCodeMustIncreaseToAllowNextPublishedRelease() {
+        // The v1.46 version codes are minimum baselines, not pinned current release IDs.
         val builds = listOf(
-            Triple(".", "185", "1.34.21-dev.1"),
-            Triple("../management-app", "53", "0.33.20-dev.1"),
-            Triple("../customer-display", "31", "0.15.23-dev.1"),
+            Triple(".", "pos", 180),
+            Triple("../management-app", "plus", 48),
+            Triple("../customer-display", "cd", 26),
         )
-        for ((dir, code, name) in builds) {
+        val standard = read("../.github/workflows/build-apk.yml")
+        val fallback = read("../.github/workflows/build-apk-ci-fallback.yml")
+        val integrity = read("../ci/verify-apk-release-integrity.sh")
+        for ((dir, key, previousCode) in builds) {
             val gradle = read("$dir/build.gradle.kts")
-            assertTrue(gradle.contains("        versionCode = $code"))
-            assertTrue(gradle.contains("        versionName = \"$name\""))
+            val code = Regex("""(?m)^        versionCode = ([0-9]+)$""")
+                .find(gradle)?.groupValues?.get(1)?.toInt()
+                ?: error("$key has no active versionCode")
+            val name = Regex("""(?m)^        versionName = "([^"]+)"$""")
+                .find(gradle)?.groupValues?.get(1)
+                ?: error("$key has no active versionName")
+            assertTrue("$key release code must increase", code > previousCode)
+            assertTrue("$key invalid development version", name.matches(Regex("""[0-9]+[.][0-9]+[.][0-9]+-dev[.]1""")))
+            val ciKey = when (key) { "pos" -> "POS"; "plus" -> "PLUS"; else -> null }
+            if (ciKey != null) {
+                for (workflow in listOf(standard, fallback)) {
+                    assertTrue("$key CI code mismatch", workflow.contains("${ciKey}_VERSION_CODE: $code"))
+                    assertTrue("$key CI name mismatch", workflow.contains("${ciKey}_VERSION_NAME: $name"))
+                }
+            } else {
+                assertTrue("CD integrity code mismatch", integrity.contains("'$code'"))
+                assertTrue("CD integrity name mismatch", integrity.contains("'$name'"))
+            }
+            val prefix = when (key) { "pos" -> "TSUGUREGI"; "plus" -> "TSUGUREGI_PLUS"; else -> "TSUGUREGI_CD" }
+            val artifact = "${prefix}_v${name.removeSuffix("-dev.1")}_dev1_printer_chrome_debug.apk"
+            assertTrue("$key standard APK name mismatch", standard.contains(artifact))
+            assertTrue("$key fallback APK name mismatch", fallback.contains(artifact))
         }
-        val gate = read("../ci/verify-apk-release-integrity.sh")
-        assertTrue(gate.contains("'31'"))
-        assertTrue(gate.contains("'0.15.23-dev.1'"))
     }
+
 
     @Test fun updateActionsAreReachableFromAllThreeApps() {
         assertTrue(read("src/main/java/jp/co/tenposinfo/register/InitialReleaseSettingsV135.kt")
