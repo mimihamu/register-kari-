@@ -1599,6 +1599,7 @@ internal fun SalesScreen(
         if (minusMode) {
             Row(
                 Modifier.fillMaxWidth().height(responsive.bottomBarHeightDp.dp)
+                    .background(Color(0xFFFFCDD2))
                     .padding(horizontal = responsive.screenPaddingDp.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
             ) {
@@ -1617,6 +1618,7 @@ internal fun SalesScreen(
         } else if (twoRowActions) {
             Column(
                 Modifier.fillMaxWidth().height(122.dp)
+                    .background(RegisterSecondaryActionBarColorV159)
                     .padding(horizontal = responsive.screenPaddingDp.dp, vertical = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
@@ -1645,6 +1647,7 @@ internal fun SalesScreen(
         } else {
             Row(
                 Modifier.fillMaxWidth().height(responsive.bottomBarHeightDp.dp)
+                    .background(RegisterSecondaryActionBarColorV159)
                     .padding(horizontal = responsive.screenPaddingDp.dp, vertical = 7.dp),
                 horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
             ) {
@@ -3511,6 +3514,7 @@ private fun BottomActions(
         Modifier
             .fillMaxWidth()
             .height(responsive.bottomBarHeightDp.dp)
+            .background(RegisterSecondaryActionBarColorV159)
             .padding(horizontal = responsive.screenPaddingDp.dp, vertical = 7.dp),
         horizontalArrangement = Arrangement.spacedBy(responsive.panelGapDp.dp),
     ) {

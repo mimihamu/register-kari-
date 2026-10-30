@@ -14,7 +14,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -209,10 +208,23 @@ private fun RegisterMinusSalesV158(
                     Text("返金額  -" + java.text.NumberFormat.getCurrencyInstance(java.util.Locale.JAPAN).format(total),
                         color = Color(0xFFB42318), fontWeight = FontWeight.Bold)
                     Text("返金方法", fontWeight = FontWeight.Bold)
-                    ManualRefundMethodV135.entries.forEach { method ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = refundMethod == method, onClick = { refundMethod = method })
-                            Text(method.displayName)
+                    ManualRefundMethodV135.entries.chunked(2).forEach { methods ->
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            methods.forEach { method ->
+                                androidx.compose.material3.OutlinedButton(
+                                    onClick = { refundMethod = method },
+                                    enabled = !submissionGate.isSubmitting(),
+                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        if (refundMethod == method) 2.dp else 1.dp,
+                                        if (refundMethod == method) Color(0xFFB42318) else Color(0xFFD5DEE7),
+                                    ),
+                                ) { Text(method.displayName, maxLines = 1) }
+                            }
+                            if (methods.size == 1) androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                         }
                     }
                     OutlinedTextField(
