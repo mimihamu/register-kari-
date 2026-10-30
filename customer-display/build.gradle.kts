@@ -79,8 +79,11 @@ android {
         // versionCode = 31
         // versionName = "0.15.23-dev.1"
         // v1.66 OTA-upgradeable development build.
-        versionCode = 32
-        versionName = "0.15.24-dev.1"
+        // v1.66 identity
+        // versionCode = 32
+        // versionName = "0.15.24-dev.1"
+        versionCode = 33
+        versionName = "0.15.25-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ CD"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

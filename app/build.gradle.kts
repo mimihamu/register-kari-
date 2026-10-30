@@ -129,8 +129,11 @@ android {
         // versionCode = 185
         // versionName = "1.34.21-dev.1"
         // v1.66 OTA-upgradeable development build.
-        versionCode = 186
-        versionName = "1.34.22-dev.1"
+        // v1.66 identity
+        // versionCode = 186
+        // versionName = "1.34.22-dev.1"
+        versionCode = 187
+        versionName = "1.34.23-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
