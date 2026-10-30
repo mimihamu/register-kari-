@@ -75,8 +75,12 @@ android {
         // v1.60: versionCode 28, versionName 0.15.20-dev.1
         // v1.61: versionCode 29, versionName 0.15.21-dev.1
         // v1.62 versionCode 30 / 0.15.22-dev.1
-        versionCode = 31
-        versionName = "0.15.23-dev.1"
+        // v1.63 baseline; v1.64-v1.65 reused the same OTA identity.
+        // versionCode = 31
+        // versionName = "0.15.23-dev.1"
+        // v1.66 OTA-upgradeable development build.
+        versionCode = 32
+        versionName = "0.15.24-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ CD"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

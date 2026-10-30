@@ -493,10 +493,10 @@ jobs:
       - name: Verify built APK release identity and integrity
         shell: bash
         env:
-          POS_VERSION_CODE: 185
-          POS_VERSION_NAME: 1.34.21-dev.1
-          PLUS_VERSION_CODE: 53
-          PLUS_VERSION_NAME: 0.33.20-dev.1
+          POS_VERSION_CODE: 186
+          POS_VERSION_NAME: 1.34.22-dev.1
+          PLUS_VERSION_CODE: 54
+          PLUS_VERSION_NAME: 0.33.21-dev.1
           BUILD_TOOLS_VERSION: 36.0.0
         run: |
           set -euo pipefail
@@ -509,9 +509,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v1.34.21_dev1_printer_chrome_debug.apk
-          plus_apk=artifacts/TSUGUREGI_PLUS_v0.33.20_dev1_printer_chrome_debug.apk
-          cd_apk=artifacts/TSUGUREGI_CD_v0.15.23_dev1_printer_chrome_debug.apk
+          register_apk=artifacts/TSUGUREGI_v1.34.22_dev1_printer_chrome_debug.apk
+          plus_apk=artifacts/TSUGUREGI_PLUS_v0.33.21_dev1_printer_chrome_debug.apk
+          cd_apk=artifacts/TSUGUREGI_CD_v0.15.24_dev1_printer_chrome_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
           cp management-app/build/outputs/apk/debug/management-app-debug.apk "$plus_apk"
           cp customer-display/build/outputs/apk/debug/customer-display-debug.apk "$cd_apk"
@@ -522,12 +522,12 @@ jobs:
           stat --printf='MANAGEMENT_APP_APK_SIZE_BYTES=%s\n' "$plus_apk" | tee -a artifacts/build-summary.txt
           stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' "$cd_apk" | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=1.34.21-dev.1
-          REGISTER_VERSION_CODE=185
-          MANAGEMENT_APP_VERSION_NAME=0.33.20-dev.1
-          MANAGEMENT_APP_VERSION_CODE=53
-          CUSTOMER_DISPLAY_VERSION_NAME=0.15.23-dev.1
-          CUSTOMER_DISPLAY_VERSION_CODE=31
+          REGISTER_VERSION_NAME=1.34.22-dev.1
+          REGISTER_VERSION_CODE=186
+          MANAGEMENT_APP_VERSION_NAME=0.33.21-dev.1
+          MANAGEMENT_APP_VERSION_CODE=54
+          CUSTOMER_DISPLAY_VERSION_NAME=0.15.24-dev.1
+          CUSTOMER_DISPLAY_VERSION_CODE=32
           DRIVE_REMOTE_VERSION_FINGERPRINT=true
           DRIVE_PAGINATION_COMPLETE=true
           DRIVE_SYNC_SINGLE_FLIGHT=true
