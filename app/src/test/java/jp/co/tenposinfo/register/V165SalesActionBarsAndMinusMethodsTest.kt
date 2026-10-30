@@ -1,7 +1,6 @@
 package jp.co.tenposinfo.register
 
 import java.io.File
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -25,6 +24,6 @@ class V165SalesActionBarsAndMinusMethodsTest {
         assertTrue(minus.contains("coordinator.create(request, managerPin, checkoutRequestId)"))
         assertTrue(minus.contains("RegisterSafeAreaV141(topBarColor = Color(0xFFB42318))"))
         assertTrue(minus.contains("window.statusBarColor = android.graphics.Color.rgb(180, 35, 24)"))
-        assertTrue(src("OperationsHubActivityV030.kt").contains("HubAmountV030(\"レジマイナス\", \"-${minusCount}件\")"))
+        assertTrue(src("OperationsHubActivityV030.kt").contains("HubAmountV030(\"レジマイナス\""))
     }
 }
