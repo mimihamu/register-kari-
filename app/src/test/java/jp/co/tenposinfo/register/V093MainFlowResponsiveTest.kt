@@ -91,7 +91,9 @@ class V093MainFlowResponsiveTest {
         assertTrue(complete.contains("BlueButton(\"次の取引\", onNext, Modifier.width(180.dp).height(54.dp))"))
         assertTrue(register.contains("SaleReceiptNavigation.intent(context, saleId)"))
         assertTrue(register.contains("ReceiptVoucherNavigation.issuanceIntent(context, lastSaleId)"))
-        assertTrue(register.contains("onHistory = { screen = AppScreen.SALES_HISTORY }"))
+        assertTrue(register.contains("historyBackDestination = AppScreen.COMPLETE"))
+        assertTrue(register.contains("screen = AppScreen.SALES_HISTORY"))
+        assertTrue(mainSource.contains("onBack = { screen = historyBackDestination }"))
         assertTrue(register.contains("onQueue = { openUnifiedPrintQueue() }"))
         assertTrue(register.contains("onNext = { screen = AppScreen.SALES }"))
     }
