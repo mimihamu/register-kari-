@@ -8,7 +8,18 @@ import java.time.LocalDate
 enum class CashMovementType(val displayName: String, val sign: Long) {
     IN("入金", 1),
     OUT("出金", -1),
+    // Preserve this value for reading historical transactions and old backups.
     EXCHANGE("両替", 0),
+}
+
+/** New cash ledger entries are strictly deposits or withdrawals. */
+internal object CashMovementEntryPolicyV173 {
+    fun mayRecord(type: CashMovementType): Boolean =
+        type == CashMovementType.IN || type == CashMovementType.OUT
+
+    fun requireRecordable(type: CashMovementType) {
+        require(mayRecord(type)) { "両替は販売画面の「両替」からドロアを開けてください" }
+    }
 }
 
 enum class ReversalType(val displayName: String) {
@@ -342,6 +353,7 @@ class OperationsStore(context: Context) {
         reason: String,
         operatorName: String,
     ): Long {
+        CashMovementEntryPolicyV173.requireRecordable(type)
         require(amount > 0) { "金額を入力してください" }
         require(operatorName.isNotBlank()) { "担当者を入力してください" }
         val now = System.currentTimeMillis()

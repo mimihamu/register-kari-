@@ -173,6 +173,7 @@ private fun RegisterApp() {
     var loginMessage by remember { mutableStateOf<String?>(null) }
     var accessMessage by remember { mutableStateOf<String?>(null) }
     var exchangeDrawerInProgress by remember { mutableStateOf(false) }
+    var lastExchangeDrawerTapAt by remember { mutableStateOf<Long?>(null) }
     var printerHealth by remember { mutableStateOf(PrinterHealthSnapshot.checking()) }
     var catalogEpoch by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     var activityResumed by remember(lifecycleOwner) {
@@ -546,7 +547,11 @@ private fun RegisterApp() {
                     }
                 },
                 onExchangeDrawer = {
-                    if (!exchangeDrawerInProgress) {
+                    val tappedAt = android.os.SystemClock.elapsedRealtime()
+                    if (!exchangeDrawerInProgress &&
+                        SalesExchangeTapPolicyV173.mayStart(tappedAt, lastExchangeDrawerTapAt)
+                    ) {
+                        lastExchangeDrawerTapAt = tappedAt
                         exchangeDrawerInProgress = true
                         checkoutScope.launch {
                             val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -1684,13 +1689,13 @@ internal fun SalesScreen(
                         OutlinedButton(
                             onClick = onExchangeDrawer,
                             enabled = !exchangeDrawerInProgress,
-                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            modifier = Modifier.weight(0.8f).fillMaxHeight(),
                         ) { Text("両替", maxLines = 1) }
                     }
                     BlueButton(
                         "小計／会計  ${yen(summary.grossAmount)}",
                         onPayment,
-                        Modifier.weight(1.7f).fillMaxHeight(),
+                        Modifier.weight(2f).fillMaxHeight(),
                         cart.isNotEmpty(),
                     )
                 }
@@ -1711,7 +1716,7 @@ internal fun SalesScreen(
                     OutlinedButton(
                         onClick = onExchangeDrawer,
                         enabled = !exchangeDrawerInProgress,
-                        modifier = Modifier.weight(0.9f).fillMaxHeight(),
+                        modifier = Modifier.weight(0.75f).fillMaxHeight(),
                     ) { Text("両替", maxLines = 1) }
                 }
                 BlueButton(

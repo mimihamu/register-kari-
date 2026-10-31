@@ -48,7 +48,8 @@ class V172SalesDrawerExchangeTest {
         assertFalse(cash.contains("OpChoiceButton(\"両替\""))
         assertTrue(cash.contains("CashMovementType.EXCHANGE -> \"±"))
         assertTrue(src("OperationsStore.kt").contains("EXCHANGE(\"両替\", 0)"))
-        assertTrue(src("SecureOperationsCoordinator.kt").contains("CashMovementType.EXCHANGE -> CashDrawerOpenContextV136.EXCHANGE"))
+        assertTrue(src("SecureOperationsCoordinator.kt").contains("CashMovementType.EXCHANGE -> error("))
+        assertTrue(src("OperationsStore.kt").contains("CashMovementEntryPolicyV173.requireRecordable(type)"))
     }
 
     @Test fun salesCashierCanOpenAndMissingSalesPermissionCannot() {

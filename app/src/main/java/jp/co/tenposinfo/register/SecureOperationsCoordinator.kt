@@ -53,13 +53,14 @@ class SecureOperationsCoordinator(
         }
 
     fun recordCashMovement(type: CashMovementType, amount: Long, reason: String): Long {
+        CashMovementEntryPolicyV173.requireRecordable(type)
         val operator = requireOperator(OperationsAction.CASH_MOVEMENT)
         val actor = OperationsActorFormatter.direct(operator)
         val movementId = store.recordCashMovement(type, amount, reason, actor)
         val openContext = when (type) {
             CashMovementType.IN -> CashDrawerOpenContextV136.CASH_IN
             CashMovementType.OUT -> CashDrawerOpenContextV136.CASH_OUT
-            CashMovementType.EXCHANGE -> CashDrawerOpenContextV136.EXCHANGE
+            CashMovementType.EXCHANGE -> error("両替は販売画面から操作してください")
         }
         CashDrawerRuntimeV136.dispatchAsync(
             context = appContext,
