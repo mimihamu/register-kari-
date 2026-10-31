@@ -3,6 +3,7 @@ package jp.co.tenposinfo.register
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -181,7 +182,13 @@ private fun OperationsApp(
     }
 
     fun returnToHubOrMenu() {
-        if (requestedLegacyRoute != null) onClose() else screen = OperationsScreen.MENU
+        if (requestedLegacyRoute != null || requestedReversalSaleId != null) onClose()
+        else screen = OperationsScreen.MENU
+    }
+
+    BackHandler(enabled = screen != OperationsScreen.MENU) {
+        if (screen == OperationsScreen.REVERSAL) reversalContextSaleId = null
+        returnToHubOrMenu()
     }
 
     fun openScreen(permission: RegisterPermission, destination: OperationsScreen) {
@@ -1579,7 +1586,7 @@ private fun ReversalScreen(
                 Text("元売上は変更せず、返品明細と反対支払を追記します。", color = Color.DarkGray, fontSize = 11.sp)
             }
         }
-        OpBottomBar("レジ管理へ戻る", onBack)
+        OpBottomBar(if (initialSaleId != null) "売上詳細へ戻る" else "レジ管理へ戻る", onBack)
     }
     if (showReversalConfirm) {
         RegisterModalV154(

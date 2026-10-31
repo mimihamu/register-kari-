@@ -3,6 +3,7 @@ package jp.co.tenposinfo.register
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.core.view.WindowCompat
 import androidx.compose.foundation.BorderStroke
@@ -235,6 +236,8 @@ private fun RegisterApp() {
     var paymentState by remember { mutableStateOf(PaymentState()) }
     var lastSaleId by remember { mutableStateOf<Long?>(null) }
     var selectedSaleId by remember { mutableStateOf<Long?>(null) }
+    var historyBackDestination by remember { mutableStateOf(AppScreen.SALES) }
+    var discountBackDestination by remember { mutableStateOf(AppScreen.SALES) }
     var queueMessage by remember { mutableStateOf<String?>(null) }
     var ticketMessage by remember { mutableStateOf<String?>(null) }
     var selectedHeldTicketId by remember { mutableStateOf<Long?>(null) }
@@ -253,6 +256,41 @@ private fun RegisterApp() {
         database.saveCart(cart.toList())
         paymentDraftStore.clear()
         paymentCommitKey = null
+    }
+
+    fun returnFromPayment() {
+        if (saleCommitInProgress) return
+        saleCommitGuard.resetForNewPayment()
+        saleCommitInProgress = false
+        paymentMessage = null
+        paymentDraftStore.clear()
+        paymentCommitKey = null
+        CustomerDisplayRuntime.publish(
+            CustomerDisplaySnapshotFactory.sales(
+                cart.toList(),
+                CustomerDisplaySettingsStore(context.applicationContext).load().storeName,
+            ),
+        )
+        screen = AppScreen.SALES
+    }
+
+    // Android system Back and on-screen Back must share the same destination.
+    BackHandler(enabled = screen !in setOf(AppScreen.SALES, AppScreen.LOGIN, AppScreen.DIAGNOSTIC)) {
+        when (screen) {
+            AppScreen.DISCOUNT -> screen = discountBackDestination
+            AppScreen.SALES_HISTORY -> screen = historyBackDestination
+            AppScreen.SALE_DETAIL -> screen = AppScreen.SALES_HISTORY
+            AppScreen.RECEIPT_PREVIEW -> screen = AppScreen.SALE_DETAIL
+            AppScreen.TICKET_SPLIT -> {
+                selectedHeldTicketId = null
+                ticketMessage = null
+                screen = AppScreen.TICKETS
+            }
+            AppScreen.PAYMENT -> returnFromPayment()
+            AppScreen.LINE_EDIT, AppScreen.TICKETS, AppScreen.COMPLETE, AppScreen.PRINT_QUEUE ->
+                screen = AppScreen.SALES
+            else -> screen = AppScreen.SALES
+        }
     }
 
     fun updateCartItem(index: Int, item: CartItem) {
@@ -439,7 +477,10 @@ private fun RegisterApp() {
                     corrections.clear()
                     replaceCart(emptyList())
                 },
-                onDiscount = { screen = AppScreen.DISCOUNT },
+                onDiscount = {
+                    discountBackDestination = AppScreen.SALES
+                    screen = AppScreen.DISCOUNT
+                },
                 onTickets = {
                     if (currentOperator?.allows(RegisterPermission.HOLD_TICKET) == true) {
                         accessMessage = null
@@ -497,6 +538,7 @@ private fun RegisterApp() {
                 onSalesHistory = {
                     if (currentOperator?.allows(RegisterPermission.VIEW_SALES) == true) {
                         accessMessage = null
+                        historyBackDestination = AppScreen.SALES
                         screen = AppScreen.SALES_HISTORY
                     } else {
                         accessMessage = "売上確認の権限がありません"
@@ -566,7 +608,10 @@ private fun RegisterApp() {
                             }
                             screen = AppScreen.SALES
                         },
-                        onDiscount = { screen = AppScreen.DISCOUNT },
+                        onDiscount = {
+                            discountBackDestination = AppScreen.LINE_EDIT
+                            screen = AppScreen.DISCOUNT
+                        },
                         onBack = { screen = AppScreen.SALES },
                     )
                 }
@@ -579,7 +624,7 @@ private fun RegisterApp() {
                     replaceCart(it)
                     screen = AppScreen.SALES
                 },
-                onBack = { screen = AppScreen.SALES },
+                onBack = { screen = discountBackDestination },
             )
 
             AppScreen.TICKETS -> TicketListScreen(
@@ -705,20 +750,7 @@ private fun RegisterApp() {
                         ),
                     )
                 },
-                onBack = {
-                    saleCommitGuard.resetForNewPayment()
-                    saleCommitInProgress = false
-                    paymentMessage = null
-                    paymentDraftStore.clear()
-                    paymentCommitKey = null
-                    CustomerDisplayRuntime.publish(
-                        CustomerDisplaySnapshotFactory.sales(
-                            cart.toList(),
-                            CustomerDisplaySettingsStore(context.applicationContext).load().storeName,
-                        ),
-                    )
-                    screen = AppScreen.SALES
-                },
+                onBack = ::returnFromPayment,
                 onComplete = complete@{
                     if (!saleCommitGuard.tryBegin()) {
                         paymentMessage = "会計確定処理中です。完了まで操作しないでください"
@@ -784,7 +816,10 @@ private fun RegisterApp() {
                 onVoucher = {
                     context.startActivity(ReceiptVoucherNavigation.issuanceIntent(context, lastSaleId))
                 },
-                onHistory = { screen = AppScreen.SALES_HISTORY },
+                onHistory = {
+                    historyBackDestination = AppScreen.COMPLETE
+                    screen = AppScreen.SALES_HISTORY
+                },
                 onQueue = { openUnifiedPrintQueue() },
                 onNext = { screen = AppScreen.SALES },
             )
@@ -806,7 +841,7 @@ private fun RegisterApp() {
                     }
                 },
                 onQueue = { openUnifiedPrintQueue() },
-                onBack = { screen = AppScreen.SALES },
+                onBack = { screen = historyBackDestination },
             )
 
             AppScreen.SALE_DETAIL -> {
