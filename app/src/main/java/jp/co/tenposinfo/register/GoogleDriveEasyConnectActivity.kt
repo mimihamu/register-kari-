@@ -60,6 +60,8 @@ object GoogleDriveEasyConnectPolicy {
 
     fun statusLabel(state: GoogleDriveEasyConnectUiState): String = when {
         state.busy -> "設定中"
+        state.account.status == GoogleDriveAccountStatus.CLOUD_CONFIGURATION_REQUIRED -> "Google Cloud設定が必要"
+        state.account.status == GoogleDriveAccountStatus.AUTHORIZATION_FAILED -> "Google連携を確認"
         state.account.email == null -> "未接続"
         state.upload.blockedCategory == GoogleDriveApiFailureCategory.AUTHORIZATION_REQUIRED -> "再接続が必要"
         state.upload.blockedCategory == GoogleDriveApiFailureCategory.API_DISABLED -> "API確認が必要"
@@ -79,16 +81,29 @@ class GoogleDriveEasyConnectActivity : ComponentActivity() {
     private val authorizationLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult(),
     ) { result ->
-        if (result.resultCode != Activity.RESULT_OK || result.data == null) {
-            uiState.value = uiState.value.copy(
-                busy = false,
-                message = "Googleアカウントの選択がキャンセルされました",
-            )
+        if (result.resultCode != Activity.RESULT_OK) {
+            val error = result.data?.let { intent ->
+                runCatching { authorizationClient.getAuthorizationResultFromIntent(intent) }.exceptionOrNull()
+            }
+            if (error is com.google.android.gms.common.api.ApiException &&
+                error.statusCode != com.google.android.gms.common.api.CommonStatusCodes.CANCELED) {
+                handleFailure(error)
+            } else {
+                uiState.value = uiState.value.copy(
+                    busy = false,
+                    account = uiState.value.account.copy(status = GoogleDriveAccountStatus.AUTHORIZATION_FAILED),
+                    message = GoogleDriveAuthorizationOutcomePolicy.unfinishedMessage(result.resultCode),
+                )
+            }
             return@registerForActivityResult
         }
-        runCatching {
-            authorizationClient.getAuthorizationResultFromIntent(result.data!!)
-        }.onSuccess(::consumeAuthorizationResult)
+        val intent = result.data
+        if (intent == null) {
+            handleFailure(IllegalStateException("認証結果がありません"))
+            return@registerForActivityResult
+        }
+        runCatching { authorizationClient.getAuthorizationResultFromIntent(intent) }
+            .onSuccess(::consumeAuthorizationResult)
             .onFailure(::handleFailure)
     }
 
@@ -97,6 +112,7 @@ class GoogleDriveEasyConnectActivity : ComponentActivity() {
         configureRegisterSystemBars(window)
         refresh()
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GoogleDriveEasyConnectScreen(
@@ -104,12 +120,17 @@ class GoogleDriveEasyConnectActivity : ComponentActivity() {
                         onConnect = ::connect,
                         onSync = ::synchronizeNow,
                         onDisconnect = ::disconnect,
+                        onOpenSetupGuide = {
+                            startActivity(Intent(this, GoogleDriveSetupGuideActivity::class.java))
+                        },
                         onOpenAdvanced = {
                             startActivity(Intent(this, GoogleDriveAccountActivity::class.java))
                         },
                         onClose = ::finish,
                     )
                 }
+            }
+        
             }
         }
     }
@@ -121,7 +142,7 @@ class GoogleDriveEasyConnectActivity : ComponentActivity() {
 
     private fun refresh(message: String? = null) {
         uiState.value = GoogleDriveEasyConnectUiState(
-            account = accountStore.load(),
+            account = GoogleDriveAuthorizationRefreshPolicy.merge(uiState.value.account, accountStore.load()),
             upload = GoogleDriveDirectUploadStatusStore(applicationContext).load(),
             connectionTest = GoogleDriveConnectionTestStore(applicationContext).load(),
             busy = uiState.value.busy,
@@ -279,11 +300,7 @@ class GoogleDriveEasyConnectActivity : ComponentActivity() {
         uiState.value = uiState.value.copy(
             busy = false,
             account = uiState.value.account.copy(status = status),
-            message = if (status == GoogleDriveAccountStatus.CLOUD_CONFIGURATION_REQUIRED) {
-                "Google Cloudのアプリ登録を確認してください"
-            } else {
-                "Google連携に失敗しました：${error.message ?: error.javaClass.simpleName}"
-            },
+            message = GoogleDriveAuthorizationOutcomePolicy.errorMessage(error),
         )
     }
 }
@@ -294,27 +311,18 @@ private fun GoogleDriveEasyConnectScreen(
     onConnect: () -> Unit,
     onSync: () -> Unit,
     onDisconnect: () -> Unit,
+    onOpenSetupGuide: () -> Unit,
     onOpenAdvanced: () -> Unit,
     onClose: () -> Unit,
 ) {
     val ready = GoogleDriveEasyConnectPolicy.isReady(state)
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+    Column(Modifier.fillMaxSize()) {
+        RegisterTopBarV141(title = "Google Drive かんたん接続", onBack = onClose)
+        Column(
+            modifier = Modifier.weight(1f).fillMaxWidth()
+                .verticalScroll(rememberScrollState()).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Googleかんたん接続", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("Googleアカウントを選ぶだけで、接続確認と自動同期を設定します")
-            }
-            OutlinedButton(onClick = onClose) { Text("戻る") }
-        }
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -335,38 +343,43 @@ private fun GoogleDriveEasyConnectScreen(
             }
         }
 
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Button(
             onClick = onConnect,
             enabled = !state.busy,
-            modifier = Modifier.fillMaxWidth().height(56.dp),
+            modifier = Modifier.weight(1f).height(56.dp),
         ) {
             Text(if (state.account.email == null) "Googleと連携" else "Googleアカウントを変更")
         }
         Button(
             onClick = onSync,
             enabled = state.account.email != null && !state.busy,
-            modifier = Modifier.fillMaxWidth().height(56.dp),
+            modifier = Modifier.weight(1f).height(56.dp),
         ) { Text("今すぐ同期") }
+        }
+        if (state.account.status == GoogleDriveAccountStatus.CLOUD_CONFIGURATION_REQUIRED ||
+            state.account.status == GoogleDriveAccountStatus.AUTHORIZATION_FAILED) {
+            OutlinedButton(
+                onClick = onOpenSetupGuide,
+                enabled = !state.busy,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+            ) { Text("Google Cloudの初期設定") }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlinedButton(
             onClick = onDisconnect,
             enabled = state.account.email != null && !state.busy,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
+            modifier = Modifier.weight(1f).height(52.dp),
         ) { Text("連携を解除") }
-        OutlinedButton(
-            onClick = onOpenAdvanced,
-            enabled = !state.busy,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-        ) { Text("保守・復旧") }
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("通常はこの画面だけで設定できます", fontWeight = FontWeight.Bold)
-                Text("Drive API、接続テスト、定期送信は自動設定します。")
-                Text("互換フォルダ、全件再処理、詳細ログは「保守・復旧」にまとめています。")
-                Text("アクセストークンと更新トークンは保存しません。SQLiteの売上を原本として維持します。")
-            }
+            OutlinedButton(
+                onClick = onOpenAdvanced,
+                enabled = !state.busy,
+                modifier = Modifier.weight(1f).height(52.dp),
+            ) { Text("保守・復旧") }
         }
-        Spacer(Modifier.height(8.dp))
+
+        }
     }
 }
 

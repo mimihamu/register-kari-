@@ -118,6 +118,50 @@ class CustomerDisplayStateReducerTest {
     }
 
     @Test
+    fun handshakeAloneNeverRevealsPersistedOrPreviousSessionMoney() {
+        val restored = CustomerDisplayUiState(
+            connected = false,
+            snapshot = snapshot(91, CustomerDisplayMode.COMPLETE),
+            statusMessage = "再接続中",
+            lastError = "切断",
+        )
+        val handshake = CustomerDisplayStateReducer.connected(restored)
+        assertFalse(handshake.connected)
+        assertEquals(91L, handshake.snapshot.sequence)
+        assertEquals("最新の表示データを受信中", handshake.statusMessage)
+        assertNull(handshake.lastError)
+    }
+
+    @Test
+    fun reconnectCanAcceptAuthoritativeFullSnapshotWithSameSequence() {
+        val previous = CustomerDisplayUiState(
+            connected = true,
+            snapshot = snapshot(92, CustomerDisplayMode.ACCOUNTING),
+            statusMessage = "接続中",
+        )
+        val waiting = CustomerDisplayStateReducer.connected(
+            CustomerDisplayStateReducer.disconnected(previous, "切断"),
+        )
+        assertFalse(waiting.connected)
+        val refreshed = CustomerDisplayStateReducer.received(
+            waiting,
+            snapshot(92, CustomerDisplayMode.STANDBY),
+        )
+        assertTrue(refreshed.connected)
+        assertEquals(CustomerDisplayMode.STANDBY, refreshed.snapshot.mode)
+    }
+
+    @Test
+    fun reconnectNeverAcceptsOlderSnapshotFromSameServer() {
+        val old = CustomerDisplayUiState(
+            connected = false,
+            snapshot = snapshot(101, CustomerDisplayMode.COMPLETE),
+            statusMessage = "再接続中",
+        )
+        assertEquals(old, CustomerDisplayStateReducer.received(old, snapshot(100)))
+    }
+
+    @Test
     fun websocketHandshakeMatchesServerImplementation() {
         assertEquals(
             "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",

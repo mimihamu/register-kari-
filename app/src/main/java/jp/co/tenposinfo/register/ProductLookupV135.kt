@@ -18,6 +18,26 @@ object ProductQuantityKeyPolicyV135 {
     }
 }
 
+data class ProductExactQuantityKeyDecisionV136(
+    val selectedLineQuantityHundredths: Long? = null,
+    val pendingProductQuantityHundredths: Long? = null,
+)
+
+object ProductExactQuantityKeyPolicyV136 {
+    fun decide(
+        raw: String,
+        selectedQuantityMode: QuantityMode?,
+    ): ProductExactQuantityKeyDecisionV136? {
+        val quantityHundredths = runCatching { QuantityV136.parse(raw).hundredths }.getOrNull() ?: return null
+        if (quantityHundredths > 999_999L) return null
+        if (selectedQuantityMode != null) {
+            if (runCatching { selectedQuantityMode.requireAllowed(quantityHundredths) }.isFailure) return null
+            return ProductExactQuantityKeyDecisionV136(selectedLineQuantityHundredths = quantityHundredths)
+        }
+        return ProductExactQuantityKeyDecisionV136(pendingProductQuantityHundredths = quantityHundredths)
+    }
+}
+
 object ProductLookupPolicyV135 {
     fun findExact(products: List<Product>, raw: String): Product? {
         val token = raw.trim()

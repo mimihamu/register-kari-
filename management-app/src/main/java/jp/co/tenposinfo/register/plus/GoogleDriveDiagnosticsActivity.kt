@@ -243,7 +243,9 @@ class GoogleDriveDiagnosticsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         refresh()
+        configurePlusSystemBarsV148(window)
         setContent {
+            PlusSafeAreaV148 {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GoogleDrivePlusDiagnosticsScreen(
@@ -260,6 +262,7 @@ class GoogleDriveDiagnosticsActivity : ComponentActivity() {
                         onClose = ::finish,
                     )
                 }
+            }
             }
         }
     }
@@ -310,24 +313,13 @@ private fun GoogleDrivePlusDiagnosticsScreen(
     onOpenAccount: () -> Unit,
     onClose: () -> Unit,
 ) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "つぐレジ＋ Google Drive診断・ログ",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text("OAuth登録値、端末環境、同期結果、取込DBをまとめて確認します")
-                }
-                OutlinedButton(onClick = onClose) { Text("戻る") }
-            }
-        }
-
+    Column(Modifier.fillMaxSize()) {
+        PlusTopBarV155(title = "Google Drive診断・ログ", onBack = onClose)
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -405,6 +397,7 @@ private fun GoogleDrivePlusDiagnosticsScreen(
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) { Text("Googleアカウント・同期設定") }
             Text("診断レポートにはアクセストークン、更新トークン、売上JSON本文、content URI全文を含めません。")
+        }
         }
     }
 }

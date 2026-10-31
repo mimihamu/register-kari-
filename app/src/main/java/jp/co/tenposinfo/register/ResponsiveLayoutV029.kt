@@ -36,9 +36,43 @@ internal data class RegisterKeypadMetrics(
     val scrollRequired: Boolean,
 )
 
+internal data class RegisterProductGridMetrics(
+    val columns: Int,
+    val rows: Int,
+    val buttonHeightDp: Int,
+    val gapDp: Int,
+    val textSizeSp: Int,
+    val scrollRequired: Boolean,
+)
+
+internal object RegisterProductGridPolicy {
+    const val TOTAL_SLOTS = 24
+    const val STANDARD_COLUMNS = 3
+    const val MIN_BUTTON_HEIGHT_DP = 56
+    const val MAX_BUTTON_HEIGHT_DP = 116
+
+    /** Preserve stable slot 1..24 while filling available pane height. */
+    fun metrics(widthDp: Int, heightDp: Int, fontScale: Float = 1f): RegisterProductGridMetrics {
+        val columns = STANDARD_COLUMNS
+        val rows = (TOTAL_SLOTS + columns - 1) / columns
+        val gap = if (heightDp < 500) 5 else 8
+        val naturalHeight = (heightDp.coerceAtLeast(0) - (rows - 1) * gap) / rows
+        val height = naturalHeight.coerceIn(MIN_BUTTON_HEIGHT_DP, MAX_BUTTON_HEIGHT_DP)
+        val cellWidth = (widthDp.coerceAtLeast(0) - (columns - 1) * gap) / columns
+        val font = when {
+            cellWidth < 90 || fontScale >= 1.3f -> 11
+            cellWidth < 120 || heightDp < 520 -> 12
+            cellWidth >= 180 && height >= 86 && fontScale <= 1.15f -> 16
+            cellWidth >= 145 && height >= 72 -> 15
+            else -> 13
+        }
+        return RegisterProductGridMetrics(columns, rows, height, gap, font, naturalHeight < MIN_BUTTON_HEIGHT_DP)
+    }
+}
+
 internal object RegisterResponsiveLayoutPolicy {
     const val MIN_TOUCH_DP = 48
-    const val MAX_KEY_HEIGHT_DP = 80
+    const val MAX_KEY_HEIGHT_DP = 96
     const val MAX_FUNCTION_HEIGHT_DP = 64
     const val MAX_VALUE_HEIGHT_DP = 68
 
@@ -64,9 +98,9 @@ internal object RegisterResponsiveLayoutPolicy {
             cardPaddingDp = 10,
             headerHeightDp = 56,
             bottomBarHeightDp = 72,
-            salesListWeight = 0.31f,
-            salesKeypadWeight = 0.34f,
-            salesProductsWeight = 0.35f,
+            salesListWeight = 0.26f,
+            salesKeypadWeight = 0.42f,
+            salesProductsWeight = 0.32f,
             paymentDetailWeight = 0.55f,
             paymentKeypadWeight = 0.45f,
         )
@@ -78,9 +112,9 @@ internal object RegisterResponsiveLayoutPolicy {
             cardPaddingDp = 14,
             headerHeightDp = 62,
             bottomBarHeightDp = 80,
-            salesListWeight = 0.34f,
-            salesKeypadWeight = 0.30f,
-            salesProductsWeight = 0.36f,
+            salesListWeight = 0.29f,
+            salesKeypadWeight = 0.39f,
+            salesProductsWeight = 0.32f,
             paymentDetailWeight = 0.60f,
             paymentKeypadWeight = 0.40f,
         )
@@ -92,9 +126,9 @@ internal object RegisterResponsiveLayoutPolicy {
             cardPaddingDp = 18,
             headerHeightDp = 68,
             bottomBarHeightDp = 88,
-            salesListWeight = 0.35f,
-            salesKeypadWeight = 0.29f,
-            salesProductsWeight = 0.36f,
+            salesListWeight = 0.31f,
+            salesKeypadWeight = 0.36f,
+            salesProductsWeight = 0.33f,
             paymentDetailWeight = 0.64f,
             paymentKeypadWeight = 0.36f,
         )
@@ -109,22 +143,24 @@ internal object RegisterResponsiveLayoutPolicy {
         availableHeightDp: Int,
         functionRows: Int,
         reservedTopDp: Int = 0,
+        preferredMinKeyDp: Int = MIN_TOUCH_DP,
     ): RegisterKeypadMetrics {
+        require(preferredMinKeyDp in MIN_TOUCH_DP..MAX_KEY_HEIGHT_DP) { "preferredMinKeyDp out of range" }
         require(functionRows >= 0) { "functionRows must not be negative" }
 
         val gap = when {
-            availableHeightDp >= 700 -> 8
+            availableHeightDp >= 700 -> 6
             availableHeightDp >= 520 -> 6
             else -> 5
         }
         val functionHeight = when {
-            availableHeightDp >= 720 -> 60
-            availableHeightDp >= 560 -> 54
+            availableHeightDp >= 720 -> 54
+            availableHeightDp >= 560 -> 50
             else -> MIN_TOUCH_DP
         }.coerceAtMost(MAX_FUNCTION_HEIGHT_DP)
         val valueHeight = when {
-            availableHeightDp >= 720 -> 64
-            availableHeightDp >= 560 -> 56
+            availableHeightDp >= 720 -> 56
+            availableHeightDp >= 560 -> 50
             else -> MIN_TOUCH_DP
         }.coerceAtMost(MAX_VALUE_HEIGHT_DP)
 
@@ -134,8 +170,8 @@ internal object RegisterResponsiveLayoutPolicy {
             functionRows * functionHeight +
             (functionRows + 5) * gap
         val rawKeyHeight = (availableHeightDp - fixedHeight - 3 * gap) / 4
-        val scrollRequired = rawKeyHeight < MIN_TOUCH_DP
-        val keyHeight = rawKeyHeight.coerceIn(MIN_TOUCH_DP, MAX_KEY_HEIGHT_DP)
+        val scrollRequired = rawKeyHeight < preferredMinKeyDp
+        val keyHeight = rawKeyHeight.coerceIn(preferredMinKeyDp, MAX_KEY_HEIGHT_DP)
         val allocationHeight = when {
             availableHeightDp >= 720 -> 112
             availableHeightDp >= 560 -> 76

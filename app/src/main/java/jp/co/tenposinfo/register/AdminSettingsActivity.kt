@@ -1,7 +1,17 @@
 package jp.co.tenposinfo.register
 
+import android.Manifest
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.hardware.usb.UsbManager
+import android.os.Build
 import android.os.Bundle
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -10,6 +20,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -76,8 +87,11 @@ class AdminSettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 AdminSettingsApp(onClose = { finish() })
+            }
+        
             }
         }
     }
@@ -90,6 +104,14 @@ private enum class AdminScreen {
     SECURITY,
     AUDIT,
 }
+
+private data class AdminMenuEntryV136(
+    val title: String,
+    val description: String,
+    val searchTerms: String,
+    val background: Color,
+    val onClick: () -> Unit,
+)
 
 @Composable
 private fun AdminSettingsApp(onClose: () -> Unit) {
@@ -107,7 +129,7 @@ private fun AdminSettingsApp(onClose: () -> Unit) {
         if (!unlocked) {
             AdminUnlockScreen(
                 onVerify = { pin ->
-                    val name = store.managerNameForPin(pin)
+                    val name = ManagerApprovalV145.resolve(context.applicationContext, pin)
                     if (name == null) {
                         false
                     } else {
@@ -124,6 +146,13 @@ private fun AdminSettingsApp(onClose: () -> Unit) {
                     operatorCount = store.listOperators().count { it.enabled },
                     printer = store.loadPrinterConfiguration(),
                     auditCount = store.auditCount(),
+                    lastBackupAt = AutoBackupStatusStore(context.applicationContext).load().lastCompletedAt,
+                    backupHasError = AutoBackupStatusStore(context.applicationContext).load().lastError != null,
+                    driveSyncAt = GoogleDriveDirectUploadStatusStore(context.applicationContext).load().lastCompletedAt,
+                    driveSyncRunning = GoogleDriveDirectUploadStatusStore(context.applicationContext).load().running,
+                    driveSyncHasError = GoogleDriveDirectUploadStatusStore(context.applicationContext).load().let {
+                        it.blockedCategory != null || it.permanentFailureCount > 0
+                    },
                     actorName = actorName,
                     onInitialReleaseSettings = {
                         context.startActivity(
@@ -134,8 +163,26 @@ private fun AdminSettingsApp(onClose: () -> Unit) {
                     onOperators = { screen = AdminScreen.OPERATORS },
                     onPrinter = { screen = AdminScreen.PRINTER },
                     onCatalog = { context.startActivity(Intent(context, CatalogHubActivityV030::class.java)) },
+                    onTaxInvoice = {
+                        context.startActivity(
+                            Intent(context, TaxPaymentSettingsHubActivity::class.java)
+                                .putExtra(TaxPaymentSettingsHubActivity.EXTRA_ACTOR, actorName),
+                        )
+                    },
+                    onReceiptSettings = {
+                        context.startActivity(
+                            Intent(context, ReceiptSettingsActivity::class.java)
+                                .putExtra(ReceiptSettingsActivity.EXTRA_ACTOR, actorName),
+                        )
+                    },
                     onCustomerDisplay = { context.startActivity(Intent(context, CustomerDisplaySettingsActivity::class.java)) },
                     onPrinterTools = { context.startActivity(Intent(context, PrinterToolsHubActivity::class.java)) },
+                    onCrashReport = {
+                        val activity = context as? android.app.Activity
+                        if (activity != null && !CrashReportUiV138.sharePending(activity)) {
+                            android.widget.Toast.makeText(context, "障害レポートを開けませんでした", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
                     onDataProtection = { context.startActivity(Intent(context, DataProtectionActivity::class.java)) },
                     onSync = { context.startActivity(Intent(context, SyncSettingsActivity::class.java)) },
                     onSecurity = { screen = AdminScreen.SECURITY },
@@ -179,23 +226,25 @@ private fun AdminUnlockScreen(
 ) {
     var pin by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
+    val currentContext = LocalContext.current
+    val loggedInManagerNoPin = ManagerApprovalV145.canUseCurrentManagerSession(currentContext)
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         AsPanel(Modifier.width(520.dp).height(430.dp)) {
             Text("各種設定", fontSize = 31.sp, fontWeight = FontWeight.Bold, color = AsNavy)
             Spacer(Modifier.height(8.dp))
             Text("責任者認証", fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(20.dp))
-            OutlinedTextField(
-                value = pin,
-                onValueChange = { pin = it.filter(Char::isDigit).take(8) },
-                label = { Text("責任者PIN") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                visualTransformation = PasswordVisualTransformation(),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(10.dp))
-            Text("登録済みの責任者PINを入力してください", color = Color.Gray)
+            if (!loggedInManagerNoPin) {
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { pin = it.filter(Char::isDigit).take(8) },
+                    label = { Text("責任者PIN") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             if (message != null) {
                 Spacer(Modifier.height(10.dp))
                 Text(message.orEmpty(), color = AsDanger, fontWeight = FontWeight.Bold)
@@ -216,7 +265,7 @@ private fun AdminUnlockScreen(
                     },
                     modifier = Modifier.weight(1f).height(56.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = AsBlue),
-                ) { Text("認証", fontWeight = FontWeight.Bold) }
+                ) { Text(if (loggedInManagerNoPin) "設定を開く" else "認証", fontWeight = FontWeight.Bold) }
             }
         }
     }
@@ -227,13 +276,21 @@ private fun AdminMenuScreen(
     operatorCount: Int,
     printer: PrinterConfiguration,
     auditCount: Long,
+    lastBackupAt: Long?,
+    backupHasError: Boolean,
+    driveSyncAt: Long?,
+    driveSyncRunning: Boolean,
+    driveSyncHasError: Boolean,
     actorName: String,
     onInitialReleaseSettings: () -> Unit,
     onOperators: () -> Unit,
     onPrinter: () -> Unit,
     onCatalog: () -> Unit,
+    onTaxInvoice: () -> Unit,
+    onReceiptSettings: () -> Unit,
     onCustomerDisplay: () -> Unit,
     onPrinterTools: () -> Unit,
+    onCrashReport: () -> Unit,
     onDataProtection: () -> Unit,
     onSync: () -> Unit,
     onSecurity: () -> Unit,
@@ -241,62 +298,243 @@ private fun AdminMenuScreen(
     onLock: () -> Unit,
     onClose: () -> Unit,
 ) {
+    val context = LocalContext.current
+    var query by remember { mutableStateOf("") }
+    val settingIssueCount = listOf(
+        operatorCount <= 0,
+        !printer.usable,
+        backupHasError,
+        driveSyncHasError,
+    ).count { it }
+
+    val dailyEntries = listOf(
+        AdminMenuEntryV136(
+            title = "店舗・レジ設定",
+            description = "店舗基本、販売操作、営業日・精算、端末・初期設定",
+            searchTerms = "店舗・レジ設定  SCR-691～695 店舗 レジ 販売操作 営業日 精算 端末 アプリ 初期設定 SCR-691 SCR-692 SCR-693 SCR-694 SCR-695",
+            background = AsPaleBlue,
+            onClick = onInitialReleaseSettings,
+        ),
+        AdminMenuEntryV136(
+            title = "担当者・権限",
+            description = "担当者登録、停止、並び順、権限",
+            searchTerms = "担当者 権限 PIN ロール 責任者",
+            background = AsPaleBlue,
+            onClick = onOperators,
+        ),
+        AdminMenuEntryV136(
+            title = "商品設定",
+            description = "商品、部門、税区分、価格改定",
+            searchTerms = "商品 部門 グループ 税区分 価格 バーコード",
+            background = Color(0xFFE8F0FC),
+            onClick = onCatalog,
+        ),
+        AdminMenuEntryV136(
+            title = "税・支払設定",
+            description = "税・インボイス、現金、カード、電子マネー、QR、商品券、掛売",
+            searchTerms = "税 税区分 インボイス 適格請求書 内税 外税 支払 現金 カード 電子マネー QR 商品券 掛売 複合支払 SCR-630 SCR-630A SCR-630B",
+            background = Color(0xFFF3ECFA),
+            onClick = onTaxInvoice,
+        ),
+        AdminMenuEntryV136(
+            title = "レシート設定",
+            description = "自動発行、文書別設定、店名スタンプ、58/80mmプレビュー",
+            searchTerms = "レシート 領収書 印字 文書別 自動発行 部数 ヘッダ フッタ 店名スタンプ ロゴ 58mm 80mm SCR-640",
+            background = Color(0xFFFFF3E5),
+            onClick = onReceiptSettings,
+        ),
+        AdminMenuEntryV136(
+            title = "周辺機器設定",
+            description = "プリンター、IP、用紙幅、カッター、ドロア",
+            searchTerms = "プリンター 周辺機器 紙幅 58mm 80mm カッター ドロア IP SCR-660",
+            background = AsPaleGreen,
+            onClick = onPrinter,
+        ),
+        AdminMenuEntryV136(
+            title = "顧客表示",
+            description = "つぐレジ CDの接続と表示設定",
+            searchTerms = "顧客表示 Customer Display CD 接続 ペアリング",
+            background = Color(0xFFEDEBFA),
+            onClick = onCustomerDisplay,
+        ),
+    )
+    val maintenanceEntries = listOfNotNull(
+        AdminMenuEntryV136(
+            title = "データ保全",
+            description = "整合性診断、バックアップ、復元",
+            searchTerms = "バックアップ 復元 DB 整合性 診断 データ",
+            background = Color(0xFFE8F3EE),
+            onClick = onDataProtection,
+        ),
+        AdminMenuEntryV136(
+            title = "Google Drive・同期",
+            description = "初期設定、アカウント、送信状況、診断",
+            searchTerms = "Google Drive 同期 未送信 送信 再送 アカウント",
+            background = Color(0xFFE8F0FC),
+            onClick = onSync,
+        ),
+        AdminMenuEntryV136(
+            title = "保守・診断",
+            description = "プリンター診断、印刷キュー、検証、試験履歴",
+            searchTerms = "プリンター 保守 診断 印刷 キュー テスト 試験",
+            background = Color(0xFFE5F3FA),
+            onClick = onPrinterTools,
+        ),
+        if (CrashReportRuntimeV138.hasPending(context)) AdminMenuEntryV136(
+            title = "障害レポート",
+            description = "前回の障害情報を共有",
+            searchTerms = "障害 レポート クラッシュ エラー 共有",
+            background = AsPaleYellow,
+            onClick = onCrashReport,
+        ) else null,
+        AdminMenuEntryV136(
+            title = "監査ログ",
+            description = "設定、返品、精算、入出金を確認",
+            searchTerms = "監査 ログ 履歴 返品 精算 入出金 設定変更",
+            background = Color(0xFFF0EAF8),
+            onClick = onAudit,
+        ),
+        AdminMenuEntryV136(
+            title = "責任者PIN",
+            description = "責任者PINを安全に更新",
+            searchTerms = "責任者 PIN セキュリティ 再認証",
+            background = AsPaleYellow,
+            onClick = onSecurity,
+        ),
+    )
+
+    val filteredDaily = dailyEntries.filter {
+        settingsMenuMatchesV136(query, it.title, it.description, it.searchTerms)
+    }
+    val filteredMaintenance = maintenanceEntries.filter {
+        settingsMenuMatchesV136(query, it.title, it.description, it.searchTerms)
+    }
+
     Column(Modifier.fillMaxSize()) {
-        AsHeader("SCR-690", "各種設定", "認証：$actorName")
-        Row(Modifier.weight(1f).padding(20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-            AsPanel(Modifier.width(360.dp).fillMaxHeight()) {
-                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                    Text("設定状態", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AsNavy)
-                Spacer(Modifier.height(18.dp))
-                AsValueRow("有効担当者", "${operatorCount}名")
-                AsValueRow("プリンター", if (printer.usable) "接続設定済み" else "未設定")
-                AsValueRow("接続先", if (printer.host.isBlank()) "－" else "${printer.host}:${printer.port}")
-                AsValueRow("機種", printer.profile.displayName)
-                AsValueRow("用紙幅", "${printer.paperWidthMm}mm")
-                AsValueRow("ドロア", if (printer.drawerEnabled) "DK${printer.drawerPort + 1} 有効" else "無効")
-                AsValueRow("監査ログ", "${auditCount}件")
-                    Spacer(Modifier.height(10.dp))
-                    Button(
-                    onClick = onInitialReleaseSettings,
-                    modifier = Modifier.fillMaxWidth().height(58.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = AsBlue),
-                ) {
-                    Text("店舗・レジ設定  SCR-691～695", fontWeight = FontWeight.Bold)
+        AsHeader("SCR-690", "各種設定", "認証：$actorName", onBack = onClose, action = {
+            OutlinedButton(
+                onClick = onLock,
+                colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White, contentColor = AsNavy),
+            ) { Text("ロック", color = AsNavy) }
+        })
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(16.dp)) {
+            // 横800×480でも3列。文字倍率・高さによって縦1列へは落とさない。
+            val columns = when {
+                maxWidth < 540.dp -> 1
+                maxWidth < 1_050.dp -> 3
+                else -> 4
+            }
+            Column(Modifier.fillMaxSize()) {
+                if (settingIssueCount > 0 || driveSyncHasError || backupHasError) {
+                    Text(
+                        "設定異常：${settingIssueCount}件。バックアップ・同期・機器設定を確認してください。",
+                        color = AsDanger,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Spacer(Modifier.height(6.dp))
                 }
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    "店舗基本、販売操作、営業日・精算、端末・アプリ、初期設定に加え、担当者・プリンター等を管理します。",
-                    color = Color.DarkGray,
-                    lineHeight = 23.sp,
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it.take(40) },
+                    label = { Text("設定を検索") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
                 )
+                Spacer(Modifier.height(10.dp))
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    if (filteredDaily.isNotEmpty()) {
+                        item {
+                            AsSettingsSectionHeaderV136(
+                                title = "日常設定",
+                                description = "店舗運用で日常的に使う設定",
+                            )
+                        }
+                        items(filteredDaily.chunked(columns)) { rowEntries ->
+                            Row(
+                                Modifier.fillMaxWidth().height(104.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                rowEntries.forEach { entry ->
+                                    AsMenuTile(
+                                        entry.title,
+                                        entry.description,
+                                        entry.background,
+                                        Modifier.weight(1f),
+                                        entry.onClick,
+                                    )
+                                }
+                                repeat(columns - rowEntries.size) {
+                                    Spacer(Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+
+                    if (filteredMaintenance.isNotEmpty()) {
+                        item {
+                            AsSettingsSectionHeaderV136(
+                                title = "保守・診断・データ",
+                                description = "バックアップ、同期、監査、診断など管理・保守向け",
+                            )
+                        }
+                        items(filteredMaintenance.chunked(columns)) { rowEntries ->
+                            Row(
+                                Modifier.fillMaxWidth().height(104.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                rowEntries.forEach { entry ->
+                                    AsMenuTile(
+                                        entry.title,
+                                        entry.description,
+                                        entry.background,
+                                        Modifier.weight(1f),
+                                        entry.onClick,
+                                    )
+                                }
+                                repeat(columns - rowEntries.size) {
+                                    Spacer(Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+
+                    if (filteredDaily.isEmpty() && filteredMaintenance.isEmpty()) {
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                border = BorderStroke(1.dp, AsBorder),
+                            ) {
+                                Column(
+                                    Modifier.fillMaxWidth().padding(24.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    Text("該当する設定はありません", fontWeight = FontWeight.Bold, color = AsNavy)
+                                    Spacer(Modifier.height(6.dp))
+                                    Text("別の設定名・機能名で検索してください", color = Color.Gray)
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    AsMenuTile("担当者・権限", "担当者登録、停止、並び順、権限", AsPaleBlue, Modifier.weight(1f), onOperators)
-                    AsMenuTile("商品設定", "商品、部門、税区分、価格改定", Color(0xFFE8F0FC), Modifier.weight(1f), onCatalog)
-                    AsMenuTile("プリンター設定", "機種、IP、用紙、カット、ドロア", AsPaleGreen, Modifier.weight(1f), onPrinter)
-                }
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    AsMenuTile("顧客表示", "つぐレジ CDの接続と表示設定", Color(0xFFEDEBFA), Modifier.weight(1f), onCustomerDisplay)
-                    AsMenuTile("プリンター運用", "診断、印刷キュー、検証、試験履歴", Color(0xFFE5F3FA), Modifier.weight(1f), onPrinterTools)
-                    AsMenuTile("監査ログ", "設定、返品、精算、入出金を確認", Color(0xFFF0EAF8), Modifier.weight(1f), onAudit)
-                }
-                Row(Modifier.weight(0.72f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    AsMenuTile("責任者PIN", "責任者PINを安全に更新", AsPaleYellow, Modifier.weight(1f), onSecurity)
-                    AsMenuTile("データ保全", "整合性診断、バックアップ、復元", Color(0xFFE8F3EE), Modifier.weight(1f), onDataProtection)
-                    AsMenuTile("Google Drive・同期", "初期設定、アカウント、送信状況、診断", Color(0xFFE8F0FC), Modifier.weight(1f), onSync)
-                }
-            }
+
         }
-        Row(
-            Modifier.fillMaxWidth().height(74.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            OutlinedButton(onClick = onClose, modifier = Modifier.width(220.dp).fillMaxHeight()) { Text("販売へ戻る") }
-            Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = onLock, modifier = Modifier.width(220.dp).fillMaxHeight()) { Text("設定をロック") }
-        }
+    }
+}
+
+internal fun settingsMenuMatchesV136(query: String, vararg texts: String): Boolean {
+    val normalized = query.trim().lowercase(Locale.JAPAN)
+    if (normalized.isBlank()) return true
+    return texts.any { it.lowercase(Locale.JAPAN).contains(normalized) }
+}
+
+@Composable
+private fun AsSettingsSectionHeaderV136(title: String, description: String) {
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp)) {
+        Text(title, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = AsNavy)
     }
 }
 
@@ -315,8 +553,10 @@ private fun OperatorMasterScreen(
     var role by remember { mutableStateOf(OperatorRole.CASHIER) }
     var enabled by remember { mutableStateOf(true) }
     var pin by remember { mutableStateOf("") }
+    var pinRequired by remember { mutableStateOf(true) }
     var permissions by remember { mutableStateOf(OperatorPermissionPolicy.defaults(OperatorRole.CASHIER)) }
     var message by remember { mutableStateOf<String?>(null) }
+    var showPermissionsV150 by remember { mutableStateOf(false) }
 
     LaunchedEffect(selected?.id, selected?.updatedAt) {
         if (selected == null) {
@@ -325,6 +565,7 @@ private fun OperatorMasterScreen(
             role = OperatorRole.CASHIER
             enabled = true
             pin = ""
+            pinRequired = true
             permissions = OperatorPermissionPolicy.defaults(role)
         } else {
             code = selected.code
@@ -332,14 +573,24 @@ private fun OperatorMasterScreen(
             role = selected.role
             enabled = selected.enabled
             pin = ""
+            pinRequired = selected.pinRequired
             permissions = selected.permissions
         }
     }
 
     Column(Modifier.fillMaxSize()) {
-        AsHeader("SCR-761", "担当者・権限マスター", "有効 ${operators.count { it.enabled }}名")
+        AsHeader("SCR-650", "担当者・権限マスター", "有効 ${operators.count { it.enabled }}名", onBack = onBack, action = {
+            OutlinedButton(
+                onClick = { showPermissionsV150 = !showPermissionsV150 },
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = Color.White,
+                    contentColor = AsNavy,
+                ),
+            ) { Text(if (showPermissionsV150) "担当者の編集" else "権限の詳細", color = AsNavy) }
+        })
         Row(Modifier.weight(1f).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            AsPanel(Modifier.width(420.dp).fillMaxHeight()) {
+            if (!showPermissionsV150) {
+            AsPanel(Modifier.weight(0.9f).fillMaxHeight()) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("担当者一覧", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = AsNavy)
                     Spacer(Modifier.weight(1f))
@@ -383,7 +634,7 @@ private fun OperatorMasterScreen(
                 }
             }
 
-            AsPanel(Modifier.width(430.dp).fillMaxHeight()) {
+            AsPanel(Modifier.weight(1.1f).fillMaxHeight()) {
                 Text(if (selected == null) "担当者を追加" else "担当者を編集", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = AsNavy)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(code, { code = it.uppercase().take(20) }, label = { Text("担当者コード") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -397,6 +648,7 @@ private fun OperatorMasterScreen(
                     }
                     AsChoiceButton("責任者", role == OperatorRole.MANAGER, Modifier.weight(1f)) {
                         role = OperatorRole.MANAGER
+                        pinRequired = true
                         permissions = OperatorPermissionPolicy.defaults(role)
                     }
                 }
@@ -404,20 +656,34 @@ private fun OperatorMasterScreen(
                     Checkbox(checked = enabled, onCheckedChange = { enabled = it })
                     Text("有効")
                 }
-                OutlinedTextField(
-                    value = pin,
-                    onValueChange = { pin = it.filter(Char::isDigit).take(8) },
-                    label = { Text(if (selected == null) "PIN（必須）" else "PIN（変更時のみ入力）") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = pinRequired,
+                        enabled = true,
+                        onCheckedChange = { pinRequired = it },
+                    )
+                    Text("ログイン時にPINを使う", fontWeight = FontWeight.Medium)
+                }
+                if (pinRequired) {
+                    OutlinedTextField(
+                        value = pin,
+                        onValueChange = { pin = it.filter(Char::isDigit).take(8) },
+                        label = { Text(if (selected == null || selected.pinRequired == false) "PIN（4～8桁）" else "PIN変更") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 Spacer(Modifier.weight(1f))
                 Button(
                     onClick = {
                         val result = runCatching {
-                            store.saveOperator(selected?.id, code, name, role, enabled, pin.ifBlank { null }, permissions, actorName)
+                            store.saveOperator(
+                                selected?.id, code, name, role, enabled,
+                                pin.takeIf { pinRequired && it.isNotBlank() },
+                                permissions, actorName, pinRequired = pinRequired,
+                            )
                         }
                         message = result.fold(
                             onSuccess = { "保存しました（ID $it）" },
@@ -438,10 +704,11 @@ private fun OperatorMasterScreen(
                 }
             }
 
-            AsPanel(Modifier.weight(1f).fillMaxHeight()) {
+            }
+            if (showPermissionsV150) AsPanel(Modifier.fillMaxSize()) {
                 Text("権限", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = AsNavy)
                 Spacer(Modifier.height(6.dp))
-                Text("担当者ごとに許可する機能を選択します。", color = Color.DarkGray)
+                Text("変更後は「担当者の編集」で保存してください。", color = AsNavy)
                 Spacer(Modifier.height(8.dp))
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     RegisterPermissionCompatibilityV026.selectablePermissions.forEach { permission ->
@@ -459,14 +726,12 @@ private fun OperatorMasterScreen(
                             )
                             Column {
                                 Text(permission.displayName, fontWeight = FontWeight.SemiBold)
-                                Text(permission.name, color = Color.Gray, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                             }
                         }
                     }
                 }
             }
         }
-        AsBottomBar("各種設定へ戻る", onBack)
     }
 }
 
@@ -476,40 +741,147 @@ private fun PrinterSettingsScreen(
     actorName: String,
     onBack: () -> Unit,
 ) {
-    val initial = remember { store.loadPrinterConfiguration() }
+    val context = LocalContext.current
+    val profileStore = remember(context) { PrinterProfileStoreV136(context.applicationContext) }
+    DisposableEffect(profileStore) {
+        onDispose { profileStore.close() }
+    }
+    var profiles by remember { mutableStateOf(profileStore.list()) }
+    var routes by remember { mutableStateOf(profileStore.routes()) }
+    val initial = remember {
+        val defaultId = profileStore.defaultPrinterId(DocumentPrintKindV136.SALE_RECEIPT)
+        defaultId?.let(profileStore::load) ?: profiles.firstOrNull() ?: store.loadPrinterConfiguration()
+    }
+    var selectedPrinterId by remember { mutableStateOf(initial.printerId) }
     var name by remember { mutableStateOf(initial.name) }
     var host by remember { mutableStateOf(initial.host) }
     var port by remember { mutableStateOf(initial.port.toString()) }
+    var connectionType by remember { mutableStateOf(initial.connectionType) }
+    var usbDeviceName by remember { mutableStateOf(initial.usbDeviceName) }
+    var bluetoothAddress by remember { mutableStateOf(initial.bluetoothAddress) }
     var paperWidth by remember { mutableStateOf(initial.paperWidthMm) }
+    var printableDotWidth by remember { mutableStateOf(initial.printableDotWidth.toString()) }
+    var feedLines by remember { mutableStateOf(initial.feedLines.toString()) }
     var timeout by remember { mutableStateOf(initial.timeoutMillis.toString()) }
     var enabled by remember { mutableStateOf(initial.enabled) }
+    var receiptAutoPrint by remember { mutableStateOf(initial.receiptAutoPrintEnabled) }
     var profile by remember { mutableStateOf(initial.profile) }
     var cutMode by remember { mutableStateOf(initial.cutMode) }
     var drawerEnabled by remember { mutableStateOf(initial.drawerEnabled) }
     var drawerOpenOnCash by remember { mutableStateOf(initial.drawerOpenOnCashSale) }
+    var drawerOpenOnCashRefund by remember { mutableStateOf(initial.drawerOpenOnCashRefund) }
+    var drawerOpenOnCashMovement by remember { mutableStateOf(initial.drawerOpenOnCashMovement) }
+    var drawerOpenOnExchange by remember { mutableStateOf(initial.drawerOpenOnExchange) }
     var drawerPort by remember { mutableStateOf(initial.drawerPort) }
     var drawerOnMillis by remember { mutableStateOf(initial.drawerOnMillis.toString()) }
     var drawerOffMillis by remember { mutableStateOf(initial.drawerOffMillis.toString()) }
     var message by remember { mutableStateOf<String?>(null) }
     var testing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
+    val usbManager = remember(context) {
+        context.applicationContext.getSystemService(Context.USB_SERVICE) as UsbManager
+    }
+    val bluetoothPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        message = if (granted) "Bluetooth接続を許可しました" else "Bluetooth接続権限が許可されませんでした"
+    }
+    val usbPermissionAction = remember(context) { "${context.packageName}.USB_PERMISSION_V136" }
+    DisposableEffect(context, usbPermissionAction) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(receiverContext: Context?, intent: Intent?) {
+                if (intent?.action != usbPermissionAction) return
+                val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
+                message = if (granted) "USBプリンター接続を許可しました" else "USBプリンター接続が許可されませんでした"
+            }
+        }
+        ContextCompat.registerReceiver(
+            context,
+            receiver,
+            IntentFilter(usbPermissionAction),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        onDispose { runCatching { context.unregisterReceiver(receiver) } }
+    }
+
+    fun requestUsbPermission(deviceName: String) {
+        val device = usbManager.deviceList.values.firstOrNull { it.deviceName == deviceName }
+        if (device == null) {
+            message = "選択したUSB機器が接続されていません"
+            return
+        }
+        if (usbManager.hasPermission(device)) {
+            message = "USBプリンター接続は許可済みです"
+            return
+        }
+        val intent = Intent(usbPermissionAction).setPackage(context.packageName)
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        usbManager.requestPermission(device, PendingIntent.getBroadcast(context, 0, intent, flags))
+    }
 
     fun currentConfiguration() = PrinterConfiguration(
+        printerId = selectedPrinterId,
         name = name,
         host = host,
         port = port.toIntOrNull() ?: 0,
+        connectionType = connectionType,
+        usbDeviceName = usbDeviceName,
+        bluetoothAddress = bluetoothAddress,
         paperWidthMm = paperWidth,
+        printableDotWidth = printableDotWidth.toIntOrNull() ?: 0,
+        feedLines = feedLines.toIntOrNull() ?: 0,
         timeoutMillis = timeout.toIntOrNull() ?: 0,
         enabled = enabled,
+        receiptAutoPrintEnabled = receiptAutoPrint,
         profile = profile,
         cutMode = cutMode,
         drawerEnabled = drawerEnabled,
         drawerOpenOnCashSale = drawerOpenOnCash,
+        drawerOpenOnCashRefund = drawerOpenOnCashRefund,
+        drawerOpenOnCashMovement = drawerOpenOnCashMovement,
+        drawerOpenOnExchange = drawerOpenOnExchange,
+        drawerStandaloneEnabled = false,
+        drawerOpenReasonRequired = true,
         drawerPort = drawerPort,
         drawerOnMillis = drawerOnMillis.toIntOrNull() ?: 0,
         drawerOffMillis = drawerOffMillis.toIntOrNull() ?: 0,
     )
+
+    fun loadProfile(configuration: PrinterConfiguration) {
+        selectedPrinterId = configuration.printerId
+        name = configuration.name
+        host = configuration.host
+        port = configuration.port.toString()
+        connectionType = configuration.connectionType
+        usbDeviceName = configuration.usbDeviceName
+        bluetoothAddress = configuration.bluetoothAddress
+        paperWidth = configuration.paperWidthMm
+        printableDotWidth = configuration.printableDotWidth.toString()
+        feedLines = configuration.feedLines.toString()
+        timeout = configuration.timeoutMillis.toString()
+        enabled = configuration.enabled
+        receiptAutoPrint = configuration.receiptAutoPrintEnabled
+        profile = configuration.profile
+        cutMode = configuration.cutMode
+        drawerEnabled = configuration.drawerEnabled
+        drawerOpenOnCash = configuration.drawerOpenOnCashSale
+        drawerOpenOnCashRefund = configuration.drawerOpenOnCashRefund
+        drawerOpenOnCashMovement = configuration.drawerOpenOnCashMovement
+        drawerOpenOnExchange = configuration.drawerOpenOnExchange
+        drawerPort = configuration.drawerPort
+        drawerOnMillis = configuration.drawerOnMillis.toString()
+        drawerOffMillis = configuration.drawerOffMillis.toString()
+    }
+
+    fun refreshProfiles() {
+        profiles = profileStore.list()
+        routes = profileStore.routes()
+    }
+
+    fun selectPaper(widthMm: Int) {
+        paperWidth = widthMm
+        printableDotWidth = PrinterProfileContractV136.standardPrintableDotWidth(widthMm).toString()
+    }
 
     fun executeTest(kind: String, action: suspend (PrinterConfiguration) -> Result<Unit>) {
         val config = currentConfiguration()
@@ -532,33 +904,191 @@ private fun PrinterSettingsScreen(
         }
     }
 
+    var showRoutesV150 by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
-        AsHeader("SCR-762", "プリンター・ドロア設定", profile.displayName)
+        AsHeader("SCR-660", "プリンター・ドロア設定", profile.displayName, onBack = onBack)
         Row(Modifier.weight(1f).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            AsPanel(Modifier.width(650.dp).fillMaxHeight()) {
+            AsPanel(Modifier.fillMaxSize()) {
                 Text("接続・機種設定", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AsNavy)
                 Spacer(Modifier.height(8.dp))
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                    Text("登録プリンター", fontWeight = FontWeight.Bold, color = AsNavy)
+                    profiles.forEach { candidate ->
+                        OutlinedButton(
+                            onClick = { loadProfile(candidate) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                if (candidate.printerId == selectedPrinterId) {
+                                    "● ${candidate.name}  ${candidate.paperWidthMm}mm  [${candidate.printerId}]"
+                                } else {
+                                    "${candidate.name}  ${candidate.paperWidthMm}mm  [${candidate.printerId}]"
+                                },
+                            )
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                val draft = profileStore.createDraft()
+                                loadProfile(draft)
+                                message = "新しいプリンター設定を入力し、保存してください"
+                            },
+                            modifier = Modifier.weight(1f),
+                        ) { Text("プリンター追加") }
+                        OutlinedButton(
+                            onClick = {
+                                val target = profiles.firstOrNull { it.printerId == selectedPrinterId }
+                                val result = runCatching {
+                                    require(target != null) { "未保存のプリンターです" }
+                                    profileStore.delete(selectedPrinterId, actorName)
+                                    refreshProfiles()
+                                    val next = profileStore.resolve(DocumentPrintKindV136.SALE_RECEIPT)
+                                        ?: profiles.firstOrNull()
+                                        ?: error("プリンターがありません")
+                                    loadProfile(next)
+                                    PrinterConfigurationRegistry.reload(context.applicationContext)
+                                }
+                                message = result.fold(
+                                    onSuccess = { "プリンターを削除し、既定出力先を再割当しました" },
+                                    onFailure = { it.message ?: "削除できませんでした" },
+                                )
+                            },
+                            enabled = profiles.size > 1 && profiles.any { it.printerId == selectedPrinterId },
+                            modifier = Modifier.weight(1f),
+                        ) { Text("選択プリンター削除") }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { showRoutesV150 = !showRoutesV150 },
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                    ) { Text(if (showRoutesV150) "文書別出力先を閉じる" else "文書別出力先の詳細") }
+                    if (showRoutesV150) {
+                    Text("文書別の既定出力先", fontWeight = FontWeight.Bold, color = AsNavy)
+                    Text(
+                        "58mmと80mmを同時登録できます。文書ごとに送信先を選択してください。",
+                        color = Color.Gray,
+                        fontSize = 12.sp,
+                    )
+                    DocumentPrintKindV136.entries.forEach { kind ->
+                        Text(kind.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        profiles.chunked(2).forEach { rowProfiles ->
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                rowProfiles.forEach { candidate ->
+                                    AsChoiceButton(
+                                        candidate.name,
+                                        routes[kind] == candidate.printerId,
+                                        Modifier.weight(1f),
+                                    ) {
+                                        runCatching {
+                                            profileStore.setDefault(kind, candidate.printerId, actorName)
+                                            refreshProfiles()
+                                            if (kind == DocumentPrintKindV136.SALE_RECEIPT) {
+                                                PrinterConfigurationRegistry.reload(context.applicationContext)
+                                            }
+                                        }.onSuccess {
+                                            message = "${kind.displayName}の出力先を${candidate.name}に変更しました"
+                                        }.onFailure {
+                                            message = it.message ?: "出力先を変更できませんでした"
+                                        }
+                                    }
+                                }
+                                if (rowProfiles.size == 1) Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+
+                    }
+                    Spacer(Modifier.height(10.dp))
                     OutlinedTextField(name, { name = it.take(40) }, label = { Text("プリンター名") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(host, { host = it.take(255) }, label = { Text("IPアドレス／ホスト名") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Text("接続方式", fontWeight = FontWeight.Bold, color = AsNavy)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        PrinterConnectionTypeV136.entries.forEach { candidate ->
+                            AsChoiceButton(
+                                candidate.displayName,
+                                connectionType == candidate,
+                                Modifier.weight(1f),
+                            ) { connectionType = candidate }
+                        }
+                    }
                     Spacer(Modifier.height(6.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            port,
-                            { port = it.filter(Char::isDigit).take(5) },
-                            label = { Text("ポート") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                        )
+                    when (connectionType) {
+                        PrinterConnectionTypeV136.TCP_9100 -> {
+                            OutlinedTextField(host, { host = it.take(255) }, label = { Text("IPアドレス／ホスト名") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                            Spacer(Modifier.height(6.dp))
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(
+                                    port,
+                                    { port = it.filter(Char::isDigit).take(5) },
+                                    label = { Text("ポート") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                OutlinedTextField(
+                                    timeout,
+                                    { timeout = it.filter(Char::isDigit).take(5) },
+                                    label = { Text("タイムアウトms") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                        PrinterConnectionTypeV136.USB -> {
+                            OutlinedTextField(
+                                usbDeviceName,
+                                { usbDeviceName = it.take(255) },
+                                label = { Text("USB機器名") },
+                                supportingText = { Text("接続中のAndroid USB deviceNameを保存します") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    val device = usbManager.deviceList.values.sortedBy { it.deviceName }.firstOrNull()
+                                    if (device == null) {
+                                        message = "接続中のUSB機器が見つかりません"
+                                    } else {
+                                        usbDeviceName = device.deviceName
+                                        requestUsbPermission(device.deviceName)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("接続中USB機器を選択・許可") }
+                        }
+                        PrinterConnectionTypeV136.BLUETOOTH -> {
+                            OutlinedTextField(
+                                bluetoothAddress,
+                                { bluetoothAddress = it.uppercase().filter { c -> c.isDigit() || c in 'A'..'F' || c == ':' }.take(17) },
+                                label = { Text("Bluetoothアドレス") },
+                                supportingText = { Text("AA:BB:CC:DD:EE:FF") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                Spacer(Modifier.height(4.dp))
+                                OutlinedButton(
+                                    onClick = { bluetoothPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) { Text("Bluetooth接続を許可") }
+                            }
+                        }
+                    }
+                    if (connectionType != PrinterConnectionTypeV136.TCP_9100) {
+                        Spacer(Modifier.height(6.dp))
                         OutlinedTextField(
                             timeout,
                             { timeout = it.filter(Char::isDigit).take(5) },
                             label = { Text("タイムアウトms") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
                     Spacer(Modifier.height(8.dp))
@@ -574,11 +1104,53 @@ private fun PrinterSettingsScreen(
                     }
                     Text(profile.description, color = Color.Gray, fontSize = 13.sp)
                     Spacer(Modifier.height(8.dp))
-                    Text("用紙幅・カット", fontWeight = FontWeight.Bold, color = AsNavy)
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        AsChoiceButton("58mm", paperWidth == 58, Modifier.weight(1f)) { paperWidth = 58 }
-                        AsChoiceButton("80mm", paperWidth == 80, Modifier.weight(1f)) { paperWidth = 80 }
+                    Text("レシート発行", fontWeight = FontWeight.Bold, color = AsNavy)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = receiptAutoPrint, onCheckedChange = { receiptAutoPrint = it })
+                        Column {
+                            Text("会計確定時にレシートを自動発行")
+                            Text("OFFでも売上一覧・会計完了から後レシート／再印字できます", color = Color.Gray, fontSize = 12.sp)
+                        }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    DocumentPrintSettingsPanelV136(receiptAutoPrintEnabled = receiptAutoPrint)
+                    Spacer(Modifier.height(8.dp))
+                    Text("用紙幅・印字幅・紙送り・カット", fontWeight = FontWeight.Bold, color = AsNavy)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        AsChoiceButton("58mm", paperWidth == 58, Modifier.weight(1f)) { selectPaper(58) }
+                        AsChoiceButton("80mm", paperWidth == 80, Modifier.weight(1f)) { selectPaper(80) }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = printableDotWidth,
+                            onValueChange = { printableDotWidth = it.filter(Char::isDigit).take(4) },
+                            label = { Text("印字可能幅 dot") },
+                            supportingText = {
+                                Text(
+                                    "標準: ${PrinterProfileContractV136.standardPrintableDotWidth(paperWidth)}dot。機種仕様に合わせて変更可",
+                                )
+                            },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = feedLines,
+                            onValueChange = { feedLines = it.filter(Char::isDigit).take(1) },
+                            label = { Text("カット前紙送り行数") },
+                            supportingText = { Text("${PrinterProfileContractV136.MIN_FEED_LINES}～${PrinterProfileContractV136.MAX_FEED_LINES}行") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Text(
+                        "注意：紙幅とプリンター機種が一致しない場合、文字切れやカッター位置ずれが発生することがあります。保存後は4文書テスト印刷で確認してください。",
+                        color = AsDanger,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                    )
+                    Spacer(Modifier.height(4.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         PrinterCutMode.entries.forEach { candidate ->
                             AsChoiceButton(candidate.displayName, cutMode == candidate, Modifier.weight(1f)) { cutMode = candidate }
@@ -589,14 +1161,22 @@ private fun PrinterSettingsScreen(
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = drawerEnabled, onCheckedChange = { drawerEnabled = it })
                         Text("プリンター接続ドロアを使用")
-                        Spacer(Modifier.width(18.dp))
-                        Checkbox(
-                            checked = drawerOpenOnCash,
-                            onCheckedChange = { drawerOpenOnCash = it },
-                            enabled = drawerEnabled,
-                        )
-                        Text("現金会計時に自動オープン")
                     }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = drawerOpenOnCash, onCheckedChange = { drawerOpenOnCash = it }, enabled = drawerEnabled)
+                        Text("現金会計")
+                        Spacer(Modifier.width(12.dp))
+                        Checkbox(checked = drawerOpenOnCashRefund, onCheckedChange = { drawerOpenOnCashRefund = it }, enabled = drawerEnabled)
+                        Text("現金返金")
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = drawerOpenOnCashMovement, onCheckedChange = { drawerOpenOnCashMovement = it }, enabled = drawerEnabled)
+                        Text("入金・出金")
+                        Spacer(Modifier.width(12.dp))
+                        Checkbox(checked = drawerOpenOnExchange, onCheckedChange = { drawerOpenOnExchange = it }, enabled = drawerEnabled)
+                        Text("両替")
+                    }
+                    Text("単独開放は無効。開放は業務確定後に理由・担当者付きで監査記録します。", color = Color.Gray, fontSize = 12.sp)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         AsChoiceButton("DK1", drawerPort == 0, Modifier.weight(1f)) { drawerPort = 0 }
                         AsChoiceButton("DK2", drawerPort == 1, Modifier.weight(1f)) { drawerPort = 1 }
@@ -627,11 +1207,40 @@ private fun PrinterSettingsScreen(
                     Button(
                         onClick = {
                             val config = currentConfiguration()
-                            val result = runCatching { store.savePrinterConfiguration(config, actorName) }
+                            val duplicateTcpIds = profileStore.duplicateTcpPrinterIds(config)
+                            val result = runCatching {
+                                val saved = if (
+                                    config.printerId == PrinterProfileContractV136.SINGLE_PRINTER_ID
+                                ) {
+                                    store.savePrinterConfiguration(config, actorName)
+                                    profileStore.load(config.printerId)
+                                        ?: error("保存後のプリンタープロファイルが見つかりません")
+                                } else {
+                                    profileStore.save(config, actorName)
+                                }
+                                refreshProfiles()
+                                val reloaded = profileStore.load(saved.printerId)
+                                    ?: error("プリンタープロファイルの保存後再読込に失敗しました")
+                                require(
+                                    reloaded.printableDotWidth == config.printableDotWidth &&
+                                        reloaded.feedLines == config.feedLines &&
+                                        reloaded.connectionType == config.connectionType &&
+                                        reloaded.usbDeviceName == config.usbDeviceName.trim() &&
+                                        reloaded.bluetoothAddress == config.bluetoothAddress.trim().uppercase()
+                                ) {
+                                    "プリンタープロファイルの保存後再読込に失敗しました"
+                                }
+                                reloaded
+                            }
                             message = result.fold(
-                                onSuccess = {
+                                onSuccess = { reloaded ->
+                                    loadProfile(reloaded)
                                     PrinterConfigurationRegistry.reload(context.applicationContext)
-                                    "設定を保存しました"
+                                    if (duplicateTcpIds.isEmpty()) {
+                                        "設定を保存し、再読込を確認しました"
+                                    } else {
+                                        "設定を保存しました。注意：同じIPの登録があります（${duplicateTcpIds.joinToString()}）"
+                                    }
                                 },
                                 onFailure = { it.message ?: "保存に失敗しました" },
                             )
@@ -646,7 +1255,13 @@ private fun PrinterSettingsScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = AsGreen),
                     ) { Text("テスト印刷", fontWeight = FontWeight.Bold) }
                     Button(
-                        onClick = { executeTest("ドロアテスト") { store.testDrawer(it) } },
+                        onClick = { executeTest("4文書テスト印刷") { store.testFourDocuments(it) } },
+                        enabled = !testing,
+                        modifier = Modifier.weight(1f).height(54.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AsGreen),
+                    ) { Text("4文書テスト", fontWeight = FontWeight.Bold) }
+                    Button(
+                        onClick = { executeTest("ドロアテスト") { store.testDrawer(it, actorName) } },
                         enabled = !testing && drawerEnabled,
                         modifier = Modifier.weight(1f).height(54.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = AsGreen),
@@ -658,30 +1273,8 @@ private fun PrinterSettingsScreen(
                 }
             }
 
-            AsPanel(Modifier.weight(1f).fillMaxHeight()) {
-                Text("適用内容", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AsNavy)
-                Spacer(Modifier.height(14.dp))
-                AsValueRow("機種", profile.displayName)
-                AsValueRow("接続", "${host.ifBlank { "未設定" }}:${port.ifBlank { "9100" }}")
-                AsValueRow("用紙", "${paperWidth}mm")
-                AsValueRow("カット", cutMode.displayName)
-                AsValueRow("ドロア", if (drawerEnabled) "DK${drawerPort + 1}" else "無効")
-                AsValueRow("自動オープン", if (drawerEnabled && drawerOpenOnCash) "現金会計時" else "なし")
-                Spacer(Modifier.height(12.dp))
-                AsFlowStep("1", "会計・精算・返品をSQLiteへ確定")
-                AsFlowStep("2", "印刷キューへ登録")
-                AsFlowStep("3", "選択プロファイルでESC/POS生成")
-                AsFlowStep("4", "TCP 9100へ送信")
-                AsFlowStep("5", "送信結果不明時は自動再印刷を停止")
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    "現金会計の初回レシートだけにドロアキックを付加します。再発行、返品票、X点検票、Z精算票では自動でドロアを開きません。",
-                    color = Color.DarkGray,
-                    lineHeight = 22.sp,
-                )
-            }
+
         }
-        AsBottomBar("各種設定へ戻る", onBack)
     }
 }
 
@@ -698,7 +1291,7 @@ private fun ManagerPinScreen(
     var message by remember { mutableStateOf<String?>(null) }
 
     Column(Modifier.fillMaxSize()) {
-        AsHeader("SCR-763", "責任者PIN設定", "認証：$actorName")
+        AsHeader("SCR-650", "責任者PIN設定", "認証：$actorName", onBack = onBack)
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             AsPanel(Modifier.width(600.dp).height(520.dp)) {
                 Text("責任者PINを変更", fontSize = 27.sp, fontWeight = FontWeight.Bold, color = AsNavy)
@@ -742,7 +1335,6 @@ private fun ManagerPinScreen(
                 }
             }
         }
-        AsBottomBar("各種設定へ戻る", onBack)
     }
 }
 
@@ -756,7 +1348,7 @@ private fun AuditLogScreen(
     val logs = remember(query, revision) { store.listAuditLogs(query = query) }
 
     Column(Modifier.fillMaxSize()) {
-        AsHeader("SCR-764", "監査ログ", "${logs.size}件表示")
+        AsHeader("SCR-680", "監査ログ", "${logs.size}件表示", onBack = onBack)
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -790,7 +1382,6 @@ private fun AuditLogScreen(
                 }
             }
         }
-        AsBottomBar("各種設定へ戻る", onBack)
     }
 }
 
@@ -808,17 +1399,14 @@ private fun AsPinField(label: String, value: String, onValueChange: (String) -> 
 }
 
 @Composable
-private fun AsHeader(screenId: String, title: String, status: String) {
-    Row(
-        Modifier.fillMaxWidth().height(62.dp).background(AsNavy).padding(horizontal = 20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(24.dp))
-        Text("$screenId  $title", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
-        Text(status, color = Color.White, fontSize = 14.sp)
-    }
+private fun AsHeader(
+    screenId: String,
+    title: String,
+    status: String,
+    onBack: (() -> Unit)? = null,
+    action: (@Composable () -> Unit)? = null,
+) {
+    RegisterTopBarV141(title = title, action = action, onBack = onBack)
 }
 
 @Composable
@@ -838,17 +1426,14 @@ private fun AsMenuTile(title: String, description: String, background: Color, mo
     Card(
         modifier = modifier.fillMaxHeight().clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = background),
-        border = BorderStroke(1.dp, AsBorder),
         shape = RoundedCornerShape(12.dp),
     ) {
         Column(
-            Modifier.fillMaxSize().padding(20.dp),
+            Modifier.fillMaxSize().padding(12.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(title, fontSize = 21.sp, fontWeight = FontWeight.Bold, color = AsNavy)
-            Spacer(Modifier.height(6.dp))
-            Text(description, textAlign = TextAlign.Center, color = Color.DarkGray, lineHeight = 18.sp, fontSize = 13.sp)
         }
     }
 }
@@ -885,7 +1470,7 @@ private fun AsFlowStep(number: String, text: String) {
 @Composable
 private fun AsBottomBar(label: String, onBack: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().height(72.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
+        Modifier.fillMaxWidth().height(72.dp).background(RegisterSecondaryActionBarColorV159).padding(horizontal = 18.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         OutlinedButton(onClick = onBack, modifier = Modifier.width(240.dp).fillMaxHeight()) {

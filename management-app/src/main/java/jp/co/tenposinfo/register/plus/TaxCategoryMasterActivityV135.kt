@@ -23,6 +23,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,7 +40,9 @@ class TaxCategoryMasterActivityV135 : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configurePlusSystemBarsV148(window)
         setContent {
+            PlusSafeAreaV148 {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     var rules by remember { mutableStateOf(store.listAll()) }
@@ -82,6 +85,7 @@ class TaxCategoryMasterActivityV135 : ComponentActivity() {
                     }
                 }
             }
+            }
         }
     }
 
@@ -98,35 +102,28 @@ private fun TaxCategoryMasterScreenV135(
     onAdd: () -> Unit,
     onRevise: (ManagementTaxCategoryV135) -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
+    Column(Modifier.fillMaxSize()) {
+        PlusTopBarV155(title = "税区分マスター", onBack = onBack)
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(onClick = onBack) { Text("戻る") }
-            Column(modifier = Modifier.weight(1f)) {
-                Text("税区分マスター", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(
-                    "非課税・内税・外税を営業日単位で管理します。過去行は削除せず、変更は改定として追加します。",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
+            Text(
+                "税区分",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
             Button(onClick = onAdd) { Text("新規追加") }
         }
-
         Text(
-            "初期5区分に加え、第3税率以降も追加できます。適用開始は暦日0時ではなく営業日です。",
+            "変更は履歴を残して改定します。適用日は営業日で指定してください。",
+            modifier = Modifier.padding(horizontal = 16.dp),
             style = MaterialTheme.typography.bodySmall,
         )
-
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(rules, key = { it.id }) { rule ->
@@ -187,9 +184,14 @@ private fun TaxCategoryEditorDialogV135(
     var effectiveFrom by remember(initial) { mutableStateOf(initial.effectiveFromBusinessDate) }
     var effectiveTo by remember(initial) { mutableStateOf(initial.effectiveToBusinessDate) }
     var enabled by remember(initial) { mutableStateOf(initial.enabled) }
+    var showAdvanced by remember(initial) { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+        ),
         title = { Text(if (initial.taxKey.isBlank()) "税区分を追加" else "税区分を改定") },
         text = {
             Column(
@@ -237,36 +239,13 @@ private fun TaxCategoryEditorDialogV135(
                         Text(candidate.displayName)
                     }
                 }
-                OutlinedTextField(
-                    value = symbol,
-                    onValueChange = { symbol = it.take(4) },
-                    label = { Text("税記号") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("軽減税率")
-                        Text("レシート記号等で利用", style = MaterialTheme.typography.labelSmall)
-                    }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("軽減税率", modifier = Modifier.weight(1f))
                     Switch(
                         checked = reduced,
                         onCheckedChange = { reduced = it },
                         enabled = mode != ManagementTaxModeV135.NON_TAXABLE,
                     )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("使用状態")
-                        Text("OFFも履歴として保存", style = MaterialTheme.typography.labelSmall)
-                    }
-                    Switch(checked = enabled, onCheckedChange = { enabled = it })
                 }
                 OutlinedTextField(
                     value = effectiveFrom,
@@ -275,13 +254,29 @@ private fun TaxCategoryEditorDialogV135(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(
-                    value = effectiveTo,
-                    onValueChange = { effectiveTo = it.take(10) },
-                    label = { Text("適用終了営業日（任意）") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                TextButton(onClick = { showAdvanced = !showAdvanced }) {
+                    Text(if (showAdvanced) "詳細を閉じる" else "詳細設定")
+                }
+                if (showAdvanced) {
+                    OutlinedTextField(
+                        value = symbol,
+                        onValueChange = { symbol = it.take(4) },
+                        label = { Text("税記号") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("使用状態", modifier = Modifier.weight(1f))
+                        Switch(checked = enabled, onCheckedChange = { enabled = it })
+                    }
+                    OutlinedTextField(
+                        value = effectiveTo,
+                        onValueChange = { effectiveTo = it.take(10) },
+                        label = { Text("適用終了営業日（任意）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 errorMessage?.let { message ->
                     Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }

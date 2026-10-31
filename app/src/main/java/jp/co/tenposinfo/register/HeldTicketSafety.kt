@@ -71,7 +71,7 @@ internal object HeldTicketMergeSplitPolicy {
     fun mergeItems(targetItems: List<CartItem>, sourceItems: List<CartItem>): List<CartItem> {
         require(targetItems.isNotEmpty()) { "結合先の伝票が空です" }
         require(sourceItems.isNotEmpty()) { "結合元の伝票が空です" }
-        return targetItems + sourceItems
+        return CartLineIdentityV137.normalize(targetItems + sourceItems)
     }
 
     fun splitItems(items: List<CartItem>, movedQuantities: Map<Int, Int>): HeldTicketSplitPlan {
@@ -91,12 +91,22 @@ internal object HeldTicketMergeSplitPolicy {
                         partQuantity = movedQuantity,
                         wholeQuantity = item.quantity,
                     )
+                    val movedQuantityHundredths = proportionalQuantityHundredths(
+                        totalHundredths = item.quantityHundredths,
+                        partQuantity = movedQuantity,
+                        wholeQuantity = item.quantity,
+                    )
                     moved += item.copy(
                         quantity = movedQuantity,
+                        quantityHundredths = movedQuantityHundredths,
                         discountAmount = movedDiscount,
+                        // A partial split creates a distinct sale line. The
+                        // source row retains its original identifier.
+                        lineId = CartLineIdentityV135.newId(),
                     )
                     remaining += item.copy(
                         quantity = item.quantity - movedQuantity,
+                        quantityHundredths = item.quantityHundredths - movedQuantityHundredths,
                         discountAmount = item.discountAmount - movedDiscount,
                     )
                 }
@@ -110,6 +120,15 @@ internal object HeldTicketMergeSplitPolicy {
             movedItems = moved,
         )
     }
+
+    private fun proportionalQuantityHundredths(
+        totalHundredths: Long,
+        partQuantity: Int,
+        wholeQuantity: Int,
+    ): Long = BigInteger.valueOf(totalHundredths)
+        .multiply(BigInteger.valueOf(partQuantity.toLong()))
+        .divide(BigInteger.valueOf(wholeQuantity.toLong()))
+        .longValueExact()
 
     private fun proportionalDiscount(
         totalDiscount: Long,
@@ -141,7 +160,7 @@ internal class HeldTicketSafetyCoordinator(
         SaleGuestCountRuntimeV135.ensureSchema(db)
         db.beginTransaction()
         return try {
-            val selected = database.loadHeldTicket(ticket.id)
+            val selected = CartLineIdentityV137.normalize(database.loadHeldTicket(ticket.id))
             require(selected.isNotEmpty()) { "呼出対象の伝票が空か、既に削除されています" }
 
             // currentCartに客数が設定されていれば、held_tickets INSERT triggerが
@@ -324,14 +343,15 @@ internal class HeldTicketSafetyCoordinator(
                 put("created_at", System.currentTimeMillis())
             },
         )
-        items.forEach { item ->
+        val normalized = CartLineIdentityV137.normalize(items)
+        normalized.forEach { item ->
             db.insertOrThrow(
                 "held_ticket_items",
                 null,
                 item.toDatabaseValues().apply { put("ticket_id", ticketId) },
             )
         }
-        LineTaxSnapshotStore.save(db, LineTaxSnapshotStore.SCOPE_HELD, ticketId, items)
+        LineTaxSnapshotStore.save(db, LineTaxSnapshotStore.SCOPE_HELD, ticketId, normalized)
         return ticketId
     }
 
@@ -342,8 +362,11 @@ internal class HeldTicketSafetyCoordinator(
         put("tax_category", product.taxCategory.name)
         put("display_order", product.displayOrder)
         put("quantity", quantity)
+        put("quantity_hundredths", quantityHundredths)
+        put("quantity_mode", product.quantityMode.name)
         put("discount_amount", discountAmount)
         put("note", note)
+        put("line_id", lineId)
     }
 }
 

@@ -17,7 +17,7 @@ class V093MainFlowResponsiveTest {
 
     private fun functionSource(name: String, nextName: String): String {
         val start = mainSource.indexOf("private fun $name(")
-        val end = mainSource.indexOf("private fun $nextName(", start + 1)
+        val end = mainSource.indexOf(if (nextName == "SalesScreen") "internal fun SalesScreen(" else "private fun $nextName(", start + 1)
         assertTrue("$name source not found", start >= 0)
         assertTrue("$nextName source not found", end > start)
         return mainSource.substring(start, end)
@@ -47,12 +47,13 @@ class V093MainFlowResponsiveTest {
         assertTrue(source.contains("val operatorScroll = rememberScrollState()"))
         assertTrue(source.contains("val pinScroll = rememberScrollState()"))
         assertTrue(source.contains(".verticalScroll(operatorScroll)"))
-        assertTrue(source.contains("if (responsive.isCompact) Modifier.verticalScroll(pinScroll)"))
-        assertTrue(source.contains("val pinPanelWidthDp = if (responsive.isCompact) 260 else 390"))
+        assertTrue(source.contains("if (keypad.scrollRequired) Modifier.verticalScroll(pinScroll)"))
+        assertTrue(source.contains("loginWidthDp * if (responsive.isCompact) 0.43f else 0.36f"))
         assertTrue(source.contains("val operatorButtonHeightDp = if (responsive.isCompact) 58 else 82"))
-        assertTrue(source.contains("RegisterLayoutPolicy.COMPACT_VALUE_HEIGHT_DP"))
-        assertTrue(source.contains("RegisterLayoutPolicy.COMPACT_KEY_HEIGHT_DP"))
-        assertTrue(source.contains("RegisterLayoutPolicy.COMPACT_KEY_GAP_DP"))
+        assertTrue(source.contains("preferredMinKeyDp = 72"))
+        assertTrue(source.contains("heightDp = keypad.valueHeightDp"))
+        assertTrue(source.contains("buttonHeightDp = keypad.keyHeightDp"))
+        assertTrue(source.contains("rowGapDp = keypad.gapDp"))
         assertTrue(source.contains("bottomActionLabel = \"ログイン\""))
         assertTrue(source.contains("selectedId?.let { onLogin(it, pin) }"))
     }
@@ -90,7 +91,9 @@ class V093MainFlowResponsiveTest {
         assertTrue(complete.contains("BlueButton(\"次の取引\", onNext, Modifier.width(180.dp).height(54.dp))"))
         assertTrue(register.contains("SaleReceiptNavigation.intent(context, saleId)"))
         assertTrue(register.contains("ReceiptVoucherNavigation.issuanceIntent(context, lastSaleId)"))
-        assertTrue(register.contains("onHistory = { screen = AppScreen.SALES_HISTORY }"))
+        assertTrue(register.contains("historyBackDestination = AppScreen.COMPLETE"))
+        assertTrue(register.contains("screen = AppScreen.SALES_HISTORY"))
+        assertTrue(mainSource.contains("onBack = { screen = historyBackDestination }"))
         assertTrue(register.contains("onQueue = { openUnifiedPrintQueue() }"))
         assertTrue(register.contains("onNext = { screen = AppScreen.SALES }"))
     }

@@ -6,6 +6,11 @@ import org.json.JSONObject
 internal const val CUSTOMER_DISPLAY_SCHEMA_VERSION = 1
 internal const val CUSTOMER_DISPLAY_PATH = "/customer-display/v1"
 
+enum class CustomerDisplayMessageType {
+    SNAPSHOT,
+    STATE_UPDATE,
+}
+
 enum class CustomerDisplayMode {
     STANDBY,
     SALES,
@@ -19,11 +24,14 @@ data class CustomerDisplayOrderItem(
     val productId: String,
     val name: String,
     val quantity: Int,
+    val quantityHundredths: Long = Math.multiplyExact(quantity.toLong(), QuantityV136.SCALE),
+    val quantityText: String = QuantityV136.fromHundredths(quantityHundredths).format(),
     val unitPrice: Long,
     val amount: Long,
     val latest: Boolean = false,
     val cancelled: Boolean = false,
     val taxSymbol: String = "",
+    val lineId: String = "",
 )
 
 data class CustomerDisplaySnapshot(
@@ -44,38 +52,73 @@ data class CustomerDisplaySnapshot(
     val message: String? = null,
     val orderItems: List<CustomerDisplayOrderItem> = emptyList(),
     val presentation: CustomerDisplayPresentation = CustomerDisplayPresentation(),
+    val sessionId: String? = null,
+    val messageType: CustomerDisplayMessageType = CustomerDisplayMessageType.SNAPSHOT,
+    val storeId: String? = null,
+    val registerTerminalId: String? = null,
 ) {
     fun toJson(): String = JSONObject().apply {
         put("schemaVersion", schemaVersion)
         put("sequence", sequence)
+        put("sessionId", sessionId ?: JSONObject.NULL)
+        put("messageType", messageType.name)
         put("serverInstanceId", serverInstanceId ?: JSONObject.NULL)
         put("sentAtMillis", sentAtMillis)
-        put("mode", mode.name)
+        put("sentAt", if (sentAtMillis > 0L) java.time.Instant.ofEpochMilli(sentAtMillis).toString() else JSONObject.NULL)
+        put("mode", mode.name) // Legacy mode retained for previously installed CD apps.
+        put("canonicalMode", when (mode) {
+            CustomerDisplayMode.STANDBY -> "STANDBY"
+            CustomerDisplayMode.SALES -> "CART"
+            CustomerDisplayMode.SUBTOTAL -> "SUBTOTAL"
+            CustomerDisplayMode.ACCOUNTING -> if (receivedAmount > 0L && paymentMethod?.contains("現金") == true) "CASH_RECEIVED" else "PAYMENT"
+            CustomerDisplayMode.COMPLETE -> if (changeAmount > 0L) "CHANGE" else "COMPLETE"
+            CustomerDisplayMode.DISCONNECTED -> "DISCONNECTED"
+        })
         put("transactionId", transactionId ?: JSONObject.NULL)
         put("storeName", storeName)
+        put("storeId", storeId ?: JSONObject.NULL)
+        put("registerTerminalId", registerTerminalId ?: JSONObject.NULL)
         put("numberOfProducts", numberOfProducts)
+        put("itemCount", numberOfProducts)
+        put("latestLineId", orderItems.lastOrNull { it.latest }?.lineId ?: JSONObject.NULL)
         put("subtotalAmount", subtotalAmount)
         put("totalAmount", totalAmount)
         put("paymentMethod", paymentMethod ?: JSONObject.NULL)
         put("receivedAmount", receivedAmount)
         put("shortageAmount", shortageAmount)
+        put("remainingAmount", shortageAmount)
         put("changeAmount", changeAmount)
+        put("payment", paymentMethod?.let { name -> JSONObject().apply {
+            put("receiptName", name)
+            put("tenderedAmount", receivedAmount)
+            put("appliedAmount", (totalAmount - shortageAmount).coerceAtLeast(0L))
+        } } ?: JSONObject.NULL)
         put("message", message ?: JSONObject.NULL)
         put("presentation", presentation.toJsonObject())
         put("orderItems", JSONArray().apply {
             orderItems.forEach { item ->
                 put(JSONObject().apply {
                     put("productId", item.productId)
+                    put("lineId", item.lineId)
                     put("name", item.name)
                     put("quantity", item.quantity)
+                    put("quantityHundredths", item.quantityHundredths)
+                    // Formal v2.5 §30.6 exact quantity wire fields; legacy aliases stay.
+                    put("quantityScaled", item.quantityHundredths)
+                    put("quantityScale", 2)
+                    put("quantityText", item.quantityText)
                     put("unitPrice", item.unitPrice)
                     put("amount", item.amount)
+                    put("lineAmount", item.amount)
                     put("latest", item.latest)
                     put("cancelled", item.cancelled)
+                    put("isVoided", item.cancelled)
                     put("taxSymbol", item.taxSymbol)
                 })
             }
         })
+        // v2.5 §30.6: canonical items; orderItems remains for older CD installations.
+        put("items", JSONArray(getJSONArray("orderItems").toString()))
     }.toString()
 }
 
@@ -95,6 +138,7 @@ object CustomerDisplaySnapshotFactory {
         storeName: String,
         latestProductId: String? = null,
         presentation: CustomerDisplayPresentation = CustomerDisplayPresentation(),
+        latestLineId: String? = null,
     ): CustomerDisplaySnapshot {
         if (items.isEmpty()) return standby(storeName, presentation)
         val total = TaxEngine.calculate(items).grossAmount
@@ -104,7 +148,7 @@ object CustomerDisplaySnapshotFactory {
             numberOfProducts = items.sumOf { it.quantity },
             subtotalAmount = total,
             totalAmount = total,
-            orderItems = orderItems(items, latestProductId),
+            orderItems = orderItems(items, latestProductId, latestLineId),
             presentation = presentation,
         )
     }
@@ -154,7 +198,9 @@ object CustomerDisplaySnapshotFactory {
             paymentMethod = methods,
             receivedAmount = paymentState.allocations.sumOf { it.receivedAmount },
             shortageAmount = paymentState.remaining(total),
-            changeAmount = paymentState.changeAmount,
+            // Provisional overpayment must never be published as confirmed change.
+            // Only the persisted sale completion may reveal the actual change.
+            changeAmount = 0L,
             message = if (paymentState.remaining(total) > 0L) "お支払い金額をご確認ください" else "お支払いを確認しました",
             orderItems = orderItems(items),
             presentation = presentation,
@@ -184,15 +230,79 @@ object CustomerDisplaySnapshotFactory {
     private fun orderItems(
         items: List<CartItem>,
         latestProductId: String? = null,
-    ): List<CustomerDisplayOrderItem> = items.map { item ->
+        latestLineId: String? = null,
+    ): List<CustomerDisplayOrderItem> {
+        // Explicit row identity wins over product identity: two lines may share
+        // the same productId but have different price, quantity, or tax conditions.
+        val latestIndex = if (latestLineId != null) {
+            items.indices.lastOrNull { index ->
+                items[index].lineId.ifBlank { "legacy-line-${index + 1}" } == latestLineId
+            } ?: -1
+        } else {
+            items.indexOfLast { latestProductId != null && it.product.id == latestProductId }
+        }
+        return items.mapIndexed { index, item ->
         CustomerDisplayOrderItem(
             productId = item.product.id,
+            lineId = item.lineId.ifBlank { "legacy-line-${index + 1}" },
             name = item.product.name,
             quantity = item.quantity,
+            quantityHundredths = item.quantityHundredths,
+            quantityText = item.quantityText,
             unitPrice = item.unitPrice,
             amount = item.baseAmount,
-            latest = item.product.id == latestProductId,
+            latest = index == latestIndex,
             taxSymbol = item.product.taxSymbol,
         )
+        }
+    }
+}
+
+/**
+ * Customer Display cart delta policy. Keeping it free of Android and database
+ * dependencies makes duplicate-product and reorder behavior directly testable.
+ * Length-prefixing each field avoids collisions from names/notes containing ':'
+ * or '|' characters.
+ */
+internal object CustomerDisplayCartChangePolicy {
+    fun fingerprint(items: List<CartItem>): String = buildString {
+        append(items.size).append('#')
+        items.forEach { item ->
+            val row = rowFingerprint(item)
+            append(row.length).append(':').append(row)
+        }
+    }
+
+    fun latestChangedLineId(before: List<CartItem>, after: List<CartItem>): String? {
+        val beforeById = before.filter { it.lineId.isNotBlank() }.associateBy { it.lineId }
+        val lastChangedIndex = after.indices.lastOrNull { index ->
+            val current = after[index]
+            val old = if (current.lineId.isNotBlank()) {
+                beforeById[current.lineId]
+            } else {
+                // Old records can lack lineId; avoid treating a different
+                // product at the same position as the same line.
+                before.getOrNull(index)?.takeIf {
+                    it.lineId.isBlank() && it.product.id == current.product.id
+                }
+            }
+            old == null || rowFingerprint(old) != rowFingerprint(current)
+        } ?: return null
+        return after[lastChangedIndex].lineId.ifBlank { "legacy-line-${lastChangedIndex + 1}" }
+    }
+
+    private fun rowFingerprint(item: CartItem): String = buildString {
+        val fields = listOf(
+            item.lineId, item.product.id, item.product.name,
+            item.quantity.toString(), item.quantityHundredths.toString(),
+            item.unitPrice.toString(), item.discountAmount.toString(), item.note,
+            item.product.taxKey, item.product.taxRatePercent.toString(),
+            item.product.taxIncluded.toString(), item.product.taxable.toString(),
+            item.product.reducedTax.toString(), item.product.taxSymbol,
+            item.product.quantityMode.name,
+        )
+        fields.forEach { value ->
+            append(value.length).append(':').append(value)
+        }
     }
 }

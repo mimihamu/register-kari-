@@ -62,8 +62,11 @@ class ExternalBackupSettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 ExternalBackupSettingsScreen(onClose = { finish() })
+            }
+        
             }
         }
     }
@@ -85,6 +88,7 @@ private fun ExternalBackupSettingsScreen(onClose: () -> Unit) {
     var failureNotifications by remember { mutableStateOf(initial.failureNotificationsEnabled) }
     var status by remember { mutableStateOf(statusStore.load()) }
     var message by remember { mutableStateOf<String?>(null) }
+    var showAdvancedV153 by remember { mutableStateOf(false) }
     var permissionRevision by remember { mutableIntStateOf(0) }
     val notificationPermission = remember(permissionRevision) {
         PrinterNotificationPermissionStatus.read(appContext)
@@ -167,16 +171,7 @@ private fun ExternalBackupSettingsScreen(onClose: () -> Unit) {
 
     Surface(Modifier.fillMaxSize(), color = EbsBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(64.dp).background(EbsNavy).padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(24.dp))
-                Text("外部自動バックアップ設定", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                Text("内部バックアップを正本として維持", color = Color.White)
-            }
+            RegisterTopBarV141(title = "外部自動バックアップ", onBack = onClose)
 
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                 val compact = maxWidth < 980.dp
@@ -209,7 +204,7 @@ private fun ExternalBackupSettingsScreen(onClose: () -> Unit) {
                                 },
                                 color = if (destinationPermission) EbsGreen else EbsRed,
                             )
-                            treeUriText?.let { Text(it, color = Color.DarkGray, fontSize = 12.sp) }
+                            // 保存先URIは機密を含む場合があるため、通常画面には表示しない。
                             Row(
                                 Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -250,10 +245,6 @@ private fun ExternalBackupSettingsScreen(onClose: () -> Unit) {
                                     fontWeight = FontWeight.Bold,
                                 )
                             }
-                            Text(
-                                "Z精算後・定期・手動で作成された内部バックアップを検出し、選択した外部フォルダへ複製します。失敗しても内部バックアップ、売上、Z精算結果は変更しません。",
-                                color = Color.DarkGray,
-                            )
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Switch(
                                     checked = unmeteredOnly,
@@ -264,14 +255,17 @@ private fun ExternalBackupSettingsScreen(onClose: () -> Unit) {
                                     fontWeight = FontWeight.Bold,
                                 )
                             }
-                            Text(
-                                "Google Driveを保存先にする場合は、Wi-Fi等で通信可能な状態が必要です。USB・端末フォルダではネットワーク不要です。",
-                                color = Color.DarkGray,
-                                fontSize = 13.sp,
-                            )
                         }
                     }
 
+                    if (status.lastError != null) {
+                        Text("外部バックアップ：${status.lastError}", color = EbsRed, fontWeight = FontWeight.Bold)
+                    }
+                    OutlinedButton(
+                        onClick = { showAdvancedV153 = !showAdvancedV153 },
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                    ) { Text(if (showAdvancedV153) "詳細を閉じる" else "実行状態・通知の詳細") }
+                    if (showAdvancedV153) {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = Color.White),
                         modifier = Modifier.fillMaxWidth(),
@@ -376,18 +370,15 @@ private fun ExternalBackupSettingsScreen(onClose: () -> Unit) {
                             }
                         }
                     }
+                    }
                 }
             }
 
             Row(
-                Modifier.fillMaxWidth().height(76.dp).background(Color.White)
+                Modifier.fillMaxWidth().height(76.dp).background(RegisterSecondaryActionBarColorV159)
                     .padding(horizontal = 18.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(
-                    onClick = onClose,
-                    modifier = Modifier.width(220.dp).fillMaxHeight(),
-                ) { Text("戻る", fontWeight = FontWeight.Bold) }
                 message?.let {
                     Spacer(Modifier.width(18.dp))
                     Text(

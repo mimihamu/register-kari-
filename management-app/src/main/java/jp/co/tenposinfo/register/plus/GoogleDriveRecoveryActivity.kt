@@ -120,7 +120,9 @@ class GoogleDriveRecoveryActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configurePlusSystemBarsV148(window)
         setContent {
+            PlusSafeAreaV148 {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GoogleDriveRecoveryScreen(
@@ -152,6 +154,7 @@ class GoogleDriveRecoveryActivity : ComponentActivity() {
                         onClose = ::finish,
                     )
                 }
+            }
             }
         }
         refresh()
@@ -336,29 +339,15 @@ private fun GoogleDriveRecoveryScreen(
         folderStatus = state.folderConnection.status,
     )
     val healthy = GoogleDriveOperationsPolicy.currentConfigurationHealthy(snapshot)
+    val showDetailsV155 = androidx.compose.runtime.remember { mutableStateOf(false) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+    Column(Modifier.fillMaxSize()) {
+        PlusTopBarV155(title = "Google Drive運用・復旧", onBack = onClose)
+        Column(
+            modifier = Modifier.weight(1f).fillMaxWidth()
+                .verticalScroll(rememberScrollState()).padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Google Drive運用セットアップ・復旧",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text("接続確認、方式選択、自動同期、実機確認を一画面で完了します")
-            }
-            OutlinedButton(onClick = onClose) { Text("戻る") }
-        }
-
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -438,6 +427,11 @@ private fun GoogleDriveRecoveryScreen(
             }
         }
 
+        OutlinedButton(
+            onClick = { showDetailsV155.value = !showDetailsV155.value },
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+        ) { Text(if (showDetailsV155.value) "詳細を閉じる" else "接続先・実機検証の詳細") }
+        if (showDetailsV155.value) {
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text("Drive API方式", fontWeight = FontWeight.Bold)
@@ -538,6 +532,7 @@ private fun GoogleDriveRecoveryScreen(
             enabled = !state.registering,
         ) { Text("売上同期検証・復旧") }
 
+        }
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text("一括適用時の安全動作", fontWeight = FontWeight.Bold)
@@ -548,6 +543,7 @@ private fun GoogleDriveRecoveryScreen(
             }
         }
         Spacer(Modifier.height(12.dp))
+        }
     }
 }
 

@@ -62,6 +62,8 @@ object GoogleDriveEasyConnectPolicy {
 
     fun statusLabel(state: GoogleDriveEasyConnectUiState): String = when {
         state.busy -> "設定中"
+        state.account.status == GoogleDriveAccountStatus.CLOUD_CONFIGURATION_REQUIRED -> "Google Cloud設定が必要"
+        state.account.status == GoogleDriveAccountStatus.AUTHORIZATION_FAILED -> "Google連携を確認"
         state.account.email == null -> "未接続"
         isReady(state) -> "正常"
         state.connectionTest.status == GoogleDriveConnectionTestStatus.NOT_FOUND -> "つぐレジ側の準備待ち"
@@ -78,23 +80,38 @@ class GoogleDriveEasyConnectActivity : ComponentActivity() {
     private val authorizationLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult(),
     ) { result ->
-        if (result.resultCode != Activity.RESULT_OK || result.data == null) {
-            uiState.value = uiState.value.copy(
-                busy = false,
-                message = "Googleアカウントの選択がキャンセルされました",
-            )
+        if (result.resultCode != Activity.RESULT_OK) {
+            val error = result.data?.let { intent ->
+                runCatching { authorizationClient.getAuthorizationResultFromIntent(intent) }.exceptionOrNull()
+            }
+            if (error is com.google.android.gms.common.api.ApiException &&
+                error.statusCode != com.google.android.gms.common.api.CommonStatusCodes.CANCELED) {
+                handleFailure(error)
+            } else {
+                uiState.value = uiState.value.copy(
+                    busy = false,
+                    account = uiState.value.account.copy(status = GoogleDriveAccountStatus.AUTHORIZATION_FAILED),
+                    message = GoogleDriveAuthorizationOutcomePolicy.unfinishedMessage(result.resultCode),
+                )
+            }
             return@registerForActivityResult
         }
-        runCatching {
-            authorizationClient.getAuthorizationResultFromIntent(result.data!!)
-        }.onSuccess(::consumeAuthorizationResult)
+        val intent = result.data
+        if (intent == null) {
+            handleFailure(IllegalStateException("認証結果がありません"))
+            return@registerForActivityResult
+        }
+        runCatching { authorizationClient.getAuthorizationResultFromIntent(intent) }
+            .onSuccess(::consumeAuthorizationResult)
             .onFailure(::handleFailure)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         refresh()
+        configurePlusSystemBarsV148(window)
         setContent {
+            PlusSafeAreaV148 {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GoogleDriveEasyConnectScreen(
@@ -102,12 +119,16 @@ class GoogleDriveEasyConnectActivity : ComponentActivity() {
                         onConnect = ::connect,
                         onSync = ::synchronizeNow,
                         onDisconnect = ::disconnect,
+                        onOpenSetupGuide = {
+                            startActivity(Intent(this, GoogleDriveSetupGuideActivity::class.java))
+                        },
                         onOpenAdvanced = {
                             startActivity(Intent(this, GoogleDriveRecoveryActivity::class.java))
                         },
                         onClose = ::finish,
                     )
                 }
+            }
             }
         }
     }
@@ -119,7 +140,7 @@ class GoogleDriveEasyConnectActivity : ComponentActivity() {
 
     private fun refresh(message: String? = null) {
         uiState.value = GoogleDriveEasyConnectUiState(
-            account = accountStore.load(),
+            account = GoogleDriveAuthorizationRefreshPolicy.merge(uiState.value.account, accountStore.load()),
             sync = GoogleDriveDirectSyncStatusStore(applicationContext).load(),
             connectionTest = GoogleDriveConnectionTestStore(applicationContext).load(),
             folderAutoImportEnabled = DriveSyncPreferences(applicationContext).autoImportOnLaunch(),
@@ -310,11 +331,7 @@ class GoogleDriveEasyConnectActivity : ComponentActivity() {
         uiState.value = uiState.value.copy(
             busy = false,
             account = uiState.value.account.copy(status = status),
-            message = if (status == GoogleDriveAccountStatus.CLOUD_CONFIGURATION_REQUIRED) {
-                "Google Cloudのアプリ登録を確認してください"
-            } else {
-                "Google連携に失敗しました：${error.message ?: error.javaClass.simpleName}"
-            },
+            message = GoogleDriveAuthorizationOutcomePolicy.errorMessage(error),
         )
     }
 }
@@ -325,28 +342,18 @@ private fun GoogleDriveEasyConnectScreen(
     onConnect: () -> Unit,
     onSync: () -> Unit,
     onDisconnect: () -> Unit,
+    onOpenSetupGuide: () -> Unit,
     onOpenAdvanced: () -> Unit,
     onClose: () -> Unit,
 ) {
     val ready = GoogleDriveEasyConnectPolicy.isReady(state)
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(13.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+    Column(Modifier.fillMaxSize()) {
+        PlusTopBarV155(title = "Googleかんたん接続", onBack = onClose)
+        Column(
+            modifier = Modifier.weight(1f).fillMaxWidth()
+                .verticalScroll(rememberScrollState()).padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Googleかんたん接続", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("Googleアカウントを選ぶだけで、つぐレジとの接続確認と自動同期を設定します")
-            }
-            OutlinedButton(onClick = onClose) { Text("戻る") }
-        }
-
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -383,6 +390,14 @@ private fun GoogleDriveEasyConnectScreen(
             enabled = state.account.email != null && !state.busy,
             modifier = Modifier.fillMaxWidth().height(52.dp),
         ) { Text("連携を解除") }
+        if (state.account.status == GoogleDriveAccountStatus.CLOUD_CONFIGURATION_REQUIRED ||
+            state.account.status == GoogleDriveAccountStatus.AUTHORIZATION_FAILED) {
+            OutlinedButton(
+                onClick = onOpenSetupGuide,
+                enabled = !state.busy,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+            ) { Text("Google Cloudの初期設定") }
+        }
         OutlinedButton(
             onClick = onOpenAdvanced,
             enabled = !state.busy,
@@ -399,6 +414,7 @@ private fun GoogleDriveEasyConnectScreen(
             }
         }
         Spacer(Modifier.height(8.dp))
+        }
     }
 }
 

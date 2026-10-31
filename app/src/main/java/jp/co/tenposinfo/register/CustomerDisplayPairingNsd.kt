@@ -45,6 +45,15 @@ internal object CustomerDisplayPairingCodec {
     }
 }
 
+/**
+ * The pairing window begins when the operator presses Start, not when
+ * DNS-SD finishes registering. Registration delay cannot extend exposure.
+ */
+internal object CustomerDisplayPairingWindowPolicy {
+    fun remainingMillis(nowMillis: Long, endsAtMillis: Long): Long =
+        (endsAtMillis - nowMillis).coerceAtLeast(0L)
+}
+
 internal class CustomerDisplayPairingAdvertiser(
     context: Context,
     private val onStateChanged: (CustomerDisplayPairingState) -> Unit,
@@ -60,6 +69,9 @@ internal class CustomerDisplayPairingAdvertiser(
         stop(null)
         requested = true
         val endsAt = System.currentTimeMillis() + CUSTOMER_DISPLAY_PAIRING_WINDOW_MS
+        // A stalled registerService callback must not leave us in STARTING
+        // forever with an outstanding service registration request.
+        handler.postDelayed(stopRunnable, CUSTOMER_DISPLAY_PAIRING_WINDOW_MS)
         emit(
             CustomerDisplayPairingState(
                 status = CustomerDisplayPairingStatus.STARTING,
@@ -83,9 +95,16 @@ internal class CustomerDisplayPairingAdvertiser(
                     runCatching { nsdManager.unregisterService(this) }
                     return
                 }
+                val remaining = CustomerDisplayPairingWindowPolicy.remainingMillis(
+                    System.currentTimeMillis(), endsAt,
+                )
+                if (remaining == 0L) {
+                    stop("ペアリング受付時間が終了しました")
+                    return
+                }
                 registered = true
-                handler.removeCallbacks(stopRunnable)
-                handler.postDelayed(stopRunnable, CUSTOMER_DISPLAY_PAIRING_WINDOW_MS)
+                // Keep the original deadline; registering late does NOT restart
+                // the two-minute token advertisement window.
                 emit(
                     CustomerDisplayPairingState(
                         status = CustomerDisplayPairingStatus.ACTIVE,
@@ -110,11 +129,11 @@ internal class CustomerDisplayPairingAdvertiser(
             }
 
             override fun onServiceUnregistered(service: NsdServiceInfo) {
-                registered = false
+                if (listener === this) registered = false
             }
 
             override fun onUnregistrationFailed(service: NsdServiceInfo, errorCode: Int) {
-                registered = false
+                if (listener === this) registered = false
             }
         }
         listener = registrationListener

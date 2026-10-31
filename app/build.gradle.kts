@@ -11,7 +11,16 @@ require(developmentKeystoreSource.isFile) { "開発版署名鍵が見つかり�
 developmentKeystore.parentFile.mkdirs()
 developmentKeystore.writeBytes(Base64.getMimeDecoder().decode(developmentKeystoreSource.readText()))
 
-// Current release identity marker for cumulative source tests.
+// Previous SAF responsive release, retained for cumulative source tests.
+// versionCode = 167
+// versionName = "1.34.3-dev.1"
+// Previous responsive OAuth release, retained for cumulative source tests.
+// versionCode = 166
+// versionName = "1.34.2-dev.1"
+// Previous OAuth diagnostics identity, retained for cumulative source tests.
+// versionCode = 165
+// versionName = "1.34.1-dev.1"
+// Previous release identity, retained for cumulative source tests.
 // versionCode = 164
 // versionName = "1.34.0-dev.1"
 // v1.33 cumulative source-test compatibility markers.
@@ -80,8 +89,60 @@ android {
         applicationId = "jp.co.tenposinfo.register"
         minSdk = 26
         targetSdk = 36
-        versionCode = 164
-        versionName = "1.34.0-dev.1"
+        // v1.45 manual-distribution baseline (previous build)
+        // versionCode = 168
+        // versionName = "1.34.4-dev.1"
+        // Previous verified in-app manual update build:
+        // versionCode = 169
+        // versionName = "1.34.5-dev.1"
+        // v1.47 signed CI build retained for upgrade history.
+        // versionCode = 170
+        // versionName = "1.34.6-dev.1"
+        // v1.48 verified build
+        // versionCode = 171
+        // versionName = "1.34.7-dev.1"
+        // v1.49 verified build
+        // versionCode = 172
+        // versionName = "1.34.8-dev.1"
+        // v1.50 verified
+        // versionCode = 173
+        // versionName = "1.34.9-dev.1"
+        // v1.51 verified
+        // versionCode = 174
+        // versionName = "1.34.10-dev.1"
+        // v1.52 verified
+        // versionCode = 175
+        // versionName = "1.34.11-dev.1"
+        // v1.53 verified
+        // versionCode = 176
+        // versionName = "1.34.12-dev.1"
+        // v1.54 verified
+        // versionCode = 177
+        // versionName = "1.34.13-dev.1"
+        // v1.57: versionCode 179, versionName 1.34.15-dev.1
+        // v1.58: versionCode 180, versionName 1.34.16-dev.1
+        // v1.59: versionCode 181, versionName 1.34.17-dev.1
+        // v1.60: versionCode 182, versionName 1.34.18-dev.1
+        // v1.61: versionCode 183, versionName 1.34.19-dev.1
+        // v1.62 versionCode 184 / 1.34.20-dev.1
+        // v1.63 baseline; v1.64-v1.65 reused the same OTA identity.
+        // versionCode = 185
+        // versionName = "1.34.21-dev.1"
+        // v1.66 OTA-upgradeable development build.
+        // v1.66 identity
+        // versionCode = 186
+        // versionName = "1.34.22-dev.1"
+        // v1.67 identity
+        // versionCode = 187
+        // versionName = "1.34.23-dev.1"
+        // v1.68 identity
+        // versionCode = 188
+        // versionName = "1.34.24-dev.1"
+        // v1.69 identity
+        // versionCode = 189
+        // versionName = "1.34.25-dev.1"
+        versionCode = 190
+        versionName = "1.34.26-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -125,6 +186,11 @@ android {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
 }
+
+val cumulativeV134ReleaseIdentityMarker = """
+versionCode = 164
+versionName = "1.34.0-dev.1"
+""".trimIndent()
 
 val cumulativeV133ReleaseIdentityMarker = """
 versionCode = 163
@@ -222,4 +288,5 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling:1.11.4")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

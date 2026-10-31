@@ -69,9 +69,13 @@ private val HsBorder = Color(0xFFD5DEE7)
 class PrinterSoakTestHistoryActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 PrinterSoakTestHistoryScreen(onClose = { finish() })
+            }
+        
             }
         }
     }
@@ -144,17 +148,7 @@ private fun PrinterSoakTestHistoryScreen(onClose: () -> Unit) {
 
     Surface(Modifier.fillMaxSize(), color = HsBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(64.dp).background(HsNavy).padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(24.dp))
-                Text("連続印刷試験履歴", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                Text("${runs.size}件表示 / 保持${maintenance.retentionDays()}日", color = Color.White)
-            }
-
+            RegisterTopBarV141(title = "連続印刷試験履歴", onBack = onClose)
             Row(
                 Modifier.weight(1f).fillMaxWidth().padding(14.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -377,13 +371,9 @@ private fun PrinterSoakTestHistoryScreen(onClose: () -> Unit) {
             }
 
             Row(
-                Modifier.fillMaxWidth().height(72.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
+                Modifier.fillMaxWidth().height(72.dp).background(RegisterSecondaryActionBarColorV159).padding(horizontal = 18.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(onClick = onClose, modifier = Modifier.width(230.dp).fillMaxHeight()) {
-                    Text("プリンター運用へ戻る", fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.weight(1f))
                 Text("送信結果不明の試験は、用紙を確認してから新しい試験を開始してください", color = HsRed, fontWeight = FontWeight.Bold)
             }
         }

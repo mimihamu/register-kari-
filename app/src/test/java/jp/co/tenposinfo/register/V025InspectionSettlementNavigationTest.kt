@@ -29,7 +29,8 @@ class V025InspectionSettlementNavigationTest {
     fun zSettlementRequiresExplicitConfirmation() {
         assertTrue(source.contains("Z精算して営業を終了しますか？"))
         assertTrue(source.contains("完了後、この営業セッションでは販売できません。"))
-        assertTrue(source.contains("enabled = pin.isNotBlank()"))
+        assertTrue(source.contains("zPreflight.mayProceed"))
+        assertTrue(source.contains("ManagerApprovalV145.canUseCurrentManagerSession"))
     }
 
     @Test

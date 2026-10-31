@@ -126,7 +126,7 @@ class V033PeriodicBackupSettingsTest {
         assertTrue(notification.contains("data_backup_failures"))
         assertTrue(notification.contains("DataProtectionActivity::class.java"))
         assertTrue(activity.contains("Z精算後バックアップは常時有効"))
-        assertTrue(activity.contains("定期バックアップ・通知設定"))
+        assertTrue(activity.contains("RegisterTopBarV141(title = \"定期バックアップ\", onBack = onClose)"))
         assertTrue(activity.contains("DATA_BACKUP_SETTINGS_UPDATED"))
         assertTrue(activity.contains("Manifest.permission.POST_NOTIFICATIONS"))
         assertTrue(protection.contains("定期・保存世代・失敗通知を設定"))

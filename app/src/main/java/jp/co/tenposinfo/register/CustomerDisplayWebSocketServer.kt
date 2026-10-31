@@ -4,6 +4,9 @@ import java.io.ByteArrayOutputStream
 import java.io.EOFException
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.Inet4Address
+import java.net.Inet6Address
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -19,6 +22,43 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import org.json.JSONObject
+
+/**
+ * Strict RFC6455 handshake inspection; rejecting malformed requests before
+ * sending business snapshots protects the authenticated kiosk endpoint.
+ * The wire-format header is intentionally optional for legacy displays.
+ */
+internal object CustomerDisplayUpgradeRequestPolicy {
+    fun valid(
+        requestLine: String,
+        upgradeHeader: String?,
+        connectionHeader: String?,
+        version: String?,
+        key: String?,
+    ): Boolean {
+        val parts = requestLine.split(' ')
+        if (parts.size != 3 || parts[0] != "GET" || parts[2] != "HTTP/1.1") return false
+        if (upgradeHeader?.equals("websocket", ignoreCase = true) != true) return false
+        if (connectionHeader?.split(',')?.any { it.trim().equals("Upgrade", ignoreCase = true) } != true) return false
+        if (version != "13" || key.isNullOrBlank()) return false
+        val decoded = runCatching { Base64.getDecoder().decode(key) }.getOrNull() ?: return false
+        return decoded.size == 16 && Base64.getEncoder().encodeToString(decoded) == key
+    }
+
+    fun tokenMatches(received: String?, configured: String): Boolean =
+        received != null && MessageDigest.isEqual(
+            received.toByteArray(StandardCharsets.UTF_8),
+            configured.toByteArray(StandardCharsets.UTF_8),
+        )
+}
+
+internal object CustomerDisplayDeviceIdentityPolicy {
+    private val uuidPattern = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+    fun parseHeader(header: String?): String? =
+        header?.takeIf { uuidPattern.matches(it) }?.lowercase(Locale.ROOT)
+}
 
 internal object CustomerDisplayWebSocketHandshake {
     private const val MAGIC = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -27,6 +67,30 @@ internal object CustomerDisplayWebSocketHandshake {
         val digest = MessageDigest.getInstance("SHA-1")
             .digest((key.trim() + MAGIC).toByteArray(StandardCharsets.ISO_8859_1))
         return Base64.getEncoder().encodeToString(digest)
+    }
+}
+
+/**
+ * WebSocket bearer-token endpoint may not be reachable from an arbitrary
+ * routed/public source even if the user accidentally forwards its TCP port.
+ * Loopback is intentionally permitted for local JVM integration tests and
+ * same-device diagnostics. RFC1918 and link-local peers use local networking.
+ */
+internal object CustomerDisplayServerPeerPolicy {
+    fun allows(remote: InetAddress?): Boolean {
+        if (remote == null || remote.isAnyLocalAddress) return false
+        if (remote.isLoopbackAddress) return true
+        return when (remote) {
+            is Inet4Address -> {
+                val bytes = remote.address.map { it.toInt() and 0xff }
+                val a = bytes[0]
+                val b = bytes[1]
+                a == 10 || (a == 172 && b in 16..31) ||
+                    (a == 192 && b == 168) || (a == 169 && b == 254)
+            }
+            is Inet6Address -> remote.isLinkLocalAddress
+            else -> false
+        }
     }
 }
 
@@ -102,6 +166,32 @@ internal class CustomerDisplayLatestSendDispatcher(
     }
 }
 
+/**
+ * A new CD opts in to the formal v2.5 1.0 contract at the WebSocket
+ * handshake. Old installations remain on the numeric schema/mode wire.
+ * This is deliberately a transport-specific projection, not a mutation
+ * of the stored authoritative POS snapshot.
+ */
+internal object CustomerDisplayWireNegotiation {
+    const val HEADER = "x-tsuguregi-cd-wire"
+    const val CANONICAL_VERSION = "1.0"
+
+    fun wantsCanonical(header: String?): Boolean = header == CANONICAL_VERSION
+
+    fun payload(
+        legacyJson: String,
+        canonical: Boolean,
+        displayDeviceId: String? = null,
+    ): String {
+        if (!canonical) return legacyJson
+        val objectValue = JSONObject(legacyJson)
+        objectValue.put("schemaVersion", CANONICAL_VERSION)
+        objectValue.put("mode", objectValue.getString("canonicalMode"))
+        if (displayDeviceId != null) objectValue.put("displayDeviceId", displayDeviceId)
+        return objectValue.toString()
+    }
+}
+
 internal class CustomerDisplayWebSocketServer(
     private val config: CustomerDisplayServerConfig,
     private val latestPayload: () -> String,
@@ -147,14 +237,14 @@ internal class CustomerDisplayWebSocketServer(
         if (!running.getAndSet(false)) return
         runCatching { serverSocket?.close() }
         serverSocket = null
-        clients.toList().forEach { it.close() }
+        clients.forEach { it.close() }
         clients.clear()
         notifyClientCount()
         executor.shutdownNow()
     }
 
     fun broadcast(payload: String) {
-        clients.toList().forEach { connection ->
+        clients.forEach { connection ->
             if (!connection.sendText(payload)) {
                 if (clients.remove(connection)) notifyClientCount()
                 connection.close()
@@ -167,15 +257,35 @@ internal class CustomerDisplayWebSocketServer(
     private fun handleClient(socket: Socket) {
         var connection: ClientConnection? = null
         try {
+            // Validate the actual TCP peer, not a client-controlled Host/XFF header.
+            // Authentication is still enforced for every admitted LAN peer below.
+            if (!CustomerDisplayServerPeerPolicy.allows(socket.inetAddress)) {
+                writeHttpError(socket.getOutputStream(), 403, "Forbidden")
+                return
+            }
             val request = readHttpRequest(socket.getInputStream())
             val requestLine = request.lines.firstOrNull().orEmpty().split(' ')
             val target = requestLine.getOrNull(1).orEmpty()
             val path = target.substringBefore('?')
             val token = queryParameter(target, "token")
             val key = request.headers["sec-websocket-key"]
-            val upgrade = request.headers["upgrade"]?.lowercase(Locale.ROOT)
-            if (path != config.path || token != config.token || key.isNullOrBlank() || upgrade != "websocket") {
+            // Authentication and RFC6455 transport validation are independent.
+            // Never accept a malformed upgrade even with a correct bearer token.
+            if (path != config.path ||
+                !CustomerDisplayUpgradeRequestPolicy.tokenMatches(token, config.token)
+            ) {
                 writeHttpError(socket.getOutputStream(), 401, "Unauthorized")
+                return
+            }
+            if (!CustomerDisplayUpgradeRequestPolicy.valid(
+                    requestLine = request.lines.firstOrNull().orEmpty(),
+                    upgradeHeader = request.headers["upgrade"],
+                    connectionHeader = request.headers["connection"],
+                    version = request.headers["sec-websocket-version"],
+                    key = key,
+                )
+            ) {
+                writeHttpError(socket.getOutputStream(), 400, "Bad Request")
                 return
             }
 
@@ -184,14 +294,22 @@ internal class CustomerDisplayWebSocketServer(
                 append("HTTP/1.1 101 Switching Protocols\r\n")
                 append("Upgrade: websocket\r\n")
                 append("Connection: Upgrade\r\n")
-                append("Sec-WebSocket-Accept: ${CustomerDisplayWebSocketHandshake.accept(key)}\r\n")
+                append("Sec-WebSocket-Accept: ${CustomerDisplayWebSocketHandshake.accept(requireNotNull(key))}\r\n")
                 append("\r\n")
             }
             output.write(response.toByteArray(StandardCharsets.ISO_8859_1))
             output.flush()
 
             socket.soTimeout = CustomerDisplayConnectionLivenessPolicy.LIVENESS_CHECK_INTERVAL_MS
-            connection = ClientConnection(socket, executor)
+            connection = ClientConnection(
+                socket, executor, latestPayload,
+                canonicalWire = CustomerDisplayWireNegotiation.wantsCanonical(
+                    request.headers[CustomerDisplayWireNegotiation.HEADER],
+                ),
+                displayDeviceId = CustomerDisplayDeviceIdentityPolicy.parseHeader(
+                    request.headers["x-tsuguregi-cd-device-id"],
+                ),
+            )
             clients += connection
             notifyClientCount()
             connection.sendText(latestPayload())
@@ -252,6 +370,14 @@ internal class CustomerDisplayWebSocketServer(
                     return
                 }
                 0x9 -> connection.sendControl(0xA, payload)
+                0x1 -> {
+                    require(masked) { "unmasked client text frame" }
+                    val message = JSONObject(String(payload, StandardCharsets.UTF_8))
+                    if (message.optString("messageType") == "SNAPSHOT_REQUEST") {
+                        // A gap never replays old events: publish the latest full state.
+                        connection.requestSnapshot()
+                    }
+                }
                 else -> Unit
             }
         }
@@ -318,14 +444,22 @@ internal class CustomerDisplayWebSocketServer(
     private class ClientConnection(
         val socket: Socket,
         executor: Executor,
+        private val latestPayload: () -> String,
+        private val canonicalWire: Boolean,
+        private val displayDeviceId: String?,
     ) {
         private val writeLock = Any()
+        private val snapshotRequested = AtomicBoolean(false)
         private val lastTransportActivityAtMillis = AtomicLong(System.currentTimeMillis())
         private val textDispatcher = CustomerDisplayLatestSendDispatcher(
             executor = executor,
             send = { payload ->
                 synchronized(writeLock) {
-                    writeFrame(socket.getOutputStream(), 0x1, payload.toByteArray(StandardCharsets.UTF_8))
+                    // Keep a requested snapshot authoritative even when the
+                    // latest-only dispatcher coalesces it with further updates.
+                    val outgoing = if (snapshotRequested.getAndSet(false)) latestPayload() else payload
+                    val negotiated = CustomerDisplayWireNegotiation.payload(outgoing, canonicalWire, displayDeviceId)
+                    writeFrame(socket.getOutputStream(), 0x1, negotiated.toByteArray(StandardCharsets.UTF_8))
                     markTransportActivity()
                 }
             },
@@ -333,6 +467,11 @@ internal class CustomerDisplayWebSocketServer(
         )
 
         fun sendText(payload: String): Boolean = textDispatcher.offer(payload)
+
+        fun requestSnapshot(): Boolean {
+            snapshotRequested.set(true)
+            return textDispatcher.offer(latestPayload())
+        }
 
         fun sendControl(opcode: Int, payload: ByteArray): Boolean = runCatching {
             synchronized(writeLock) {

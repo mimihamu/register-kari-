@@ -66,9 +66,13 @@ private val PsBorder = Color(0xFFD5DEE7)
 class PrinterStatusActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 PrinterStatusApp(onClose = { finish() })
+            }
+        
             }
         }
     }
@@ -77,10 +81,10 @@ class PrinterStatusActivity : ComponentActivity() {
 @Composable
 private fun PrinterStatusApp(onClose: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val settingsStore = remember { AdminSettingsStore(context.applicationContext) }
+    val profileStore = remember { PrinterProfileStoreV136(context.applicationContext) }
     val monitoringStore = remember { PrinterMonitoringStore(context.applicationContext) }
     val actor = remember { OperatorSessionRegistry.lastKnownName() ?: "プリンター診断" }
-    var configuration by remember { mutableStateOf(settingsStore.loadPrinterConfiguration()) }
+    var configuration by remember { mutableStateOf(profileStore.resolve(DocumentPrintKindV136.SALE_RECEIPT) ?: PrinterConfiguration(enabled = false)) }
     var runtimeSettings by remember { mutableStateOf(monitoringStore.loadSettings()) }
     var retentionText by remember { mutableStateOf(runtimeSettings.historyRetentionDays.toString()) }
     var status by remember { mutableStateOf<PrinterRealtimeStatus?>(null) }
@@ -96,7 +100,7 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
     DisposableEffect(Unit) {
         onDispose {
             monitoringStore.close()
-            settingsStore.close()
+            profileStore.close()
         }
     }
 
@@ -141,17 +145,7 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
 
     Surface(Modifier.fillMaxSize(), color = PsBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(64.dp).background(PsNavy).padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(24.dp))
-                Text("プリンター状態診断", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                Text("EPSON確認済み／STAR・汎用は手動互換試行", color = Color.White, fontSize = 14.sp)
-            }
-
+            RegisterTopBarV141(title = "プリンター状態診断", onBack = onClose)
             Row(
                 Modifier.weight(1f).fillMaxWidth().padding(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -164,7 +158,7 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
                         StatusValue("機種", configuration.profile.displayName)
                         StatusValue("状態方式", capability.implementationName)
                         StatusValue("検証区分", capability.verification.displayName)
-                        StatusValue("接続先", if (configuration.host.isBlank()) "未設定" else "${configuration.host}:${configuration.port}")
+                        StatusValue("接続先", PrinterTransportPolicyV136.endpointDisplay(configuration).ifBlank { "未設定" })
                         StatusValue("タイムアウト", "${configuration.timeoutMillis}ms")
                         StatusValue("履歴上限", "${PrinterHistoryRetentionPolicy.MAX_ROWS}件")
                         Spacer(Modifier.height(8.dp))
@@ -273,7 +267,7 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
                         Spacer(Modifier.height(8.dp))
                         OutlinedButton(
                             onClick = {
-                                configuration = settingsStore.loadPrinterConfiguration()
+                                configuration = profileStore.resolve(DocumentPrintKindV136.SALE_RECEIPT) ?: PrinterConfiguration(enabled = false)
                                 runtimeSettings = monitoringStore.loadSettings()
                                 retentionText = runtimeSettings.historyRetentionDays.toString()
                                 status = null
@@ -288,7 +282,7 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
                             Checkbox(
                                 checked = autoMonitor,
                                 onCheckedChange = { autoMonitor = it },
-                                enabled = configuration.host.isNotBlank() && capability.automaticQueryAllowed,
+                                enabled = PrinterTransportPolicyV136.supportsRealtimeStatus(configuration) && PrinterTransportPolicyV136.isConfigured(configuration) && capability.automaticQueryAllowed,
                             )
                             Text("5秒ごとに自動確認")
                         }
@@ -299,7 +293,8 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
                                 }
                             },
                             enabled = !checking &&
-                                configuration.host.isNotBlank() &&
+                                PrinterTransportPolicyV136.supportsRealtimeStatus(configuration) &&
+                                PrinterTransportPolicyV136.isConfigured(configuration) &&
                                 (capability.verification != PrinterStatusVerification.EXPERIMENTAL_COMPATIBILITY || experimentalConfirmed),
                             modifier = Modifier.fillMaxWidth().height(56.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = PsGreen),
@@ -381,12 +376,10 @@ private fun PrinterStatusApp(onClose: () -> Unit) {
             }
 
             Row(
-                Modifier.fillMaxWidth().height(72.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
+                Modifier.fillMaxWidth().height(72.dp).background(RegisterSecondaryActionBarColorV159).padding(horizontal = 18.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(onClick = onClose, modifier = Modifier.width(240.dp).fillMaxHeight()) {
-                    Text("閉じる", fontWeight = FontWeight.Bold)
-                }
+
                 Spacer(Modifier.weight(1f))
                 Text(
                     if (capability.automaticQueryAllowed) {

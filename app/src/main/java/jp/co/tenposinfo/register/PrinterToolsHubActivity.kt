@@ -65,7 +65,9 @@ private val PhBorder = Color(0xFFD5DEE7)
 class PrinterToolsHubActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 PrinterToolsHubScreen(
                     onOpenDiagnostics = { startActivity(Intent(this, PrinterStatusActivity::class.java)) },
@@ -76,8 +78,11 @@ class PrinterToolsHubActivity : ComponentActivity() {
                     onOpenSoakTest = { startActivity(Intent(this, PrinterSoakTestActivity::class.java)) },
                     onOpenHistory = { startActivity(Intent(this, PrinterSoakTestHistoryActivity::class.java)) },
                     onOpenQueue = { startActivity(Intent(this, UnifiedPrintQueueActivity::class.java)) },
+                    onOpenPerformanceDiagnostics = { startActivity(Intent(this, PerformanceDiagnosticsActivityV136::class.java)) },
                     onClose = { finish() },
                 )
+            }
+        
             }
         }
     }
@@ -93,10 +98,12 @@ private fun PrinterToolsHubScreen(
     onOpenSoakTest: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenQueue: () -> Unit,
+    onOpenPerformanceDiagnostics: () -> Unit,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
     val settingsStore = remember { AdminSettingsStore(context.applicationContext) }
+    val profileStore = remember { PrinterProfileStoreV136(context.applicationContext) }
     val resultStore = remember { PrinterSoakTestResultStore(context.applicationContext) }
     val maintenance = remember { PrinterSoakTestMaintenance(context.applicationContext) }
     var unlocked by remember { mutableStateOf(false) }
@@ -109,6 +116,7 @@ private fun PrinterToolsHubScreen(
         onDispose {
             maintenance.close()
             resultStore.close()
+            profileStore.close()
             settingsStore.close()
         }
     }
@@ -116,12 +124,12 @@ private fun PrinterToolsHubScreen(
     Surface(Modifier.fillMaxSize(), color = PhBackground) {
         if (!unlocked) {
             Column(Modifier.fillMaxSize()) {
-                PrinterHubHeader("プリンター運用", "責任者認証")
+                PrinterHubHeader("SCR-680  保守・診断", "責任者認証", onClose)
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     PrinterHubPanel(Modifier.width(540.dp).height(430.dp)) {
-                        Text("プリンター運用を開く", fontSize = 29.sp, fontWeight = FontWeight.Bold, color = PhNavy)
+                        Text("保守・診断を開く", fontSize = 29.sp, fontWeight = FontWeight.Bold, color = PhNavy)
                         Spacer(Modifier.height(8.dp))
-                        Text("状態診断、条件別RAW採取、応答分析、通知、連続試験、履歴、印刷キューを管理します。", color = Color.DarkGray)
+                        Text("状態診断、条件別通信データ採取（RAW）、応答分析、通知、連続試験、履歴、印刷キューを管理します。", color = Color.DarkGray)
                         Spacer(Modifier.height(20.dp))
                         OutlinedTextField(
                             value = pin,
@@ -138,7 +146,6 @@ private fun PrinterToolsHubScreen(
                         }
                         Spacer(Modifier.weight(1f))
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            OutlinedButton(onClick = onClose, modifier = Modifier.weight(1f).height(56.dp)) { Text("閉じる") }
                             Button(
                                 onClick = {
                                     val manager = settingsStore.managerNameForPin(pin)
@@ -159,12 +166,15 @@ private fun PrinterToolsHubScreen(
                 }
             }
         } else {
-            val printer = remember(revision) { settingsStore.loadPrinterConfiguration() }
+            val printer = remember(revision) {
+                profileStore.resolve(DocumentPrintKindV136.SALE_RECEIPT)
+                    ?: PrinterConfiguration(enabled = false)
+            }
             val capability = remember(revision) { PrinterStatusCapabilityRegistry.forProfile(printer.profile) }
             val notification = remember(revision) { PrinterNotificationPermissionStatus.read(context) }
             val recent = remember(revision) { resultStore.listRecent(10) }
             Column(Modifier.fillMaxSize()) {
-                PrinterHubHeader("プリンター運用", "認証：$actor")
+                PrinterHubHeader("SCR-680  保守・診断", "認証：$actor", onClose)
                 Row(
                     Modifier.weight(1f).fillMaxWidth().padding(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -172,8 +182,10 @@ private fun PrinterToolsHubScreen(
                     PrinterHubPanel(Modifier.width(390.dp).fillMaxHeight()) {
                         Text("現在の設定", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = PhNavy)
                         Spacer(Modifier.height(12.dp))
+                        PrinterHubValue("対象", "レシート既定出力先")
                         PrinterHubValue("プリンター", printer.name)
-                        PrinterHubValue("接続先", if (printer.host.isBlank()) "未設定" else "${printer.host}:${printer.port}")
+                        PrinterHubValue("接続方式", printer.connectionType.displayName)
+                        PrinterHubValue("接続先", PrinterTransportPolicyV136.endpointDisplay(printer))
                         PrinterHubValue("機種", printer.profile.displayName)
                         PrinterHubValue("用紙", "${printer.paperWidthMm}mm")
                         PrinterHubValue("状態方式", capability.implementationName)
@@ -205,13 +217,14 @@ private fun PrinterToolsHubScreen(
 
                     Column(Modifier.width(420.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         PrinterHubAction("状態診断", "解釈済みのオンライン、カバー、用紙、エラー", PhGreen, onOpenDiagnostics, Modifier.weight(1f))
-                        PrinterHubAction("状態ラボ", "条件付きRAW採取、履歴、最大4件比較、CSV", PhTeal, onOpenProbe, Modifier.weight(1f))
+                        PrinterHubAction("状態ラボ", "条件付き通信データ採取（RAW）、履歴、最大4件比較、CSV", PhTeal, onOpenProbe, Modifier.weight(1f))
                         PrinterHubAction("応答分析", "型番別の採取進捗と正常時との差分ビット候補", PhIndigo, onOpenAnalysis, Modifier.weight(1f))
                         PrinterHubAction("最終検証・承認", "再現性、外れ値、信頼度、候補審査。runtime未適用", PhPurple, onOpenValidation, Modifier.weight(1f))
                         PrinterHubAction("管理者通知", "Android通知の許可・端末通知設定", PhBlue, onOpenNotification, Modifier.weight(1f))
                         PrinterHubAction("連続印刷試験", "状態確認付きで1～500回。自動再送なし", PhOrange, onOpenSoakTest, Modifier.weight(1f))
                         PrinterHubAction("試験履歴・CSV", "詳細、保持期間、削除、過去CSV再出力", PhPurple, onOpenHistory, Modifier.weight(1f))
                         PrinterHubAction("統合印刷キュー", "FAILEDを含む全帳票と紙確認後の再印刷", PhRed, onOpenQueue, Modifier.weight(1f))
+                        PrinterHubAction("性能診断", "メモリ・PSS・端末メモリ・ストレージを現在値で確認", PhBlue, onOpenPerformanceDiagnostics, Modifier.weight(1f))
                     }
 
                     PrinterHubPanel(Modifier.weight(1f).fillMaxHeight()) {
@@ -250,17 +263,16 @@ private fun PrinterToolsHubScreen(
                     }
                 }
                 Row(
-                    Modifier.fillMaxWidth().height(72.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
+                    Modifier.fillMaxWidth().height(72.dp).background(RegisterSecondaryActionBarColorV159).padding(horizontal = 18.dp, vertical = 9.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    OutlinedButton(onClick = onClose, modifier = Modifier.width(220.dp).fillMaxHeight()) { Text("閉じる", fontWeight = FontWeight.Bold) }
                     OutlinedButton(
                         onClick = { unlocked = false; actor = "責任者" },
                         modifier = Modifier.width(220.dp).fillMaxHeight(),
                     ) { Text("運用をロック", fontWeight = FontWeight.Bold) }
                     Spacer(Modifier.weight(1f))
-                    Text("変化ビット候補とCI成功だけでは実機互換性確認完了になりません", color = PhRed, fontWeight = FontWeight.Bold)
+                    Text("通信応答の候補判定や自動テスト成功だけでは、実機互換性の確認完了にはなりません", color = PhRed, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -268,17 +280,8 @@ private fun PrinterToolsHubScreen(
 }
 
 @Composable
-private fun PrinterHubHeader(title: String, status: String) {
-    Row(
-        Modifier.fillMaxWidth().height(64.dp).background(PhNavy).padding(horizontal = 20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(24.dp))
-        Text(title, color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
-        Text(status, color = Color.White, fontSize = 14.sp)
-    }
+private fun PrinterHubHeader(title: String, status: String, onBack: () -> Unit) {
+    RegisterTopBarV141(title = "保守・診断", onBack = onBack)
 }
 
 @Composable

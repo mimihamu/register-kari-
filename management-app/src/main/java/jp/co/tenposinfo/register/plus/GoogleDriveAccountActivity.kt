@@ -80,6 +80,47 @@ object GoogleDriveAccountPolicy {
         }
 }
 
+/**
+ * Authorization sheet cancellation and service/setup failures can both return
+ * RESULT_CANCELED. The UI must not claim the user explicitly pressed Cancel.
+ * No account identifiers, tokens or OAuth response contents are logged.
+ */
+object GoogleDriveAuthorizationOutcomePolicy {
+    fun unfinishedMessage(resultCode: Int): String =
+        "Google連携を完了できませんでした（認可画面の結果：$resultCode）。" +
+            "操作を取り消していない場合は、Google Cloudのアプリ登録とテストユーザー、Google Play開発者サービスを確認してください"
+
+    fun errorMessage(error: Throwable): String {
+        if (error is ApiException) {
+            val message = when (error.statusCode) {
+                CommonStatusCodes.DEVELOPER_ERROR ->
+                    "Google CloudのAndroid OAuth登録（パッケージ名・署名SHA-1）を確認してください"
+                CommonStatusCodes.NETWORK_ERROR ->
+                    "Googleとの通信に失敗しました。ネットワークを確認してください"
+                CommonStatusCodes.CANCELED ->
+                    "Google連携を完了できませんでした。取り消していない場合は初期設定を確認してください"
+                else -> "Google認証に失敗しました。初期設定とGoogle Play開発者サービスを確認してください"
+            }
+            return "$message（Google認証コード：${error.statusCode}）"
+        }
+        return "Google認証に失敗しました（${error.javaClass.simpleName}）。初期設定を確認してください"
+    }
+}
+
+/** Keep the authorization result visible when Android resumes after Google's account sheet. */
+object GoogleDriveAuthorizationRefreshPolicy {
+    fun merge(current: GoogleDriveAccountState, persisted: GoogleDriveAccountState): GoogleDriveAccountState {
+        val retain = when (current.status) {
+            GoogleDriveAccountStatus.CONNECTING,
+            GoogleDriveAccountStatus.CLOUD_CONFIGURATION_REQUIRED,
+            GoogleDriveAccountStatus.AUTHORIZATION_FAILED,
+            GoogleDriveAccountStatus.VERIFICATION_FAILED -> true
+            else -> false
+        }
+        return if (retain && current.email == persisted.email) current else persisted
+    }
+}
+
 class GoogleDriveAccountStore(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences(
         "tsuguregi_plus_google_drive_account",
@@ -165,23 +206,37 @@ class GoogleDriveAccountActivity : ComponentActivity() {
     private val authorizationLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult(),
     ) { result ->
-        if (result.resultCode != Activity.RESULT_OK || result.data == null) {
-            state.value = state.value.copy(
-                status = GoogleDriveAccountStatus.AUTHORIZATION_FAILED,
-                message = "Googleアカウント接続がキャンセルされました",
-            )
+        if (result.resultCode != Activity.RESULT_OK) {
+            val error = result.data?.let { intent ->
+                runCatching { authorizationClient.getAuthorizationResultFromIntent(intent) }.exceptionOrNull()
+            }
+            if (error is ApiException && error.statusCode != CommonStatusCodes.CANCELED) {
+                handleAuthorizationFailure(error)
+            } else {
+                val message = GoogleDriveAuthorizationOutcomePolicy.unfinishedMessage(result.resultCode)
+                state.value = state.value.copy(
+                    status = GoogleDriveAccountStatus.AUTHORIZATION_FAILED,
+                    message = message,
+                )
+            }
             return@registerForActivityResult
         }
-        runCatching {
-            authorizationClient.getAuthorizationResultFromIntent(result.data!!)
-        }.onSuccess(::consumeAuthorizationResult)
+        val intent = result.data
+        if (intent == null) {
+            handleAuthorizationFailure(IllegalStateException("認証結果がありません"))
+            return@registerForActivityResult
+        }
+        runCatching { authorizationClient.getAuthorizationResultFromIntent(intent) }
+            .onSuccess(::consumeAuthorizationResult)
             .onFailure(::handleAuthorizationFailure)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         refreshState()
+        configurePlusSystemBarsV148(window)
         setContent {
+            PlusSafeAreaV148 {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GoogleDriveAccountScreen(
@@ -208,6 +263,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
                     )
                 }
             }
+            }
         }
     }
 
@@ -217,7 +273,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
     }
 
     private fun refreshState() {
-        state.value = accountStore.load()
+        state.value = GoogleDriveAuthorizationRefreshPolicy.merge(state.value, accountStore.load())
         syncStatus.value = GoogleDriveDirectSyncStatusStore(this).load()
         connectionTest.value = GoogleDriveConnectionTestStore(this).load()
     }
@@ -358,11 +414,7 @@ class GoogleDriveAccountActivity : ComponentActivity() {
         val status = GoogleDriveAccountPolicy.statusForAuthorizationError(error)
         state.value = state.value.copy(
             status = status,
-            message = if (status == GoogleDriveAccountStatus.CLOUD_CONFIGURATION_REQUIRED) {
-                "Google CloudにapplicationIdと署名SHA-1を登録してください"
-            } else {
-                "Googleアカウント認可に失敗しました：${error.message ?: error.javaClass.simpleName}"
-            },
+            message = GoogleDriveAuthorizationOutcomePolicy.errorMessage(error),
         )
     }
 
@@ -412,24 +464,14 @@ private fun GoogleDriveAccountScreen(
     onOpenRecovery: () -> Unit,
     onClose: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+    val advancedV155 = androidx.compose.runtime.remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize()) {
+        PlusTopBarV155(title = "Google Driveアカウント", onBack = onClose)
+        Column(
+            modifier = Modifier.weight(1f).fillMaxWidth()
+                .verticalScroll(rememberScrollState()).padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Google Driveアカウント", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("つぐレジ＋がDrive APIから売上JSONを差分取得します")
-            }
-            OutlinedButton(onClick = onClose) { Text("戻る") }
-        }
-
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -472,6 +514,27 @@ private fun GoogleDriveAccountScreen(
             }
         }
 
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Button(
+            onClick = onConnect,
+            enabled = state.status != GoogleDriveAccountStatus.CONNECTING && !syncStatus.running,
+            modifier = Modifier.weight(1f).height(52.dp),
+        ) {
+            Text(if (state.email == null) "Googleアカウントを登録" else "別アカウントへ変更")
+        }
+
+        Button(
+            onClick = onSync,
+            enabled = state.email != null && !syncStatus.running,
+            modifier = Modifier.weight(1f).height(52.dp),
+        ) { Text("今すぐ差分同期") }
+
+        }
+        OutlinedButton(
+            onClick = { advancedV155.value = !advancedV155.value },
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+        ) { Text(if (advancedV155.value) "詳細操作を閉じる" else "詳細設定・診断") }
+        if (advancedV155.value) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -522,23 +585,11 @@ private fun GoogleDriveAccountScreen(
             )
         }
 
-        Button(
-            onClick = onConnect,
-            enabled = state.status != GoogleDriveAccountStatus.CONNECTING && !syncStatus.running,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-        ) {
-            Text(if (state.email == null) "Googleアカウントを登録" else "別アカウントへ変更")
-        }
         OutlinedButton(
             onClick = onVerify,
             enabled = state.email != null && state.status != GoogleDriveAccountStatus.CONNECTING && !syncStatus.running,
             modifier = Modifier.fillMaxWidth().height(52.dp),
         ) { Text("接続確認") }
-        Button(
-            onClick = onSync,
-            enabled = state.email != null && !syncStatus.running,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-        ) { Text("今すぐ差分同期") }
         OutlinedButton(
             onClick = onForceSync,
             enabled = state.email != null && !syncStatus.running,
@@ -559,7 +610,9 @@ private fun GoogleDriveAccountScreen(
                 Text("フォルダ方式はUSB・端末フォルダ・Driveアプリ経由の互換用として残します。")
             }
         }
+        }
         Spacer(Modifier.height(12.dp))
+        }
     }
 }
 

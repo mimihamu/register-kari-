@@ -11,7 +11,13 @@ require(developmentKeystoreSource.isFile) { "開発版署名鍵が見つかり�
 developmentKeystore.parentFile.mkdirs()
 developmentKeystore.writeBytes(Base64.getMimeDecoder().decode(developmentKeystoreSource.readText()))
 
-// Current release identity marker for cumulative source tests.
+// Previous responsive OAuth release, retained for cumulative source tests.
+// versionCode = 35
+// versionName = "0.33.2-dev.1"
+// Previous OAuth diagnostics identity, retained for cumulative source tests.
+// versionCode = 34
+// versionName = "0.33.1-dev.1"
+// Previous release identity, retained for cumulative source tests.
 // versionCode = 33
 // versionName = "0.33.0-dev.1"
 // v1.33 compatibility markers for cumulative source tests.
@@ -77,8 +83,60 @@ android {
         applicationId = "jp.co.tenposinfo.register.plus"
         minSdk = 26
         targetSdk = 36
-        versionCode = 33
-        versionName = "0.33.0-dev.1"
+        // v1.45 manual-distribution baseline
+        // versionCode = 36
+        // versionName = "0.33.3-dev.1"
+        // Previous verified in-app manual update build:
+        // versionCode = 37
+        // versionName = "0.33.4-dev.1"
+        // v1.47 signed CI build retained for upgrade history.
+        // versionCode = 38
+        // versionName = "0.33.5-dev.1"
+        // v1.48 verified build
+        // versionCode = 39
+        // versionName = "0.33.6-dev.1"
+        // v1.49 verified build
+        // versionCode = 40
+        // versionName = "0.33.7-dev.1"
+        // v1.50 verified
+        // versionCode = 41
+        // versionName = "0.33.8-dev.1"
+        // v1.51 verified
+        // versionCode = 42
+        // versionName = "0.33.9-dev.1"
+        // v1.52 verified
+        // versionCode = 43
+        // versionName = "0.33.10-dev.1"
+        // v1.53 verified
+        // versionCode = 44
+        // versionName = "0.33.11-dev.1"
+        // v1.54 verified
+        // versionCode = 45
+        // versionName = "0.33.12-dev.1"
+        // v1.57: versionCode 47, versionName 0.33.14-dev.1
+        // v1.58: versionCode 48, versionName 0.33.15-dev.1
+        // v1.59: versionCode 49, versionName 0.33.16-dev.1
+        // v1.60: versionCode 50, versionName 0.33.17-dev.1
+        // v1.61: versionCode 51, versionName 0.33.18-dev.1
+        // v1.62 versionCode 52 / 0.33.19-dev.1
+        // v1.63 baseline; v1.64-v1.65 reused the same OTA identity.
+        // versionCode = 53
+        // versionName = "0.33.20-dev.1"
+        // v1.66 OTA-upgradeable development build.
+        // v1.66 identity
+        // versionCode = 54
+        // versionName = "0.33.21-dev.1"
+        // v1.67 identity
+        // versionCode = 55
+        // versionName = "0.33.22-dev.1"
+        // v1.68 identity
+        // versionCode = 56
+        // versionName = "0.33.23-dev.1"
+        // v1.69 identity
+        // versionCode = 57
+        // versionName = "0.33.24-dev.1"
+        versionCode = 58
+        versionName = "0.33.25-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ＋"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -122,6 +180,11 @@ android {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
 }
+
+val cumulativeV134ReleaseIdentityMarker = """
+versionCode = 33
+versionName = "0.33.0-dev.1"
+""".trimIndent()
 
 val cumulativeV133ReleaseIdentityMarker = """
 versionCode = 32

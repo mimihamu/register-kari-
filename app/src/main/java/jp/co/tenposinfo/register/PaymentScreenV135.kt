@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -71,6 +72,10 @@ internal fun PaymentScreen(
     val remaining = state.remaining(summary.grossAmount)
     val context = LocalContext.current
     val mixedPolicy = remember { TaxInvoiceSettingsStore(context.applicationContext).load().mixedTaxPolicy }
+    val paymentSettings = remember { PaymentSettingsStoreV136(context.applicationContext).load() }
+    val enabledNonCashMethods = remember(paymentSettings) {
+        paymentSettings.enabledMethods().filter { it != PaymentMethod.CASH }
+    }
     var input by remember { mutableStateOf("") }
     var operationMessage by remember { mutableStateOf<String?>(null) }
     var acknowledgedMixedTax by remember { mutableStateOf(false) }
@@ -81,7 +86,19 @@ internal fun PaymentScreen(
     fun add(method: PaymentMethod) {
         if (completing) return
         val amount = input.toLongOrNull()
-        runCatching { PaymentEngine.addPayment(state, summary.grossAmount, method, amount) }
+        if (method !in paymentSettings.enabledMethods()) {
+            operationMessage = "この支払方法は設定で無効です"
+            return
+        }
+        runCatching {
+            PaymentEngine.addPayment(
+                state,
+                summary.grossAmount,
+                method,
+                amount,
+                paymentSettings.tenderPolicyFor(method),
+            )
+        }
             .onSuccess {
                 onStateChange(it)
                 input = ""
@@ -158,6 +175,19 @@ internal fun PaymentScreen(
             }
 
             Uc08Card(Modifier.weight(0.9f).fillMaxHeight()) {
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val keypad = RegisterResponsiveLayoutPolicy.keypadMetrics(
+                        availableHeightDp = maxHeight.value.toInt(),
+                        functionRows = ((enabledNonCashMethods.size + 2) / 3).coerceAtLeast(1),
+                        reservedTopDp = 134,
+                        preferredMinKeyDp = 72,
+                    )
+                    val keypadScroll = rememberScrollState()
+                    Column(
+                        Modifier.fillMaxSize().then(
+                            if (keypad.scrollRequired) Modifier.verticalScroll(keypadScroll) else Modifier,
+                        ),
+                    ) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Column(Modifier.weight(1f)) {
                         Uc08PaymentRow("合計", uc08Yen(summary.grossAmount), true)
@@ -195,27 +225,35 @@ internal fun PaymentScreen(
                         maxLines = 2,
                     )
                 }
-                Uc08ValueBox(if (input.isBlank()) "残額全額" else input)
-                Spacer(Modifier.height(6.dp))
+                Uc08ValueBox(if (input.isBlank()) "残額全額" else input, keypad.valueHeightDp)
+                Spacer(Modifier.height(keypad.gapDp.dp))
                 Uc08NumberPad(
                     onDigit = { if (input.length < 10) input += it },
                     onClear = { input = "" },
                     onCash = { add(PaymentMethod.CASH) },
                     enabled = remaining > 0 && !completing,
+                    keyHeightDp = keypad.keyHeightDp,
+                    gapDp = keypad.gapDp,
                 )
-                Spacer(Modifier.height(6.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Uc08TenderButton("クレジット", remaining > 0 && !completing, Modifier.weight(1f)) {
-                        add(PaymentMethod.CARD)
+                Spacer(Modifier.height(keypad.gapDp.dp))
+                enabledNonCashMethods.chunked(3).forEachIndexed { rowIndex, methods ->
+                    if (rowIndex > 0) Spacer(Modifier.height(keypad.gapDp.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(keypad.gapDp.dp)) {
+                        methods.forEach { method ->
+                            Uc08TenderButton(
+                                method.displayName,
+                                remaining > 0 && !completing,
+                                Modifier.weight(1f),
+                                keypad.functionHeightDp,
+                            ) {
+                                add(method)
+                            }
+                        }
+                        repeat(3 - methods.size) {
+                            Spacer(Modifier.weight(1f))
+                        }
                     }
-                    Uc08TenderButton("商品券", remaining > 0 && !completing, Modifier.weight(1f)) {
-                        add(PaymentMethod.GIFT_CERTIFICATE)
-                    }
-                    Uc08TenderButton("掛売", remaining > 0 && !completing, Modifier.weight(1f)) {
-                        add(PaymentMethod.ACCOUNT_RECEIVABLE)
-                    }
-                    Uc08TenderButton("その他", remaining > 0 && !completing, Modifier.weight(1f)) {
-                        add(PaymentMethod.OTHER)
+                }
                     }
                 }
             }
@@ -241,14 +279,7 @@ internal fun PaymentScreen(
 
 @Composable
 private fun Uc08Header() {
-    Row(
-        Modifier.fillMaxWidth().height(58.dp).background(Uc08Navy).padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(20.dp))
-        Text("SCR-300 / SCR-310  会計・支払追加", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-    }
+    RegisterTopBarV141("会計・支払追加")
 }
 
 @Composable
@@ -279,9 +310,9 @@ private fun Uc08PaymentRow(label: String, value: String, emphasized: Boolean = f
 }
 
 @Composable
-private fun Uc08ValueBox(value: String) {
+private fun Uc08ValueBox(value: String, heightDp: Int) {
     Box(
-        Modifier.fillMaxWidth().height(44.dp).background(Uc08PaleBlue, RoundedCornerShape(8.dp)).padding(horizontal = 12.dp),
+        Modifier.fillMaxWidth().height(heightDp.dp).background(Uc08PaleBlue, RoundedCornerShape(8.dp)).padding(horizontal = 12.dp),
         contentAlignment = Alignment.CenterEnd,
     ) {
         Text(value, fontSize = 23.sp, fontWeight = FontWeight.Bold, color = Uc08Navy, maxLines = 1)
@@ -294,37 +325,39 @@ private fun Uc08NumberPad(
     onClear: () -> Unit,
     onCash: () -> Unit,
     enabled: Boolean,
+    keyHeightDp: Int,
+    gapDp: Int,
 ) {
     val rows = listOf(listOf("7", "8", "9"), listOf("4", "5", "6"), listOf("1", "2", "3"))
     rows.forEach { row ->
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gapDp.dp)) {
             row.forEach { digit ->
-                OutlinedButton(onClick = { onDigit(digit) }, enabled = enabled, modifier = Modifier.weight(1f).height(39.dp)) {
-                    Text(digit, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                OutlinedButton(onClick = { onDigit(digit) }, enabled = enabled, modifier = Modifier.weight(1f).height(keyHeightDp.dp)) {
+                    Text(digit, fontSize = if (keyHeightDp >= 72) 26.sp else 20.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(gapDp.dp))
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-        OutlinedButton(onClick = onClear, enabled = !enabled || enabled, modifier = Modifier.weight(1f).height(39.dp)) {
-            Text("C", color = Uc08Danger, fontSize = 17.sp)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gapDp.dp)) {
+        OutlinedButton(onClick = onClear, enabled = !enabled || enabled, modifier = Modifier.weight(1f).height(keyHeightDp.dp)) {
+            Text("C", color = Uc08Danger, fontSize = if (keyHeightDp >= 72) 26.sp else 20.sp)
         }
-        OutlinedButton(onClick = { onDigit("0") }, enabled = enabled, modifier = Modifier.weight(1f).height(39.dp)) {
-            Text("0", fontSize = 17.sp)
+        OutlinedButton(onClick = { onDigit("0") }, enabled = enabled, modifier = Modifier.weight(1f).height(keyHeightDp.dp)) {
+            Text("0", fontSize = if (keyHeightDp >= 72) 26.sp else 20.sp)
         }
         Button(
             onClick = onCash,
             enabled = enabled,
-            modifier = Modifier.weight(1f).height(39.dp),
+            modifier = Modifier.weight(1f).height(keyHeightDp.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Uc08Blue),
         ) { Text("現金", fontWeight = FontWeight.Bold) }
     }
 }
 
 @Composable
-private fun Uc08TenderButton(label: String, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    OutlinedButton(onClick = onClick, enabled = enabled, modifier = modifier.height(39.dp)) {
+private fun Uc08TenderButton(label: String, enabled: Boolean, modifier: Modifier, heightDp: Int, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick, enabled = enabled, modifier = modifier.height(heightDp.dp)) {
         Text(label, fontSize = 12.sp, maxLines = 1, textAlign = TextAlign.Center)
     }
 }

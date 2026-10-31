@@ -12,7 +12,10 @@ import java.util.UUID
 internal data class ManualReturnLineRequestV135(
     val product: Product,
     val quantity: Int,
-)
+    val quantityHundredths: Long = Math.multiplyExact(quantity.toLong(), QuantityV136.SCALE),
+) {
+    val quantityText: String get() = QuantityV136.fromHundredths(quantityHundredths).format()
+}
 
 internal data class ManualReturnRequestV135(
     val lines: List<ManualReturnLineRequestV135>,
@@ -41,12 +44,18 @@ internal object ManualReturnPolicyV135 {
         require(request.lines.isNotEmpty()) { "返品商品を1件以上追加してください" }
         if (reasonRequired) require(request.reason.isNotBlank()) { "返品理由を入力してください" }
         return request.lines.map { line ->
-            require(line.quantity > 0) { "返品数量は1以上で入力してください" }
+            require(line.quantityHundredths > 0L) { "返品数量は0.01以上で入力してください" }
+            line.product.quantityMode.requireAllowed(line.quantityHundredths)
             require(line.product.unitPrice >= 0) { "商品単価が不正です" }
+            val legacyQuantity = ((line.quantityHundredths + QuantityV136.SCALE - 1L) / QuantityV136.SCALE)
+                .coerceAtLeast(1L)
+                .coerceAtMost(Int.MAX_VALUE.toLong())
+                .toInt()
             CartItem(
                 product = line.product,
-                quantity = line.quantity,
+                quantity = legacyQuantity,
                 unitPrice = line.product.unitPrice,
+                quantityHundredths = line.quantityHundredths,
             )
         }
     }
@@ -56,16 +65,38 @@ internal object ManualReturnPolicyV135 {
         return -quantity
     }
 
+    fun signedQuantityHundredths(quantityHundredths: Long): Long {
+        require(quantityHundredths > 0L)
+        return -quantityHundredths
+    }
+
     fun signedAmount(amount: Long): Long {
         require(amount > 0)
         return -amount
     }
 }
 
+/** Exact request identity used when replaying a checkout whose database commit is uncertain. */
+internal data class ManualReturnReplayFingerprintV160(
+    val signedAmount: Long,
+    val refundMethod: String,
+    val reason: String,
+    val operator: String,
+    val manager: String,
+    val lines: List<List<String>>,
+)
+
+internal object ManualReturnReplaySafetyV160 {
+    fun isSameCommittedOperation(
+        original: ManualReturnReplayFingerprintV160,
+        requested: ManualReturnReplayFingerprintV160,
+    ): Boolean = original == requested
+}
+
 internal class ManualReturnSettingsV135(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    fun isReasonRequired(): Boolean = prefs.getBoolean(KEY_REASON_REQUIRED, true)
+    fun isReasonRequired(): Boolean = false // 返品理由は常に任意（旧版の設定は参照しない）
 
     fun setReasonRequired(required: Boolean) {
         prefs.edit().putBoolean(KEY_REASON_REQUIRED, required).apply()
@@ -89,7 +120,7 @@ internal class ManualReturnStoreV135(context: Context) : AutoCloseable {
         ensureSchema()
     }
 
-    fun products(): List<Product> = database.loadProducts()
+    fun products(): List<Product> = V11CatalogRuntime.visibleProducts(appContext, database.loadProducts())
 
     fun reasonRequired(): Boolean = settings.isReasonRequired()
 
@@ -104,13 +135,20 @@ internal class ManualReturnStoreV135(context: Context) : AutoCloseable {
         require(operatorName.isNotBlank()) { "担当者を確認できません" }
         require(managerName.isNotBlank()) { "責任者を確認できません" }
         require(requestId.isNotBlank()) { "操作IDがありません" }
-        val items = ManualReturnPolicyV135.toPositiveCartItems(request, settings.isReasonRequired())
+        val items = ManualReturnPolicyV135.toPositiveCartItems(request, reasonRequired = false)
         val taxSummary = TaxEngine.calculate(items)
         val gross = taxSummary.grossAmount
         require(gross > 0) { "返金額が0円です" }
         val signedGross = ManualReturnPolicyV135.signedAmount(gross)
+        // A commit may have succeeded even if the caller lost its response.
+        // Reusing the same approval ID must recover that receipt, never insert a second refund.
+        recoverCommittedReturn(requestId, signedGross, request, items, operatorName, managerName)?.let { return it }
         val now = System.currentTimeMillis()
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(appContext)
+        val printerConfiguration = PrinterRoutingV136.resolve(
+            appContext,
+            DocumentPrintKindV136.SALE_RECEIPT,
+        )
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
 
         db.beginTransaction()
         try {
@@ -142,6 +180,8 @@ internal class ManualReturnStoreV135(context: Context) : AutoCloseable {
                         put("product_name", item.product.name)
                         put("unit_price", item.unitPrice)
                         put("quantity", ManualReturnPolicyV135.signedQuantity(item.quantity))
+                        put("quantity_hundredths", ManualReturnPolicyV135.signedQuantityHundredths(item.quantityHundredths))
+                        put("quantity_mode", item.product.quantityMode.name)
                         put("line_amount", -item.baseAmount)
                         put("tax_category", item.product.taxCategory.name)
                         put("tax_key", item.product.taxKey)
@@ -182,6 +222,8 @@ internal class ManualReturnStoreV135(context: Context) : AutoCloseable {
                     put("document_type", OperationDocumentType.REVERSAL_RECEIPT.name)
                     put("reference_id", -id)
                     put("paper_width_mm", if (paperWidthMm >= 80) 80 else 58)
+                    put("printer_id", printerConfiguration.printerId)
+                    put("printable_dot_width", printerConfiguration.printableDotWidth)
                     put("status", PrintJobStatus.PENDING.name)
                     put("attempt_count", 0)
                     putNull("last_error")
@@ -209,6 +251,82 @@ internal class ManualReturnStoreV135(context: Context) : AutoCloseable {
         } finally {
             db.endTransaction()
         }
+    }
+
+    /**
+     * Recover an already committed negative transaction for the same UI confirmation.
+     * The UNIQUE approval_request_id is the final database fence against concurrent inserts.
+     * Verify the complete original request before returning the prior receipt to avoid a
+     * changed cart/method accidentally inheriting an unrelated refund.
+     */
+    private fun recoverCommittedReturn(
+        requestId: String,
+        signedGross: Long,
+        request: ManualReturnRequestV135,
+        items: List<CartItem>,
+        operatorName: String,
+        managerName: String,
+    ): ManualReturnResultV135? {
+        data class SavedHeader(
+            val id: Long, val amount: Long, val method: String,
+            val reason: String, val operator: String, val manager: String,
+        )
+        val saved = db.rawQuery(
+            "SELECT id, gross_amount, refund_method, reason, operator_name, manager_name " +
+                "FROM manual_return_transactions WHERE approval_request_id = ? LIMIT 1",
+            arrayOf(requestId.trim()),
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) null else SavedHeader(
+                cursor.getLong(0), cursor.getLong(1), cursor.getString(2),
+                cursor.getString(3), cursor.getString(4), cursor.getString(5),
+            )
+        } ?: return null
+
+        val persistedLines = db.rawQuery(
+            "SELECT product_id, product_name, unit_price, quantity_hundredths " +
+                "FROM manual_return_items WHERE manual_return_id = ? ORDER BY line_no ASC",
+            arrayOf(saved.id.toString()),
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(
+                        listOf(
+                            cursor.getString(0),
+                            cursor.getString(1),
+                            cursor.getLong(2).toString(),
+                            cursor.getLong(3).toString(),
+                        ),
+                    )
+                }
+            }
+        }
+        val expectedLines = items.map {
+            listOf(
+                it.product.id, it.product.name, it.unitPrice.toString(),
+                (-it.quantityHundredths).toString(),
+            )
+        }
+        val original = ManualReturnReplayFingerprintV160(
+            saved.amount, saved.method, saved.reason, saved.operator, saved.manager, persistedLines,
+        )
+        val requested = ManualReturnReplayFingerprintV160(
+            signedGross, request.refundMethod.name, request.reason.trim(),
+            operatorName.trim(), managerName.trim(), expectedLines,
+        )
+        require(ManualReturnReplaySafetyV160.isSameCommittedOperation(original, requested)) {
+            "この操作IDは別の商品・金額・担当者または責任者で確定済みです。取引履歴を確認してください"
+        }
+
+        val job = db.rawQuery(
+            "SELECT id, payload_text FROM document_print_jobs " +
+                "WHERE document_type = ? AND reference_id = ? ORDER BY id LIMIT 1",
+            arrayOf(OperationDocumentType.REVERSAL_RECEIPT.name, (-saved.id).toString()),
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) null else cursor.getLong(0) to cursor.getString(1)
+        } ?: throw IllegalStateException(
+            "レジマイナスは登録済みですが印刷情報を取得できません。管理画面の取引履歴を確認してください",
+        )
+        return ManualReturnResultV135(saved.id, saved.amount, job.first, job.second)
     }
 
     fun accountingContribution(sessionId: Long): ManualReturnAccountingContributionV135 {
@@ -275,6 +393,8 @@ internal class ManualReturnStoreV135(context: Context) : AutoCloseable {
                 product_name TEXT NOT NULL,
                 unit_price INTEGER NOT NULL,
                 quantity INTEGER NOT NULL CHECK(quantity < 0),
+                quantity_hundredths INTEGER,
+                quantity_mode TEXT,
                 line_amount INTEGER NOT NULL CHECK(line_amount <= 0),
                 tax_category TEXT NOT NULL,
                 tax_key TEXT NOT NULL,
@@ -288,6 +408,8 @@ internal class ManualReturnStoreV135(context: Context) : AutoCloseable {
             )
             """.trimIndent(),
         )
+        ensureColumn("manual_return_items", "quantity_hundredths", "INTEGER")
+        ensureColumn("manual_return_items", "quantity_mode", "TEXT")
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS manual_return_payments (
@@ -303,6 +425,25 @@ internal class ManualReturnStoreV135(context: Context) : AutoCloseable {
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_manual_return_items_return ON manual_return_items(manual_return_id, line_no)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_manual_return_payments_return ON manual_return_payments(manual_return_id)")
     }
+
+    private fun ensureColumn(table: String, column: String, definition: String) {
+        val exists = db.rawQuery("PRAGMA table_info($table)", null).use { cursor ->
+            val nameIndex = cursor.getColumnIndexOrThrow("name")
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameIndex) == column) return@use true
+            }
+            false
+        }
+        if (!exists) db.execSQL("ALTER TABLE $table ADD COLUMN $column $definition")
+        if (column == "quantity_hundredths") {
+            db.execSQL("UPDATE $table SET quantity_hundredths = quantity * 100 WHERE quantity_hundredths IS NULL")
+        } else if (column == "quantity_mode") {
+            db.execSQL(
+                "UPDATE $table SET quantity_mode = CASE WHEN ABS(COALESCE(quantity_hundredths, quantity * 100)) % 100 <> 0 THEN 'DECIMAL' ELSE 'INTEGER' END " +
+                    "WHERE quantity_mode IS NULL OR quantity_mode NOT IN ('INTEGER','DECIMAL')",
+            )
+        }
+    }
 }
 
 internal class ManualReturnCoordinatorV135(context: Context) : AutoCloseable {
@@ -317,14 +458,33 @@ internal class ManualReturnCoordinatorV135(context: Context) : AutoCloseable {
         store.setReasonRequired(required)
     }
 
-    fun create(request: ManualReturnRequestV135, managerPin: String): ManualReturnResultV135 {
+    fun create(
+        request: ManualReturnRequestV135,
+        managerPin: String,
+        requestId: String = UUID.randomUUID().toString(),
+    ): ManualReturnResultV135 {
         val (operator, managerName) = requireAuthorizedActor(managerPin)
         val result = store.create(
             request = request,
             operatorName = operator.name,
             managerName = managerName,
-            requestId = UUID.randomUUID().toString(),
+            requestId = requestId,
         )
+        // The negative ledger is already committed. A drawer dispatch failure must never
+        // surface as "checkout failed", because repeating checkout could refund twice.
+        if (request.refundMethod == ManualRefundMethodV135.CASH) {
+            runCatching { CashDrawerRuntimeV136.dispatchAsync(
+                context = appContext,
+                openContext = CashDrawerOpenContextV136.CASH_REFUND,
+                referenceId = result.manualReturnId,
+                eventKey = "MANUAL_RETURN:${result.manualReturnId}",
+                reason = request.reason.trim().ifBlank { "元取引なし現金返品" },
+                actor = operator.name,
+                hasCashPayment = true,
+            ) }.onFailure {
+                android.util.Log.e("RegisterMinus", "Committed refund drawer dispatch failed: ${result.manualReturnId}", it)
+            }
+        }
         runCatching { AutomaticPrintScheduler.enqueueNow(appContext) }
         return result
     }
@@ -337,9 +497,8 @@ internal class ManualReturnCoordinatorV135(context: Context) : AutoCloseable {
         if (!operator.allows(RegisterPermission.REVERSAL)) {
             throw SecurityException("${RegisterPermission.REVERSAL.displayName}の権限がありません")
         }
-        require(managerPin.isNotBlank()) { "責任者PINを入力してください" }
-        val managerName = AdminSettingsStore(appContext).use { it.managerNameForPin(managerPin) }
-            ?: throw SecurityException("責任者PINが違います")
+        val managerName = ManagerApprovalV145.resolve(appContext, managerPin)
+            ?: throw SecurityException("責任者の承認が必要です。PINなし責任者でログインするか、責任者PINを入力してください")
         return operator to managerName
     }
 }
@@ -388,15 +547,15 @@ internal object ManualReturnDocumentRendererV135 {
         val timestamp = SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.JAPAN).format(Date(createdAt))
         return buildString {
             appendLine("================================")
-            appendLine("      返品（元取引不明）")
+            appendLine("      レジマイナス")
             appendLine("================================")
-            appendLine("返品No. MR-$manualReturnId")
+            appendLine("レジマイナスNo. MR-$manualReturnId")
             appendLine("営業日 $businessDate")
             appendLine("日時   $timestamp")
             appendLine("--------------------------------")
             items.forEach { item ->
                 appendLine("${item.product.name} ${item.product.taxSymbol}")
-                appendLine("  -${item.quantity} × ${yen.format(item.unitPrice)}   -${yen.format(item.baseAmount)}")
+                appendLine("  -${item.quantityText} × ${yen.format(item.unitPrice)}   -${yen.format(item.baseAmount)}")
             }
             appendLine("--------------------------------")
             taxSummary.buckets.forEach { bucket ->

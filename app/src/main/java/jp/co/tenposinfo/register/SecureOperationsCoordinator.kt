@@ -54,7 +54,22 @@ class SecureOperationsCoordinator(
 
     fun recordCashMovement(type: CashMovementType, amount: Long, reason: String): Long {
         val operator = requireOperator(OperationsAction.CASH_MOVEMENT)
-        return store.recordCashMovement(type, amount, reason, OperationsActorFormatter.direct(operator))
+        val actor = OperationsActorFormatter.direct(operator)
+        val movementId = store.recordCashMovement(type, amount, reason, actor)
+        val openContext = when (type) {
+            CashMovementType.IN -> CashDrawerOpenContextV136.CASH_IN
+            CashMovementType.OUT -> CashDrawerOpenContextV136.CASH_OUT
+            CashMovementType.EXCHANGE -> CashDrawerOpenContextV136.EXCHANGE
+        }
+        CashDrawerRuntimeV136.dispatchAsync(
+            context = appContext,
+            openContext = openContext,
+            referenceId = movementId,
+            eventKey = "CASH_MOVEMENT:$movementId",
+            reason = reason.ifBlank { "入出金（コメントなし）" },
+            actor = actor,
+        )
+        return movementId
     }
 
     fun recordSettlement(
@@ -164,6 +179,24 @@ class SecureOperationsCoordinator(
         reason: String,
         managerPin: String,
         requestId: String,
+    ): PartialReversalResult = createReversalHundredths(
+        originalSaleId = originalSaleId,
+        type = type,
+        requestedQuantityHundredths = requestedQuantities.mapValues { (_, quantity) ->
+            Math.multiplyExact(quantity.toLong(), QuantityV136.SCALE)
+        },
+        reason = reason,
+        managerPin = managerPin,
+        requestId = requestId,
+    )
+
+    fun createReversalHundredths(
+        originalSaleId: Long,
+        type: ReversalType,
+        requestedQuantityHundredths: Map<Long, Long>,
+        reason: String,
+        managerPin: String,
+        requestId: String,
     ): PartialReversalResult {
         val executionKey = OperationsIdempotencyPolicy.reversalKey(originalSaleId)
         return executionGuard.runExclusive(executionKey, "返品・取消を処理中です") {
@@ -180,16 +213,25 @@ class SecureOperationsCoordinator(
                 context = appContext,
                 approvedContext = refundContext,
             ) {
-                store.createReversal(
+                store.createReversalHundredths(
                     originalSaleId = originalSaleId,
                     type = type,
-                    requestedQuantities = requestedQuantities,
+                    requestedQuantityHundredths = requestedQuantityHundredths,
                     reason = reason,
                     operatorName = actor,
                     requestId = requestId,
                 )
             }
             ManualRefundFallbackRuntimeV135.complete(appContext, refundContext, result.refundAmount)
+            CashDrawerRuntimeV136.dispatchAsync(
+                context = appContext,
+                openContext = CashDrawerOpenContextV136.CASH_REFUND,
+                referenceId = result.reversalId,
+                eventKey = "REVERSAL:${result.reversalId}",
+                reason = reason.ifBlank { "${type.displayName}（理由なし）" },
+                actor = actor,
+                hasCashPayment = store.reversalHasCashRefund(result.reversalId),
+            )
             result
         }
     }
@@ -199,11 +241,11 @@ class SecureOperationsCoordinator(
         type: ReversalType,
         reason: String,
         managerPin: String,
-    ): Long = createReversal(
+    ): Long = createReversalHundredths(
         originalSaleId = originalSaleId,
         type = type,
-        requestedQuantities = if (type == ReversalType.RETURN) {
-            store.loadReturnableLines(originalSaleId).associate { it.saleItemId to it.remainingQuantity }
+        requestedQuantityHundredths = if (type == ReversalType.RETURN) {
+            store.loadReturnableLines(originalSaleId).associate { it.saleItemId to it.remainingQuantityHundredths }
         } else emptyMap(),
         reason = reason,
         managerPin = managerPin,
@@ -219,9 +261,7 @@ class SecureOperationsCoordinator(
         return operator
     }
 
-    private fun requireManagerName(pin: String): String {
-        require(pin.isNotBlank()) { "責任者PINを入力してください" }
-        return AdminSettingsStore(appContext).use { it.managerNameForPin(pin) }
-            ?: throw SecurityException("責任者PINが違います")
-    }
+    private fun requireManagerName(pin: String): String =
+        ManagerApprovalV145.resolve(appContext, pin)
+            ?: throw SecurityException("責任者の承認が必要です。PINなし責任者でログインするか、責任者PINを入力してください")
 }
