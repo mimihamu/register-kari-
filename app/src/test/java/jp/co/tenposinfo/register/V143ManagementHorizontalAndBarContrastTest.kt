@@ -36,7 +36,7 @@ class V143ManagementHorizontalAndBarContrastTest {
         assertFalse(hub.contains("metrics.isCompact || maxWidth < 1_050.dp"))
         for (label in listOf(
             "営業開始・状態", "当日売上", "入出金", "X点検", "Z精算",
-            "返品・取消", "点検・精算履歴", "営業日別 売上検索",
+            "取引指定で返品・取消", "点検・精算履歴", "営業日別 売上検索",
             "領収書発行", "レシート再印字台帳", "レジマイナス"
         )) {
             assertTrue("Missing management action: $label", hub.contains("\"$label\""))
