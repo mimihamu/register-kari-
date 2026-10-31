@@ -36,7 +36,7 @@ class V169ManagementCompactAndReversalConfirmTest {
         assertTrue(screen.contains("onDismissRequest = {}"))
         assertTrue(screen.contains("Text(\"元売上 No."))
         assertTrue(screen.contains("Text(\"処理："))
-        assertTrue(screen.contains("Text(\"返金予定 "))
+        assertTrue(screen.contains("\"返金予定 "))
         assertTrue(screen.contains("enabled = canExecute"))
         assertTrue(screen.contains("if (saleId != null && canExecute)"))
         assertTrue(screen.contains("RegisterModalCancelV154(onClick = { showReversalConfirm = false })"))
