@@ -91,8 +91,11 @@ android {
         // v1.69 identity
         // versionCode = 35
         // versionName = "0.15.27-dev.1"
-        versionCode = 36
-        versionName = "0.15.28-dev.1"
+        // v1.70 signed development release
+        // versionCode = 36
+        // versionName = "0.15.28-dev.1"
+        versionCode = 37
+        versionName = "0.15.29-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ CD"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
