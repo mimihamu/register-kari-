@@ -18,7 +18,8 @@ class V143ManagementHorizontalAndBarContrastTest {
             assertTrue("width=$width", HubManagementLayoutV143.twoPane(width))
         }
         assertEquals(2, HubManagementLayoutV143.columns(460))
-        assertEquals(2, HubManagementLayoutV143.columns(719))
+        assertEquals(3, HubManagementLayoutV143.columns(719))
+        assertEquals(3, HubManagementLayoutV143.columns(480))
         assertEquals(3, HubManagementLayoutV143.columns(720))
         assertEquals(3, HubManagementLayoutV143.columns(1000))
         assertTrue(HubManagementLayoutV143.tileHeightDp(350) >= 56)

@@ -1143,6 +1143,7 @@ private fun ReversalScreen(
     var reason by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
     var requestId by remember { mutableStateOf(UUID.randomUUID().toString()) }
+    var showReversalConfirm by remember { mutableStateOf(false) }
     var savedResult by remember { mutableStateOf<PartialReversalResult?>(null) }
     var localMessage by remember { mutableStateOf<String?>(null) }
     var saleQuery by remember { mutableStateOf("") }
@@ -1556,22 +1557,11 @@ private fun ReversalScreen(
                 }
                 Spacer(Modifier.height(8.dp))
                 Button(
-                    onClick = {
-                        val saleId = selectedSaleId ?: return@Button
-                        val result = onExecute(saleId, type, quantityHundredths, reason, pin, requestId)
-                        if (result != null) {
-                            savedResult = result
-                            lines = loadLines(saleId)
-                            quantityInputs = emptyMap()
-                            reason = ""
-                            pin = ""
-                            requestId = UUID.randomUUID().toString()
-                        }
-                    },
+                    onClick = { showReversalConfirm = true },
                     enabled = canExecute,
                     modifier = Modifier.fillMaxWidth().height(53.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = OpDanger),
-                ) { Text("${type.displayName}を確定", fontWeight = FontWeight.Bold) }
+                ) { Text("${type.displayName}内容を確認", fontWeight = FontWeight.Bold) }
                 (localMessage ?: message)?.let {
                     Spacer(Modifier.height(6.dp))
                     Text(it, color = if (it.contains("失敗") || it.contains("違い") || it.contains("超え") || it.contains("できません")) OpDanger else OpGreen, fontSize = 12.sp)
@@ -1590,6 +1580,51 @@ private fun ReversalScreen(
             }
         }
         OpBottomBar("レジ管理へ戻る", onBack)
+    }
+    if (showReversalConfirm) {
+        RegisterModalV154(
+            onDismissRequest = {},
+            title = { Text("${type.displayName}を確定しますか？", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("元売上 No.${selectedSaleId ?: "-"}", fontWeight = FontWeight.Bold)
+                    Text("処理：${type.displayName}")
+                    Text("対象商品：${selectedItems.size}種類")
+                    Text(
+                        "返金予定 ${opYen(previewSummary?.grossAmount ?: 0L)}",
+                        color = OpDanger,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text("元売上を残し、返品・取消の記録を追加します。")
+                }
+            },
+            confirmButton = {
+                RegisterModalConfirmV154(
+                    label = "${type.displayName}を確定",
+                    destructive = true,
+                    enabled = canExecute,
+                    onClick = {
+                        showReversalConfirm = false
+                        val saleId = selectedSaleId
+                        if (saleId != null && canExecute) {
+                            val result = onExecute(saleId, type, quantityHundredths, reason, pin, requestId)
+                            if (result != null) {
+                                savedResult = result
+                                lines = loadLines(saleId)
+                                quantityInputs = emptyMap()
+                                reason = ""
+                                pin = ""
+                                requestId = UUID.randomUUID().toString()
+                            }
+                        }
+                    },
+                )
+            },
+            dismissButton = {
+                RegisterModalCancelV154(onClick = { showReversalConfirm = false })
+            },
+            destructive = true,
+        )
     }
 }
 

@@ -170,12 +170,12 @@ private fun OperationsHubRouteV030(
 /** Horizontal tablet management remains two-pane even at 800×480dp. */
 internal object HubManagementLayoutV143 {
     const val TWO_PANE_MIN_WIDTH_DP = 700
-    const val THREE_COLUMN_MIN_PANE_WIDTH_DP = 720
+    const val THREE_COLUMN_MIN_PANE_WIDTH_DP = 480
     fun twoPane(widthDp: Int): Boolean = widthDp >= TWO_PANE_MIN_WIDTH_DP
     fun columns(actionPaneWidthDp: Int): Int =
         if (actionPaneWidthDp >= THREE_COLUMN_MIN_PANE_WIDTH_DP) 3 else 2
     fun tileHeightDp(availableHeightDp: Int): Int =
-        if (availableHeightDp < 470) 82 else 94
+        if (availableHeightDp < 470) 70 else 86
 }
 
 private data class HubManagementActionV143(
@@ -346,6 +346,8 @@ private fun HubStatusPanelV030(
     minusCount: Int,
 ) {
     val metrics = rememberRegisterResponsiveMetrics()
+    var detailsExpanded by remember { mutableStateOf(false) }
+    val showAllDetails = !metrics.isCompact || detailsExpanded
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -357,8 +359,22 @@ private fun HubStatusPanelV030(
                 .verticalScroll(rememberScrollState())
                 .padding(metrics.cardPaddingDp.dp),
         ) {
-            Text("営業日の状態", fontSize = if (metrics.isCompact) 20.sp else 24.sp, fontWeight = FontWeight.Bold, color = HubNavyV030)
-            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "営業日の状態",
+                    modifier = Modifier.weight(1f),
+                    fontSize = if (metrics.isCompact) 18.sp else 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = HubNavyV030,
+                )
+                if (metrics.isCompact) {
+                    OutlinedButton(
+                        onClick = { detailsExpanded = !detailsExpanded },
+                        modifier = Modifier.heightIn(min = 44.dp),
+                    ) { Text(if (detailsExpanded) "閉じる" else "詳細") }
+                }
+            }
+            Spacer(Modifier.height(4.dp))
             Row(
                 Modifier.fillMaxWidth().background(HubPaleBlueV030, RoundedCornerShape(8.dp)).padding(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -374,16 +390,20 @@ private fun HubStatusPanelV030(
                 }
             } else {
                 HubAmountV030("営業日", summary.businessDate)
-                HubAmountV030("営業セッション", session?.let { "No.${it.id}" } ?: "開始前")
                 HubAmountV030("営業状態", session?.status?.displayName ?: "営業開始前")
-                HubAmountV030("開始釣銭", hubYenV030(summary.openingCash))
                 HubAmountV030("純売上", hubYenV030(summary.netSales), true)
                 HubAmountV030("取引件数", "${summary.transactionCount}件")
                 HubAmountV030("レジマイナス", "-${minusCount}件")
                 HubAmountV030("現金理論残高", hubYenV030(summary.expectedCash))
-                HubAmountV030("未印刷", "${summary.pendingPrints}件")
-                HubAmountV030("未会計伝票", "${summary.heldTickets}件")
-                HubAmountV030("精算状態", if (summary.settled) "Z精算済み" else "未精算")
+                if (summary.pendingPrints > 0 || showAllDetails) {
+                    HubAmountV030("未印刷", "${summary.pendingPrints}件")
+                }
+                if (showAllDetails) {
+                    HubAmountV030("営業セッション", session?.let { "No.${it.id}" } ?: "開始前")
+                    HubAmountV030("開始釣銭", hubYenV030(summary.openingCash))
+                    HubAmountV030("未会計伝票", "${summary.heldTickets}件")
+                    HubAmountV030("精算状態", if (summary.settled) "Z精算済み" else "未精算")
+                }
             }
         }
     }
