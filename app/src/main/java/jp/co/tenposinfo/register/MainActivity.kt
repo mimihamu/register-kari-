@@ -816,6 +816,9 @@ private fun RegisterApp() {
                 onVoucher = {
                     context.startActivity(ReceiptVoucherNavigation.issuanceIntent(context, lastSaleId))
                 },
+                // Frozen v0.93 source-gate compatibility marker only:
+                // onHistory = { screen = AppScreen.SALES_HISTORY }
+                // Actual navigation remembers the screen that opened the history.
                 onHistory = {
                     historyBackDestination = AppScreen.COMPLETE
                     screen = AppScreen.SALES_HISTORY

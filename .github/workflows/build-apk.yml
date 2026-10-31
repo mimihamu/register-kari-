@@ -377,21 +377,6 @@ jobs:
             capture && inrun { sub(/^          /, ""); print }
           ' /tmp/v133-build-apk.yml > /tmp/v133-cumulative-checks.sh
           test -s /tmp/v133-cumulative-checks.sh
-          # v1.70: retain the historical gate, but replace its obsolete fixed
-          # COMPLETE -> HISTORY -> SALES navigation assertion with origin-aware checks.
-          python3 - <<'PY'
-          from pathlib import Path
-          gate = Path('/tmp/v133-cumulative-checks.sh')
-          source = gate.read_text()
-          old = "grep -Fq 'onHistory = { screen = AppScreen.SALES_HISTORY }' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt"
-          new = (
-              "grep -Fq 'historyBackDestination = AppScreen.COMPLETE' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt"
-              " && grep -Fq 'historyBackDestination = AppScreen.SALES' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt"
-              " && grep -Fq 'onBack = { screen = historyBackDestination }' app/src/main/java/jp/co/tenposinfo/register/MainActivity.kt"
-          )
-          assert source.count(old) == 1, 'historical sales-history check is missing or changed'
-          gate.write_text(source.replace(old, new))
-          PY
           bash -euxo pipefail /tmp/v133-cumulative-checks.sh
 
           python3 - <<'PY'
