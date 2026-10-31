@@ -75,6 +75,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppDistributionUpdateNoticeV147.maybeCheck(applicationContext, "cd")
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            window.isNavigationBarContrastEnforced = false
+            window.isStatusBarContrastEnforced = false
+        }
         @Suppress("DEPRECATION")
         window.statusBarColor = android.graphics.Color.rgb(8, 21, 34)
         @Suppress("DEPRECATION")

@@ -69,6 +69,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.decorView.setBackgroundColor(android.graphics.Color.rgb(23, 63, 107))
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            window.isNavigationBarContrastEnforced = false
+            window.isStatusBarContrastEnforced = false
+        }
         @Suppress("DEPRECATION")
         window.statusBarColor = android.graphics.Color.rgb(23, 63, 107)
         @Suppress("DEPRECATION")

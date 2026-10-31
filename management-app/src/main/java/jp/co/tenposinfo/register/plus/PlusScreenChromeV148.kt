@@ -18,6 +18,12 @@ internal val PlusNavyV148 = Color(0xFF173F6B)
 
 @Suppress("DEPRECATION")
 internal fun configurePlusSystemBarsV148(window: Window) {
+    WindowCompat.setDecorFitsSystemWindows(window, false)
+    window.decorView.setBackgroundColor(AndroidColor.rgb(23, 63, 107))
+    if (android.os.Build.VERSION.SDK_INT >= 29) {
+        window.isNavigationBarContrastEnforced = false
+        window.isStatusBarContrastEnforced = false
+    }
     window.statusBarColor = AndroidColor.rgb(23, 63, 107)
     window.navigationBarColor = AndroidColor.rgb(23, 63, 107)
     WindowCompat.getInsetsController(window, window.decorView).apply {

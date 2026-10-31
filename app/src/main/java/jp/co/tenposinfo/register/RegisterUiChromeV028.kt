@@ -11,6 +11,13 @@ object RegisterUiChromeV028 {
 
 @Suppress("DEPRECATION")
 fun configureRegisterSystemBars(window: Window) {
+    // Android 15+ draws transparent system bars. Paint the inset in our root UI.
+    WindowCompat.setDecorFitsSystemWindows(window, false)
+    window.decorView.setBackgroundColor(Color.rgb(23, 63, 107))
+    if (android.os.Build.VERSION.SDK_INT >= 29) {
+        window.isNavigationBarContrastEnforced = false
+        window.isStatusBarContrastEnforced = false
+    }
     window.statusBarColor = Color.rgb(23, 63, 107)
     window.navigationBarColor = Color.rgb(23, 63, 107)
     WindowCompat.getInsetsController(window, window.decorView).apply {
