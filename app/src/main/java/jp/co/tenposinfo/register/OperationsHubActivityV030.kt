@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -225,13 +226,17 @@ private fun OperationsHubScreenV030(
             RegisterPermission.X_INSPECTION in permissions, openXInspection,
         ),
         HubManagementActionV143(
-            "Z精算", Color(0xFFFFE8E8),
-            RegisterPermission.Z_SETTLEMENT in permissions, openZSettlement,
-        ),
-        HubManagementActionV143(
-            "返品・取消", HubPaleYellowV030,
+            "取引指定で返品・取消", HubPaleYellowV030,
             RegisterPermission.REVERSAL in permissions,
             { openLegacyManagement(OperationsLegacyRouteV140.REVERSAL) },
+        ),
+        HubManagementActionV143(
+            "レジマイナス", Color(0xFFFFE9E9),
+            RegisterPermission.REVERSAL in permissions, openManualReturn,
+        ),
+        HubManagementActionV143(
+            "Z精算", Color(0xFFFFE8E8),
+            RegisterPermission.Z_SETTLEMENT in permissions, openZSettlement,
         ),
         HubManagementActionV143(
             "点検・精算履歴", Color(0xFFEDE7F6),
@@ -248,10 +253,6 @@ private fun OperationsHubScreenV030(
         HubManagementActionV143(
             "レシート再印字台帳", Color(0xFFFFF3E0),
             RegisterPermission.VIEW_SALES in permissions, openReceiptReprintLedger,
-        ),
-        HubManagementActionV143(
-            "レジマイナス", Color(0xFFFFE9E9),
-            RegisterPermission.REVERSAL in permissions, openManualReturn,
         ),
     )
     Column(Modifier.fillMaxSize()) {
@@ -431,10 +432,12 @@ private fun HubTileV030(
         ) {
             Text(
                 title,
-                fontSize = if (metrics.isCompact) 20.sp else 25.sp,
+                fontSize = if (metrics.isCompact) 18.sp else 22.sp,
                 fontWeight = FontWeight.Bold,
                 color = if (enabled) HubNavyV030 else Color.Gray,
                 textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
             if (description.isNotBlank() || !enabled) {
                 Spacer(Modifier.height(8.dp))

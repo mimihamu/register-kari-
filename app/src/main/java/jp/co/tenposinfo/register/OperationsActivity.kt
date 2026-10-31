@@ -1,5 +1,6 @@
 package jp.co.tenposinfo.register
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -453,6 +454,9 @@ private fun OperationsApp(
                     }
                     activeOperator = OperatorSessionRegistry.current(appContext)
                     result.getOrNull()
+                },
+                onManualReturn = {
+                    context.startActivity(Intent(context, ManualReturnActivityV135::class.java))
                 },
                 onBack = {
                     reversalContextSaleId = null
@@ -1128,6 +1132,7 @@ private fun ReversalScreen(
     loadLines: (Long) -> List<ReturnableSaleLine>,
     lookupSale: (Long) -> SaleSummaryRecord?,
     onExecute: (Long, ReversalType, Map<Long, Long>, String, String, String) -> PartialReversalResult?,
+    onManualReturn: () -> Unit,
     onBack: () -> Unit,
 ) {
     var selectedSaleId by remember(initialSaleId) { mutableStateOf<Long?>(initialSaleId) }
@@ -1227,7 +1232,7 @@ private fun ReversalScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        OpHeader("SCR-400/410", "返品・取消")
+        OpHeader("SCR-400/410", "元売上から返品・取消")
         Row(Modifier.weight(1f).padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OpPanel(Modifier.width(355.dp).fillMaxHeight()) {
                 Text("元売上を検索・選択", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = OpNavy)
@@ -1395,7 +1400,25 @@ private fun ReversalScreen(
                 )
                 Spacer(Modifier.height(8.dp))
                 if (selected == null) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("元売上を選択してください", color = Color.Gray) }
+                    Column(
+                        Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text("元売上を選択してください", color = Color.Gray)
+                        Spacer(Modifier.height(18.dp))
+                        OutlinedButton(
+                            onClick = onManualReturn,
+                            modifier = Modifier.height(52.dp),
+                            border = BorderStroke(2.dp, OpDanger),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = Color(0xFFFFEBEE),
+                                contentColor = OpDanger,
+                            ),
+                        ) {
+                            Text("元取引なし → レジマイナス", fontWeight = FontWeight.Bold)
+                        }
+                    }
                 } else if (lines.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("返品可能な明細がありません", color = OpDanger) }
                 } else {
