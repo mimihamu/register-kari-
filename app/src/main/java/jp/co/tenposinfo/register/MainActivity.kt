@@ -172,6 +172,7 @@ private fun RegisterApp() {
     var operatorName by remember { mutableStateOf(currentOperator?.name ?: "未選択") }
     var loginMessage by remember { mutableStateOf<String?>(null) }
     var accessMessage by remember { mutableStateOf<String?>(null) }
+    var exchangeDrawerInProgress by remember { mutableStateOf(false) }
     var printerHealth by remember { mutableStateOf(PrinterHealthSnapshot.checking()) }
     var catalogEpoch by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     var activityResumed by remember(lifecycleOwner) {
@@ -544,6 +545,22 @@ private fun RegisterApp() {
                         accessMessage = "売上確認の権限がありません"
                     }
                 },
+                onExchangeDrawer = {
+                    if (!exchangeDrawerInProgress) {
+                        exchangeDrawerInProgress = true
+                        checkoutScope.launch {
+                            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                SalesExchangeDrawerV172.open(context.applicationContext)
+                            }
+                            exchangeDrawerInProgress = false
+                            accessMessage = result.fold(
+                                onSuccess = { if (it) "両替：ドロア開放信号を送信しました" else "両替：ドロア設定を確認してください" },
+                                onFailure = { it.message ?: "両替：ドロアを開けませんでした" },
+                            )
+                        }
+                    }
+                },
+                exchangeDrawerInProgress = exchangeDrawerInProgress,
                 onPrintQueue = {
                     if (currentOperator?.allows(RegisterPermission.VIEW_SALES) == true) {
                         accessMessage = null
@@ -1146,6 +1163,8 @@ internal fun SalesScreen(
     onPayment: () -> Unit,
     onSalesHistory: () -> Unit,
     onPrintQueue: () -> Unit,
+    onExchangeDrawer: (() -> Unit)? = null,
+    exchangeDrawerInProgress: Boolean = false,
     onPrinterStatus: () -> Unit,
     canOpenSettings: Boolean,
     canOpenManagement: Boolean,
@@ -1661,6 +1680,13 @@ internal fun SalesScreen(
                 ) {
                     OutlinedButton(onClick = onPrinterStatus, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("プリンター", maxLines = 1) }
                     OutlinedButton(onClick = onPrintQueue, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("印刷管理", maxLines = 1) }
+                    if (onExchangeDrawer != null) {
+                        OutlinedButton(
+                            onClick = onExchangeDrawer,
+                            enabled = !exchangeDrawerInProgress,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                        ) { Text("両替", maxLines = 1) }
+                    }
                     BlueButton(
                         "小計／会計  ${yen(summary.grossAmount)}",
                         onPayment,
@@ -1681,6 +1707,13 @@ internal fun SalesScreen(
                 OutlinedButton(onClick = onSalesHistory, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("売上一覧", maxLines = 1) }
                 OutlinedButton(onClick = onPrinterStatus, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("プリンター", maxLines = 1) }
                 OutlinedButton(onClick = onPrintQueue, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("印刷管理", maxLines = 1) }
+                if (onExchangeDrawer != null) {
+                    OutlinedButton(
+                        onClick = onExchangeDrawer,
+                        enabled = !exchangeDrawerInProgress,
+                        modifier = Modifier.weight(0.9f).fillMaxHeight(),
+                    ) { Text("両替", maxLines = 1) }
+                }
                 BlueButton(
                     "小計／会計  ${yen(summary.grossAmount)}",
                     onPayment,

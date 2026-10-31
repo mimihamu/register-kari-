@@ -1054,7 +1054,6 @@ private fun CashMovementScreen(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OpChoiceButton("入金", type == CashMovementType.IN, Modifier.weight(1f)) { type = CashMovementType.IN }
                     OpChoiceButton("出金", type == CashMovementType.OUT, Modifier.weight(1f)) { type = CashMovementType.OUT }
-                    OpChoiceButton("両替", type == CashMovementType.EXCHANGE, Modifier.weight(1f)) { type = CashMovementType.EXCHANGE }
                 }
                 Spacer(Modifier.height(10.dp))
                 OpNumericField("金額", amount, { amount = it })
