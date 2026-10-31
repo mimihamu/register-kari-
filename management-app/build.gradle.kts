@@ -132,8 +132,11 @@ android {
         // v1.68 identity
         // versionCode = 56
         // versionName = "0.33.23-dev.1"
-        versionCode = 57
-        versionName = "0.33.24-dev.1"
+        // v1.69 identity
+        // versionCode = 57
+        // versionName = "0.33.24-dev.1"
+        versionCode = 58
+        versionName = "0.33.25-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ＋"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
