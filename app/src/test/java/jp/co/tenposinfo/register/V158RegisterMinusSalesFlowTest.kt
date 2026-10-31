@@ -9,14 +9,14 @@ class V158RegisterMinusSalesFlowTest {
     private val dir = File("src/main/java/jp/co/tenposinfo/register")
     private fun source(name: String) = File(dir, name).readText()
 
-    @Test fun salesScreenShowsRedMinusAndNoWhiteActionBar() {
+    @Test fun normalSalesDoesNotOfferMinusShortcutButMinusModeRemainsRed() {
         val s = source("MainActivity.kt")
-        assertTrue(s.contains("onRegisterMinus = if (currentOperator?.allows(RegisterPermission.REVERSAL) == true)"))
-        assertTrue(s.contains("onClick = onRegisterMinus"))
+        assertFalse(s.contains("onRegisterMinus = if"))
+        assertFalse(s.contains("onClick = onRegisterMinus"))
         assertTrue(s.contains("minusMode: Boolean = false"))
         assertTrue(s.contains("backgroundColor = if (minusMode) Danger else Navy"))
         assertTrue(s.contains("containerColor = Color.Transparent"))
-        assertTrue(s.contains("Text(\"レジマイナス\", maxLines = 1)"))
+        assertTrue(s.contains("title = if (minusMode) \"レジマイナス\" else \"販売\""))
         assertTrue(s.contains("if (minusMode) \"-\" else \"\""))
         assertTrue(s.contains("会計（レジマイナス）"))
         assertTrue(s.contains("enabled = cart.isNotEmpty() && !minusMode"))

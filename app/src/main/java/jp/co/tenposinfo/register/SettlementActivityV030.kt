@@ -175,6 +175,7 @@ private fun SettlementScreenV030(
     val context = LocalContext.current
     val metrics = rememberRegisterResponsiveMetrics()
     val isZ = reportType == SettlementReportType.Z_SETTLEMENT
+    val pinFreeManagerApproved = ManagerApprovalV145.canUseCurrentManagerSession(context)
     val rep001Totals = SettlementReportingRuntimeV135.currentTotals(summary.businessSessionId)
     val taxBreakdown = SettlementTaxBreakdownRuntimeV135.current(summary.businessSessionId)
     var actualCash by remember { mutableStateOf("") }
@@ -241,7 +242,7 @@ private fun SettlementScreenV030(
                         showConfirmation = false
                         onExecute(actual, managerPin, pendingAcknowledged, backupFailureAcknowledged)
                     },
-                    enabled = (managerPin.isNotBlank() || ManagerApprovalV145.canUseCurrentManagerSession(context)) && preflight.mayProceed,
+                    enabled = (pinFreeManagerApproved || managerPin.isNotBlank()) && preflight.mayProceed,
                 )
             },
             dismissButton = { RegisterModalCancelV154(onClick = { showConfirmation = false }) },
@@ -260,7 +261,7 @@ private fun SettlementScreenV030(
                 ) {
                     SettlementInputPanelV030(
                         Modifier.fillMaxWidth(), reportType, session, summary, operatorName,
-                        actualCash, managerPin, pendingAcknowledged, backupFailureAcknowledged,
+                        actualCash, managerPin, pinFreeManagerApproved, pendingAcknowledged, backupFailureAcknowledged,
                         preflight, message,
                         { actualCash = it.filter(Char::isDigit).take(12) },
                         { managerPin = it.filter(Char::isDigit).take(8) },
@@ -280,7 +281,7 @@ private fun SettlementScreenV030(
                 ) {
                     SettlementInputPanelV030(
                         Modifier.weight(1f).fillMaxHeight(), reportType, session, summary, operatorName,
-                        actualCash, managerPin, pendingAcknowledged, backupFailureAcknowledged,
+                        actualCash, managerPin, pinFreeManagerApproved, pendingAcknowledged, backupFailureAcknowledged,
                         preflight, message,
                         { actualCash = it.filter(Char::isDigit).take(12) },
                         { managerPin = it.filter(Char::isDigit).take(8) },
@@ -328,7 +329,7 @@ private fun SettlementScreenV030(
                 ) {
                     SettlementInputPanelV030(
                         Modifier.weight(1.15f).fillMaxHeight(), reportType, session, summary, operatorName,
-                        actualCash, managerPin, pendingAcknowledged, backupFailureAcknowledged,
+                        actualCash, managerPin, pinFreeManagerApproved, pendingAcknowledged, backupFailureAcknowledged,
                         preflight, message,
                         { actualCash = it.filter(Char::isDigit).take(12) },
                         { managerPin = it.filter(Char::isDigit).take(8) },
@@ -365,6 +366,7 @@ private fun SettlementInputPanelV030(
     operatorName: String,
     actualCash: String,
     managerPin: String,
+    pinFreeManagerApproved: Boolean,
     pendingAcknowledged: Boolean,
     backupFailureAcknowledged: Boolean,
     preflight: ZSettlementPreflightResult,
@@ -417,14 +419,18 @@ private fun SettlementInputPanelV030(
         }
         if (isZ) {
             Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = managerPin,
-                onValueChange = onManagerPinChanged,
-                label = { Text("責任者PIN") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            if (pinFreeManagerApproved) {
+                Text("責任者承認済み（PIN不要）", color = SettlementGreenV030, fontWeight = FontWeight.Bold)
+            } else {
+                OutlinedTextField(
+                    value = managerPin,
+                    onValueChange = onManagerPinChanged,
+                    label = { Text("責任者PIN") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             Spacer(Modifier.height(8.dp))
             Text("精算前確認（REP-003）", fontWeight = FontWeight.Bold, color = SettlementNavyV030)
             preflight.items.forEach { item ->

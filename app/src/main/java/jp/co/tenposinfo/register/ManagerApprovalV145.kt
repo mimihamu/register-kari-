@@ -13,12 +13,14 @@ internal object ManagerApprovalV145 {
     fun canUseCurrentManagerSession(context: Context): Boolean =
         pinFreeSessionManagerName(context) != null
 
-    fun resolve(context: Context, suppliedPin: String): String? =
-        if (suppliedPin.isNotBlank()) {
+    fun resolve(context: Context, suppliedPin: String): String? {
+        // An explicitly PIN-free manager can approve with the verified login session.
+        // Never allow a stale value in the PIN field to override that session.
+        pinFreeSessionManagerName(context)?.let { return it }
+        return if (suppliedPin.isNotBlank()) {
             AdminSettingsStore(context.applicationContext).use { it.managerNameForPin(suppliedPin) }
-        } else {
-            pinFreeSessionManagerName(context)
-        }
+        } else null
+    }
 
     private fun pinFreeSessionManagerName(context: Context): String? {
         val session = OperatorSessionRegistry.current(context.applicationContext) ?: return null

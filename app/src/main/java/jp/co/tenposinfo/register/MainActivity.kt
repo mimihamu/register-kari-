@@ -564,9 +564,6 @@ private fun RegisterApp() {
                     context.startActivity(CatalogNavigationContractV030.productRegistrationIntent(context, scannedCode))
                 },
                 onOpenManagement = { context.startActivity(Intent(context, OperationsHubActivityV030::class.java)) },
-                onRegisterMinus = if (currentOperator?.allows(RegisterPermission.REVERSAL) == true) {
-                    { context.startActivity(Intent(context, ManualReturnActivityV135::class.java)) }
-                } else null,
                 accessMessage = accessMessage,
                 onLogout = {
                     OperatorSessionRegistry.logout(context.applicationContext)
@@ -1157,7 +1154,6 @@ internal fun SalesScreen(
     onOpenManagement: () -> Unit,
     accessMessage: String?,
     onLogout: () -> Unit,
-    onRegisterMinus: (() -> Unit)? = null,
     minusMode: Boolean = false,
 ) {
     val summary = TaxEngine.calculate(cart)
@@ -1270,15 +1266,6 @@ internal fun SalesScreen(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.width(6.dp))
-            if (!minusMode && onRegisterMinus != null) {
-                OutlinedButton(
-                    onClick = onRegisterMinus,
-                    modifier = Modifier.height(48.dp),
-                    border = BorderStroke(1.dp, Color.White),
-                    colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.Transparent, contentColor = Color.White),
-                ) { Text("レジマイナス", maxLines = 1) }
-                Spacer(Modifier.width(6.dp))
-            }
             if (!minusMode && canOpenManagement) {
                 OutlinedButton(
                     onClick = onOpenManagement,

@@ -830,6 +830,7 @@ private fun SettlementScreen(
     var showZConfirmation by remember { mutableStateOf(false) }
     @Suppress("UNUSED_VARIABLE") val refresh = revision
     val isZSettlement = reportType == SettlementReportType.Z_SETTLEMENT
+    val pinFreeManagerApproved = ManagerApprovalV145.canUseCurrentManagerSession(LocalContext.current)
     val actual = actualCash.toLongOrNull()
     val previewActual = if (isZSettlement) actual else actual ?: summary.expectedCash
     val variance = previewActual?.let { OperationsMath.variance(it, summary.expectedCash) }
@@ -872,7 +873,7 @@ private fun SettlementScreen(
                         showZConfirmation = false
                         onExecute(actual, pin, pendingPrintsAcknowledged, backupFailureAcknowledged)
                     },
-                    enabled = (pin.isNotBlank() || ManagerApprovalV145.canUseCurrentManagerSession(LocalContext.current)) &&
+                    enabled = (pinFreeManagerApproved || pin.isNotBlank()) &&
                         zPreflight.mayProceed,
                 )
             },
@@ -906,14 +907,18 @@ private fun SettlementScreen(
                 OpAuthenticatedOperator(operatorName)
                 if (isZSettlement) {
                     Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = pin,
-                        onValueChange = { pin = it.filter(Char::isDigit).take(8) },
-                        label = { Text("責任者PIN") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    if (pinFreeManagerApproved) {
+                        Text("責任者承認済み（PIN不要）", color = OpGreen, fontWeight = FontWeight.Bold)
+                    } else {
+                        OutlinedTextField(
+                            value = pin,
+                            onValueChange = { pin = it.filter(Char::isDigit).take(8) },
+                            label = { Text("責任者PIN") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
                     Text("精算前確認（REP-003）", fontWeight = FontWeight.Bold, color = OpNavy)
                     zPreflight.items.forEach { item ->
