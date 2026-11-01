@@ -1678,7 +1678,10 @@ internal fun SalesScreen(
             }
         }
 
-        val twoRowActions = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 1_060
+        val actionConfig = androidx.compose.ui.platform.LocalConfiguration.current
+        val twoRowActions = SalesActionBarLayoutPolicyV174.useTwoRows(
+            actionConfig.screenWidthDp, actionConfig.fontScale,
+        )
         if (minusMode) {
             Row(
                 Modifier.fillMaxWidth().height(responsive.bottomBarHeightDp.dp)
