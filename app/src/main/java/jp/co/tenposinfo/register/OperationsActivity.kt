@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -1130,6 +1132,12 @@ private fun CashMovementScreen(
     }
 }
 
+/** Three columns only when the search and approval panels leave usable line-edit space. */
+internal object ReversalLayoutPolicyV175 {
+    const val THREE_PANE_MIN_WIDTH_DP = 1_250
+    fun useSteps(widthDp: Int): Boolean = widthDp < THREE_PANE_MIN_WIDTH_DP
+}
+
 @Composable
 private fun ReversalScreen(
     initialSaleId: Long?,
@@ -1245,8 +1253,33 @@ private fun ReversalScreen(
 
     Column(Modifier.fillMaxSize()) {
         OpHeader("SCR-400/410", "元売上から返品・取消")
-        Row(Modifier.weight(1f).padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OpPanel(Modifier.width(355.dp).fillMaxHeight()) {
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val compactReversal = ReversalLayoutPolicyV175.useSteps(maxWidth.value.toInt())
+            var compactStepV175 by remember(initialSaleId) {
+                androidx.compose.runtime.mutableIntStateOf(if (initialSaleId != null) 1 else 0)
+            }
+            Column(Modifier.fillMaxSize()) {
+                if (compactReversal) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf("元売上", "商品・数量", "確定").forEachIndexed { index, label ->
+                            OpChoiceButton(label, compactStepV175 == index, Modifier.weight(1f)) {
+                                compactStepV175 = index
+                            }
+                        }
+                    }
+                }
+                Row(
+                    Modifier.weight(1f).fillMaxWidth().padding(14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+            if (!compactReversal || compactStepV175 == 0) {
+            OpPanel(
+                if (compactReversal) Modifier.weight(1f).fillMaxHeight()
+                else Modifier.width(355.dp).fillMaxHeight(),
+            ) {
                 Text("元売上を検索・選択", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = OpNavy)
                 if (contextSaleLocked && selectedSaleId != null) {
                     Card(
@@ -1338,6 +1371,7 @@ private fun ReversalScreen(
                                     savedResult = null
                                     requestId = UUID.randomUUID().toString()
                                     localMessage = if (lines.isEmpty()) "返品可能な明細がありません" else null
+                                    if (lines.isNotEmpty() && compactReversal) compactStepV175 = 1
                                 }
                             }
                         },
@@ -1383,6 +1417,7 @@ private fun ReversalScreen(
                                     savedResult = null
                                     requestId = UUID.randomUUID().toString()
                                     localMessage = if (lines.isEmpty()) "返品可能な明細がありません" else null
+                                    if (lines.isNotEmpty() && compactReversal) compactStepV175 = 1
                                 }
                                 .padding(horizontal = 7.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -1402,7 +1437,9 @@ private fun ReversalScreen(
                     Text("${record.type.displayName} No.${record.originalSaleId}  -${opYen(record.grossAmount)}", fontSize = 12.sp)
                 }
             }
+            }
 
+            if (!compactReversal || compactStepV175 == 1) {
             OpPanel(Modifier.weight(1f).fillMaxHeight()) {
                 Text("返品商品・数量", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = OpNavy)
                 Spacer(Modifier.height(5.dp))
@@ -1524,8 +1561,16 @@ private fun ReversalScreen(
                     }
                 }
             }
+            }
 
-            OpPanel(Modifier.width(390.dp).fillMaxHeight()) {
+            if (!compactReversal || compactStepV175 == 2) {
+            OpPanel(
+                if (compactReversal) Modifier.weight(1f).fillMaxHeight()
+                else Modifier.width(390.dp).fillMaxHeight(),
+            ) {
+                Column(
+                    Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                ) {
                 Text("返品・取消確定", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = OpNavy)
                 Spacer(Modifier.height(8.dp))
                 OpAmountRow("元売上", selected?.let { "No.${it.id}" } ?: "未選択")
@@ -1566,6 +1611,7 @@ private fun ReversalScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
+                }
                 Spacer(Modifier.height(8.dp))
                 Button(
                     onClick = { showReversalConfirm = true },
@@ -1584,10 +1630,14 @@ private fun ReversalScreen(
                         result.previewText,
                         fontSize = 9.sp,
                         lineHeight = 11.sp,
-                        modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 80.dp)
+                            .verticalScroll(rememberScrollState()),
                     )
-                } ?: Spacer(Modifier.weight(1f))
+                } ?: Spacer(Modifier.height(4.dp))
                 Text("元売上は変更せず、返品明細と反対支払を追記します。", color = Color.DarkGray, fontSize = 11.sp)
+            }
+            }
+                }
             }
         }
         OpBottomBar(if (initialSaleId != null) "売上詳細へ戻る" else "レジ管理へ戻る", onBack)
