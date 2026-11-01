@@ -9,6 +9,8 @@ import java.util.UUID
  * The transport is called off the UI thread. Every request uses an immutable
  * unique event key, so a failed/uncertain pulse cannot be retried automatically.
  */
+internal class SalesExchangePreflightExceptionV174(message: String) : IllegalStateException(message)
+
 internal object SalesExchangeDrawerV172 {
     fun canRequest(operator: AuthenticatedOperator?): Boolean =
         operator?.allows(RegisterPermission.SALES) == true
@@ -16,10 +18,12 @@ internal object SalesExchangeDrawerV172 {
     fun open(context: Context): Result<Boolean> = runCatching {
         val appContext = context.applicationContext
         val operator = OperatorSessionRegistry.current(appContext)
-        check(canRequest(operator)) { "販売権限のある担当者でログインしてください" }
+        if (!canRequest(operator)) {
+            throw SalesExchangePreflightExceptionV174("販売権限のある担当者でログインしてください")
+        }
         val config = PrinterPaperSettingPolicy.currentConfiguration(appContext)
-        check(CashDrawerSafetyPolicyV136.shouldOpen(CashDrawerOpenContextV136.EXCHANGE, config)) {
-            "ドロアの両替開放設定、プリンター接続を確認してください"
+        if (!CashDrawerSafetyPolicyV136.shouldOpen(CashDrawerOpenContextV136.EXCHANGE, config)) {
+            throw SalesExchangePreflightExceptionV174("ドロアの両替開放設定、プリンター接続を確認してください")
         }
         CashDrawerRuntimeV136.dispatch(
             context = appContext,

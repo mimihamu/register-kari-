@@ -173,6 +173,7 @@ private fun RegisterApp() {
     var loginMessage by remember { mutableStateOf<String?>(null) }
     var accessMessage by remember { mutableStateOf<String?>(null) }
     var exchangeDrawerInProgress by remember { mutableStateOf(false) }
+    var drawerFeedback by remember { mutableStateOf<SalesDrawerFeedbackV174?>(null) }
     var lastExchangeDrawerTapAt by remember { mutableStateOf<Long?>(null) }
     var printerHealth by remember { mutableStateOf(PrinterHealthSnapshot.checking()) }
     var catalogEpoch by remember { androidx.compose.runtime.mutableIntStateOf(0) }
@@ -552,20 +553,27 @@ private fun RegisterApp() {
                         SalesExchangeTapPolicyV173.mayStart(tappedAt, lastExchangeDrawerTapAt)
                     ) {
                         lastExchangeDrawerTapAt = tappedAt
+                        drawerFeedback = null
                         exchangeDrawerInProgress = true
                         checkoutScope.launch {
                             val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                                 SalesExchangeDrawerV172.open(context.applicationContext)
                             }
                             exchangeDrawerInProgress = false
-                            accessMessage = result.fold(
-                                onSuccess = { if (it) "両替：ドロア開放信号を送信しました" else "両替：ドロア設定を確認してください" },
-                                onFailure = { it.message ?: "両替：ドロアを開けませんでした" },
-                            )
+                            drawerFeedback = SalesDrawerFeedbackPolicyV174.fromResult(result)
+                            if (drawerFeedback == null) {
+                                android.widget.Toast.makeText(
+                                    context.applicationContext,
+                                    "ドロア開放信号を送信しました",
+                                    android.widget.Toast.LENGTH_SHORT,
+                                ).show()
+                            }
                         }
                     }
                 },
                 exchangeDrawerInProgress = exchangeDrawerInProgress,
+                drawerFeedback = drawerFeedback,
+                onDismissDrawerFeedback = { drawerFeedback = null },
                 onPrintQueue = {
                     if (currentOperator?.allows(RegisterPermission.VIEW_SALES) == true) {
                         accessMessage = null
@@ -1170,6 +1178,8 @@ internal fun SalesScreen(
     onPrintQueue: () -> Unit,
     onExchangeDrawer: (() -> Unit)? = null,
     exchangeDrawerInProgress: Boolean = false,
+    drawerFeedback: SalesDrawerFeedbackV174? = null,
+    onDismissDrawerFeedback: () -> Unit = {},
     onPrinterStatus: () -> Unit,
     canOpenSettings: Boolean,
     canOpenManagement: Boolean,
@@ -1194,7 +1204,31 @@ internal fun SalesScreen(
     androidx.compose.runtime.LaunchedEffect(printerHealth.level) {
         if (printerHealth.level != PrinterHealthLevel.ERROR) dismissedPrinterError = null
     }
-    if (printerHealth.level == PrinterHealthLevel.ERROR && dismissedPrinterError != printerErrorKey) {
+    if (drawerFeedback != null) {
+        RegisterModalV154(
+            onDismissRequest = onDismissDrawerFeedback,
+            title = { Text(drawerFeedback.title, fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    drawerFeedback.detail,
+                    color = if (drawerFeedback.uncertain) Danger else Color(0xFF152635),
+                )
+            },
+            confirmButton = {
+                RegisterModalConfirmV154(label = "プリンター状態", onClick = {
+                    onDismissDrawerFeedback()
+                    onPrinterStatus()
+                })
+            },
+            dismissButton = {
+                RegisterModalCancelV154(onClick = onDismissDrawerFeedback, label = "閉じる")
+            },
+        )
+    }
+    if (drawerFeedback == null &&
+        printerHealth.level == PrinterHealthLevel.ERROR &&
+        dismissedPrinterError != printerErrorKey
+    ) {
         RegisterModalV154(
             onDismissRequest = { dismissedPrinterError = printerErrorKey },
             title = { Text("プリンターエラー", fontWeight = FontWeight.Bold) },
