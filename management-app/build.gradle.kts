@@ -144,8 +144,11 @@ android {
         // v1.72 developer build:
         // versionCode = 60
         // versionName = "0.33.27-dev.1"
-        versionCode = 61
-        versionName = "0.33.28-dev.1"
+        // v1.73 previous identity
+        // versionCode = 61
+        // versionName = "0.33.28-dev.1"
+        versionCode = 62
+        versionName = "0.33.29-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ＋"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
