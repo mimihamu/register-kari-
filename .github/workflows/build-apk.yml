@@ -493,10 +493,10 @@ jobs:
       - name: Verify built APK release identity and integrity
         shell: bash
         env:
-          POS_VERSION_CODE: 195
-          POS_VERSION_NAME: 1.34.31-dev.1
-          PLUS_VERSION_CODE: 63
-          PLUS_VERSION_NAME: 0.33.30-dev.1
+          POS_VERSION_CODE: 196
+          POS_VERSION_NAME: 1.34.32-dev.1
+          PLUS_VERSION_CODE: 64
+          PLUS_VERSION_NAME: 0.33.31-dev.1
           BUILD_TOOLS_VERSION: 36.0.0
         run: |
           set -euo pipefail
@@ -522,12 +522,12 @@ jobs:
           stat --printf='MANAGEMENT_APP_APK_SIZE_BYTES=%s\n' "$plus_apk" | tee -a artifacts/build-summary.txt
           stat --printf='CUSTOMER_DISPLAY_APK_SIZE_BYTES=%s\n' "$cd_apk" | tee -a artifacts/build-summary.txt
           cat >> artifacts/build-summary.txt <<'EOF'
-          REGISTER_VERSION_NAME=1.34.31-dev.1
-          REGISTER_VERSION_CODE=195
-          MANAGEMENT_APP_VERSION_NAME=0.33.30-dev.1
-          MANAGEMENT_APP_VERSION_CODE=63
-          CUSTOMER_DISPLAY_VERSION_NAME=0.15.33-dev.1
-          CUSTOMER_DISPLAY_VERSION_CODE=41
+          REGISTER_VERSION_NAME=1.34.32-dev.1
+          REGISTER_VERSION_CODE=196
+          MANAGEMENT_APP_VERSION_NAME=0.33.31-dev.1
+          MANAGEMENT_APP_VERSION_CODE=64
+          CUSTOMER_DISPLAY_VERSION_NAME=0.15.34-dev.1
+          CUSTOMER_DISPLAY_VERSION_CODE=42
           DRIVE_REMOTE_VERSION_FINGERPRINT=true
           DRIVE_PAGINATION_COMPLETE=true
           DRIVE_SYNC_SINGLE_FLIGHT=true

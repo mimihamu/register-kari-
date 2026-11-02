@@ -90,10 +90,10 @@ jobs:
       - name: Verify APK release identity and integrity
         shell: bash
         env:
-          POS_VERSION_CODE: 195
-          POS_VERSION_NAME: 1.34.31-dev.1
-          PLUS_VERSION_CODE: 63
-          PLUS_VERSION_NAME: 0.33.30-dev.1
+          POS_VERSION_CODE: 196
+          POS_VERSION_NAME: 1.34.32-dev.1
+          PLUS_VERSION_CODE: 64
+          PLUS_VERSION_NAME: 0.33.31-dev.1
           BUILD_TOOLS_VERSION: 36.0.0
         run: |
           set -euo pipefail
