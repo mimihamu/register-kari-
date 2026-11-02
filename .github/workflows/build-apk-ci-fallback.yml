@@ -106,9 +106,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          register_apk=artifacts/TSUGUREGI_v1.34.31_dev1_printer_chrome_debug.apk
-          plus_apk=artifacts/TSUGUREGI_PLUS_v0.33.30_dev1_printer_chrome_debug.apk
-          cd_apk=artifacts/TSUGUREGI_CD_v0.15.33_dev1_printer_chrome_debug.apk
+          register_apk=artifacts/TSUGUREGI_v1.34.32_dev1_printer_chrome_debug.apk
+          plus_apk=artifacts/TSUGUREGI_PLUS_v0.33.31_dev1_printer_chrome_debug.apk
+          cd_apk=artifacts/TSUGUREGI_CD_v0.15.34_dev1_printer_chrome_debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk "$register_apk"
           cp management-app/build/outputs/apk/debug/management-app-debug.apk "$plus_apk"
           cp customer-display/build/outputs/apk/debug/customer-display-debug.apk "$cd_apk"
@@ -123,7 +123,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: TSUGUREGI-v1.34.31-dev1-printer-chrome-fallback-apks
+          name: TSUGUREGI-v1.34.32-dev1-printer-chrome-fallback-apks
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
