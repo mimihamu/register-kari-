@@ -43,6 +43,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1135,7 +1136,14 @@ private fun CashMovementScreen(
 /** Three columns only when the search and approval panels leave usable line-edit space. */
 internal object ReversalLayoutPolicyV175 {
     const val THREE_PANE_MIN_WIDTH_DP = 1_250
-    fun useSteps(widthDp: Int): Boolean = widthDp < THREE_PANE_MIN_WIDTH_DP
+    fun useSteps(widthDp: Int, fontScale: Float = 1f): Boolean {
+        val minimum = when {
+            fontScale >= 1.5f -> 1_850
+            fontScale >= 1.2f -> 1_500
+            else -> THREE_PANE_MIN_WIDTH_DP
+        }
+        return widthDp < minimum
+    }
 }
 
 @Composable
@@ -1161,7 +1169,8 @@ private fun ReversalScreen(
     var type by remember { mutableStateOf(ReversalType.RETURN) }
     var reason by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
-    var requestId by remember { mutableStateOf(UUID.randomUUID().toString()) }
+    // Preserve the idempotency key across activity recreation after an uncertain commit.
+    var requestId by rememberSaveable(initialSaleId) { mutableStateOf(UUID.randomUUID().toString()) }
     var showReversalConfirm by remember { mutableStateOf(false) }
     var savedResult by remember { mutableStateOf<PartialReversalResult?>(null) }
     var localMessage by remember { mutableStateOf<String?>(null) }
@@ -1254,7 +1263,10 @@ private fun ReversalScreen(
     Column(Modifier.fillMaxSize()) {
         OpHeader("SCR-400/410", "元売上から返品・取消")
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-            val compactReversal = ReversalLayoutPolicyV175.useSteps(maxWidth.value.toInt())
+            val compactReversal = ReversalLayoutPolicyV175.useSteps(
+                maxWidth.value.toInt(),
+                androidx.compose.ui.platform.LocalConfiguration.current.fontScale,
+            )
             var compactStepV175 by remember(initialSaleId) {
                 androidx.compose.runtime.mutableIntStateOf(if (initialSaleId != null) 1 else 0)
             }
@@ -1471,7 +1483,7 @@ private fun ReversalScreen(
                 } else if (lines.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("返品可能な明細がありません", color = OpDanger) }
                 } else {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         itemsIndexed(lines) { _, line ->
                             val inputText = quantityInputs[line.saleItemId].orEmpty()
                             val parsedRequested = reversalQuantityInputHundredths(inputText)
@@ -1559,6 +1571,14 @@ private fun ReversalScreen(
                             }
                         }
                     }
+                    if (compactReversal) {
+                        Spacer(Modifier.height(8.dp))
+                        Button(
+                            onClick = { compactStepV175 = 2 },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = OpBlue),
+                        ) { Text("返金内容を確認", fontWeight = FontWeight.Bold) }
+                    }
                 }
             }
             }
@@ -1577,12 +1597,16 @@ private fun ReversalScreen(
                 OpAmountRow("返金予定", opYen(previewSummary?.grossAmount ?: 0L), emphasized = true)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OpChoiceButton("返品", type == ReversalType.RETURN, Modifier.weight(1f)) {
-                        type = ReversalType.RETURN
-                        requestId = UUID.randomUUID().toString()
+                        if (type != ReversalType.RETURN) {
+                            type = ReversalType.RETURN
+                            requestId = UUID.randomUUID().toString()
+                        }
                     }
                     OpChoiceButton("取消", type == ReversalType.CANCEL, Modifier.weight(1f)) {
-                        type = ReversalType.CANCEL
-                        requestId = UUID.randomUUID().toString()
+                        if (type != ReversalType.CANCEL) {
+                            type = ReversalType.CANCEL
+                            requestId = UUID.randomUUID().toString()
+                        }
                     }
                 }
                 Spacer(Modifier.height(7.dp))
