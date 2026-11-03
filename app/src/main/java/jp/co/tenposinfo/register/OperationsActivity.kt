@@ -1203,6 +1203,10 @@ private fun ReversalScreen(
         it.returnedQuantityHundredths == 0L && it.remainingQuantityHundredths > 0L
     }
     val managerApproved = pin.isNotBlank() || ManagerApprovalV145.canUseCurrentManagerSession(LocalContext.current)
+    // Persist the chosen step; an invalid deep-link must return to sale search.
+    var compactStepV175 by rememberSaveable(initialSaleId) {
+        androidx.compose.runtime.mutableIntStateOf(if (initialSaleId != null) 1 else 0)
+    }
     val canExecute = selected != null && managerApproved && when (type) {
         ReversalType.CANCEL -> canCancel
         ReversalType.RETURN -> selectedItems.isNotEmpty() && !hasQuantityInputError
@@ -1225,6 +1229,7 @@ private fun ReversalScreen(
                 quantityInputs = emptyMap()
                 savedResult = null
                 requestId = UUID.randomUUID().toString()
+                compactStepV175 = 0
                 localMessage = "指定された売上No.$saleId は見つかりません。元売上は選択していません"
             }
             context.alreadyCompleted -> {
@@ -1235,6 +1240,7 @@ private fun ReversalScreen(
                 quantityInputs = emptyMap()
                 savedResult = null
                 requestId = UUID.randomUUID().toString()
+                compactStepV175 = 0
                 localMessage = "売上No.$saleId は全量返品・取消済みです。元売上は選択していません"
             }
             context.mayOpenLocked && sale != null -> {
@@ -1246,11 +1252,13 @@ private fun ReversalScreen(
                 }
                 quantityInputs = emptyMap()
                 savedResult = null
-                requestId = UUID.randomUUID().toString()
+                // On Activity recreation preserve the existing sale-bound requestId.
+                // A new initialSaleId automatically gets a new rememberSaveable identity.
                 if (lines.isEmpty()) {
                     selectedSaleId = null
                     directSaleOverride = null
                     contextSaleLocked = false
+                    compactStepV175 = 0
                     localMessage = "売上No.${sale.id} に返品可能な明細がありません。元売上は選択していません"
                 } else {
                     contextSaleLocked = true
@@ -1267,9 +1275,6 @@ private fun ReversalScreen(
                 maxWidth.value.toInt(),
                 androidx.compose.ui.platform.LocalConfiguration.current.fontScale,
             )
-            var compactStepV175 by remember(initialSaleId) {
-                androidx.compose.runtime.mutableIntStateOf(if (initialSaleId != null) 1 else 0)
-            }
             Column(Modifier.fillMaxSize()) {
                 if (compactReversal) {
                     Row(
@@ -1293,6 +1298,18 @@ private fun ReversalScreen(
                 else Modifier.width(355.dp).fillMaxHeight(),
             ) {
                 Text("元売上を検索・選択", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = OpNavy)
+                if (!contextSaleLocked) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = onManualReturn,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+                        border = BorderStroke(2.dp, OpDanger),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = Color(0xFFFFEBEE),
+                            contentColor = OpDanger,
+                        ),
+                    ) { Text("元取引なし → レジマイナス", fontWeight = FontWeight.Bold) }
+                }
                 if (contextSaleLocked && selectedSaleId != null) {
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
@@ -1468,16 +1485,11 @@ private fun ReversalScreen(
                     ) {
                         Text("元売上を選択してください", color = Color.Gray)
                         Spacer(Modifier.height(18.dp))
-                        OutlinedButton(
-                            onClick = onManualReturn,
-                            modifier = Modifier.height(52.dp),
-                            border = BorderStroke(2.dp, OpDanger),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                containerColor = Color(0xFFFFEBEE),
-                                contentColor = OpDanger,
-                            ),
-                        ) {
-                            Text("元取引なし → レジマイナス", fontWeight = FontWeight.Bold)
+                        if (compactReversal) {
+                            OutlinedButton(
+                                onClick = { compactStepV175 = 0 },
+                                modifier = Modifier.heightIn(min = 50.dp),
+                            ) { Text("元売上を選ぶ") }
                         }
                     }
                 } else if (lines.isEmpty()) {
