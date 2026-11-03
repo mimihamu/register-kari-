@@ -204,3 +204,12 @@ internal fun rememberRegisterResponsiveMetrics(): RegisterResponsiveMetrics {
         )
     }
 }
+
+/** Ensure operator buttons have enough width for names on small landscape tablets. */
+internal object RegisterOperatorGridPolicyV177 {
+    fun columns(leftPaneWidthDp: Int, fontScale: Float = 1f): Int = when {
+        leftPaneWidthDp < 340 -> 1
+        leftPaneWidthDp < 490 || fontScale >= 1.3f -> 2
+        else -> 3
+    }
+}

@@ -1024,6 +1024,12 @@ private fun LoginScreen(
     val loginWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
     val pinPanelWidthDp = (loginWidthDp * if (responsive.isCompact) 0.43f else 0.36f)
         .toInt().coerceIn(240, 420)
+    val availableOperatorWidthDp = (loginWidthDp - 2 * outerPaddingDp - panelGapDp - pinPanelWidthDp)
+        .coerceAtLeast(0)
+    val operatorColumnsV177 = RegisterOperatorGridPolicyV177.columns(
+        availableOperatorWidthDp,
+        androidx.compose.ui.platform.LocalConfiguration.current.fontScale,
+    )
     Column(modifier = Modifier.fillMaxSize()) {
         Header("SCR-010", "担当者選択／ログイン")
         Row(
@@ -1047,12 +1053,12 @@ private fun LoginScreen(
                 if (operators.isEmpty()) {
                     Text("有効な担当者が登録されていません", color = Danger, fontWeight = FontWeight.Bold)
                 }
-                for (rowStart in operators.indices step 3) {
+                for (rowStart in operators.indices step operatorColumnsV177) {
                     Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(operatorGapDp.dp),
                     ) {
-                        for (index in rowStart until minOf(rowStart + 3, operators.size)) {
+                        for (index in rowStart until minOf(rowStart + operatorColumnsV177, operators.size)) {
                             val operator = operators[index]
                             OutlinedButton(
                                 onClick = {
@@ -1076,7 +1082,7 @@ private fun LoginScreen(
                                 )
                             }
                         }
-                        for (unused in minOf(rowStart + 3, operators.size) until rowStart + 3) Spacer(Modifier.weight(1f))
+                        for (unused in minOf(rowStart + operatorColumnsV177, operators.size) until rowStart + operatorColumnsV177) Spacer(Modifier.weight(1f))
                     }
                     Spacer(Modifier.height(operatorGapDp.dp))
                 }
