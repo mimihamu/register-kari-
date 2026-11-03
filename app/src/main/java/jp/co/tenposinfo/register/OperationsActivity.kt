@@ -1162,15 +1162,17 @@ private fun ReversalScreen(
     onManualReturn: () -> Unit,
     onBack: () -> Unit,
 ) {
-    var selectedSaleId by remember(initialSaleId) { mutableStateOf<Long?>(initialSaleId) }
-    var contextSaleLocked by remember(initialSaleId) { mutableStateOf(initialSaleId != null) }
+    var selectedSaleId by rememberSaveable(initialSaleId) { mutableStateOf<Long?>(initialSaleId) }
+    var contextSaleLocked by rememberSaveable(initialSaleId) { mutableStateOf(initialSaleId != null) }
     var lines by remember { mutableStateOf<List<ReturnableSaleLine>>(emptyList()) }
-    var quantityInputs by remember { mutableStateOf<Map<Long, String>>(emptyMap()) }
-    var type by remember { mutableStateOf(ReversalType.RETURN) }
-    var reason by remember { mutableStateOf("") }
+    // Retain the original request inputs with the idempotency key on Activity recreation.
+    var quantityInputs by rememberSaveable(initialSaleId) { mutableStateOf<Map<Long, String>>(emptyMap()) }
+    var type by rememberSaveable(initialSaleId) { mutableStateOf(ReversalType.RETURN) }
+    var reason by rememberSaveable(initialSaleId) { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
     // Preserve the idempotency key across activity recreation after an uncertain commit.
     var requestId by rememberSaveable(initialSaleId) { mutableStateOf(UUID.randomUUID().toString()) }
+    var requestScopeSaleId by rememberSaveable(initialSaleId) { mutableStateOf(initialSaleId) }
     var showReversalConfirm by remember { mutableStateOf(false) }
     var savedResult by remember { mutableStateOf<PartialReversalResult?>(null) }
     var localMessage by remember { mutableStateOf<String?>(null) }
@@ -1229,6 +1231,7 @@ private fun ReversalScreen(
                 quantityInputs = emptyMap()
                 savedResult = null
                 requestId = UUID.randomUUID().toString()
+                requestScopeSaleId = null
                 compactStepV175 = 0
                 localMessage = "指定された売上No.$saleId は見つかりません。元売上は選択していません"
             }
@@ -1240,6 +1243,7 @@ private fun ReversalScreen(
                 quantityInputs = emptyMap()
                 savedResult = null
                 requestId = UUID.randomUUID().toString()
+                requestScopeSaleId = null
                 compactStepV175 = 0
                 localMessage = "売上No.$saleId は全量返品・取消済みです。元売上は選択していません"
             }
@@ -1250,9 +1254,8 @@ private fun ReversalScreen(
                     localMessage = it.message ?: "明細取得に失敗しました"
                     emptyList()
                 }
-                quantityInputs = emptyMap()
                 savedResult = null
-                // On Activity recreation preserve the existing sale-bound requestId.
+                // On Activity recreation preserve the existing sale-bound requestId and quantities.
                 // A new initialSaleId automatically gets a new rememberSaveable identity.
                 if (lines.isEmpty()) {
                     selectedSaleId = null
@@ -1265,6 +1268,31 @@ private fun ReversalScreen(
                     localMessage = "売上No.${sale.id} から開きました。元売上を固定しています"
                 }
             }
+        }
+    }
+
+    // Restore the selected source after Android recreates a general-menu reversal Activity.
+    androidx.compose.runtime.LaunchedEffect(initialSaleId, selectedSaleId) {
+        if (initialSaleId != null || lines.isNotEmpty()) return@LaunchedEffect
+        val restoredId = selectedSaleId ?: return@LaunchedEffect
+        val restoredSale = lookupSale(restoredId)
+        val restoredLines = if (restoredSale != null && restoredId !in reversedSaleIds) {
+            runCatching { loadLines(restoredId) }.getOrElse {
+                localMessage = it.message ?: "返品可能な明細を復元できませんでした"
+                emptyList()
+            }
+        } else emptyList()
+        if (restoredSale == null || restoredLines.isEmpty()) {
+            selectedSaleId = null
+            directSaleOverride = null
+            quantityInputs = emptyMap()
+            requestScopeSaleId = null
+            requestId = UUID.randomUUID().toString()
+            compactStepV175 = 0
+            localMessage = "元売上の返品可能明細を確認できません。元売上を選び直してください"
+        } else {
+            lines = restoredLines
+            directSaleOverride = restoredSale.takeIf { candidate -> sales.none { it.id == candidate.id } }
         }
     }
 
@@ -1330,9 +1358,8 @@ private fun ReversalScreen(
                                     selectedSaleId = null
                                     directSaleOverride = null
                                     lines = emptyList()
-                                    quantityInputs = emptyMap()
+                                    // Keep the pending ID and quantities until a different sale is selected.
                                     savedResult = null
-                                    requestId = UUID.randomUUID().toString()
                                     localMessage = "元売上固定を解除しました。別売上を検索してください"
                                 },
                                 modifier = Modifier.fillMaxWidth(),
@@ -1378,6 +1405,7 @@ private fun ReversalScreen(
                                     quantityInputs = emptyMap()
                                     savedResult = null
                                     requestId = UUID.randomUUID().toString()
+                                    requestScopeSaleId = null
                                     localMessage = "売上No.$saleId は見つかりません。元売上の選択を解除しました"
                                 }
                                 sale.id in reversedSaleIds -> {
@@ -1387,18 +1415,22 @@ private fun ReversalScreen(
                                     quantityInputs = emptyMap()
                                     savedResult = null
                                     requestId = UUID.randomUUID().toString()
+                                    requestScopeSaleId = null
                                     localMessage = "売上No.${sale.id} は全量返品・取消済みです。元売上の選択を解除しました"
                                 }
                                 else -> {
                                     selectedSaleId = sale.id
+                                    if (ReversalRetryScopeV178.requiresNewId(requestScopeSaleId, sale.id)) {
+                                        requestScopeSaleId = sale.id
+                                        requestId = UUID.randomUUID().toString()
+                                        quantityInputs = emptyMap()
+                                    }
                                     directSaleOverride = sale.takeIf { candidate -> sales.none { it.id == candidate.id } }
                                     lines = runCatching { loadLines(sale.id) }.getOrElse {
                                         localMessage = it.message ?: "明細取得に失敗しました"
                                         emptyList()
                                     }
-                                    quantityInputs = emptyMap()
                                     savedResult = null
-                                    requestId = UUID.randomUUID().toString()
                                     localMessage = if (lines.isEmpty()) "返品可能な明細がありません" else null
                                     if (lines.isNotEmpty() && compactReversal) compactStepV175 = 1
                                 }
@@ -1437,14 +1469,17 @@ private fun ReversalScreen(
                                 .background(if (selectedRow) OpPaleBlue else Color.Transparent)
                                 .clickable(enabled = !completed && !contextSaleLocked) {
                                     selectedSaleId = sale.id
+                                    if (ReversalRetryScopeV178.requiresNewId(requestScopeSaleId, sale.id)) {
+                                        requestScopeSaleId = sale.id
+                                        requestId = UUID.randomUUID().toString()
+                                        quantityInputs = emptyMap()
+                                    }
                                     directSaleOverride = null
                                     lines = runCatching { loadLines(sale.id) }.getOrElse {
                                         localMessage = it.message ?: "明細取得に失敗しました"
                                         emptyList()
                                     }
-                                    quantityInputs = emptyMap()
                                     savedResult = null
-                                    requestId = UUID.randomUUID().toString()
                                     localMessage = if (lines.isEmpty()) "返品可能な明細がありません" else null
                                     if (lines.isNotEmpty() && compactReversal) compactStepV175 = 1
                                 }
