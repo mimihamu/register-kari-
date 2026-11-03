@@ -14,7 +14,7 @@ class V177ReversalEntryAndDeepLinkRetryTest {
         source.indexOf("private val reversalQuantityInputRegex"),
     )
     private val initialization = screen.substringAfter("LaunchedEffect(initialSaleId) {")
-        .substringBefore("Column(Modifier.fillMaxSize())")
+        .substringBefore("LaunchedEffect(initialSaleId, selectedSaleId)")
 
     @Test fun deepLinkedValidSaleDoesNotRotateRetryIdOnRecreation() {
         val validSale = initialization.substringAfter("context.mayOpenLocked && sale != null -> {")
