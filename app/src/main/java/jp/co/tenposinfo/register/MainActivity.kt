@@ -1157,7 +1157,10 @@ private fun LoginScreen(
                             onDigit = { if (pin.length < 8) pin += it },
                             onClear = { pin = "" },
                             bottomActionLabel = "ログイン",
-                            onBottomAction = { selectedId?.let { onLogin(it, pin) } },
+                            onBottomAction = {
+                                selectedId?.let { onLogin(it, pin) }
+                                pinPadOpenV179 = false
+                            },
                             compact = responsive.isCompact,
                             buttonHeightDp = padHeightDp,
                             rowGapDp = padGapDp,
@@ -1544,6 +1547,7 @@ internal fun SalesScreen(
                                     }
                                 }
                                 numericInput = ""
+                                salePadOpenV179 = false
                             },
                             onDecimal = {
                                 if ("." !in numericInput && numericInput.length < 6) {
@@ -2812,7 +2816,10 @@ private fun PaymentScreen(
                             onDigit = { if (input.length < 10) input += it },
                             onClear = { input = "" },
                             bottomActionLabel = "現金",
-                            onBottomAction = { add(PaymentMethod.CASH) },
+                            onBottomAction = {
+                                add(PaymentMethod.CASH)
+                                paymentPadOpenV179 = false
+                            },
                             compact = true,
                             buttonHeightDp = padHeightDp,
                             rowGapDp = padGapDp,

@@ -235,7 +235,10 @@ internal fun PaymentScreen(
                         Uc08NumberPad(
                             onDigit = { if (input.length < 10) input += it },
                             onClear = { input = "" },
-                            onCash = { add(PaymentMethod.CASH) },
+                            onCash = {
+                                add(PaymentMethod.CASH)
+                                paymentPadOpenV179 = false
+                            },
                             enabled = remaining > 0 && !completing,
                             keyHeightDp = padHeightDp,
                             gapDp = padGapDp,

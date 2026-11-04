@@ -41,6 +41,9 @@ class V179ChromeAndExpandedKeypadTest {
         assertTrue(main.contains("backgroundColor = if (minusMode) RegisterMinusTopBarColorV179 else Navy"))
         assertTrue(uc08.contains("paymentPadOpenV179"))
         assertTrue(uc08.contains("RegisterExpandedKeypadV179("))
+        assertTrue(uc08.contains("paymentPadOpenV179 = false"))
+        assertTrue(main.contains("salePadOpenV179 = false"))
+        assertTrue(main.contains("pinPadOpenV179 = false"))
         assertTrue(uc08.contains("onCash = { add(PaymentMethod.CASH) }"))
     }
 
