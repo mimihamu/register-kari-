@@ -52,8 +52,9 @@ class V093MainFlowResponsiveTest {
         assertTrue(source.contains("val operatorButtonHeightDp = if (responsive.isCompact) 58 else 82"))
         assertTrue(source.contains("preferredMinKeyDp = 72"))
         assertTrue(source.contains("heightDp = keypad.valueHeightDp"))
-        assertTrue(source.contains("buttonHeightDp = keypad.keyHeightDp"))
-        assertTrue(source.contains("rowGapDp = keypad.gapDp"))
+        assertTrue(source.contains("drawPinPad(keypad.keyHeightDp, keypad.gapDp)"))
+        assertTrue(source.contains("buttonHeightDp = padHeightDp"))
+        assertTrue(source.contains("rowGapDp = padGapDp"))
         assertTrue(source.contains("bottomActionLabel = \"ログイン\""))
         assertTrue(source.contains("selectedId?.let { onLogin(it, pin) }"))
     }

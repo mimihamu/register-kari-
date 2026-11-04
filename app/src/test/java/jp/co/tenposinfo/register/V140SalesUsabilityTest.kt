@@ -46,7 +46,8 @@ class V140SalesUsabilityTest {
         assertTrue(sales.contains("preferredMinKeyDp = 72"))
         val payment = main.substring(main.indexOf("private fun PaymentScreen("), main.indexOf("private fun CompleteScreen("))
         assertTrue(payment.contains("preferredMinKeyDp = 72"))
-        assertTrue(sales.contains("buttonHeightDp = keypad.keyHeightDp"))
+        assertTrue(sales.contains("drawSalePad(keypad.keyHeightDp, keypad.gapDp)"))
+        assertTrue(sales.contains("buttonHeightDp = padHeightDp"))
     }
 
     @Test fun managementHubDirectlyExposesAllDailyOperations() {
