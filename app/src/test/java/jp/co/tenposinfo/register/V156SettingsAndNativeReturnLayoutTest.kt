@@ -13,14 +13,14 @@ class V156SettingsAndNativeReturnLayoutTest {
     @Test fun minusScreenReusesSalesLayoutAndIsolatesReturnCart() {
         val screen = source("ManualReturnActivityV135.kt")
         val main = source("MainActivity.kt")
-        assertTrue(screen.contains("RegisterSafeAreaV141(topBarColor = Color(0xFFB42318))"))
+        assertTrue(screen.contains("RegisterSafeAreaV141(topBarColor = RegisterMinusTopBarColorV179)"))
         assertTrue(screen.contains("SalesScreen("))
         assertTrue(screen.contains("minusMode = true"))
         assertTrue(screen.contains("val cart = remember { mutableStateListOf<CartItem>() }"))
         assertFalse(main.contains("onRegisterMinus = if"))
         assertFalse(main.contains("onClick = onRegisterMinus"))
         assertTrue(source("OperationsHubActivityV030.kt").contains("RegisterPermission.REVERSAL in permissions, openManualReturn"))
-        assertTrue(main.contains("if (minusMode) Danger else Navy"))
+        assertTrue(main.contains("if (minusMode) RegisterMinusTopBarColorV179 else Navy"))
         assertTrue(screen.contains("ManualReturnRequestV135(lines, reason, refundMethod)"))
         assertFalse(screen.contains("database.saveSale("))
     }

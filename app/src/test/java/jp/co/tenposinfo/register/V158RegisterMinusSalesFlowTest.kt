@@ -14,7 +14,7 @@ class V158RegisterMinusSalesFlowTest {
         assertFalse(s.contains("onRegisterMinus = if"))
         assertFalse(s.contains("onClick = onRegisterMinus"))
         assertTrue(s.contains("minusMode: Boolean = false"))
-        assertTrue(s.contains("backgroundColor = if (minusMode) Danger else Navy"))
+        assertTrue(s.contains("backgroundColor = if (minusMode) RegisterMinusTopBarColorV179 else Navy"))
         assertTrue(s.contains("containerColor = Color.Transparent"))
         assertTrue(s.contains("title = if (minusMode) \"レジマイナス\" else \"販売\""))
         assertTrue(s.contains("if (minusMode) \"-\" else \"\""))

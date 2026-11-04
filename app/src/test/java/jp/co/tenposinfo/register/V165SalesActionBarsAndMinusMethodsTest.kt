@@ -10,7 +10,7 @@ class V165SalesActionBarsAndMinusMethodsTest {
 
     @Test fun allSalesAndCheckoutActionRowsHaveBackgrounds() {
         val src = src("MainActivity.kt")
-        assertTrue(src.contains("backgroundColor = if (minusMode) Danger else Navy"))
+        assertTrue(src.contains("backgroundColor = if (minusMode) RegisterMinusTopBarColorV179 else Navy"))
         assertTrue(src.contains("Modifier.fillMaxWidth().height(responsive.bottomBarHeightDp.dp)\n                    .background(Color(0xFFFFCDD2))"))
         assertTrue(src.contains("Modifier.fillMaxWidth().height(122.dp)\n                    .background(RegisterSecondaryActionBarColorV159)"))
         assertTrue(src.contains("Modifier.fillMaxWidth().height(responsive.bottomBarHeightDp.dp)\n                    .background(RegisterSecondaryActionBarColorV159)"))
@@ -22,8 +22,8 @@ class V165SalesActionBarsAndMinusMethodsTest {
         assertTrue(minus.contains("ManualRefundMethodV135.entries.chunked(2)"))
         assertTrue(minus.contains("modifier = Modifier.weight(1f).heightIn(min = 48.dp)"))
         assertTrue(minus.contains("coordinator.create(request, managerPin, checkoutRequestId)"))
-        assertTrue(minus.contains("RegisterSafeAreaV141(topBarColor = Color(0xFFB42318))"))
-        assertTrue(minus.contains("window.statusBarColor = android.graphics.Color.rgb(180, 35, 24)"))
+        assertTrue(minus.contains("RegisterSafeAreaV141(topBarColor = RegisterMinusTopBarColorV179)"))
+        assertTrue(minus.contains("configureRegisterSystemBars(window, android.graphics.Color.rgb(180, 35, 24))"))
         assertTrue(src("OperationsHubActivityV030.kt").contains("HubAmountV030(\"レジマイナス\""))
     }
 }
