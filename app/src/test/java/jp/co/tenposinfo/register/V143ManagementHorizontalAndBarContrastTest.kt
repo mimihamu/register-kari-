@@ -60,6 +60,7 @@ class V143ManagementHorizontalAndBarContrastTest {
             safeArea.contains("topBarColor: Color = RegisterTopBarColorV141"))
         assertTrue(safeArea.contains("WindowInsets.safeDrawing"))
         assertTrue(chrome.contains("isAppearanceLightNavigationBars = false"))
-        assertTrue(chrome.contains("window.navigationBarColor = Color.rgb(23, 63, 107)"))
+        assertTrue(chrome.contains("barColor: Int = Color.rgb(23, 63, 107)"))
+        assertTrue(chrome.contains("window.navigationBarColor = barColor"))
     }
 }

@@ -34,9 +34,9 @@ class V142SystemBarSafeAreaTest {
 
     @Test fun registerMinusUsesRedStatusBarAndSafeComposeInsets() {
         val src = source("ManualReturnActivityV135.kt")
-        assertTrue(src.contains("configureRegisterSystemBars(window)"))
-        assertTrue(src.contains("window.statusBarColor = android.graphics.Color.rgb(180, 35, 24)"))
-        assertTrue(src.contains("RegisterSafeAreaV141(topBarColor = Color(0xFFB42318))"))
+        assertTrue(src.contains("configureRegisterSystemBars(window, android.graphics.Color.rgb(180, 35, 24))"))
+        assertTrue(source("RegisterUiChromeV028.kt").contains("window.statusBarColor = barColor"))
+        assertTrue(src.contains("RegisterSafeAreaV141(topBarColor = RegisterMinusTopBarColorV179)"))
         assertTrue(src.contains("coordinator.create(request, managerPin, checkoutRequestId)"))
     }
 

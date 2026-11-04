@@ -21,9 +21,13 @@ class V148CrossAppUiFormalSpecTest {
         screens.forEach { screen ->
             val src = screen.readText()
             if (src.contains("setContent {")) {
-                assertTrue("${screen.name} system colors", src.contains("configureRegisterSystemBars(window)"))
+                assertTrue("${screen.name} system colors", src.contains(
+                    if (screen.name == "ManualReturnActivityV135.kt")
+                        "configureRegisterSystemBars(window, android.graphics.Color.rgb(180, 35, 24))"
+                    else "configureRegisterSystemBars(window)"
+                ))
                 assertTrue("${screen.name} system padding", src.contains(if (screen.name == "ManualReturnActivityV135.kt")
-                    "RegisterSafeAreaV141(topBarColor = Color(0xFFB42318))" else "RegisterSafeAreaV141 {"))
+                    "RegisterSafeAreaV141(topBarColor = RegisterMinusTopBarColorV179)" else "RegisterSafeAreaV141 {"))
             } else if (screen.name == "AppDistributionUpdateActivityV146.kt") {
                 assertTrue(src.contains("WindowInsetsCompat.Type.systemBars()"))
                 assertTrue(src.contains("ViewCompat.setOnApplyWindowInsetsListener(screen)"))
