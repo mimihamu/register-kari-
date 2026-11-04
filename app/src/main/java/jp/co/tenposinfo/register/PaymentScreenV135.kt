@@ -77,6 +77,7 @@ internal fun PaymentScreen(
         paymentSettings.enabledMethods().filter { it != PaymentMethod.CASH }
     }
     var input by remember { mutableStateOf("") }
+    var paymentPadOpenV179 by remember { mutableStateOf(false) }
     var operationMessage by remember { mutableStateOf<String?>(null) }
     var acknowledgedMixedTax by remember { mutableStateOf(false) }
     val mixed = TaxEngine.validateMixedTax(items, MixedTaxPolicy.ALLOW)
@@ -225,7 +226,30 @@ internal fun PaymentScreen(
                         maxLines = 2,
                     )
                 }
-                Uc08ValueBox(if (input.isBlank()) "残額全額" else input, keypad.valueHeightDp)
+                if (paymentPadOpenV179) {
+                    RegisterExpandedKeypadV179(
+                        title = "現金支払",
+                        displayValue = input.ifBlank { "残額全額" },
+                        onClose = { paymentPadOpenV179 = false },
+                    ) { padHeightDp, padGapDp ->
+                        Uc08NumberPad(
+                            onDigit = { if (input.length < 10) input += it },
+                            onClear = { input = "" },
+                            onCash = { add(PaymentMethod.CASH) },
+                            enabled = remaining > 0 && !completing,
+                            keyHeightDp = padHeightDp,
+                            gapDp = padGapDp,
+                        )
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) {
+                        Uc08ValueBox(if (input.isBlank()) "残額全額" else input, keypad.valueHeightDp)
+                    }
+                    OutlinedButton(onClick = { paymentPadOpenV179 = true }, modifier = Modifier.height(keypad.valueHeightDp.dp)) {
+                        Text("拡大", maxLines = 1)
+                    }
+                }
                 Spacer(Modifier.height(keypad.gapDp.dp))
                 Uc08NumberPad(
                     onDigit = { if (input.length < 10) input += it },

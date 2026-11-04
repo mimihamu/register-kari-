@@ -1008,6 +1008,7 @@ private fun LoginScreen(
     var selectedId by remember(operators) { mutableStateOf(operators.firstOrNull()?.id) }
     val selectedOperator = operators.firstOrNull { it.id == selectedId }
     var pin by remember { mutableStateOf("") }
+    var pinPadOpenV179 by remember { mutableStateOf(false) }
     val responsive = rememberRegisterResponsiveMetrics()
     val operatorScroll = rememberScrollState()
     val pinScroll = rememberScrollState()
@@ -1119,13 +1120,21 @@ private fun LoginScreen(
                             if (keypad.scrollRequired) Modifier.verticalScroll(pinScroll) else Modifier,
                         ),
                     ) {
-                    Text(
-                        "PIN入力",
-                        fontSize = if (responsive.isCompact) 18.sp else 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Navy,
-                        maxLines = 1,
-                    )
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "PIN入力",
+                            fontSize = if (responsive.isCompact) 18.sp else 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Navy,
+                            maxLines = 1,
+                        modifier = Modifier.weight(1f),
+                        )
+                        if (responsive.isCompact) {
+                            OutlinedButton(onClick = { pinPadOpenV179 = true }, modifier = Modifier.height(48.dp)) {
+                                Text("拡大", maxLines = 1)
+                            }
+                        }
+                    }
                     Spacer(Modifier.height(if (responsive.isCompact) 6.dp else 12.dp))
                     ValueBox(
                         if (pin.isEmpty()) "PINを入力" else "●".repeat(pin.length),
@@ -1143,15 +1152,26 @@ private fun LoginScreen(
                         )
                     }
                     Spacer(Modifier.height(if (responsive.isCompact) 6.dp else 14.dp))
-                    NumberPad(
-                        onDigit = { if (pin.length < 8) pin += it },
-                        onClear = { pin = "" },
-                        bottomActionLabel = "ログイン",
-                        onBottomAction = { selectedId?.let { onLogin(it, pin) } },
-                        compact = responsive.isCompact,
-                        buttonHeightDp = keypad.keyHeightDp,
-                        rowGapDp = keypad.gapDp,
-                    )
+                    val drawPinPad: @Composable (Int, Int) -> Unit = { padHeightDp, padGapDp ->
+                        NumberPad(
+                            onDigit = { if (pin.length < 8) pin += it },
+                            onClear = { pin = "" },
+                            bottomActionLabel = "ログイン",
+                            onBottomAction = { selectedId?.let { onLogin(it, pin) } },
+                            compact = responsive.isCompact,
+                            buttonHeightDp = padHeightDp,
+                            rowGapDp = padGapDp,
+                        )
+                    }
+                    drawPinPad(keypad.keyHeightDp, keypad.gapDp)
+                    if (pinPadOpenV179) {
+                        RegisterExpandedKeypadV179(
+                            title = "担当者PIN",
+                            displayValue = if (pin.isEmpty()) "PINを入力" else "●".repeat(pin.length),
+                            onClose = { pinPadOpenV179 = false },
+                            keypad = drawPinPad,
+                        )
+                    }
                     }
                 }
                 }
@@ -1198,6 +1218,7 @@ internal fun SalesScreen(
 ) {
     val summary = TaxEngine.calculate(cart)
     var numericInput by remember { mutableStateOf("") }
+    var salePadOpenV179 by remember { mutableStateOf(false) }
     var pendingQuantityHundredths by remember { mutableStateOf<Long?>(null) }
     var showProductSearch by remember { mutableStateOf(false) }
     var lookupMessage by remember { mutableStateOf<String?>(null) }
@@ -1320,7 +1341,7 @@ internal fun SalesScreen(
 
     Column(Modifier.fillMaxSize().background(if (minusMode) Color(0xFFFFE5E5) else Background)) {
         // レジマイナスは通常販売カートと分離し、全操作を赤で識別する。
-        RegisterTopBarV141(title = if (minusMode) "レジマイナス" else "販売", backgroundColor = if (minusMode) Danger else Navy, action = {
+        RegisterTopBarV141(title = if (minusMode) "レジマイナス" else "販売", backgroundColor = if (minusMode) RegisterMinusTopBarColorV179 else Navy, action = {
             Text(
                 if (accessMessage != null) accessMessage else "担当：$operatorName",
                 color = Color.White,
@@ -1485,8 +1506,16 @@ internal fun SalesScreen(
                                 modifier = Modifier.weight(1f),
                                 heightDp = keypad.valueHeightDp,
                             )
+                            if (responsive.isCompact) {
+                                Spacer(Modifier.width(keypad.gapDp.dp))
+                                OutlinedButton(
+                                    onClick = { salePadOpenV179 = true },
+                                    modifier = Modifier.height(keypad.valueHeightDp.dp),
+                                ) { Text("拡大", maxLines = 1) }
+                            }
                         }
                         Spacer(Modifier.height(keypad.gapDp.dp))
+                        val drawSalePad: @Composable (Int, Int) -> Unit = { padHeightDp, padGapDp ->
                         NumberPad(
                             onDigit = { digit ->
                                 if (numericInput.length < 7) numericInput += digit
@@ -1523,9 +1552,19 @@ internal fun SalesScreen(
                             },
                             decimalEnabled = selectedIndex?.let { cart.getOrNull(it)?.product?.quantityMode } != QuantityMode.INTEGER,
                             compact = true,
-                            buttonHeightDp = keypad.keyHeightDp,
-                            rowGapDp = keypad.gapDp,
+                            buttonHeightDp = padHeightDp,
+                            rowGapDp = padGapDp,
                         )
+                        }
+                        drawSalePad(keypad.keyHeightDp, keypad.gapDp)
+                        if (salePadOpenV179) {
+                            RegisterExpandedKeypadV179(
+                                title = "数量",
+                                displayValue = numericInput.ifBlank { "0" },
+                                onClose = { salePadOpenV179 = false },
+                                keypad = drawSalePad,
+                            )
+                        }
                         Spacer(Modifier.height(keypad.gapDp.dp))
                         CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
                             Row(
@@ -2596,6 +2635,7 @@ private fun PaymentScreen(
         paymentSettings.enabledMethods().filter { it != PaymentMethod.CASH }
     }
     var input by remember { mutableStateOf("") }
+    var paymentPadOpenV179 by remember { mutableStateOf(false) }
     var operationMessage by remember { mutableStateOf<String?>(null) }
     var acknowledgedMixedTax by remember { mutableStateOf(false) }
     val mixed = TaxEngine.validateMixedTax(items, MixedTaxPolicy.ALLOW)
@@ -2752,21 +2792,41 @@ private fun PaymentScreen(
                             fontSize = 12.sp,
                             maxLines = 1,
                         )
-                        ValueBox(
-                            if (input.isBlank()) "残額全額" else input,
-                            compact = true,
-                            heightDp = keypad.valueHeightDp,
-                        )
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            ValueBox(
+                                if (input.isBlank()) "残額全額" else input,
+                                compact = true,
+                                modifier = Modifier.weight(1f),
+                                heightDp = keypad.valueHeightDp,
+                            )
+                            if (responsive.isCompact) {
+                                Spacer(Modifier.width(keypad.gapDp.dp))
+                                OutlinedButton(onClick = { paymentPadOpenV179 = true }, modifier = Modifier.height(keypad.valueHeightDp.dp)) {
+                                    Text("拡大", maxLines = 1)
+                                }
+                            }
+                        }
                         Spacer(Modifier.height(keypad.gapDp.dp))
+                        val drawPaymentPad: @Composable (Int, Int) -> Unit = { padHeightDp, padGapDp ->
                         NumberPad(
                             onDigit = { if (input.length < 10) input += it },
                             onClear = { input = "" },
                             bottomActionLabel = "現金",
                             onBottomAction = { add(PaymentMethod.CASH) },
                             compact = true,
-                            buttonHeightDp = keypad.keyHeightDp,
-                            rowGapDp = keypad.gapDp,
+                            buttonHeightDp = padHeightDp,
+                            rowGapDp = padGapDp,
                         )
+                        }
+                        drawPaymentPad(keypad.keyHeightDp, keypad.gapDp)
+                        if (paymentPadOpenV179) {
+                            RegisterExpandedKeypadV179(
+                                title = "現金支払",
+                                displayValue = input.ifBlank { "残額全額" },
+                                onClose = { paymentPadOpenV179 = false },
+                                keypad = drawPaymentPad,
+                            )
+                        }
                         Spacer(Modifier.height(keypad.gapDp.dp))
                         CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
                             enabledNonCashMethods.chunked(3).forEachIndexed { rowIndex, methods ->

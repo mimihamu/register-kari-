@@ -31,6 +31,19 @@ class V179ChromeAndExpandedKeypadTest {
         assertTrue(chrome.contains("isAppearanceLightStatusBars = false"))
     }
 
+    @Test fun loginSalesAndBothPaymentPathsUseTheOriginalNumericCallbacks() {
+        val main = source("MainActivity.kt")
+        val uc08 = source("PaymentScreenV135.kt")
+        assertTrue(main.contains("drawPinPad(keypad.keyHeightDp, keypad.gapDp)"))
+        assertTrue(main.contains("drawSalePad(keypad.keyHeightDp, keypad.gapDp)"))
+        assertTrue(main.contains("drawPaymentPad(keypad.keyHeightDp, keypad.gapDp)"))
+        assertTrue(main.contains("RegisterExpandedKeypadV179("))
+        assertTrue(main.contains("backgroundColor = if (minusMode) RegisterMinusTopBarColorV179 else Navy"))
+        assertTrue(uc08.contains("paymentPadOpenV179"))
+        assertTrue(uc08.contains("RegisterExpandedKeypadV179("))
+        assertTrue(uc08.contains("onCash = { add(PaymentMethod.CASH) }"))
+    }
+
     @Test fun expandedPadIsDismissibleAndOnlyUsesExistingNumericCallbacks() {
         val pad = source("RegisterExpandedKeypadV179.kt")
         assertTrue(pad.contains("Dialog("))
