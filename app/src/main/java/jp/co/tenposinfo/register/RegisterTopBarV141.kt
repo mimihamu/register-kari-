@@ -29,6 +29,15 @@ import androidx.compose.ui.unit.sp
 
 /** つぐレジ共通のタイトルバー色。 */
 internal val RegisterTopBarColorV141 = Color(0xFF173F6B)
+internal val RegisterMinusTopBarColorV179 = Color(0xFFB42318)
+
+internal object RegisterTopBarSizingV179 {
+    fun heightDp(normalDp: Int, fontScale: Float): Int = when {
+        fontScale >= 1.5f -> maxOf(normalDp, 76)
+        fontScale >= 1.2f -> maxOf(normalDp, 68)
+        else -> normalDp
+    }
+}
 
 /** Bottom action rows are clearly separated from white content cards without a white stripe. */
 internal val RegisterSecondaryActionBarColorV159 = Color(0xFFE3EDF7)
@@ -60,9 +69,10 @@ internal fun RegisterTopBarV141(
     backgroundColor: Color = RegisterTopBarColorV141,
 ) {
     val metrics = rememberRegisterResponsiveMetrics()
+    val fontScale = androidx.compose.ui.platform.LocalConfiguration.current.fontScale
     Row(
         Modifier.fillMaxWidth()
-            .height(metrics.headerHeightDp.dp)
+            .height(RegisterTopBarSizingV179.heightDp(metrics.headerHeightDp, fontScale).dp)
             .background(backgroundColor)
             .padding(horizontal = metrics.screenPaddingDp.dp),
         verticalAlignment = Alignment.CenterVertically,

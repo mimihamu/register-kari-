@@ -41,12 +41,10 @@ class ManualReturnActivityV135 : ComponentActivity() {
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        configureRegisterSystemBars(window)
-        window.statusBarColor = android.graphics.Color.rgb(180, 35, 24)
-        window.navigationBarColor = android.graphics.Color.rgb(180, 35, 24)
+        configureRegisterSystemBars(window, android.graphics.Color.rgb(180, 35, 24))
         coordinator = ManualReturnCoordinatorV135(applicationContext)
         setContent {
-            RegisterSafeAreaV141(topBarColor = Color(0xFFB42318)) {
+            RegisterSafeAreaV141(topBarColor = RegisterMinusTopBarColorV179) {
                 MaterialTheme {
                     RegisterMinusSalesV158(coordinator = coordinator, onExit = ::finish)
                 }
