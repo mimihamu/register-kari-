@@ -140,7 +140,25 @@ internal class PaymentDraftStore(
                     if (cursor.isNull(2)) null else cursor.getString(2),
                 )
             }
-        } ?: return PaymentDraftLoadResult(PaymentState(), false, null, null)
+        } ?: run {
+            // Metadata can be missing after an interrupted / incomplete migration.
+            // The remaining allocation rows must never be silently discarded.
+            val orphanedAllocations = runCatching {
+                db.query(
+                    TABLE_ALLOCATIONS,
+                    arrayOf("sequence_no"),
+                    null, null, null, null, null, "1",
+                ).use { it.moveToFirst() }
+            }.getOrDefault(true)
+            return if (orphanedAllocations) {
+                PaymentDraftLoadResult(
+                    PaymentState(), false, null, null,
+                    PaymentDraftRecoveryPolicyV182.ORPHAN_REVIEW_MESSAGE,
+                )
+            } else {
+                PaymentDraftLoadResult(PaymentState(), false, null, null)
+            }
+        }
 
         val allocations = runCatching {
             db.query(
@@ -172,16 +190,18 @@ internal class PaymentDraftStore(
         }
 
         if (metadata.first != PaymentDraftFingerprint.of(items)) {
-            // An old interrupted draft may have a valid payment for a different fractional
-            // quantity or sale line. Never silently replay it against today's cart.
-            if (allocations.isNotEmpty() &&
+            // Do not silently erase a paid draft for a completely different cart either.
+            // Every non-empty persisted allocation is evidence of a possibly processed tender.
+            val matchingOldFormat =
                 metadata.first == PaymentDraftFingerprint.legacyV180Of(items)
-            ) {
+            if (PaymentDraftRecoveryPolicyV182.mustPreserveDifferentCart(allocations.size)) {
                 return PaymentDraftLoadResult(
                     PaymentState(), false, metadata.second, metadata.third,
-                    PaymentDraftIntegrityV181.REVIEW_MESSAGE,
+                    if (matchingOldFormat) PaymentDraftIntegrityV181.REVIEW_MESSAGE
+                    else PaymentDraftRecoveryPolicyV182.OTHER_CART_REVIEW_MESSAGE,
                 )
             }
+            // Only an empty draft is safe to retire without an operator investigation.
             clear()
             return PaymentDraftLoadResult(PaymentState(), false, null, null)
         }

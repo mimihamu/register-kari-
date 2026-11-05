@@ -521,7 +521,14 @@ private fun RegisterApp() {
                     }
                 },
                 onPayment = {
-                    val draft = paymentDraftStore.loadOrCreate(cart.toList())
+                    val draft = runCatching {
+                        paymentDraftStore.loadOrCreate(cart.toList())
+                    }.getOrElse {
+                        paymentIntegrityWarningV181 =
+                            PaymentDraftRecoveryPolicyV182.STORAGE_REVIEW_MESSAGE
+                        accessMessage = "支払データ要確認"
+                        return@SalesScreen
+                    }
                     if (draft.integrityIssue != null) {
                         paymentIntegrityWarningV181 = draft.integrityIssue
                         accessMessage = "支払データ要確認"
