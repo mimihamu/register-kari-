@@ -245,6 +245,7 @@ private fun RegisterApp() {
     var ticketMessage by remember { mutableStateOf<String?>(null) }
     var selectedHeldTicketId by remember { mutableStateOf<Long?>(null) }
     var paymentMessage by remember { mutableStateOf<String?>(null) }
+    var paymentIntegrityWarningV181 by remember { mutableStateOf<String?>(null) }
     var paymentCommitKey by remember { mutableStateOf<String?>(null) }
     var saleCommitInProgress by remember { mutableStateOf(false) }
     val heldTicketCoordinator = remember { HeldTicketSafetyCoordinator(database) }
@@ -522,9 +523,11 @@ private fun RegisterApp() {
                 onPayment = {
                     val draft = paymentDraftStore.loadOrCreate(cart.toList())
                     if (draft.integrityIssue != null) {
-                        accessMessage = draft.integrityIssue
+                        paymentIntegrityWarningV181 = draft.integrityIssue
+                        accessMessage = "支払データ要確認"
                         return@SalesScreen
                     }
+                    paymentIntegrityWarningV181 = null
                     accessMessage = null
                     paymentState = draft.state
                     paymentCommitKey = draft.commitKey
@@ -938,6 +941,17 @@ private fun RegisterApp() {
                 onBack = { screen = AppScreen.SALES },
             )
         }
+    }
+    if (paymentIntegrityWarningV181 != null) {
+        RegisterModalV154(
+            onDismissRequest = { paymentIntegrityWarningV181 = null },
+            title = { Text("支払データを確認してください", fontWeight = FontWeight.Bold) },
+            text = { Text(paymentIntegrityWarningV181.orEmpty()) },
+            confirmButton = {
+                RegisterModalConfirmV154("確認", onClick = { paymentIntegrityWarningV181 = null })
+            },
+            dismissButton = {},
+        )
     }
 }
 
