@@ -21,20 +21,23 @@ internal object PaymentDraftFingerprint {
 
     private fun digest(items: List<CartItem>, exactIdentity: Boolean): String {
         val canonical = items.mapIndexed { index, item ->
-            listOf(
-                index,
-                item.product.id,
-                item.product.name,
-                item.quantity,
-                *if (exactIdentity) arrayOf(item.quantityHundredths, item.lineId) else emptyArray(),
-                item.unitPrice,
-                item.discountAmount,
-                item.note,
-                item.product.taxKey,
-                item.product.taxRatePercent,
-                item.product.taxIncluded,
-                item.product.taxable,
-            ).joinToString("\u001F")
+            buildList<Any> {
+                add(index)
+                add(item.product.id)
+                add(item.product.name)
+                add(item.quantity)
+                if (exactIdentity) {
+                    add(item.quantityHundredths)
+                    add(item.lineId)
+                }
+                add(item.unitPrice)
+                add(item.discountAmount)
+                add(item.note)
+                add(item.product.taxKey)
+                add(item.product.taxRatePercent)
+                add(item.product.taxIncluded)
+                add(item.product.taxable)
+            }.joinToString("\u001F")
         }.joinToString("\u001E")
         return MessageDigest.getInstance("SHA-256")
             .digest(canonical.toByteArray(StandardCharsets.UTF_8))
