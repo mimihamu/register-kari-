@@ -29,6 +29,18 @@ class V180EntryAndPaymentGuardTest {
         assertTrue(source("RegisterExpandedKeypadV179.kt").contains("Modifier.fillMaxWidth(widthFraction)"))
     }
 
+    @Test fun mediumWindowWithShortKeypadCanStillOpenZoom() {
+        assertTrue(RegisterExpandedKeypadLayoutV180.shouldOfferZoom(true, false))
+        assertTrue(RegisterExpandedKeypadLayoutV180.shouldOfferZoom(false, true))
+        assertFalse(RegisterExpandedKeypadLayoutV180.shouldOfferZoom(false, false))
+        val main = source("MainActivity.kt")
+        val guard = "RegisterExpandedKeypadLayoutV180.shouldOfferZoom(responsive.isCompact, keypad.scrollRequired)"
+        assertEquals(3, main.split(guard).size - 1)
+        assertTrue(RegisterResponsiveLayoutPolicy.keypadMetrics(
+            400, functionRows = 2, preferredMinKeyDp = 72,
+        ).scrollRequired)
+    }
+
     @Test fun changingSaleLineClearsEntryAndClosesExpandedPad() {
         val main = source("MainActivity.kt")
         val sale = main.substring(main.indexOf("internal fun SalesScreen("), main.indexOf("private fun LineEditScreen("))

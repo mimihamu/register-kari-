@@ -1129,7 +1129,7 @@ private fun LoginScreen(
                             maxLines = 1,
                         modifier = Modifier.weight(1f),
                         )
-                        if (responsive.isCompact) {
+                        if (RegisterExpandedKeypadLayoutV180.shouldOfferZoom(responsive.isCompact, keypad.scrollRequired)) {
                             OutlinedButton(onClick = { pinPadOpenV179 = true }, modifier = Modifier.height(48.dp)) {
                                 Text("拡大", maxLines = 1)
                             }
@@ -1515,7 +1515,7 @@ internal fun SalesScreen(
                                 modifier = Modifier.weight(1f),
                                 heightDp = keypad.valueHeightDp,
                             )
-                            if (responsive.isCompact) {
+                            if (RegisterExpandedKeypadLayoutV180.shouldOfferZoom(responsive.isCompact, keypad.scrollRequired)) {
                                 Spacer(Modifier.width(keypad.gapDp.dp))
                                 OutlinedButton(
                                     onClick = { salePadOpenV179 = true },
@@ -2813,7 +2813,7 @@ private fun PaymentScreen(
                                 modifier = Modifier.weight(1f),
                                 heightDp = keypad.valueHeightDp,
                             )
-                            if (responsive.isCompact) {
+                            if (RegisterExpandedKeypadLayoutV180.shouldOfferZoom(responsive.isCompact, keypad.scrollRequired)) {
                                 Spacer(Modifier.width(keypad.gapDp.dp))
                                 OutlinedButton(
                                     onClick = { paymentPadOpenV179 = true },
