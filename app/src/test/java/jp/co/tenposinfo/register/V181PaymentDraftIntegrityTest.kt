@@ -55,6 +55,11 @@ class V181PaymentDraftIntegrityTest {
             PaymentAllocation(PaymentMethod.CASH, 1L, 1L),
         )
         assertFalse(PaymentDraftIntegrityV181.validAllocations(overflow, Long.MAX_VALUE))
+        val changeOverflow = listOf(
+            PaymentAllocation(PaymentMethod.CASH, 1L, Long.MAX_VALUE),
+            PaymentAllocation(PaymentMethod.CASH, 1L, Long.MAX_VALUE),
+        )
+        assertFalse(PaymentDraftIntegrityV181.validAllocations(changeOverflow, 2L))
         assertFalse(PaymentDraftIntegrityV181.validAllocations(
             listOf(PaymentAllocation(PaymentMethod.CARD, 1001L, 1001L)), 1000L,
         ))

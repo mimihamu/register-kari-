@@ -9,11 +9,17 @@ internal object PaymentDraftIntegrityV181 {
         if (total < 0L) return false
         return runCatching {
             var paid = 0L
+            var change = 0L
             for (allocation in allocations) {
                 require(allocation.appliedAmount > 0L)
                 require(allocation.receivedAmount >= allocation.appliedAmount)
                 paid = Math.addExact(paid, allocation.appliedAmount)
+                change = Math.addExact(
+                    change,
+                    Math.subtractExact(allocation.receivedAmount, allocation.appliedAmount),
+                )
                 require(paid <= total)
+                require(change >= 0L)
             }
             true
         }.getOrDefault(false)
