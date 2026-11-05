@@ -246,6 +246,7 @@ private fun RegisterApp() {
     var selectedHeldTicketId by remember { mutableStateOf<Long?>(null) }
     var paymentMessage by remember { mutableStateOf<String?>(null) }
     var paymentIntegrityWarningV181 by remember { mutableStateOf<String?>(null) }
+    var paymentExitWarningV183 by remember { mutableStateOf(false) }
     var paymentCommitKey by remember { mutableStateOf<String?>(null) }
     var saleCommitInProgress by remember { mutableStateOf(false) }
     val heldTicketCoordinator = remember { HeldTicketSafetyCoordinator(database) }
@@ -264,10 +265,18 @@ private fun RegisterApp() {
 
     fun returnFromPayment() {
         if (saleCommitInProgress) return
+        if (PaymentExitPolicyV183.mustKeepPaymentOpen(paymentState.allocations.size)) {
+            // Returning here used to delete the persisted tender and its idempotency key.
+            paymentExitWarningV183 = true
+            return
+        }
+        if (runCatching { paymentDraftStore.clear() }.isFailure) {
+            paymentIntegrityWarningV181 = PaymentDraftRecoveryPolicyV182.STORAGE_REVIEW_MESSAGE
+            return
+        }
         saleCommitGuard.resetForNewPayment()
         saleCommitInProgress = false
         paymentMessage = null
-        paymentDraftStore.clear()
         paymentCommitKey = null
         CustomerDisplayRuntime.publish(
             CustomerDisplaySnapshotFactory.sales(
@@ -779,11 +788,21 @@ private fun RegisterApp() {
                 state = paymentState,
                 completing = saleCommitInProgress,
                 externalMessage = paymentMessage,
-                onStateChange = {
+                onStateChange = tenderUpdate@{
+                    val commitKey = paymentCommitKey ?: PaymentCommitKey.newKey()
+                    // Never show a tender as accepted before its durable draft is stored.
+                    if (runCatching {
+                            paymentDraftStore.save(cart.toList(), it, commitKey)
+                        }.isFailure
+                    ) {
+                        paymentIntegrityWarningV181 =
+                            PaymentDraftRecoveryPolicyV182.STORAGE_REVIEW_MESSAGE
+                        paymentMessage = "支払情報の保存に失敗しました。会計を続けないでください"
+                        return@tenderUpdate
+                    }
+                    paymentCommitKey = commitKey
                     paymentState = it
-                    val commitKey = paymentCommitKey
-                        ?: PaymentCommitKey.newKey().also { generated -> paymentCommitKey = generated }
-                    paymentDraftStore.save(cart.toList(), it, commitKey)
+                    paymentMessage = null
                     CustomerDisplayRuntime.publish(
                         CustomerDisplaySnapshotFactory.accounting(
                             cart.toList(),
@@ -948,6 +967,17 @@ private fun RegisterApp() {
                 onBack = { screen = AppScreen.SALES },
             )
         }
+    }
+    if (paymentExitWarningV183) {
+        RegisterModalV154(
+            onDismissRequest = { paymentExitWarningV183 = false },
+            title = { Text("支払入力が残っています", fontWeight = FontWeight.Bold) },
+            text = { Text(PaymentExitPolicyV183.BLOCKED_EXIT_MESSAGE) },
+            confirmButton = {
+                RegisterModalConfirmV154("会計画面へ戻る", onClick = { paymentExitWarningV183 = false })
+            },
+            dismissButton = {},
+        )
     }
     if (paymentIntegrityWarningV181 != null) {
         RegisterModalV154(
