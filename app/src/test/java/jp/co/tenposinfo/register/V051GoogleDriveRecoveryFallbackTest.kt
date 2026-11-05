@@ -24,7 +24,7 @@ class V051GoogleDriveRecoveryFallbackTest {
         assertTrue(deliverySettings.contains("takePersistableUriPermission"))
         assertTrue(delivery.contains("drive-sync-staging"))
         assertTrue(syncSettings.contains("Google Drive・同期設定"))
-        assertTrue(syncSettings.contains("互換用フォルダ送信設定"))
+        assertTrue(syncSettings.contains("送信運用・個別再試行の詳細"))
         assertTrue(easyConnect.contains("保守・復旧"))
         assertTrue(plusRecovery.contains("両アプリで同じDriveフォルダを選択してください"))
         assertTrue(docs.contains("同じGoogle Driveフォルダ"))

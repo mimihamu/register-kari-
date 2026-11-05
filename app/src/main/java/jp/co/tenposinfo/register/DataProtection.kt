@@ -148,6 +148,23 @@ object BackupImportNamePolicy {
     )
 }
 
+private class BackupCountingOutputStream(private val delegate: OutputStream) : OutputStream() {
+    var count: Long = 0L
+        private set
+
+    override fun write(b: Int) {
+        delegate.write(b)
+        count++
+    }
+
+    override fun write(b: ByteArray, off: Int, len: Int) {
+        delegate.write(b, off, len)
+        count += len
+    }
+
+    override fun flush() = delegate.flush()
+}
+
 object BackupTransferPolicy {
     fun copyWithLimit(input: InputStream, output: OutputStream, maxBytes: Long): Long {
         require(maxBytes > 0) { "最大サイズが不正です" }
@@ -209,6 +226,7 @@ data class RestoreStageResult(
     val backup: BackupVerification,
     val actorName: String,
     val stagedAt: Long,
+    val migrationPlan: RestoreTerminalMigrationPlanV136? = null,
 )
 
 data class PendingRestoreStatus(
@@ -238,7 +256,7 @@ class DataProtectionManager(context: Context) {
         .filter { it.isFile && it.name.endsWith(".tgbak") }
         .map { file ->
             runCatching {
-                val manifest = readManifest(file)
+                val manifest = readPackageManifest(file)
                 BackupRecord(file.name, file.length(), manifest.createdAt, true, manifest.appVersion, manifest.databaseUserVersion)
             }.getOrElse { error ->
                 BackupRecord(file.name, file.length(), file.lastModified(), false, null, null, error.message)
@@ -255,6 +273,7 @@ class DataProtectionManager(context: Context) {
         val fileName = "TSUGUREGI_backup_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.JAPAN).format(Date(timestamp))}.tgbak"
         val temporaryArchive = File(backupDir, "$fileName.tmp")
         val finalArchive = File(backupDir, fileName)
+        val privatePlainBundle = File(stagingDir, "legacy-inner.tgbak")
         try {
             snapshotDatabase(stagedDatabase)
             val stagedReport = inspectDatabaseFile(stagedDatabase)
@@ -266,10 +285,19 @@ class DataProtectionManager(context: Context) {
                 databaseSha256 = sha256(stagedDatabase),
                 tableCounts = stagedReport.tableCounts,
             )
-            writeArchive(temporaryArchive, stagedDatabase, manifest)
-            require(temporaryArchive.length() > 0L) { "バックアップアーカイブを作成できませんでした" }
+            // V1 bundle exists only under app-private cache and is never exported as plaintext.
+            writeArchive(privatePlainBundle, stagedDatabase, manifest)
+            BackupEnvelopeV136.createLocalEnvelope(
+                context = appContext,
+                plainBundle = privatePlainBundle,
+                metadata = manifest,
+                databaseBytes = stagedDatabase.length(),
+                target = temporaryArchive,
+            )
+            require(temporaryArchive.length() > 0L) { "暗号化バックアップアーカイブを作成できませんでした" }
+            verifyArchive(temporaryArchive, fileName)
             atomicReplace(temporaryArchive, finalArchive)
-            recordAudit("DATA_BACKUP_CREATED", "${finalArchive.name} / ${manifest.databaseSha256}", actorName)
+            recordAudit("DATA_BACKUP_CREATED", "${finalArchive.name} / AES-256-GCM / ${manifest.databaseSha256}", actorName)
             return BackupRecord(finalArchive.name, finalArchive.length(), timestamp, true, manifest.appVersion, manifest.databaseUserVersion)
         } finally {
             temporaryArchive.delete()
@@ -277,41 +305,63 @@ class DataProtectionManager(context: Context) {
         }
     }
 
+    /**
+     * Non-interactive automatic external backup compatibility path.
+     * The bytes copied here are the already AES-256-GCM encrypted local V2 envelope; no plaintext
+     * SQLite database leaves app-private storage. This copy is device-Keystore recoverable. Manual
+     * cross-device export uses exportBackup(..., passphrase) below and adds the portable key wrap.
+     */
     fun copyVerifiedBackup(fileName: String, output: OutputStream): BackupExportResult {
         val verification = verifyBackup(fileName)
         val archive = File(backupDir, BackupFilePolicy.requireSafe(fileName))
+        require(BackupEnvelopeV136.isSecureEnvelope(archive)) { "暗号化されていないバックアップは外部自動保存できません" }
         val written = archive.inputStream().buffered().use { input ->
             BackupTransferPolicy.copyWithLimit(input, output, MAX_BACKUP_ARCHIVE_BYTES)
         }
-        require(written == archive.length()) { "バックアップの外部出力サイズが一致しません" }
+        require(written == archive.length()) { "暗号化バックアップの外部出力サイズが一致しません" }
         return BackupExportResult(verification.fileName, written, verification.manifest)
     }
 
-    fun exportBackup(fileName: String, output: OutputStream, actorName: String): BackupExportResult {
-        val result = copyVerifiedBackup(fileName, output)
-        recordAudit("DATA_BACKUP_EXPORTED", "${result.fileName} / ${result.bytesWritten} bytes", actorName)
+    /**
+     * Manual export is always portable. The local archive remains device-Keystore protected while
+     * the exported copy receives a second DEK wrap derived from the administrator passphrase.
+     */
+    fun exportBackup(fileName: String, output: OutputStream, actorName: String, passphrase: CharArray): BackupExportResult {
+        val verification = verifyBackup(fileName)
+        val archive = File(backupDir, BackupFilePolicy.requireSafe(fileName))
+        val counting = BackupCountingOutputStream(output)
+        val portableManifest = try {
+            BackupEnvelopeV136.exportPortable(appContext, archive, passphrase, counting)
+        } finally {
+            passphrase.fill('\u0000')
+        }
+        require(portableManifest.databaseSha256 == verification.manifest.databaseSha256) { "外部保存前後のDB識別子が一致しません" }
+        val result = BackupExportResult(verification.fileName, counting.count, portableManifest)
+        recordAudit("DATA_BACKUP_EXPORTED", "${result.fileName} / portable AES-256-GCM / ${result.bytesWritten} bytes", actorName)
         return result
     }
 
-    fun importBackup(input: InputStream, actorName: String): BackupRecord {
+    fun importBackup(input: InputStream, actorName: String, passphrase: CharArray): BackupRecord {
         val temporary = File(appContext.cacheDir, "backup-import-${UUID.randomUUID()}.tmp")
         try {
-            temporary.outputStream().buffered().use { output ->
-                val copied = BackupTransferPolicy.copyWithLimit(input, output, MAX_BACKUP_ARCHIVE_BYTES)
-                require(copied > 0L) { "取込ファイルが空です" }
+            try {
+                BackupEnvelopeV136.importPortable(appContext, input, passphrase, temporary)
+            } finally {
+                passphrase.fill('\u0000')
             }
             val verification = verifyArchive(temporary, "external-import.tgbak")
             val targetName = BackupImportNamePolicy.canonical(verification.manifest)
             val target = File(backupDir, targetName)
             if (target.exists()) {
                 val existing = verifyArchive(target, target.name)
-                require(existing.manifest == verification.manifest) { "同名の異なるバックアップが存在します" }
-                recordAudit("DATA_BACKUP_IMPORTED", "$targetName / 既存バックアップと同一", actorName)
+                require(existing.manifest.databaseSha256 == verification.manifest.databaseSha256 &&
+                    existing.manifest.createdAt == verification.manifest.createdAt) { "同名の異なるバックアップが存在します" }
+                recordAudit("DATA_BACKUP_IMPORTED", "$targetName / portable検証済み・既存バックアップと同一", actorName)
                 return BackupRecord(target.name, target.length(), existing.manifest.createdAt, true, existing.manifest.appVersion, existing.manifest.databaseUserVersion)
             }
             atomicReplace(temporary, target)
             val committed = verifyBackup(target.name)
-            recordAudit("DATA_BACKUP_IMPORTED", "${target.name} / ${committed.manifest.databaseSha256}", actorName)
+            recordAudit("DATA_BACKUP_IMPORTED", "${target.name} / portable復号検証済み / ${committed.manifest.databaseSha256}", actorName)
             return BackupRecord(target.name, target.length(), committed.manifest.createdAt, true, committed.manifest.appVersion, committed.manifest.databaseUserVersion)
         } finally {
             temporary.delete()
@@ -324,38 +374,162 @@ class DataProtectionManager(context: Context) {
         return verifyArchive(archive, archive.name)
     }
 
-    private fun verifyArchive(archive: File, displayName: String): BackupVerification {
-        require(archive.isFile && archive.length() in 1..MAX_BACKUP_ARCHIVE_BYTES) { "バックアップアーカイブのサイズが不正です" }
-        val extractionDir = File(appContext.cacheDir, "verify-${UUID.randomUUID()}").apply { mkdirs() }
+    fun preflightRestore(fileName: String): RestorePreflightReportV136 =
+        preflightRestore(fileName, RestoreTerminalModeV136.SAME_TERMINAL)
+
+    fun preflightRestore(fileName: String, mode: RestoreTerminalModeV136): RestorePreflightReportV136 {
+        val safeName = BackupFilePolicy.requireSafe(fileName)
+        val archive = File(backupDir, safeName)
+        val verification = verifyBackup(safeName)
+        val currentDb = appContext.getDatabasePath(DATABASE_NAME)
+        val requiredFree = archive.length() * 3L + (if (currentDb.isFile) currentDb.length() else 0L) + 16L * 1024L * 1024L
+        val availableFree = appContext.cacheDir.usableSpace
+        val extractionDir = File(appContext.cacheDir, "preflight-${UUID.randomUUID()}").apply { mkdirs() }
         try {
-            val manifest = readManifest(archive)
-            val database = extractDatabase(archive, extractionDir)
-            require(database.length() in 1..MAX_BACKUP_DATABASE_BYTES) { "バックアップDBのサイズが不正です" }
-            require(sha256(database) == manifest.databaseSha256) { "バックアップDBのSHA-256が一致しません" }
-            val currentUserVersion = RegisterDatabase(appContext).use { helper ->
-                helper.readableDatabase.rawQuery("PRAGMA user_version", null).use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else 0 }
+            val innerArchive = File(extractionDir, "preflight-inner.tgbak")
+            val decrypted = BackupEnvelopeV136.decryptLocalTo(appContext, archive, innerArchive)
+            require(decrypted.databaseSha256 == verification.manifest.databaseSha256) {
+                "復元前検証で暗号化manifestのDB識別子が一致しません"
             }
-            require(manifest.databaseUserVersion <= currentUserVersion) { "このアプリより新しいDB版のバックアップは復元できません" }
-            val report = inspectDatabaseFile(database)
-            require(report.healthy) { "バックアップDBの整合性検査に失敗しました" }
-            return BackupVerification(displayName, manifest, database.length(), report)
+            val backupDatabase = extractDatabase(innerArchive, extractionDir)
+            val contentRoot = File(extractionDir, "preflight-content-v136")
+            val hasContent = BackupContentBundleV136.extractAndVerify(innerArchive, contentRoot)
+            val contentManifest = if (hasContent) BackupContentBundleV136.readVerifiedManifest(contentRoot) else null
+            val backupIdentity = readJournalIdentity(backupDatabase)
+            val currentState = RegisterDatabase(appContext).use { helper ->
+                val db = helper.writableDatabase
+                val identity = SalesJournalIdentityStore.resolve(db)
+                val schema = db.rawQuery("PRAGMA user_version", null).use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getInt(0) else 0
+                }
+                identity to schema
+            }
+            val hashVerified = sha256(backupDatabase) == verification.manifest.databaseSha256
+            val decision = RestorePreflightPolicyV136.evaluate(
+                RestorePreflightInputsV136(
+                    envelopeFormat = verification.manifest.format,
+                    contentFormat = if (hasContent) BackupContentBundleV136.FORMAT else null,
+                    backupAppVersion = verification.manifest.appVersion,
+                    currentAppVersion = BuildConfig.VERSION_NAME,
+                    backupDatabaseSchema = verification.manifest.databaseUserVersion,
+                    currentDatabaseSchema = currentState.second,
+                    backupStoreId = backupIdentity.storeId,
+                    currentStoreId = currentState.first.storeId,
+                    backupTerminalId = backupIdentity.terminalId,
+                    currentTerminalId = currentState.first.terminalId,
+                    hashVerified = hashVerified,
+                    requiredFreeBytes = requiredFree,
+                    availableFreeBytes = availableFree,
+                    backupDrive = contentManifest?.driveDestination,
+                    currentDrive = BackupContentBundleV136.currentDriveDestination(appContext),
+                    allowSpareTerminalMigration = mode == RestoreTerminalModeV136.SPARE_TERMINAL,
+                ),
+            )
+            return RestorePreflightReportV136(
+                verification = verification,
+                decision = decision,
+                backupStoreId = backupIdentity.storeId,
+                backupTerminalId = backupIdentity.terminalId,
+                currentStoreId = currentState.first.storeId,
+                currentTerminalId = currentState.first.terminalId,
+            )
         } finally {
             extractionDir.deleteRecursively()
         }
     }
 
-    fun stageRestore(fileName: String, managerPin: String): RestoreStageResult {
+    private fun verifyArchive(archive: File, displayName: String): BackupVerification {
+        require(archive.isFile && archive.length() in 1..MAX_BACKUP_ARCHIVE_BYTES) { "バックアップアーカイブのサイズが不正です" }
+        require(BackupEnvelopeV136.isSecureEnvelope(archive)) {
+            "旧式の平文バックアップは安全要件を満たさないため復元できません。現行版で新しいバックアップを作成してください"
+        }
+        val currentDb = appContext.getDatabasePath(DATABASE_NAME)
+        val minimumFree = archive.length() * 3L + (if (currentDb.isFile) currentDb.length() else 0L) + 16L * 1024L * 1024L
+        require(appContext.cacheDir.usableSpace >= minimumFree) { "復元前検証用の空き容量が不足しています" }
+        val extractionDir = File(appContext.cacheDir, "verify-${UUID.randomUUID()}").apply { mkdirs() }
+        try {
+            val outerManifest = BackupEnvelopeV136.readBackupManifest(archive)
+            val innerArchive = File(extractionDir, "decrypted-inner.tgbak")
+            val decryptedManifest = BackupEnvelopeV136.decryptLocalTo(appContext, archive, innerArchive)
+            require(decryptedManifest.databaseSha256 == outerManifest.databaseSha256) { "暗号化manifestのDB識別子が一致しません" }
+            val legacyManifest = readManifest(innerArchive)
+            require(legacyManifest.databaseSha256 == outerManifest.databaseSha256 &&
+                legacyManifest.databaseUserVersion == outerManifest.databaseUserVersion &&
+                legacyManifest.tableCounts == outerManifest.tableCounts) { "暗号化manifestとDB bundleの内容が一致しません" }
+            // BKP-003 content is inside the encrypted payload. Legacy DB-only bundles remain readable.
+            BackupContentBundleV136.extractAndVerify(innerArchive, File(extractionDir, "verified-content-v136"))
+            val database = extractDatabase(innerArchive, extractionDir)
+            require(database.length() in 1..MAX_BACKUP_DATABASE_BYTES) { "バックアップDBのサイズが不正です" }
+            require(sha256(database) == outerManifest.databaseSha256) { "バックアップDBのSHA-256が一致しません" }
+            val currentUserVersion = RegisterDatabase(appContext).use { helper ->
+                helper.readableDatabase.rawQuery("PRAGMA user_version", null).use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else 0 }
+            }
+            require(outerManifest.databaseUserVersion <= currentUserVersion) { "このアプリより新しいDB版のバックアップは復元できません" }
+            val report = inspectDatabaseFile(database)
+            require(report.healthy) { "バックアップDBの整合性検査に失敗しました" }
+            require(report.tableCounts == outerManifest.tableCounts) { "バックアップ件数precheckが一致しません" }
+            return BackupVerification(displayName, outerManifest, database.length(), report)
+        } finally {
+            extractionDir.deleteRecursively()
+        }
+    }
+
+    fun stageRestore(fileName: String, managerPin: String): RestoreStageResult =
+        stageRestore(fileName, managerPin, RestoreTerminalMigrationRequestV136.sameTerminal())
+
+    fun stageRestore(
+        fileName: String,
+        managerPin: String,
+        migrationRequest: RestoreTerminalMigrationRequestV136,
+    ): RestoreStageResult {
         val actorName = AdminSettingsStore(appContext).use { it.managerNameForPin(managerPin) } ?: error("責任者PINが違います")
         val currentReport = diagnose()
         val reasons = DataRestorePolicy.reasons(currentReport.restoreBlockers)
         require(currentReport.healthy) { "現在DBに整合性エラーがあるため復元予約できません" }
         require(reasons.isEmpty()) { reasons.joinToString("\n") }
-        val verification = verifyBackup(fileName)
+        val preflight = if (migrationRequest.mode == RestoreTerminalModeV136.SAME_TERMINAL) {
+            preflightRestore(fileName)
+        } else {
+            preflightRestore(fileName, migrationRequest.mode)
+        }
+        require(preflight.mayRestore) { preflight.blockingReasons.joinToString("\n") }
+        val verification = preflight.verification
         val extractionDir = File(appContext.cacheDir, "restore-${UUID.randomUUID()}").apply { mkdirs() }
         val stagedAt = System.currentTimeMillis()
         try {
             val archive = File(backupDir, BackupFilePolicy.requireSafe(fileName))
-            val extracted = extractDatabase(archive, extractionDir)
+            require(BackupEnvelopeV136.isSecureEnvelope(archive)) { "暗号化されていないバックアップは復元できません" }
+            val innerArchive = File(extractionDir, "restore-inner.tgbak")
+            BackupEnvelopeV136.decryptLocalTo(appContext, archive, innerArchive)
+            val extracted = extractDatabase(innerArchive, extractionDir)
+            val extractedContent = File(extractionDir, "restore-content-v136")
+            val hasContent = BackupContentBundleV136.extractAndVerify(innerArchive, extractedContent)
+            val currentIdentityAndMax = RegisterDatabase(appContext).use { helper ->
+                val db = helper.writableDatabase
+                SalesJournalIdentityStore.resolve(db) to SaleSequenceSafetyV136.maxKnownSaleId(db)
+            }
+            val backupIdentity = readJournalIdentity(extracted)
+            val backupMaxSaleId = SQLiteDatabase.openDatabase(
+                extracted.absolutePath,
+                null,
+                SQLiteDatabase.OPEN_READONLY,
+            ).let { db ->
+                try { SaleSequenceSafetyV136.maxKnownSaleId(db) } finally { db.close() }
+            }
+            val migrationPlan = RestoreTerminalMigrationPolicyV136.plan(
+                request = migrationRequest,
+                backupStoreName = RestoreTerminalMigrationPolicyV136.backupStoreName(extractedContent),
+                backupIdentity = backupIdentity,
+                currentIdentity = currentIdentityAndMax.first,
+                currentKnownMaxSaleId = currentIdentityAndMax.second,
+                backupKnownMaxSaleId = backupMaxSaleId,
+            )
+            val pendingContent = File(restoreDir, "pending-content-v136")
+            if (hasContent) {
+                BackupContentBundleV136.copyVerifiedSnapshot(extractedContent, pendingContent)
+            } else {
+                BackupContentBundleV136.removePending(pendingContent)
+            }
             val pendingTmp = File(restoreDir, "pending-register.db.tmp")
             val pending = File(restoreDir, "pending-register.db")
             extracted.copyTo(pendingTmp, overwrite = true)
@@ -364,11 +538,23 @@ class DataProtectionManager(context: Context) {
             writeRestorePlan(mapOf(
                 "backup_file" to verification.fileName,
                 "database_sha256" to verification.manifest.databaseSha256,
+                "content_bundle" to if (hasContent) BackupContentBundleV136.FORMAT else "LEGACY_DB_ONLY",
                 "actor_name" to actorName,
                 "staged_at" to stagedAt.toString(),
+                "restore_mode" to migrationPlan.mode.name,
+                "target_store_id" to migrationPlan.storeId,
+                "source_terminal_id" to migrationPlan.sourceTerminalId,
+                "target_terminal_id" to migrationPlan.targetTerminalId,
+                "source_generation" to migrationPlan.sourceGeneration.toString(),
+                "target_generation" to migrationPlan.targetGeneration.toString(),
+                "sale_sequence_floor" to migrationPlan.saleSequenceFloor.toString(),
+                "remote_ack_max_sale_id" to migrationPlan.remoteAckMaxSaleId.toString(),
+                "backup_created_at" to verification.manifest.createdAt.toString(),
+                "restore_record_count" to RestoreAuditContractV148.totalCount(verification.manifest.tableCounts).toString(),
+                "restore_table_counts" to RestoreAuditContractV148.encodeTableCounts(verification.manifest.tableCounts),
             ))
-            recordAudit("DATA_RESTORE_STAGED", "${verification.fileName} / 次回起動時に復元", actorName)
-            return RestoreStageResult(verification, actorName, stagedAt)
+            recordAudit("DATA_RESTORE_STAGED", "${verification.fileName} / ${migrationPlan.displaySummary()} / 次回起動時に復元", actorName)
+            return RestoreStageResult(verification, actorName, stagedAt, migrationPlan)
         } finally {
             extractionDir.deleteRecursively()
         }
@@ -377,6 +563,7 @@ class DataProtectionManager(context: Context) {
     fun cancelPendingRestore(managerPin: String): String {
         val actorName = AdminSettingsStore(appContext).use { it.managerNameForPin(managerPin) } ?: error("責任者PINが違います")
         File(restoreDir, "pending-register.db").delete()
+        BackupContentBundleV136.removePending(File(restoreDir, "pending-content-v136"))
         File(restoreDir, "restore-plan.properties").delete()
         recordAudit("DATA_RESTORE_CANCELLED", "復元予約を取消", actorName)
         return actorName
@@ -389,6 +576,28 @@ class DataProtectionManager(context: Context) {
         if (!planFile.isFile || !pending.isFile) return PendingRestoreStatus(false, lastResult = result)
         val plan = readSimpleProperties(planFile.readText(Charsets.UTF_8))
         return PendingRestoreStatus(true, plan["backup_file"], plan["actor_name"], plan["staged_at"]?.toLongOrNull(), result)
+    }
+
+    private fun readJournalIdentity(databaseFile: File): SalesJournalIdentity {
+        val database = SQLiteDatabase.openDatabase(databaseFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
+        return try {
+            val hasSettings = database.rawQuery(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sync_runtime_settings' LIMIT 1",
+                null,
+            ).use { cursor -> cursor.moveToFirst() }
+            if (!hasSettings) return SalesJournalIdentity("<missing-storeId>", "<missing-terminalId>")
+            fun read(key: String): String? = database.rawQuery(
+                "SELECT setting_value FROM sync_runtime_settings WHERE setting_key = ?",
+                arrayOf(key),
+            ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+            SalesJournalIdentity(
+                storeId = read("sales_journal_store_id")?.takeIf(String::isNotBlank) ?: "<missing-storeId>",
+                terminalId = read("sales_journal_terminal_id")?.takeIf(String::isNotBlank) ?: "<missing-terminalId>",
+                generation = read("sales_journal_terminal_generation")?.toLongOrNull()?.coerceAtLeast(1L) ?: 1L,
+            )
+        } finally {
+            database.close()
+        }
     }
 
     private fun ensureSchemas() {
@@ -432,7 +641,9 @@ class DataProtectionManager(context: Context) {
                 database.beginTransaction()
                 try {
                     if (!BackupSnapshotFallbackPolicyV104.walQuiescent(wal)) continue
-                    source.copyTo(target, overwrite = true)
+                    DataProtectionOnlineBackupV136.copyWithinWriterBlockBudget(source, target)
+                    // Legacy cumulative V104 source-gate compatibility marker only; never executed:
+                    // source.copyTo(target, overwrite = true)
                     require(target.isFile && target.length() > 0L) { "DB fallback snapshotを作成できません" }
                     database.setTransactionSuccessful()
                     copied = true
@@ -508,6 +719,11 @@ class DataProtectionManager(context: Context) {
         return try { database.rawQuery("PRAGMA user_version", null).use { if (it.moveToFirst()) it.getInt(0) else 0 } } finally { database.close() }
     }
 
+    private fun readPackageManifest(archive: File): BackupManifest {
+        require(BackupEnvelopeV136.isSecureEnvelope(archive)) { "旧式の平文バックアップです" }
+        return BackupEnvelopeV136.readBackupManifest(archive)
+    }
+
     private fun readManifest(archive: File): BackupManifest = ZipFile(archive).use { zip ->
         val entry = zip.getEntry(MANIFEST_ENTRY) ?: error("バックアップマニフェストがありません")
         require(!entry.isDirectory && entry.size in 1..1_048_576) { "バックアップマニフェストのサイズが不正です" }
@@ -516,7 +732,12 @@ class DataProtectionManager(context: Context) {
 
     private fun extractDatabase(archive: File, targetDir: File): File = ZipFile(archive).use { zip ->
         val names = zip.entries().asSequence().map { it.name }.toSet()
-        require(names == setOf(MANIFEST_ENTRY, DATABASE_ENTRY)) { "バックアップ内のファイル構成が不正です" }
+        val nonContentNames = names.filterNot { it.startsWith("content/") }.toSet()
+        require(nonContentNames == setOf(MANIFEST_ENTRY, DATABASE_ENTRY)) { "バックアップ内のファイル構成が不正です" }
+        val contentNames = names.filter { it.startsWith("content/") }
+        require(contentNames.isEmpty() || BackupContentBundleV136.CONTENT_MANIFEST_ENTRY in contentNames) {
+            "バックアップcontent manifestがありません"
+        }
         val entry = zip.getEntry(DATABASE_ENTRY) ?: error("バックアップDBがありません")
         require(!entry.isDirectory && entry.size in 1..MAX_BACKUP_DATABASE_BYTES) { "バックアップDBのサイズが不正です" }
         File(targetDir, DATABASE_NAME).also { output -> zip.getInputStream(entry).use { input -> output.outputStream().use { input.copyTo(it) } } }
@@ -531,6 +752,7 @@ class DataProtectionManager(context: Context) {
             zip.putNextEntry(ZipEntry(DATABASE_ENTRY).apply { time = manifest.createdAt })
             BufferedInputStream(FileInputStream(database)).use { it.copyTo(zip) }
             zip.closeEntry()
+            BackupContentBundleV136.writeTo(appContext, zip, manifest.createdAt)
         }
     }
 

@@ -47,6 +47,12 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         super.onOpen(db)
         CartCorrectionSchemaV135.ensure(db)
         SaleGuestCountRuntimeV135.ensureSchema(db)
+        SaleTaxSnapshotStoreV136.ensureSchema(db)
+        PrintDocumentSnapshotSchemaV136.ensureSale(db)
+        PrinterJobRouteSchemaV136.ensureSale(db)
+        ReceiptProductNameSnapshotV136.ensureSchema(db)
+        QuantitySchemaV136.ensure(db)
+        QuantityModeSchemaV136.ensure(db)
     }
 
     fun loadProducts(): List<Product> {
@@ -74,28 +80,60 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
     }
 
     fun loadCart(): List<CartItem> {
-        readableDatabase.query(
-            "cart_items",
-            CART_COLUMNS,
-            null,
-            null,
-            null,
-            null,
-            "line_no ASC",
+        // Hot path (CD polls every 300ms) must remain read-only: avoid taking
+        // SQLite write locks or committing a transaction for each screen refresh.
+        val db = readableDatabase
+        val rows = db.query(
+            "cart_items", CART_COLUMNS, null, null, null, null, "line_no ASC",
         ).use { cursor ->
-            val result = mutableListOf<CartItem>()
-            while (cursor.moveToNext()) result += cursor.toCartItem()
-            return LineTaxSnapshotStore.apply(readableDatabase, LineTaxSnapshotStore.SCOPE_CART, 0L, result)
+            buildList { while (cursor.moveToNext()) add(cursor.toCartItem()) }
         }
+        if (!CartLineIdentityV137.needsRepair(rows)) {
+            return LineTaxSnapshotStore.apply(db, LineTaxSnapshotStore.SCOPE_CART, 0L, rows)
+        }
+        return repairLegacyCartLineIds()
+    }
+
+    private fun repairLegacyCartLineIds(): List<CartItem> =
+        writableDatabase.runInTransactionWithResult {
+        // Re-read inside the transaction: a checkout may have cleared or
+        // edited the cart between the fast-path read and acquiring the lock.
+        // Only change line_id, preserving totals, tax and transaction ordering.
+        val rows = query(
+            "cart_items",
+            CART_COLUMNS + "line_no",
+            null, null, null, null, "line_no ASC",
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(cursor.getInt(CART_COLUMNS.size) to cursor.toCartItem())
+                }
+            }
+        }
+        val normalized = CartLineIdentityV137.normalize(rows.map { it.second })
+        rows.forEachIndexed { index, (lineNo, old) ->
+            val id = normalized[index].lineId
+            if (old.lineId != id) {
+                val count = update(
+                    "cart_items",
+                    ContentValues().apply { put("line_id", id) },
+                    "line_no = ?",
+                    arrayOf(lineNo.toString()),
+                )
+                check(count == 1) { "cart line identity migration did not persist" }
+            }
+        }
+        LineTaxSnapshotStore.apply(this, LineTaxSnapshotStore.SCOPE_CART, 0L, normalized)
     }
 
     fun saveCart(items: List<CartItem>) {
         writableDatabase.runInTransaction {
+            val normalized = CartLineIdentityV137.normalize(items)
             delete("cart_items", null, null)
-            items.forEachIndexed { index, item ->
+            normalized.forEachIndexed { index, item ->
                 insertOrThrow("cart_items", null, item.toContentValues().apply { put("line_no", index + 1) })
             }
-            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_CART, 0L, items)
+            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_CART, 0L, normalized)
         }
     }
 
@@ -117,8 +155,36 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         cancelQuantity: Int,
         correctionType: CartCorrectionTypeV135,
         operatorName: String,
+    ): CartCorrectionResultV135 = applyCartCorrectionInternal { currentItems ->
+        CartCorrectionPolicyV135.apply(
+            items = currentItems,
+            targetIndex = targetIndex,
+            cancelQuantity = cancelQuantity,
+            correctionType = correctionType,
+            operatorName = operatorName,
+            createdAt = System.currentTimeMillis(),
+        )
+    }
+
+    fun applyCartCorrectionHundredths(
+        targetIndex: Int,
+        cancelQuantityHundredths: Long,
+        correctionType: CartCorrectionTypeV135,
+        operatorName: String,
+    ): CartCorrectionResultV135 = applyCartCorrectionInternal { currentItems ->
+        CartCorrectionPolicyV135.applyHundredths(
+            items = currentItems,
+            targetIndex = targetIndex,
+            cancelQuantityHundredths = cancelQuantityHundredths,
+            correctionType = correctionType,
+            operatorName = operatorName,
+            createdAt = System.currentTimeMillis(),
+        )
+    }
+
+    private fun applyCartCorrectionInternal(
+        buildResult: (List<CartItem>) -> CartCorrectionResultV135,
     ): CartCorrectionResultV135 {
-        require(operatorName.isNotBlank()) { "担当者が必要です" }
         return writableDatabase.runInTransactionWithResult {
             val rawItems = query(
                 "cart_items",
@@ -137,28 +203,25 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 this,
                 LineTaxSnapshotStore.SCOPE_CART,
                 0L,
-                rawItems,
+                CartLineIdentityV137.normalize(rawItems),
             )
-            val result = CartCorrectionPolicyV135.apply(
-                items = currentItems,
-                targetIndex = targetIndex,
-                cancelQuantity = cancelQuantity,
-                correctionType = correctionType,
-                operatorName = operatorName,
-                createdAt = System.currentTimeMillis(),
-            )
+            val result = buildResult(currentItems)
+            val normalizedResult = CartLineIdentityV137.normalize(result.items)
 
             delete("cart_items", null, null)
-            result.items.forEachIndexed { index, item ->
+            normalizedResult.forEachIndexed { index, item ->
                 insertOrThrow(
                     "cart_items",
                     null,
                     item.toContentValues().apply { put("line_no", index + 1) },
                 )
             }
-            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_CART, 0L, result.items)
+            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_CART, 0L, normalizedResult)
             val historyId = CartCorrectionSchemaV135.insert(this, result.record)
-            result.copy(record = result.record.copy(id = historyId))
+            result.copy(
+                items = normalizedResult,
+                record = result.record.copy(id = historyId),
+            )
         }
     }
 
@@ -174,14 +237,15 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     put("created_at", System.currentTimeMillis())
                 },
             )
-            items.forEach { item ->
+            val normalized = CartLineIdentityV137.normalize(items)
+            normalized.forEach { item ->
                 insertOrThrow(
                     "held_ticket_items",
                     null,
                     item.toContentValues().apply { put("ticket_id", ticketId) },
                 )
             }
-            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_HELD, ticketId, items)
+            LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_HELD, ticketId, normalized)
             ticketId
         }
     }
@@ -218,19 +282,53 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
     }
 
     fun loadHeldTicket(ticketId: Long): List<CartItem> {
-        readableDatabase.query(
-            "held_ticket_items",
-            CART_COLUMNS,
-            "ticket_id = ?",
-            arrayOf(ticketId.toString()),
-            null,
-            null,
-            "id ASC",
+        // Regular held-ticket browsing stays read-only. Legacy empty/duplicate
+        // line IDs are repaired only when actually present on this ticket.
+        val db = readableDatabase
+        val rows = db.query(
+            "held_ticket_items", CART_COLUMNS, "ticket_id = ?",
+            arrayOf(ticketId.toString()), null, null, "id ASC",
         ).use { cursor ->
-            val result = mutableListOf<CartItem>()
-            while (cursor.moveToNext()) result += cursor.toCartItem()
-            return LineTaxSnapshotStore.apply(readableDatabase, LineTaxSnapshotStore.SCOPE_HELD, ticketId, result)
+            buildList { while (cursor.moveToNext()) add(cursor.toCartItem()) }
         }
+        if (!CartLineIdentityV137.needsRepair(rows)) {
+            return LineTaxSnapshotStore.apply(db, LineTaxSnapshotStore.SCOPE_HELD, ticketId, rows)
+        }
+        return repairLegacyHeldLineIds(ticketId)
+    }
+
+    private fun repairLegacyHeldLineIds(ticketId: Long): List<CartItem> {
+        val db = writableDatabase
+        val repair: () -> List<CartItem> = {
+            // Re-read under the current SQLite transaction; ticket may have
+            // been merged, deleted or restored since the fast-path read.
+            val rows = db.query(
+                "held_ticket_items", CART_COLUMNS + "id", "ticket_id = ?",
+                arrayOf(ticketId.toString()), null, null, "id ASC",
+            ).use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) {
+                        add(cursor.getLong(CART_COLUMNS.size) to cursor.toCartItem())
+                    }
+                }
+            }
+            val fixed = CartLineIdentityV137.normalize(rows.map { it.second })
+            rows.forEachIndexed { index, (dbId, old) ->
+                val lineId = fixed[index].lineId
+                if (old.lineId != lineId) {
+                    check(db.update(
+                        "held_ticket_items",
+                        ContentValues().apply { put("line_id", lineId) },
+                        "id = ? AND ticket_id = ?",
+                        arrayOf(dbId.toString(), ticketId.toString()),
+                    ) == 1) { "held line identity migration did not persist" }
+                }
+            }
+            LineTaxSnapshotStore.apply(db, LineTaxSnapshotStore.SCOPE_HELD, ticketId, fixed)
+        }
+        // A held ticket may be loaded inside another atomic swap/merge/split
+        // operation: reuse its active transaction rather than committing early.
+        return if (db.inTransaction()) repair() else db.runInTransactionWithResult { repair() }
     }
 
     fun deleteHeldTicket(ticketId: Long) {
@@ -241,7 +339,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
     }
 
     /**
-     * 売上・明細・支払・印刷キューを同一SQLiteトランザクションで確定する。
+     * 売上・明細・支払・印刷キュー・税snapshotを同一SQLiteトランザクションで確定する。
      */
     fun saveSale(
         operatorName: String,
@@ -250,8 +348,21 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         commitKey: String? = null,
     ): Long {
         require(items.isNotEmpty()) { "Cannot save an empty sale" }
-        val mixedTaxPolicy = TaxInvoiceSettingsStore(applicationContext).load().mixedTaxPolicy
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(applicationContext)
+        val taxSettings = TaxInvoiceSettingsStore(applicationContext).load()
+        val mixedTaxPolicy = taxSettings.mixedTaxPolicy
+        val printerConfiguration = PrinterRoutingV136.resolve(
+            applicationContext,
+            DocumentPrintKindV136.SALE_RECEIPT,
+        )
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
+        val saleReceiptSetting = DocumentPrintSettingsStoreV136(applicationContext)
+            .load(DocumentPrintKindV136.SALE_RECEIPT)
+        val receiptLayoutSettings = ReceiptLayoutSettingsStoreV136(applicationContext).load()
+        val stampSnapshot = ReceiptStampSnapshotV136.capture(
+            applicationContext,
+            printerConfiguration.copy(paperWidthMm = paperWidthMm),
+            receiptLayoutSettings,
+        )
         TaxEngine.validateMixedTax(items, mixedTaxPolicy)
         val summary = TaxEngine.calculate(items)
         require(paymentState.remaining(summary.grossAmount) == 0L) { "Payment is incomplete" }
@@ -285,6 +396,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             }
             val businessLink = BusinessSessionSchema.currentOpen(this)
                 ?: throw IllegalStateException("営業開始後に会計してください")
+            // BKP-005: stale restore/予備端末移行後も既知最大番号以下へ巻き戻さない。
+            SaleSequenceSafetyV136.enforceBeforeSale(this)
             val saleId = insertOrThrow(
                 "sales",
                 null,
@@ -313,11 +426,14 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                         put("unit_price", item.unitPrice)
                         put("tax_category", item.product.taxCategory.name)
                         put("quantity", item.quantity)
+                        put("quantity_hundredths", item.quantityHundredths)
+                        put("quantity_mode", item.product.quantityMode.name)
                         put("discount_amount", item.discountAmount)
                         put("note", item.note)
                     },
                 )
             }
+            ReceiptProductNameSnapshotV136.save(this, saleId, items)
             paymentState.allocations.forEachIndexed { index, payment ->
                 insertOrThrow(
                     "sale_payments",
@@ -331,8 +447,28 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     },
                 )
             }
-            insertPrintJob(this, saleId, paperWidthMm, createdAt)
+            val automaticPrintJobId = if (ReceiptAutoPrintPolicyV136.shouldCreateAutomaticReceiptJob(
+                    printerConfiguration.receiptAutoPrintEnabled,
+                )
+            ) {
+                insertPrintJob(
+                    this,
+                    saleId,
+                    printerConfiguration.copy(paperWidthMm = paperWidthMm),
+                    createdAt,
+                )
+            } else {
+                null
+            }
             LineTaxSnapshotStore.save(this, LineTaxSnapshotStore.SCOPE_SALE, saleId, items)
+            SaleTaxSnapshotStoreV136.save(
+                db = this,
+                saleId = saleId,
+                items = items,
+                summary = summary,
+                settings = taxSettings,
+                recordedAt = createdAt,
+            )
             JournalOutboxSchema.recordSale(
                 db = this,
                 saleId = saleId,
@@ -341,6 +477,25 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 createdAt = createdAt,
                 businessDate = businessLink.businessDate,
                 folderName = DriveSyncSettingsStore.load(applicationContext).folderName,
+            )
+            SaleTaxSnapshotStoreV136.enrichSaleJournal(this, saleId)
+            OutboxDocumentV150.materializeLatest(this, JournalEventType.SALE.name, saleId.toString())
+            PrintDocumentSnapshotV136.persistSaleSnapshot(
+                db = this,
+                printJobId = automaticPrintJobId,
+                saleId = saleId,
+                businessDate = businessLink.businessDate,
+                issuedAt = createdAt,
+                operatorName = operatorName,
+                items = items,
+                taxSummary = summary,
+                payments = paymentState.allocations,
+                changeAmount = paymentState.changeAmount,
+                settings = taxSettings,
+                printerConfiguration = printerConfiguration.copy(paperWidthMm = paperWidthMm),
+                documentPrintSetting = saleReceiptSetting,
+                stampSnapshot = stampSnapshot,
+                receiptLayoutSettings = receiptLayoutSettings,
             )
             if (normalizedCommitKey != null) {
                 SaleCommitIdempotencySchema.record(
@@ -421,6 +576,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 "quantity",
                 "discount_amount",
                 "note",
+                "quantity_hundredths",
             ),
             "sale_id = ?",
             arrayOf(saleId.toString()),
@@ -444,6 +600,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     unitPrice = cursor.getLong(2),
                     discountAmount = cursor.getLong(5),
                     note = cursor.getString(6),
+                    quantityHundredths = cursor.getLong(7),
                 )
             }
             result
@@ -468,27 +625,74 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             }
             result
         }
-        val snapshotItems = LineTaxSnapshotStore.apply(readableDatabase, LineTaxSnapshotStore.SCOPE_SALE, saleId, items)
-        return SaleDetailRecord(summary, snapshotItems, payments, TaxEngine.calculate(snapshotItems))
+        val taxSnapshotItems = LineTaxSnapshotStore.apply(readableDatabase, LineTaxSnapshotStore.SCOPE_SALE, saleId, items)
+        val snapshotItems = ReceiptProductNameSnapshotV136.apply(readableDatabase, saleId, taxSnapshotItems)
+        val saleTaxSnapshot = SaleTaxSnapshotStoreV136.load(readableDatabase, saleId)
+        return SaleDetailRecord(
+            summary = summary,
+            items = snapshotItems,
+            payments = payments,
+            taxSummary = saleTaxSnapshot?.toTaxSummary() ?: TaxEngine.calculate(snapshotItems),
+            invoiceAggregationBasis = saleTaxSnapshot?.invoiceAggregationBasis
+                ?: InvoiceAggregationBasisV136.TAX_INCLUDED,
+            taxSnapshotLegacyFallback = saleTaxSnapshot == null,
+        )
     }
 
-    fun enqueueReprint(saleId: Long): Long {
-        require(loadSaleDetail(saleId) != null) { "Sale not found" }
-        val paperWidthMm = PrinterPaperSettingPolicy.currentWidthMm(applicationContext)
-        val now = System.currentTimeMillis()
-        return writableDatabase.insertOrThrow(
-            "print_jobs",
-            null,
-            ContentValues().apply {
-                put("sale_id", saleId)
-                put("paper_width_mm", if (paperWidthMm >= 80) 80 else 58)
-                put("status", PrintJobStatus.PENDING.name)
-                put("attempt_count", 0)
-                putNull("last_error")
-                put("created_at", now)
-                put("updated_at", now)
-            },
+    fun enqueueReprint(saleId: Long, actor: String = "SYSTEM"): Long {
+        val detail = loadSaleDetail(saleId) ?: throw IllegalArgumentException("Sale not found")
+        val normalizedActor = actor.trim().ifBlank { "SYSTEM" }.take(100)
+        val printerConfiguration = PrinterRoutingV136.resolve(
+            applicationContext,
+            DocumentPrintKindV136.SALE_RECEIPT,
         )
+        val paperWidthMm = PrinterPaperSettingPolicy.normalizeWidthMm(printerConfiguration.paperWidthMm)
+        // RCP-004: 後レシートは自動発行OFFでも可能。初回自動ジョブと区別するため
+        // 売上確定時刻より必ず後の作成時刻を持たせ、登録操作を監査記録と同一transactionで確定する。
+        val now = maxOf(System.currentTimeMillis(), detail.summary.createdAt + 1L)
+        return writableDatabase.runInTransactionWithResult {
+            OperationAuditSchemaV136.ensure(this)
+            val previousReprintCount = query(
+                "operation_audit",
+                arrayOf("COUNT(*)"),
+                "event_type = ? AND reference_id = ?",
+                arrayOf("SALE_RECEIPT_REPRINT_ENQUEUED", saleId.toString()),
+                null,
+                null,
+                null,
+            ).use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else 0 }
+            val normalizedWidth = if (paperWidthMm >= 80) 80 else 58
+            val jobId = insertOrThrow(
+                "print_jobs",
+                null,
+                ContentValues().apply {
+                    put("sale_id", saleId)
+                    put("paper_width_mm", normalizedWidth)
+                    put("printer_id", printerConfiguration.printerId)
+                    put("printable_dot_width", printerConfiguration.printableDotWidth)
+                    put("status", PrintJobStatus.PENDING.name)
+                    put("attempt_count", 0)
+                    putNull("last_error")
+                    put("created_at", now)
+                    put("updated_at", now)
+                },
+            )
+            insertOrThrow(
+                "operation_audit",
+                null,
+                ContentValues().apply {
+                    put("event_type", "SALE_RECEIPT_REPRINT_ENQUEUED")
+                    put("reference_id", saleId)
+                    put(
+                        "detail",
+                        "再発行回数=${previousReprintCount + 1}; print_job_id=$jobId; paper_width_mm=$normalizedWidth",
+                    )
+                    put("operator_name", normalizedActor)
+                    put("created_at", now)
+                },
+            )
+            jobId
+        }
     }
 
     fun listPrintJobs(limit: Int = 100): List<PrintJobRecord> {
@@ -550,8 +754,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             val current = loadPrintJob(this, jobId)
                 ?: error("印刷ジョブが見つかりません")
             if (current.status == PrintJobStatus.COMPLETED) return@runInTransactionWithResult Unit
-            check(current.status == PrintJobStatus.PRINTING) {
-                "印刷中ではないジョブを完了へ変更できません"
+            check(current.status == PrintJobStatus.SENDING || current.status == PrintJobStatus.PRINTING) {
+                "送信中ではないジョブを完了へ変更できません"
             }
             val updated = update(
                 "print_jobs",
@@ -561,7 +765,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     put("updated_at", System.currentTimeMillis())
                 },
                 "id = ? AND status = ? AND attempt_count = ?",
-                arrayOf(jobId.toString(), PrintJobStatus.PRINTING.name, current.attemptCount.toString()),
+                arrayOf(jobId.toString(), current.status.name, current.attemptCount.toString()),
             )
             check(updated == 1) { "印刷ジョブの状態が変更されたため完了を確定できませんでした" }
             execSQL("UPDATE sales SET print_count = print_count + 1 WHERE id = ?", arrayOf(current.saleId))
@@ -572,12 +776,12 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
     fun markPrintFailed(jobId: Long, error: String, permanent: Boolean = false) {
         writableDatabase.runInTransactionWithResult {
             val current = loadPrintJob(this, jobId) ?: return@runInTransactionWithResult Unit
-            if (current.status != PrintJobStatus.PRINTING) return@runInTransactionWithResult Unit
+            if (current.status != PrintJobStatus.SENDING && current.status != PrintJobStatus.PRINTING) return@runInTransactionWithResult Unit
             val manualConfirmation = error.contains("送信結果が不明") || error.contains("自動再試行しません")
-            val status = if (permanent || manualConfirmation || current.attemptCount >= 4) {
-                PrintJobStatus.FAILED
-            } else {
-                PrintJobStatus.RETRY
+            val status = when {
+                manualConfirmation -> PrintJobStatus.SENDING
+                permanent || current.attemptCount >= 4 -> PrintJobStatus.FAILED
+                else -> PrintJobStatus.RETRY
             }
             update(
                 "print_jobs",
@@ -587,7 +791,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     put("updated_at", System.currentTimeMillis())
                 },
                 "id = ? AND status = ? AND attempt_count = ?",
-                arrayOf(jobId.toString(), PrintJobStatus.PRINTING.name, current.attemptCount.toString()),
+                arrayOf(jobId.toString(), current.status.name, current.attemptCount.toString()),
             )
             Unit
         }
@@ -599,7 +803,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 ?: throw IllegalArgumentException("印刷ジョブが見つかりません")
             require(current.status != PrintJobStatus.COMPLETED) { "完了済みジョブは再送できません。再印字を登録してください" }
             require(current.status != PrintJobStatus.DISCARDED) { "破棄済みジョブは再送できません" }
-            require(current.status != PrintJobStatus.PRINTING) { "印刷中のジョブは操作できません" }
+            require(current.status != PrintJobStatus.SENDING && current.status != PrintJobStatus.PRINTING) { "送信中または印刷結果不明のジョブは再送できません" }
             require(PrintQueueAtomicityV115.mayRetry(current.status)) { "このジョブは再送できません" }
             val updated = update(
                 "print_jobs",
@@ -626,7 +830,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             ?: throw IllegalArgumentException("売上印刷ジョブが見つかりません")
         require(current.status != PrintJobStatus.COMPLETED) { "完了済みジョブは破棄できません" }
         require(current.status != PrintJobStatus.DISCARDED) { "このジョブは既に破棄済みです" }
-        require(current.status != PrintJobStatus.PRINTING) { "印刷中のジョブは破棄できません" }
+        require(current.status != PrintJobStatus.SENDING && current.status != PrintJobStatus.PRINTING) { "送信中または印刷結果不明のジョブは破棄できません" }
         require(reason.trim().length >= 4) { "破棄理由を4文字以上で入力してください" }
         require(actor.isNotBlank()) { "監査担当者が必要です" }
         writableDatabase.runInTransaction {
@@ -637,11 +841,12 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     put("last_error", "破棄理由：${reason.trim()}".take(500))
                     put("updated_at", System.currentTimeMillis())
                 },
-                "id = ? AND status NOT IN (?, ?, ?)",
+                "id = ? AND status NOT IN (?, ?, ?, ?)",
                 arrayOf(
                     jobId.toString(),
                     PrintJobStatus.COMPLETED.name,
                     PrintJobStatus.DISCARDED.name,
+                    PrintJobStatus.SENDING.name,
                     PrintJobStatus.PRINTING.name,
                 ),
             )
@@ -678,7 +883,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         val updated = db.update(
             "print_jobs",
             ContentValues().apply {
-                put("status", PrintJobStatus.PRINTING.name)
+                put("status", PrintJobStatus.SENDING.name)
                 put("attempt_count", attempt)
                 putNull("last_error")
                 put("updated_at", now)
@@ -688,7 +893,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         )
         return if (updated == 1) {
             candidate.copy(
-                status = PrintJobStatus.PRINTING,
+                status = PrintJobStatus.SENDING,
                 attemptCount = attempt,
                 lastError = null,
                 updatedAt = now,
@@ -718,6 +923,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         lastError = if (isNull(5)) null else getString(5),
         createdAt = getLong(6),
         updatedAt = getLong(7),
+        printerId = getString(8),
+        printableDotWidth = getInt(9),
     )
 
     private fun Cursor.toCartItem(): CartItem {
@@ -727,6 +934,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             unitPrice = getLong(2),
             taxCategory = TaxCategory.valueOf(getString(3)),
             displayOrder = getInt(4),
+            quantityMode = runCatching { QuantityMode.valueOf(getString(10)) }.getOrDefault(QuantityMode.INTEGER),
         )
         return CartItem(
             product = product,
@@ -735,6 +943,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             discountAmount = getLong(6),
             note = getString(7),
             lineId = getString(8),
+            quantityHundredths = getLong(9),
         )
     }
 
@@ -745,9 +954,11 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         put("tax_category", product.taxCategory.name)
         put("display_order", product.displayOrder)
         put("quantity", quantity)
+        put("quantity_hundredths", quantityHundredths)
         put("discount_amount", discountAmount)
         put("note", note)
         put("line_id", lineId)
+        put("quantity_mode", product.quantityMode.name)
     }
 
     private fun createProductsTable(db: SQLiteDatabase) {
@@ -777,7 +988,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 quantity INTEGER NOT NULL,
                 discount_amount INTEGER NOT NULL DEFAULT 0,
                 note TEXT NOT NULL DEFAULT '',
-                line_id TEXT NOT NULL DEFAULT ''
+                line_id TEXT NOT NULL DEFAULT '',
+                quantity_mode TEXT
             )
             """.trimIndent(),
         )
@@ -808,6 +1020,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 discount_amount INTEGER NOT NULL DEFAULT 0,
                 note TEXT NOT NULL DEFAULT '',
                 line_id TEXT NOT NULL DEFAULT '',
+                quantity_mode TEXT,
                 FOREIGN KEY(ticket_id) REFERENCES held_tickets(id) ON DELETE CASCADE
             )
             """.trimIndent(),
@@ -843,6 +1056,7 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 quantity INTEGER NOT NULL,
                 discount_amount INTEGER NOT NULL DEFAULT 0,
                 note TEXT NOT NULL DEFAULT '',
+                quantity_mode TEXT,
                 FOREIGN KEY(sale_id) REFERENCES sales(id) ON DELETE CASCADE
             )
             """.trimIndent(),
@@ -872,6 +1086,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 sale_id INTEGER NOT NULL,
                 paper_width_mm INTEGER NOT NULL,
+                printer_id TEXT NOT NULL DEFAULT 'printer-1',
+                printable_dot_width INTEGER NOT NULL DEFAULT 576,
                 status TEXT NOT NULL,
                 attempt_count INTEGER NOT NULL DEFAULT 0,
                 last_error TEXT,
@@ -884,21 +1100,26 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_print_jobs_status ON print_jobs(status, created_at)")
     }
 
-    private fun insertPrintJob(db: SQLiteDatabase, saleId: Long, paperWidthMm: Int, now: Long) {
-        db.insertOrThrow(
-            "print_jobs",
-            null,
-            ContentValues().apply {
-                put("sale_id", saleId)
-                put("paper_width_mm", if (paperWidthMm >= 80) 80 else 58)
-                put("status", PrintJobStatus.PENDING.name)
-                put("attempt_count", 0)
-                putNull("last_error")
-                put("created_at", now)
-                put("updated_at", now)
-            },
-        )
-    }
+    private fun insertPrintJob(
+        db: SQLiteDatabase,
+        saleId: Long,
+        configuration: PrinterConfiguration,
+        now: Long,
+    ): Long = db.insertOrThrow(
+        "print_jobs",
+        null,
+        ContentValues().apply {
+            put("sale_id", saleId)
+            put("paper_width_mm", PrinterPaperSettingPolicy.normalizeWidthMm(configuration.paperWidthMm))
+            put("printer_id", configuration.printerId)
+            put("printable_dot_width", configuration.printableDotWidth)
+            put("status", PrintJobStatus.PENDING.name)
+            put("attempt_count", 0)
+            putNull("last_error")
+            put("created_at", now)
+            put("updated_at", now)
+        },
+    )
 
     private fun migrateCartToLineNumber(db: SQLiteDatabase) {
         db.execSQL("ALTER TABLE cart_items RENAME TO cart_items_v3")
@@ -960,6 +1181,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             "discount_amount",
             "note",
             "line_id",
+            "quantity_hundredths",
+            "quantity_mode",
         )
 
         private val PRINT_JOB_COLUMNS = arrayOf(
@@ -971,6 +1194,8 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
             "last_error",
             "created_at",
             "updated_at",
+            "printer_id",
+            "printable_dot_width",
         )
     }
 }

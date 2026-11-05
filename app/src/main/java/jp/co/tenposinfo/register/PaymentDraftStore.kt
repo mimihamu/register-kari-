@@ -10,24 +10,34 @@ internal data class PaymentDraftLoadResult(
     val restored: Boolean,
     val updatedAt: Long?,
     val commitKey: String?,
+    val integrityIssue: String? = null,
 )
 
 internal object PaymentDraftFingerprint {
-    fun of(items: List<CartItem>): String {
+    fun of(items: List<CartItem>): String = digest(items, exactIdentity = true)
+
+    /** Only for detecting pre-v1.81 interrupted drafts; never use for restoring tender. */
+    fun legacyV180Of(items: List<CartItem>): String = digest(items, exactIdentity = false)
+
+    private fun digest(items: List<CartItem>, exactIdentity: Boolean): String {
         val canonical = items.mapIndexed { index, item ->
-            listOf(
-                index,
-                item.product.id,
-                item.product.name,
-                item.quantity,
-                item.unitPrice,
-                item.discountAmount,
-                item.note,
-                item.product.taxKey,
-                item.product.taxRatePercent,
-                item.product.taxIncluded,
-                item.product.taxable,
-            ).joinToString("\u001F")
+            buildList<Any> {
+                add(index)
+                add(item.product.id)
+                add(item.product.name)
+                add(item.quantity)
+                if (exactIdentity) {
+                    add(item.quantityHundredths)
+                    add(item.lineId)
+                }
+                add(item.unitPrice)
+                add(item.discountAmount)
+                add(item.note)
+                add(item.product.taxKey)
+                add(item.product.taxRatePercent)
+                add(item.product.taxIncluded)
+                add(item.product.taxable)
+            }.joinToString("\u001F")
         }.joinToString("\u001E")
         return MessageDigest.getInstance("SHA-256")
             .digest(canonical.toByteArray(StandardCharsets.UTF_8))
@@ -53,8 +63,12 @@ internal class PaymentDraftStore(
     fun save(items: List<CartItem>, state: PaymentState, commitKey: String) {
         require(PaymentCommitKey.isValid(commitKey)) { "会計キーが不正です" }
         if (items.isEmpty()) {
+            require(state.allocations.isEmpty()) { "空の伝票へ支払を保存できません" }
             clear()
             return
+        }
+        require(PaymentDraftIntegrityV181.validAllocations(state.allocations, TaxEngine.calculate(items).grossAmount)) {
+            "支払配分が伝票合計と一致しません"
         }
         val db = database.writableDatabase
         ensureSchema()
@@ -94,6 +108,7 @@ internal class PaymentDraftStore(
     fun loadOrCreate(items: List<CartItem>): PaymentDraftLoadResult {
         require(items.isNotEmpty()) { "空の伝票では支払を開始できません" }
         val loaded = load(items)
+        if (loaded.integrityIssue != null) return loaded
         if (PaymentCommitKey.isValid(loaded.commitKey)) return loaded
         val key = PaymentCommitKey.newKey()
         save(items, loaded.state, key)
@@ -125,11 +140,24 @@ internal class PaymentDraftStore(
                     if (cursor.isNull(2)) null else cursor.getString(2),
                 )
             }
-        } ?: return PaymentDraftLoadResult(PaymentState(), false, null, null)
-
-        if (metadata.first != PaymentDraftFingerprint.of(items)) {
-            clear()
-            return PaymentDraftLoadResult(PaymentState(), false, null, null)
+        } ?: run {
+            // Metadata can be missing after an interrupted / incomplete migration.
+            // The remaining allocation rows must never be silently discarded.
+            val orphanedAllocations = runCatching {
+                db.query(
+                    TABLE_ALLOCATIONS,
+                    arrayOf("sequence_no"),
+                    null, null, null, null, null, "1",
+                ).use { it.moveToFirst() }
+            }.getOrDefault(true)
+            return if (orphanedAllocations) {
+                PaymentDraftLoadResult(
+                    PaymentState(), false, null, null,
+                    PaymentDraftRecoveryPolicyV182.ORPHAN_REVIEW_MESSAGE,
+                )
+            } else {
+                PaymentDraftLoadResult(PaymentState(), false, null, null)
+            }
         }
 
         val allocations = runCatching {
@@ -155,8 +183,36 @@ internal class PaymentDraftStore(
                 }
             }
         }.getOrElse {
+            return PaymentDraftLoadResult(
+                PaymentState(), false, metadata.second, metadata.third,
+                PaymentDraftIntegrityV181.REVIEW_MESSAGE,
+            )
+        }
+
+        if (metadata.first != PaymentDraftFingerprint.of(items)) {
+            // Do not silently erase a paid draft for a completely different cart either.
+            // Every non-empty persisted allocation is evidence of a possibly processed tender.
+            val matchingOldFormat =
+                metadata.first == PaymentDraftFingerprint.legacyV180Of(items)
+            if (PaymentDraftRecoveryPolicyV182.mustPreserveDifferentCart(allocations.size)) {
+                return PaymentDraftLoadResult(
+                    PaymentState(), false, metadata.second, metadata.third,
+                    if (matchingOldFormat) PaymentDraftIntegrityV181.REVIEW_MESSAGE
+                    else PaymentDraftRecoveryPolicyV182.OTHER_CART_REVIEW_MESSAGE,
+                )
+            }
+            // Only an empty draft is safe to retire without an operator investigation.
             clear()
             return PaymentDraftLoadResult(PaymentState(), false, null, null)
+        }
+        if (!PaymentDraftIntegrityV181.validAllocations(
+                allocations, TaxEngine.calculate(items).grossAmount,
+            ) || (allocations.isNotEmpty() && !PaymentCommitKey.isValid(metadata.third))
+        ) {
+            return PaymentDraftLoadResult(
+                PaymentState(), false, metadata.second, metadata.third,
+                PaymentDraftIntegrityV181.REVIEW_MESSAGE,
+            )
         }
 
         return PaymentDraftLoadResult(

@@ -65,8 +65,12 @@ internal class SaleReceiptReprintAuditStore(context: Context) : AutoCloseable {
         require(saleId > 0L) { "売上No.が不正です" }
         val normalizedRequestId = SaleReceiptReprintAuditPolicy.normalizeRequestId(requestId)
         val normalizedOperator = SaleReceiptReprintAuditPolicy.normalizeOperatorName(operatorName)
+        val printerConfiguration = PrinterRoutingV136.resolve(
+            appContext,
+            DocumentPrintKindV136.SALE_RECEIPT,
+        )
         val paperWidthMm = SaleReceiptReprintAuditPolicy.normalizePaperWidth(
-            PrinterPaperSettingPolicy.currentPaper(appContext).widthMm,
+            printerConfiguration.paperWidthMm,
         )
         val now = System.currentTimeMillis()
 
@@ -85,6 +89,8 @@ internal class SaleReceiptReprintAuditStore(context: Context) : AutoCloseable {
                 ContentValues().apply {
                     put("sale_id", saleId)
                     put("paper_width_mm", paperWidthMm)
+                    put("printer_id", printerConfiguration.printerId)
+                    put("printable_dot_width", printerConfiguration.printableDotWidth)
                     put("status", PrintJobStatus.PENDING.name)
                     put("attempt_count", 0)
                     putNull("last_error")

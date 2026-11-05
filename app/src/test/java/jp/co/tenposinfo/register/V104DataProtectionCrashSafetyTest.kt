@@ -83,7 +83,7 @@ class V104DataProtectionCrashSafetyTest {
         val checkpoint = body.indexOf("PRAGMA wal_checkpoint(TRUNCATE)")
         val transaction = body.indexOf("database.beginTransaction()")
         val walCheck = body.indexOf("BackupSnapshotFallbackPolicyV104.walQuiescent(wal)")
-        val copy = body.indexOf("source.copyTo(target, overwrite = true)")
+        val copy = body.indexOf("DataProtectionOnlineBackupV136.copyWithinWriterBlockBudget(source, target)")
         assertTrue(checkpoint >= 0)
         assertTrue(transaction > checkpoint)
         assertTrue(walCheck > transaction)

@@ -43,7 +43,8 @@ internal object CustomerDisplayPairingParser {
         port: Int,
         attributes: Map<String, ByteArray>,
     ): DiscoveredRegister? {
-        if (serviceName.isBlank() || host.isBlank() || port !in 1024..65535) return null
+        if (serviceName.isBlank() || !CustomerDisplayPrivateLanHostPolicy.isPermitted(host) ||
+            port !in 1024..65535) return null
         val schema = attributes.stringValue(ATTRIBUTE_SCHEMA)?.toIntOrNull() ?: return null
         if (schema != CUSTOMER_DISPLAY_SCHEMA_VERSION) return null
         val path = attributes.stringValue(ATTRIBUTE_PATH) ?: return null
@@ -101,11 +102,15 @@ internal class CustomerDisplayNsdDiscovery(
     private var multicastLock: WifiManager.MulticastLock? = null
     private var resolving = false
     private var running = false
+    // Android NSD callbacks may arrive after stop() or after a new scan.
+    // Such callbacks belong to an earlier generation and must be ignored.
+    private var discoveryGeneration = 0L
     private val timeoutRunnable = Runnable { stop("検索を終了しました") }
 
     fun start() {
         stop(null)
         running = true
+        val generation = discoveryGeneration
         pendingServices.clear()
         queuedIdentities.clear()
         resolving = false
@@ -118,12 +123,17 @@ internal class CustomerDisplayNsdDiscovery(
 
         val listener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String) {
-                emit(CustomerDisplayDiscoveryState(CustomerDisplayDiscoveryStatus.SEARCHING, "同じWi-Fiのつぐレジを検索中です"))
+                handler.post {
+                    if (discoveryGeneration == generation && discoveryListener === this) {
+                        emit(CustomerDisplayDiscoveryState(CustomerDisplayDiscoveryStatus.SEARCHING, "同じWi-Fiのつぐレジを検索中です"))
+                    }
+                }
             }
 
             override fun onServiceFound(service: NsdServiceInfo) {
                 handler.post {
-                    if (!running || !CustomerDisplayNsdServiceType.matches(service.serviceType)) return@post
+                    if (!running || discoveryGeneration != generation || discoveryListener !== this ||
+                        !CustomerDisplayNsdServiceType.matches(service.serviceType)) return@post
                     val identity = "${service.serviceName}|${service.serviceType}"
                     if (queuedIdentities.add(identity)) {
                         pendingServices.addLast(service)
@@ -135,15 +145,27 @@ internal class CustomerDisplayNsdDiscovery(
             override fun onServiceLost(service: NsdServiceInfo) = Unit
 
             override fun onDiscoveryStopped(serviceType: String) {
-                handler.post { running = false }
+                handler.post {
+                    if (discoveryGeneration == generation && discoveryListener === this) {
+                        running = false
+                    }
+                }
             }
 
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
-                handler.post { stop("レジを検索できませんでした（$errorCode）") }
+                handler.post {
+                    if (discoveryGeneration == generation && discoveryListener === this) {
+                        stop("レジを検索できませんでした（$errorCode）")
+                    }
+                }
             }
 
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
-                handler.post { running = false }
+                handler.post {
+                    if (discoveryGeneration == generation && discoveryListener === this) {
+                        running = false
+                    }
+                }
             }
         }
         discoveryListener = listener
@@ -161,6 +183,7 @@ internal class CustomerDisplayNsdDiscovery(
     }
 
     fun stop(message: String? = null) {
+        discoveryGeneration++
         handler.removeCallbacks(timeoutRunnable)
         val listener = discoveryListener
         discoveryListener = null
@@ -183,11 +206,13 @@ internal class CustomerDisplayNsdDiscovery(
     private fun resolveNext() {
         if (!running || resolving || pendingServices.isEmpty()) return
         val service = pendingServices.removeFirst()
+        val generation = discoveryGeneration
         resolving = true
         runCatching {
             nsdManager.resolveService(service, object : NsdManager.ResolveListener {
                 override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
                     handler.post {
+                        if (!running || discoveryGeneration != generation) return@post
                         resolving = false
                         resolveNext()
                     }
@@ -195,6 +220,7 @@ internal class CustomerDisplayNsdDiscovery(
 
                 override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
                     handler.post {
+                        if (!running || discoveryGeneration != generation) return@post
                         val host = serviceInfo.host?.hostAddress.orEmpty()
                         CustomerDisplayPairingParser.parse(
                             serviceName = serviceInfo.serviceName.orEmpty(),
@@ -208,8 +234,10 @@ internal class CustomerDisplayNsdDiscovery(
                 }
             })
         }.onFailure {
-            resolving = false
-            resolveNext()
+            if (running && discoveryGeneration == generation) {
+                resolving = false
+                resolveNext()
+            }
         }
     }
 

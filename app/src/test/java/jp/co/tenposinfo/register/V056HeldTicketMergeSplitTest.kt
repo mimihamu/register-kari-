@@ -62,6 +62,24 @@ class V056HeldTicketMergeSplitTest {
     }
 
     @Test
+    fun splitPreservesFractionalQuantityHundredths() {
+        val original = item(id = "F", quantity = 3, unitPrice = 1_000L, discountAmount = 101L)
+            .copy(quantityHundredths = 150L)
+
+        val plan = HeldTicketMergeSplitPolicy.splitItems(
+            items = listOf(original, item(id = "KEEP", quantity = 1)),
+            movedQuantities = mapOf(0 to 1),
+        )
+
+        val moved = plan.movedItems.first { it.product.id == "F" }
+        val remaining = plan.remainingItems.first { it.product.id == "F" }
+        assertEquals(50L, moved.quantityHundredths)
+        assertEquals(100L, remaining.quantityHundredths)
+        assertEquals(original.quantityHundredths, moved.quantityHundredths + remaining.quantityHundredths)
+        assertEquals(original.baseAmount, moved.baseAmount + remaining.baseAmount)
+    }
+
+    @Test
     fun splitKeepsTaxSnapshotFieldsOnBothSides() {
         val dynamic = item(
             id = "DYNAMIC",
@@ -116,4 +134,40 @@ class V056HeldTicketMergeSplitTest {
         assertEquals("宴会A-分割-2", second)
         assertTrue(second.length <= HeldTicketSafetyPolicy.MAX_NAME_LENGTH)
     }
+    @Test
+    fun partialSplitKeepsSourceLineIdentityButCreatesNewMovedLineId() {
+        val first = item("A", quantity = 3).copy(lineId = "original-row")
+        val second = item("B", quantity = 1).copy(lineId = "other-row")
+        val plan = HeldTicketMergeSplitPolicy.splitItems(
+            listOf(first, second), mapOf(0 to 1),
+        )
+        assertEquals("original-row", plan.remainingItems.first().lineId)
+        assertTrue(plan.movedItems.first().lineId.isNotBlank())
+        assertTrue(plan.movedItems.first().lineId != "original-row")
+        assertEquals(first.baseAmount, plan.remainingItems.first().baseAmount + plan.movedItems.first().baseAmount)
+    }
+
+    @Test
+    fun wholeLineMoveRetainsIdentity() {
+        val old = item("A", quantity = 2).copy(lineId = "known")
+        val plan = HeldTicketMergeSplitPolicy.splitItems(
+            listOf(old, item("B", quantity = 1).copy(lineId = "untouched")),
+            mapOf(0 to 2),
+        )
+        assertEquals("known", plan.movedItems.single().lineId)
+        assertEquals("untouched", plan.remainingItems.single().lineId)
+    }
+
+    @Test
+    fun mergingTicketsWithCollidingLineIdsPreservesTargetAndRepairsSource() {
+        val target = listOf(item("A", 1).copy(lineId = "same"))
+        val source = listOf(item("A", 2).copy(lineId = "same"))
+        val merged = HeldTicketMergeSplitPolicy.mergeItems(target, source)
+        assertEquals(2, merged.size)
+        assertEquals("same", merged[0].lineId)
+        assertTrue(merged[1].lineId.isNotBlank())
+        assertTrue(merged[1].lineId != merged[0].lineId)
+        assertEquals(3, merged.sumOf { it.quantity })
+    }
+
 }

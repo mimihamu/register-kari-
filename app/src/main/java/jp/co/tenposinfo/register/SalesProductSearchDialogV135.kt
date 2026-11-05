@@ -38,7 +38,7 @@ fun SalesProductSearchDialogV135(
         ProductLookupPolicyV135.findExact(products, query)?.let { onRegister(it) }
     }
 
-    AlertDialog(
+    RegisterModalV154(
         onDismissRequest = onDismiss,
         title = { Text("商品検索") },
         text = {
@@ -74,11 +74,12 @@ fun SalesProductSearchDialogV135(
             }
         },
         confirmButton = {
-            TextButton(
+            RegisterModalConfirmV154(
+                label = "コード一致を登録",
                 onClick = submitExact,
                 enabled = ProductLookupPolicyV135.findExact(products, query) != null,
-            ) { Text("コード一致を登録") }
+            )
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("閉じる") } },
+        dismissButton = { RegisterModalCancelV154(onClick = onDismiss) },
     )
 }

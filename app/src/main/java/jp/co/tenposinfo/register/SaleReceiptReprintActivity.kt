@@ -73,11 +73,14 @@ class SaleReceiptReprintActivity : ComponentActivity() {
         configureRegisterSystemBars(window)
         val requestedSaleId = SaleReceiptNavigation.requestedSaleId(intent)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 SaleReceiptReprintRoute(
                     requestedSaleId = requestedSaleId,
                     onClose = { finish() },
                 )
+            }
+        
             }
         }
     }
@@ -140,12 +143,19 @@ private fun SaleReceiptReprintRoute(
                     val history = remember(requestedSaleId, refreshEpoch) {
                         auditStore.listForSale(requestedSaleId, limit = 20)
                     }
+                    val reprintAuth = remember(refreshEpoch) {
+                        ReceiptLayoutSettingsStoreV136(appContext).load().reprintAuth
+                    }
+                    val reprintAllowed =
+                        reprintAuth == ReceiptReprintAuthV136.SELLER || current.isManager
                     SaleReceiptReprintScreen(
                         detail = detail,
                         paper = PrinterPaperSettingPolicy.currentPaper(appContext),
                         history = history,
                         message = message,
                         confirmingReprint = confirmingReprint,
+                        reprintAllowed = reprintAllowed,
+                        reprintAuthLabel = reprintAuth.displayName,
                         onRequestReprint = {
                             pendingRequestId = UUID.randomUUID().toString()
                             confirmingReprint = true
@@ -161,6 +171,11 @@ private fun SaleReceiptReprintRoute(
                                 pendingRequestId = it
                             }
                             runCatching {
+                                require(
+                                    reprintAuth == ReceiptReprintAuthV136.SELLER || current.isManager,
+                                ) {
+                                    "再印字には責任者権限が必要です"
+                                }
                                 auditStore.request(
                                     saleId = detail.summary.id,
                                     operatorName = current.name,
@@ -204,6 +219,8 @@ private fun SaleReceiptReprintScreen(
     history: List<SaleReceiptReprintRequestRecord>,
     message: String?,
     confirmingReprint: Boolean,
+    reprintAllowed: Boolean,
+    reprintAuthLabel: String,
     onRequestReprint: () -> Unit,
     onCancelReprint: () -> Unit,
     onConfirmReprint: () -> Unit,
@@ -215,17 +232,11 @@ private fun SaleReceiptReprintScreen(
     val receiptText = ReceiptRenderer.render(receiptData, paper)
 
     Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().height(58.dp).background(SaleReceiptNavy).padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.width(20.dp))
-            Text("SCR-647  売上指定 レシート確認・再印字", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.weight(1f))
-            Text("売上No.${detail.summary.id} 固定", color = Color.White, fontWeight = FontWeight.Bold)
-        }
-
+        RegisterTopBarV141(
+            title = "レシート確認・再印字",
+            onBack = onClose,
+            action = { Text("売上No.${detail.summary.id}", color = Color.White, maxLines = 1) },
+        )
         Row(
             Modifier.weight(1f).fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -278,6 +289,14 @@ private fun SaleReceiptReprintScreen(
                     Text("再印字操作", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = SaleReceiptNavy)
                     Spacer(Modifier.height(8.dp))
                     Text("対象売上は売上No.${detail.summary.id}に固定されています。別売上へ自動切替しません。")
+                    Text(
+                        "再印字権限：$reprintAuthLabel",
+                        color = if (reprintAllowed) SaleReceiptGreen else SaleReceiptDanger,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    if (!reprintAllowed) {
+                        Text("この設定では責任者でログインした場合のみ再印字できます。", color = SaleReceiptDanger)
+                    }
                     Spacer(Modifier.height(8.dp))
                     Text(
                         "再印字要求とprint_jobは同一トランザクションで追記し、request UUIDで二重登録を防止します。",
@@ -304,6 +323,7 @@ private fun SaleReceiptReprintScreen(
                                 Spacer(Modifier.height(8.dp))
                                 Button(
                                     onClick = onConfirmReprint,
+                                    enabled = reprintAllowed,
                                     modifier = Modifier.fillMaxWidth().height(48.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = SaleReceiptBlue),
                                 ) { Text("再印字を確定") }
@@ -316,6 +336,7 @@ private fun SaleReceiptReprintScreen(
                     } else {
                         Button(
                             onClick = onRequestReprint,
+                            enabled = reprintAllowed,
                             modifier = Modifier.fillMaxWidth().height(50.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = SaleReceiptBlue),
                         ) { Text("再印字を確認") }
@@ -373,21 +394,6 @@ private fun SaleReceiptReprintScreen(
             }
         }
 
-        Row(
-            Modifier.fillMaxWidth().height(68.dp).background(Color.White).padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedButton(onClick = onClose, modifier = Modifier.width(220.dp).fillMaxHeight()) {
-                Text("元画面へ戻る", fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.weight(1f))
-            Text(
-                "構造化売上からプレビュー / 再印字要求は冪等・追記専用監査",
-                color = SaleReceiptGreen,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.End,
-            )
-        }
     }
 }
 

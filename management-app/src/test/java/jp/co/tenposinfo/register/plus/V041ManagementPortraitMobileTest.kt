@@ -48,7 +48,7 @@ class V041ManagementPortraitMobileTest {
             "LazyColumn",
             "MobileFilterMenu",
             "JSON取込",
-            "スマホ縦画面",
+            "NavigationBarItem",
         )) assertTrue(mobileScreen.contains(token))
         assertFalse(mobileScreen.contains("verticalScroll(rememberScrollState())"))
 

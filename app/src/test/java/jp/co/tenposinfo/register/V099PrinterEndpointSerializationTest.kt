@@ -145,8 +145,12 @@ class V099PrinterEndpointSerializationTest {
         assertTrue(receiptSource.indexOf("PrinterEndpointSendGate.withPermit(") < receiptSource.indexOf("Socket().use { socket ->"))
         assertTrue(receiptSource.contains("private fun sendExclusive(payload: ByteArray)"))
         assertTrue(receiptSource.contains("TcpEscPosPrinterGateway("))
-        assertTrue(autoSource.contains("val gateway = TcpEscPosPrinterGateway("))
-        assertTrue(queueSource.contains("val gateway = TcpEscPosPrinterGateway("))
+        // v1.36 transports are selected behind one PrinterGateway factory. TCP itself
+        // still retains the original host:port endpoint permit.
+        assertTrue(autoSource.contains("val rawGateway = PrinterGatewayFactoryV136.create("))
+        assertTrue(queueSource.contains("val rawGateway = PrinterGatewayFactoryV136.create("))
+        assertTrue(autoSource.contains("delegate = rawGateway"))
+        assertTrue(queueSource.contains("delegate = rawGateway"))
         assertTrue(receiptSource.contains("future = executor.submit<Unit>"))
     }
 
@@ -154,8 +158,13 @@ class V099PrinterEndpointSerializationTest {
     fun automaticAndManualPathsHoldEndpointGateAcrossJobClaimAndSend() {
         assertTrue(autoSource.contains("PrinterEndpointSendGate.withPermit("))
         assertTrue(autoSource.contains("val candidate = AutomaticPrintQueuePolicy.oldestCandidate("))
-        assertTrue(autoSource.contains("return@withPermit null"))
-        assertTrue(autoSource.indexOf("PrinterEndpointSendGate.withPermit(") < autoSource.indexOf("val candidate = AutomaticPrintQueuePolicy.oldestCandidate("))
+        assertTrue(
+            autoSource.indexOf("val candidate = AutomaticPrintQueuePolicy.oldestCandidate(") <
+                autoSource.indexOf("PrinterEndpointSendGate.withPermit("),
+        )
+        assertTrue(autoSource.contains("resolveCandidateConfiguration("))
+        assertTrue(autoSource.contains(").processJob(candidate.sourceId)"))
+        assertTrue(autoSource.contains("業務帳票の印刷ジョブ状態が変更されたため送信を中止しました"))
         assertTrue(queueSource.contains("PrinterEndpointSendGate.withPermit("))
         assertTrue(queueSource.contains("requireCurrentStatus(job.status, current.status)"))
         assertTrue(queueSource.contains("requireCurrentStatus(unifiedJob.status, sourceJob.status)"))

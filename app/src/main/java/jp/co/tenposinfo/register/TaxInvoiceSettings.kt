@@ -12,6 +12,7 @@ data class InvoiceIssuerProfile(
 data class TaxInvoiceSettings(
     val mixedTaxPolicy: MixedTaxPolicy = MixedTaxPolicy.BLOCK,
     val issuer: InvoiceIssuerProfile = InvoiceIssuerProfile(),
+    val invoiceAggregationBasis: InvoiceAggregationBasisV136 = InvoiceAggregationBasisV136.TAX_INCLUDED,
 )
 
 object TaxInvoiceSettingsPolicy {
@@ -52,6 +53,14 @@ class TaxInvoiceSettingsStore(context: Context) {
         val policy = runCatching {
             MixedTaxPolicy.valueOf(preferences.getString(KEY_MIXED_POLICY, MixedTaxPolicy.BLOCK.name)!!)
         }.getOrDefault(MixedTaxPolicy.BLOCK)
+        val aggregationBasis = runCatching {
+            InvoiceAggregationBasisV136.valueOf(
+                preferences.getString(
+                    KEY_INVOICE_AGGREGATION_BASIS,
+                    InvoiceAggregationBasisV136.TAX_INCLUDED.name,
+                )!!,
+            )
+        }.getOrDefault(InvoiceAggregationBasisV136.TAX_INCLUDED)
         return TaxInvoiceSettings(
             mixedTaxPolicy = policy,
             issuer = InvoiceIssuerProfile(
@@ -60,6 +69,7 @@ class TaxInvoiceSettingsStore(context: Context) {
                 phone = preferences.getString(KEY_PHONE, "").orEmpty(),
                 registrationNumber = preferences.getString(KEY_REGISTRATION, "").orEmpty(),
             ),
+            invoiceAggregationBasis = aggregationBasis,
         )
     }
 
@@ -67,6 +77,7 @@ class TaxInvoiceSettingsStore(context: Context) {
         val clean = TaxInvoiceSettingsPolicy.normalize(settings)
         preferences.edit()
             .putString(KEY_MIXED_POLICY, clean.mixedTaxPolicy.name)
+            .putString(KEY_INVOICE_AGGREGATION_BASIS, clean.invoiceAggregationBasis.name)
             .putString(KEY_STORE_NAME, clean.issuer.storeName)
             .putString(KEY_ADDRESS, clean.issuer.address)
             .putString(KEY_PHONE, clean.issuer.phone)
@@ -79,6 +90,7 @@ class TaxInvoiceSettingsStore(context: Context) {
     companion object {
         private const val PREFS = "tax_invoice_settings"
         private const val KEY_MIXED_POLICY = "mixed_tax_policy"
+        private const val KEY_INVOICE_AGGREGATION_BASIS = "invoice_aggregation_basis"
         private const val KEY_STORE_NAME = "store_name"
         private const val KEY_ADDRESS = "address"
         private const val KEY_PHONE = "phone"

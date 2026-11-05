@@ -33,10 +33,9 @@ class OperatorAuthenticationStore(context: Context) : AutoCloseable {
     }
 
     fun authenticate(operatorId: Long, pin: String): Result<AuthenticatedOperator> = runCatching {
-        require(pin.isNotBlank()) { "PINを入力してください" }
         val row = db.query(
             "register_operators",
-            arrayOf("id", "operator_code", "operator_name", "role", "pin_salt", "pin_hash", "updated_at"),
+            arrayOf("id", "operator_code", "operator_name", "role", "pin_salt", "pin_hash", "updated_at", "pin_required"),
             "id = ? AND enabled = 1",
             arrayOf(operatorId.toString()),
             null,
@@ -51,15 +50,26 @@ class OperatorAuthenticationStore(context: Context) : AutoCloseable {
                 salt = cursor.getString(4),
                 hash = cursor.getString(5),
                 revision = cursor.getLong(6),
+                pinRequired = cursor.getInt(7) != 0,
             )
         } ?: throw IllegalArgumentException("担当者が見つからないか停止されています")
 
-        if (!PinSecurity.verify(pin, row.salt, row.hash)) {
-            insertAudit("LOGIN_FAILED", row.id, "${row.code} / PIN不一致", row.name)
-            throw IllegalArgumentException("PINが違います")
+        val permissions = loadPermissions(row.id)
+        val noPinAllowed = OperatorPinOptionalPolicyV144.canLoginWithoutPin(
+            row.role, permissions, row.pinRequired,
+        )
+        if (!noPinAllowed) {
+            require(pin.isNotBlank()) { "PINを入力してください" }
+            if (!PinSecurity.verify(pin, row.salt, row.hash)) {
+                insertAudit("LOGIN_FAILED", row.id, "${row.code} / PIN不一致", row.name)
+                throw IllegalArgumentException("PINが違います")
+            }
         }
-        val authenticated = row.toAuthenticated(loadPermissions(row.id))
-        insertAudit("LOGIN_SUCCEEDED", row.id, "${row.code} / ${row.role.displayName}", row.name)
+        val authenticated = row.toAuthenticated(permissions)
+        insertAudit(
+            if (noPinAllowed) "LOGIN_SUCCEEDED_NO_PIN" else "LOGIN_SUCCEEDED",
+            row.id, "${row.code} / ${row.role.displayName}", row.name,
+        )
         authenticated
     }
 
@@ -126,6 +136,7 @@ class OperatorAuthenticationStore(context: Context) : AutoCloseable {
         val salt: String,
         val hash: String,
         val revision: Long,
+        val pinRequired: Boolean,
     ) {
         fun toAuthenticated(permissions: Set<RegisterPermission>) = AuthenticatedOperator(
             id = id,

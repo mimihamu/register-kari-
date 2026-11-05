@@ -30,6 +30,43 @@ internal object CustomerDisplayClientHandshake {
     }
 }
 
+/**
+ * Reject non-WebSocket responses before ever presenting a customer amount.
+ * A 101 status and Sec-WebSocket-Accept alone do not constitute a valid upgrade.
+ */
+internal object CustomerDisplayClientUpgradeResponsePolicy {
+    fun isSwitchingProtocols(statusLine: String): Boolean {
+        val parts = statusLine.split(' ', limit = 3)
+        return parts.size >= 2 && parts[0] == "HTTP/1.1" && parts[1] == "101"
+    }
+
+    fun valid(statusLine: String, headers: Map<String, String>, key: String): Boolean =
+        isSwitchingProtocols(statusLine) &&
+            headers["upgrade"]?.equals("websocket", ignoreCase = true) == true &&
+            headers["connection"]?.split(',')?.any {
+                it.trim().equals("Upgrade", ignoreCase = true)
+            } == true &&
+            headers["sec-websocket-accept"] == CustomerDisplayClientHandshake.accept(key)
+}
+
+/** RFC6455: a server frame is unmasked, unfragmented, and has no RSV flags. */
+internal object CustomerDisplayInboundFramePolicy {
+    const val MAX_PAYLOAD_BYTES = 1_048_576L
+
+    fun verify(first: Int, second: Int, length: Long) {
+        require(first in 0..255 && second in 0..255) { "WebSocketフレームが不正です" }
+        require(first and 0x70 == 0) { "WebSocket予約ビットが不正です" }
+        require(first and 0x80 != 0) { "分割WebSocketフレームには未対応です" }
+        require(second and 0x80 == 0) { "サーバーからマスク付きフレームを受信しました" }
+        val opcode = first and 0x0F
+        require(opcode == 0x1 || opcode == 0x8 || opcode == 0x9 || opcode == 0xA) {
+            "WebSocketフレーム種別が不正です"
+        }
+        require(length in 0..MAX_PAYLOAD_BYTES) { "受信データが大きすぎます" }
+        require(opcode < 0x8 || length <= 125L) { "制御フレームが大きすぎます" }
+    }
+}
+
 internal object CustomerDisplayConnectionPolicy {
     const val SCREEN_TRANSITION_GRACE_MS = 4_000L
     const val CONNECT_TIMEOUT_MS = 5_000
@@ -44,6 +81,38 @@ internal object CustomerDisplayConnectionPolicy {
 
     fun nextFailedAttemptCount(failedAttempts: Int, hadEstablishedConnection: Boolean): Int =
         if (hadEstablishedConnection) 0 else (failedAttempts + 1).coerceAtMost(retryDelaysMs.lastIndex)
+}
+
+/**
+ * Connection-local sequence safety. STATE_UPDATE is never applied across a gap,
+ * unknown session, or before the first authoritative SNAPSHOT.
+ */
+internal enum class CustomerDisplayDeliveryDecision { APPLY, IGNORE, REQUEST_SNAPSHOT }
+
+internal object CustomerDisplayDeliveryPolicy {
+    fun decide(
+        previous: CustomerDisplaySnapshot?,
+        incoming: CustomerDisplaySnapshot,
+        awaitingSnapshot: Boolean,
+    ): CustomerDisplayDeliveryDecision {
+        if (incoming.messageType == CustomerDisplayMessageType.SNAPSHOT) {
+            if (previous == null) return CustomerDisplayDeliveryDecision.APPLY
+            val sameServer = previous.serverInstanceId == incoming.serverInstanceId
+            val sameSession = previous.sessionId == incoming.sessionId
+            return if (sameServer && sameSession && incoming.sequence < previous.sequence) {
+                CustomerDisplayDeliveryDecision.IGNORE
+            } else CustomerDisplayDeliveryDecision.APPLY
+        }
+        if (awaitingSnapshot || previous == null) return CustomerDisplayDeliveryDecision.REQUEST_SNAPSHOT
+        if (previous.serverInstanceId != incoming.serverInstanceId ||
+            previous.sessionId != incoming.sessionId) {
+            return CustomerDisplayDeliveryDecision.REQUEST_SNAPSHOT
+        }
+        if (incoming.sequence <= previous.sequence) return CustomerDisplayDeliveryDecision.IGNORE
+        return if (previous.sequence != Long.MAX_VALUE && incoming.sequence == previous.sequence + 1) {
+            CustomerDisplayDeliveryDecision.APPLY
+        } else CustomerDisplayDeliveryDecision.REQUEST_SNAPSHOT
+    }
 }
 
 class CustomerDisplayWebSocketClient(
@@ -170,8 +239,10 @@ private class SharedCustomerDisplaySession(
             delayedStop?.cancel(false)
             delayedStop = null
             listeners[id] = listener
-            replaySnapshot = latestSnapshot
-            replayAsConnected = visibility.shouldPresentAsConnected()
+            // Do not replay cached money to a newly created screen while the
+            // underlying socket is lost or still awaiting the first live snapshot.
+            replaySnapshot = if (visibility.transportConnected) latestSnapshot else null
+            replayAsConnected = visibility.transportConnected && replaySnapshot != null
             replayReason = if (visibility.visibleDisconnected) visibility.latestDisconnectReason else null
         }
         startWorker()
@@ -285,7 +356,7 @@ private class SharedCustomerDisplaySession(
     }
 
     private fun connectAndRead(onHandshakeComplete: () -> Unit) {
-        require(settings.isConfigured) { "接続先IPとトークンを設定してください" }
+        require(settings.isConfigured) { "同一LANのプライベートIPとトークンを設定してください" }
         val client = Socket()
         socket = client
         try {
@@ -293,7 +364,7 @@ private class SharedCustomerDisplaySession(
             client.keepAlive = true
             client.soTimeout = CustomerDisplayConnectionPolicy.CONNECT_TIMEOUT_MS
             client.connect(
-                InetSocketAddress(settings.host, settings.port),
+                InetSocketAddress(settings.socketHost, settings.port),
                 CustomerDisplayConnectionPolicy.CONNECT_TIMEOUT_MS,
             )
             val input = client.getInputStream()
@@ -303,11 +374,17 @@ private class SharedCustomerDisplaySession(
             val token = URLEncoder.encode(settings.token, StandardCharsets.UTF_8.name())
             val request = buildString {
                 append("GET $CUSTOMER_DISPLAY_PATH?token=$token HTTP/1.1\r\n")
-                append("Host: ${settings.host}:${settings.port}\r\n")
+                append("Host: ${settings.httpHost}\r\n")
                 append("Upgrade: websocket\r\n")
                 append("Connection: Upgrade\r\n")
                 append("Sec-WebSocket-Key: $key\r\n")
                 append("Sec-WebSocket-Version: 13\r\n")
+                // Explicit opt-in: older CD builds omit the header and continue
+                // receiving the numeric schemaVersion + legacy SALES/ACCOUNTING modes.
+                append("X-Tsuguregi-CD-Wire: 1.0\r\n")
+                if (CustomerDisplayDeviceIdPolicy.isValid(settings.displayDeviceId)) {
+                    append("X-Tsuguregi-CD-Device-Id: ${settings.displayDeviceId}\r\n")
+                }
                 append("\r\n")
             }
             output.write(request.toByteArray(StandardCharsets.ISO_8859_1))
@@ -315,9 +392,12 @@ private class SharedCustomerDisplaySession(
 
             val response = readHttpResponse(input)
             val statusLine = response.lines.firstOrNull().orEmpty()
-            val accept = response.headers["sec-websocket-accept"]
-            require(statusLine.contains(" 101 ")) { "接続が拒否されました（$statusLine）" }
-            require(accept == CustomerDisplayClientHandshake.accept(key)) { "WebSocket応答を検証できません" }
+            require(CustomerDisplayClientUpgradeResponsePolicy.isSwitchingProtocols(statusLine)) {
+                "接続が拒否されました（$statusLine）"
+            }
+            require(CustomerDisplayClientUpgradeResponsePolicy.valid(statusLine, response.headers, key)) {
+                "WebSocket応答を検証できません"
+            }
 
             client.soTimeout = CustomerDisplayConnectionPolicy.HEARTBEAT_INTERVAL_MS
             onHandshakeComplete()
@@ -330,6 +410,8 @@ private class SharedCustomerDisplaySession(
 
     private fun readFrames(input: InputStream, output: OutputStream) {
         var missedHeartbeats = 0
+        var previousSnapshot: CustomerDisplaySnapshot? = null
+        var awaitingSnapshot = false
         while (running.get()) {
             val first = try {
                 input.read()
@@ -348,7 +430,6 @@ private class SharedCustomerDisplaySession(
 
             val finalFrame = first and 0x80 != 0
             val opcode = first and 0x0F
-            val masked = second and 0x80 != 0
             var length = (second and 0x7F).toLong()
             if (length == 126L) {
                 length = ((readRequired(input) shl 8) or readRequired(input)).toLong()
@@ -356,19 +437,36 @@ private class SharedCustomerDisplaySession(
                 length = 0L
                 kotlin.repeat(8) { length = (length shl 8) or readRequired(input).toLong() }
             }
-            require(length <= MAX_FRAME_BYTES) { "受信データが大きすぎます" }
-            val mask = if (masked) ByteArray(4).also { readFully(input, it) } else null
+            CustomerDisplayInboundFramePolicy.verify(first, second, length)
             val payload = ByteArray(length.toInt()).also { readFully(input, it) }
-            if (mask != null) {
-                payload.indices.forEach { index ->
-                    payload[index] = (payload[index].toInt() xor mask[index % 4].toInt()).toByte()
-                }
-            }
             when (opcode) {
                 0x1 -> {
                     require(finalFrame) { "分割WebSocketフレームには未対応です" }
                     val json = payload.toString(StandardCharsets.UTF_8)
-                    notifySnapshot(CustomerDisplaySnapshot.parse(json))
+                    val incoming = try {
+                        CustomerDisplaySnapshot.parse(json)
+                    } catch (error: Exception) {
+                        // Unknown mandatory fields/major can never be displayed as guessed money.
+                        // Hide the previously visible amount immediately, before retrying transport.
+                        notifyResyncRequired("E-CD-005: 表示データを確認できません。再接続しています")
+                        throw IllegalArgumentException("E-CD-005: invalid display payload", error)
+                    }
+                    when (CustomerDisplayDeliveryPolicy.decide(previousSnapshot, incoming, awaitingSnapshot)) {
+                        CustomerDisplayDeliveryDecision.APPLY -> {
+                            previousSnapshot = incoming
+                            awaitingSnapshot = false
+                            notifySnapshot(incoming)
+                        }
+                        CustomerDisplayDeliveryDecision.IGNORE -> Unit
+                        CustomerDisplayDeliveryDecision.REQUEST_SNAPSHOT -> {
+                            if (!awaitingSnapshot) {
+                                awaitingSnapshot = true
+                                notifyResyncRequired()
+                                val request = """{"messageType":"SNAPSHOT_REQUEST"}"""
+                                writeMaskedFrame(output, 0x1, request.toByteArray(StandardCharsets.UTF_8))
+                            }
+                        }
+                    }
                 }
                 0x8 -> {
                     writeMaskedFrame(output, 0x8, payload.copyOf(minOf(payload.size, 125)))
@@ -383,6 +481,9 @@ private class SharedCustomerDisplaySession(
 
     private fun notifyConnected() {
         val currentListeners = synchronized(listenerLock) {
+            // A new WebSocket transport is not proof that the saved snapshot is current.
+            // The server always sends its latest full snapshot after handshake.
+            latestSnapshot = null
             visibility.onConnected()
             everEstablishedConnection = true
             pendingVisibleDisconnect?.cancel(false)
@@ -394,6 +495,20 @@ private class SharedCustomerDisplaySession(
             "${settings.host}:${settings.port} へ接続",
         )
         currentListeners.forEach { listener -> safeCall(listener.onConnected) }
+    }
+
+    private fun notifyResyncRequired(
+        reason: String = "E-CD-004: 表示更新が不足したため最新状態を再取得しています",
+    ) {
+        val currentListeners = synchronized(listenerLock) {
+            // Suppress stale money immediately, including on newly created screens.
+            latestSnapshot = null
+            listeners.values.toList()
+        }
+        CustomerDisplayConnectionEventLog.record(
+            CustomerDisplayConnectionEventType.DISCONNECTED, reason,
+        )
+        currentListeners.forEach { listener -> safeCall { listener.onDisconnected(reason) } }
     }
 
     private fun notifySnapshot(snapshot: CustomerDisplaySnapshot) {
@@ -535,7 +650,6 @@ private class SharedCustomerDisplaySession(
 
     companion object {
         private const val MAX_HTTP_HEADER_BYTES = 16 * 1024
-        private const val MAX_FRAME_BYTES = 1_048_576L
         private val HEARTBEAT_PAYLOAD = "tsuguregi".toByteArray(StandardCharsets.UTF_8)
     }
 }
