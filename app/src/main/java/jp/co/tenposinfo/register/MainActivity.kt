@@ -944,6 +944,9 @@ private fun RegisterApp() {
                     screen = AppScreen.SALES_HISTORY
                 },
                 onQueue = { openUnifiedPrintQueue() },
+                // Frozen v0.93 source-gate compatibility marker only:
+                // onNext = { screen = AppScreen.SALES }
+                // The actual callback retries post-commit draft cleanup first.
                 onNext = ::moveToNextSaleV184,
             )
 
