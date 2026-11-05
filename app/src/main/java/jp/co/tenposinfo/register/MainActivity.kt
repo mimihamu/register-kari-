@@ -249,6 +249,8 @@ private fun RegisterApp() {
     var paymentExitWarningV183 by remember { mutableStateOf(false) }
     var paymentCommitKey by remember { mutableStateOf<String?>(null) }
     var saleCommitInProgress by remember { mutableStateOf(false) }
+    var completedDraftCleanupPendingV184 by remember { mutableStateOf(false) }
+    var completedSaleNoticeV184 by remember { mutableStateOf<String?>(null) }
     val heldTicketCoordinator = remember { HeldTicketSafetyCoordinator(database) }
     val paymentDraftStore = remember { PaymentDraftStore(database) }
     val saleCommitGuard = remember { SaleCommitGuard() }
@@ -287,6 +289,22 @@ private fun RegisterApp() {
         screen = AppScreen.SALES
     }
 
+    fun moveToNextSaleV184() {
+        if (completedDraftCleanupPendingV184) {
+            if (runCatching { paymentDraftStore.clear() }.isFailure) {
+                completedSaleNoticeV184 = SalePostCommitPolicyV184.DRAFT_CLEANUP_WARNING
+                return
+            }
+            completedDraftCleanupPendingV184 = false
+        }
+        completedSaleNoticeV184 = null
+        paymentCommitKey = null
+        paymentState = PaymentState()
+        saleCommitInProgress = false
+        saleCommitGuard.resetForNewPayment()
+        screen = AppScreen.SALES
+    }
+
     // Android system Back and on-screen Back must share the same destination.
     BackHandler(enabled = screen !in setOf(AppScreen.SALES, AppScreen.LOGIN, AppScreen.DIAGNOSTIC)) {
         when (screen) {
@@ -300,7 +318,8 @@ private fun RegisterApp() {
                 screen = AppScreen.TICKETS
             }
             AppScreen.PAYMENT -> returnFromPayment()
-            AppScreen.LINE_EDIT, AppScreen.TICKETS, AppScreen.COMPLETE, AppScreen.PRINT_QUEUE ->
+            AppScreen.COMPLETE -> moveToNextSaleV184()
+            AppScreen.LINE_EDIT, AppScreen.TICKETS, AppScreen.PRINT_QUEUE ->
                 screen = AppScreen.SALES
             else -> screen = AppScreen.SALES
         }
@@ -831,34 +850,73 @@ private fun RegisterApp() {
                             commitKey = commitKey,
                         )
                     }.onSuccess { saleId ->
-                        database.loadSaleDetail(saleId)?.let { detail ->
-                            CustomerDisplayRuntime.publish(
-                                CustomerDisplaySnapshotFactory.complete(
-                                    detail,
-                                    CustomerDisplaySettingsStore(context.applicationContext).load().storeName,
-                                ),
-                            )
+                        // saveSale already commits the sale and removes the persisted cart in
+                        // the SAME SQLite transaction. Never repeat a fallible DB cart write
+                        // after that commit or leave the operator stuck on the payment page.
+                        lastSaleId = saleId
+                        selectedSaleId = saleId
+                        cart.clear()
+                        corrections.clear()
+                        selectedIndex = null
+                        paymentMessage = null
+                        completedSaleNoticeV184 = null
+                        screen = AppScreen.COMPLETE
+
+                        completedDraftCleanupPendingV184 =
+                            runCatching { paymentDraftStore.clear() }.isFailure
+                        if (completedDraftCleanupPendingV184) {
+                            completedSaleNoticeV184 =
+                                SalePostCommitPolicyV184.DRAFT_CLEANUP_WARNING
+                        } else {
+                            paymentCommitKey = null
+                        }
+
+                        if (runCatching {
+                                database.loadSaleDetail(saleId)?.let { detail ->
+                                    CustomerDisplayRuntime.publish(
+                                        CustomerDisplaySnapshotFactory.complete(
+                                            detail,
+                                            CustomerDisplaySettingsStore(context.applicationContext).load().storeName,
+                                        ),
+                                    )
+                                }
+                            }.isFailure
+                        ) {
+                            if (!completedDraftCleanupPendingV184) {
+                                completedSaleNoticeV184 =
+                                    SalePostCommitPolicyV184.NONCRITICAL_WARNING
+                            }
                         }
                         val completedPaymentState = paymentState
                         val completedOperatorName = operatorName
                         checkoutScope.launch {
-                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                ReceiptAutoPrintRuntimeV136.dispatchDrawerIfNeeded(
-                                    context = context.applicationContext,
-                                    paymentState = completedPaymentState,
-                                    saleId = saleId,
-                                    actor = completedOperatorName,
-                                )
+                            if (runCatching {
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                        ReceiptAutoPrintRuntimeV136.dispatchDrawerIfNeeded(
+                                            context = context.applicationContext,
+                                            paymentState = completedPaymentState,
+                                            saleId = saleId,
+                                            actor = completedOperatorName,
+                                        )
+                                    }
+                                }.isFailure
+                            ) {
+                                if (!completedDraftCleanupPendingV184) {
+                                    completedSaleNoticeV184 =
+                                        SalePostCommitPolicyV184.NONCRITICAL_WARNING
+                                }
                             }
                         }
-                        AutomaticPrintScheduler.enqueueNow(context.applicationContext)
-                        DriveOutboxScheduler.enqueueNow(context.applicationContext)
-                        lastSaleId = saleId
-                        selectedSaleId = saleId
-                        corrections.clear()
-                        replaceCart(emptyList())
-                        paymentMessage = null
-                        screen = AppScreen.COMPLETE
+                        if (runCatching {
+                                AutomaticPrintScheduler.enqueueNow(context.applicationContext)
+                                DriveOutboxScheduler.enqueueNow(context.applicationContext)
+                            }.isFailure
+                        ) {
+                            if (!completedDraftCleanupPendingV184) {
+                                completedSaleNoticeV184 =
+                                    SalePostCommitPolicyV184.NONCRITICAL_WARNING
+                            }
+                        }
                     }.onFailure { error ->
                         saleCommitGuard.releaseAfterFailure()
                         saleCommitInProgress = false
@@ -868,7 +926,8 @@ private fun RegisterApp() {
             )
 
             AppScreen.COMPLETE -> CompleteScreen(
-                detail = lastSaleId?.let { database.loadSaleDetail(it) },
+                detail = lastSaleId?.let { runCatching { database.loadSaleDetail(it) }.getOrNull() },
+                notice = completedSaleNoticeV184,
                 onReceipt = {
                     lastSaleId?.let { saleId ->
                         context.startActivity(SaleReceiptNavigation.intent(context, saleId))
@@ -885,7 +944,7 @@ private fun RegisterApp() {
                     screen = AppScreen.SALES_HISTORY
                 },
                 onQueue = { openUnifiedPrintQueue() },
-                onNext = { screen = AppScreen.SALES },
+                onNext = ::moveToNextSaleV184,
             )
 
             AppScreen.SALES_HISTORY -> SalesHistoryScreen(
@@ -2946,6 +3005,7 @@ private fun PaymentScreen(
 @Composable
 private fun CompleteScreen(
     detail: SaleDetailRecord?,
+    notice: String?,
     onReceipt: () -> Unit,
     onVoucher: () -> Unit,
     onHistory: () -> Unit,
@@ -3001,6 +3061,16 @@ private fun CompleteScreen(
                 )
             }
             Spacer(Modifier.height(if (responsive.isCompact) 8.dp else 20.dp))
+            if (notice != null) {
+                Text(
+                    notice,
+                    color = Color(0xFFC62828),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = if (responsive.isCompact) 12.sp else 14.sp,
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 3,
+                )
+            }
             if (responsive.isCompact) {
                 Column(Modifier.fillMaxWidth()) {
                     Row(
