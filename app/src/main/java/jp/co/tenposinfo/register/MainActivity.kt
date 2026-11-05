@@ -521,6 +521,11 @@ private fun RegisterApp() {
                 },
                 onPayment = {
                     val draft = paymentDraftStore.loadOrCreate(cart.toList())
+                    if (draft.integrityIssue != null) {
+                        accessMessage = draft.integrityIssue
+                        return@SalesScreen
+                    }
+                    accessMessage = null
                     paymentState = draft.state
                     paymentCommitKey = draft.commitKey
                     paymentMessage = if (draft.restored) {
