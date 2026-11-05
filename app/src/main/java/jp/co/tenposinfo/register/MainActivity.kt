@@ -1222,6 +1222,12 @@ internal fun SalesScreen(
     val summary = TaxEngine.calculate(cart)
     var numericInput by remember { mutableStateOf("") }
     var salePadOpenV179 by remember { mutableStateOf(false) }
+    // Do not carry a typed quantity from one sale line to another line.
+    val selectedLineIdV180 = selectedIndex?.let { cart.getOrNull(it)?.lineId }
+    androidx.compose.runtime.LaunchedEffect(selectedLineIdV180) {
+        numericInput = ""
+        salePadOpenV179 = false
+    }
     var pendingQuantityHundredths by remember { mutableStateOf<Long?>(null) }
     var showProductSearch by remember { mutableStateOf(false) }
     var lookupMessage by remember { mutableStateOf<String?>(null) }
@@ -2650,6 +2656,7 @@ private fun PaymentScreen(
     fun add(method: PaymentMethod) {
         val amount = input.toLongOrNull()
         if (completing) return
+        if (remaining <= 0L) return
         if (method !in paymentSettings.enabledMethods()) {
             operationMessage = "この支払方法は設定で無効です"
             return
@@ -2774,7 +2781,10 @@ private fun PaymentScreen(
                                         Modifier.weight(1f),
                                         maxLines = 1,
                                     )
-                                    OutlinedButton(onClick = { onStateChange(PaymentEngine.removeAt(state, index)) }) {
+                                    OutlinedButton(
+                                        onClick = { onStateChange(PaymentEngine.removeAt(state, index)) },
+                                        enabled = !completing,
+                                    ) {
                                         Text("取消", maxLines = 1)
                                     }
                                 }
@@ -2805,7 +2815,11 @@ private fun PaymentScreen(
                             )
                             if (responsive.isCompact) {
                                 Spacer(Modifier.width(keypad.gapDp.dp))
-                                OutlinedButton(onClick = { paymentPadOpenV179 = true }, modifier = Modifier.height(keypad.valueHeightDp.dp)) {
+                                OutlinedButton(
+                                    onClick = { paymentPadOpenV179 = true },
+                                    enabled = RegisterPaymentInputSafetyV180.canEditTender(remaining, completing),
+                                    modifier = Modifier.height(keypad.valueHeightDp.dp),
+                                ) {
                                     Text("拡大", maxLines = 1)
                                 }
                             }
@@ -2823,10 +2837,13 @@ private fun PaymentScreen(
                             compact = true,
                             buttonHeightDp = padHeightDp,
                             rowGapDp = padGapDp,
+                            enabled = RegisterPaymentInputSafetyV180.canEditTender(remaining, completing),
                         )
                         }
                         drawPaymentPad(keypad.keyHeightDp, keypad.gapDp)
-                        if (paymentPadOpenV179) {
+                        if (paymentPadOpenV179 &&
+                            RegisterPaymentInputSafetyV180.canEditTender(remaining, completing)
+                        ) {
                             RegisterExpandedKeypadV179(
                                 title = "現金支払",
                                 displayValue = input.ifBlank { "残額全額" },
@@ -3532,6 +3549,7 @@ private fun NumberPad(
     compact: Boolean = false,
     buttonHeightDp: Int? = null,
     rowGapDp: Int? = null,
+    enabled: Boolean = true,
 ) {
     val resolvedButtonHeightDp = buttonHeightDp
         ?: if (compact) RegisterLayoutPolicy.COMPACT_KEY_HEIGHT_DP else 48
@@ -3552,6 +3570,7 @@ private fun NumberPad(
                 for (digit in rowStart until rowStart + 3) {
                     OutlinedButton(
                         onClick = { onDigit(digit.toString()) },
+                        enabled = enabled,
                         modifier = Modifier.weight(1f).height(buttonHeight),
                     ) {
                         Text(digit.toString(), fontSize = digitFontSize, fontWeight = FontWeight.SemiBold)
@@ -3561,22 +3580,22 @@ private fun NumberPad(
             Spacer(Modifier.height(rowGap))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(columnGap)) {
-            OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f).height(buttonHeight)) {
+            OutlinedButton(onClick = onClear, enabled = enabled, modifier = Modifier.weight(1f).height(buttonHeight)) {
                 Text("C", color = Danger, fontSize = digitFontSize)
             }
-            OutlinedButton(onClick = { onDigit("0") }, modifier = Modifier.weight(1f).height(buttonHeight)) {
+            OutlinedButton(onClick = { onDigit("0") }, enabled = enabled, modifier = Modifier.weight(1f).height(buttonHeight)) {
                 Text("0", fontSize = digitFontSize)
             }
             if (onDecimal != null) {
                 OutlinedButton(
                     onClick = onDecimal,
-                    enabled = decimalEnabled,
+                    enabled = enabled && decimalEnabled,
                     modifier = Modifier.weight(1f).height(buttonHeight),
                 ) {
                     Text(".", fontSize = digitFontSize)
                 }
             }
-            BlueButton(bottomActionLabel, onBottomAction, Modifier.weight(1f).height(buttonHeight))
+            BlueButton(bottomActionLabel, onBottomAction, Modifier.weight(1f).height(buttonHeight), enabled = enabled)
         }
     }
     if (compact || buttonHeightDp != null) {

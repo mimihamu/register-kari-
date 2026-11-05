@@ -78,6 +78,11 @@ internal fun PaymentScreen(
     }
     var input by remember { mutableStateOf("") }
     var paymentPadOpenV179 by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(completing, remaining) {
+        if (!RegisterPaymentInputSafetyV180.canEditTender(remaining, completing)) {
+            paymentPadOpenV179 = false
+        }
+    }
     var operationMessage by remember { mutableStateOf<String?>(null) }
     var acknowledgedMixedTax by remember { mutableStateOf(false) }
     val mixed = TaxEngine.validateMixedTax(items, MixedTaxPolicy.ALLOW)
@@ -86,6 +91,7 @@ internal fun PaymentScreen(
 
     fun add(method: PaymentMethod) {
         if (completing) return
+        if (remaining <= 0L) return
         val amount = input.toLongOrNull()
         if (method !in paymentSettings.enabledMethods()) {
             operationMessage = "この支払方法は設定で無効です"
@@ -226,7 +232,9 @@ internal fun PaymentScreen(
                         maxLines = 2,
                     )
                 }
-                if (paymentPadOpenV179) {
+                if (paymentPadOpenV179 &&
+                    RegisterPaymentInputSafetyV180.canEditTender(remaining, completing)
+                ) {
                     RegisterExpandedKeypadV179(
                         title = "現金支払",
                         displayValue = input.ifBlank { "残額全額" },
@@ -240,6 +248,7 @@ internal fun PaymentScreen(
                                 paymentPadOpenV179 = false
                             },
                             enabled = remaining > 0 && !completing,
+                            clearEnabled = RegisterPaymentInputSafetyV180.canClear(completing),
                             keyHeightDp = padHeightDp,
                             gapDp = padGapDp,
                         )
@@ -249,7 +258,11 @@ internal fun PaymentScreen(
                     Box(Modifier.weight(1f)) {
                         Uc08ValueBox(if (input.isBlank()) "残額全額" else input, keypad.valueHeightDp)
                     }
-                    OutlinedButton(onClick = { paymentPadOpenV179 = true }, modifier = Modifier.height(keypad.valueHeightDp.dp)) {
+                    OutlinedButton(
+                        onClick = { paymentPadOpenV179 = true },
+                        enabled = RegisterPaymentInputSafetyV180.canEditTender(remaining, completing),
+                        modifier = Modifier.height(keypad.valueHeightDp.dp),
+                    ) {
                         Text("拡大", maxLines = 1)
                     }
                 }
@@ -259,6 +272,7 @@ internal fun PaymentScreen(
                     onClear = { input = "" },
                     onCash = { add(PaymentMethod.CASH) },
                     enabled = remaining > 0 && !completing,
+                    clearEnabled = RegisterPaymentInputSafetyV180.canClear(completing),
                     keyHeightDp = keypad.keyHeightDp,
                     gapDp = keypad.gapDp,
                 )
@@ -352,6 +366,7 @@ private fun Uc08NumberPad(
     onClear: () -> Unit,
     onCash: () -> Unit,
     enabled: Boolean,
+    clearEnabled: Boolean,
     keyHeightDp: Int,
     gapDp: Int,
 ) {
@@ -367,7 +382,7 @@ private fun Uc08NumberPad(
         Spacer(Modifier.height(gapDp.dp))
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gapDp.dp)) {
-        OutlinedButton(onClick = onClear, enabled = !enabled || enabled, modifier = Modifier.weight(1f).height(keyHeightDp.dp)) {
+        OutlinedButton(onClick = onClear, enabled = clearEnabled, modifier = Modifier.weight(1f).height(keyHeightDp.dp)) {
             Text("C", color = Uc08Danger, fontSize = if (keyHeightDp >= 72) 26.sp else 20.sp)
         }
         OutlinedButton(onClick = { onDigit("0") }, enabled = enabled, modifier = Modifier.weight(1f).height(keyHeightDp.dp)) {

@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -43,7 +44,11 @@ internal fun RegisterExpandedKeypadV179(
         onDismissRequest = onClose,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        BoxWithConstraints(Modifier.fillMaxWidth(0.76f).fillMaxHeight(0.94f)) {
+        val config = LocalConfiguration.current
+        val widthFraction = RegisterExpandedKeypadLayoutV180.widthFraction(
+            config.screenWidthDp, config.fontScale,
+        )
+        BoxWithConstraints(Modifier.fillMaxWidth(widthFraction).fillMaxHeight(0.94f)) {
             val metrics = RegisterResponsiveLayoutPolicy.keypadMetrics(
                 availableHeightDp = maxHeight.value.toInt(),
                 functionRows = 0,
