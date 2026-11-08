@@ -256,13 +256,24 @@ private fun RegisterApp() {
     val saleCommitGuard = remember { SaleCommitGuard() }
     val checkoutScope = rememberCoroutineScope()
 
-    fun replaceCart(items: List<CartItem>) {
+    fun clearDraftBeforeCartMutationV185(): Boolean {
+        if (runCatching { paymentDraftStore.clear() }.isFailure) {
+            paymentIntegrityWarningV181 =
+                PaymentDraftRecoveryPolicyV182.OTHER_CART_REVIEW_MESSAGE
+            accessMessage = "支払データ要確認"
+            return false
+        }
+        paymentCommitKey = null
+        return true
+    }
+
+    fun replaceCart(items: List<CartItem>): Boolean {
+        if (!clearDraftBeforeCartMutationV185()) return false
         cart.clear()
         cart.addAll(items)
         selectedIndex = null
         database.saveCart(cart.toList())
-        paymentDraftStore.clear()
-        paymentCommitKey = null
+        return true
     }
 
     fun returnFromPayment() {
@@ -334,6 +345,7 @@ private fun RegisterApp() {
 
     fun applyCartCorrection(index: Int, quantity: Int, type: CartCorrectionTypeV135) {
         if (index !in cart.indices) return
+        if (!clearDraftBeforeCartMutationV185()) return
         runCatching {
             database.applyCartCorrection(
                 targetIndex = index,
@@ -347,8 +359,6 @@ private fun RegisterApp() {
             corrections.clear()
             corrections.addAll(database.loadCartCorrections())
             selectedIndex = null
-            paymentDraftStore.clear()
-            paymentCommitKey = null
         }.onFailure { error ->
             accessMessage = error.message ?: "訂正できませんでした"
         }
@@ -356,6 +366,7 @@ private fun RegisterApp() {
 
     fun applyCartCorrectionHundredths(index: Int, quantityHundredths: Long, type: CartCorrectionTypeV135) {
         if (index !in cart.indices) return
+        if (!clearDraftBeforeCartMutationV185()) return
         runCatching {
             database.applyCartCorrectionHundredths(
                 targetIndex = index,
@@ -369,8 +380,6 @@ private fun RegisterApp() {
             corrections.clear()
             corrections.addAll(database.loadCartCorrections())
             selectedIndex = null
-            paymentDraftStore.clear()
-            paymentCommitKey = null
         }.onFailure { error ->
             accessMessage = error.message ?: "訂正できませんでした"
         }
@@ -505,9 +514,10 @@ private fun RegisterApp() {
                     }
                 },
                 onCancelTransaction = {
-                    database.clearCartCorrections()
-                    corrections.clear()
-                    replaceCart(emptyList())
+                    if (replaceCart(emptyList())) {
+                        database.clearCartCorrections()
+                        corrections.clear()
+                    }
                 },
                 onDiscount = {
                     discountBackDestination = AppScreen.SALES
@@ -524,7 +534,7 @@ private fun RegisterApp() {
                 onHold = {
                     if (currentOperator?.allows(RegisterPermission.HOLD_TICKET) != true) {
                         accessMessage = "保留伝票の権限がありません"
-                    } else if (cart.isNotEmpty()) {
+                    } else if (cart.isNotEmpty() && clearDraftBeforeCartMutationV185()) {
                         accessMessage = null
                         val existing = database.listHeldTickets()
                         val name = HeldTicketSafetyPolicy.defaultName(existing.map { it.name })
@@ -692,8 +702,7 @@ private fun RegisterApp() {
                 items = cart,
                 selectedIndex = selectedIndex,
                 onApply = {
-                    replaceCart(it)
-                    screen = AppScreen.SALES
+                    if (replaceCart(it)) screen = AppScreen.SALES
                 },
                 onBack = { screen = discountBackDestination },
             )
@@ -703,7 +712,9 @@ private fun RegisterApp() {
                 currentCartCount = cart.sumOf { it.quantity },
                 message = ticketMessage,
                 onLoad = { ticket ->
-                    runCatching {
+                    if (!clearDraftBeforeCartMutationV185()) {
+                        ticketMessage = "支払記録を確認してから伝票を呼び出してください"
+                    } else runCatching {
                         heldTicketCoordinator.loadSafely(
                             ticket = ticket,
                             currentCart = cart.toList(),

@@ -58,6 +58,25 @@ class V185CommittedDraftRecoveryTest {
         assertTrue(recovered.contains("recoveredConfirmedSaleId = confirmedSale.saleId"))
     }
 
+    @Test fun cartReplacingAndHeldTicketActionsNeverEraseAnUnconfirmedTender() {
+        val main = code("MainActivity.kt")
+        val guard = main.substringAfter("fun clearDraftBeforeCartMutationV185(): Boolean {")
+            .substringBefore("fun replaceCart(items: List<CartItem>): Boolean {")
+        assertTrue(guard.contains("runCatching { paymentDraftStore.clear() }"))
+        assertTrue(guard.contains("paymentIntegrityWarningV181"))
+        assertTrue(guard.indexOf("paymentDraftStore.clear()") < guard.indexOf("paymentCommitKey = null"))
+        val replace = main.substringAfter("fun replaceCart(items: List<CartItem>): Boolean {")
+            .substringBefore("fun returnFromPayment()")
+        assertTrue(replace.contains("if (!clearDraftBeforeCartMutationV185()) return false"))
+        assertTrue(replace.indexOf("clearDraftBeforeCartMutationV185()") <
+            replace.indexOf("database.saveCart(cart.toList())"))
+        assertTrue(main.contains("if (replaceCart(emptyList())) {"))
+        assertTrue(main.contains("if (replaceCart(it)) screen = AppScreen.SALES"))
+        assertTrue(main.contains("cart.isNotEmpty() && clearDraftBeforeCartMutationV185()"))
+        assertTrue(main.contains("if (!clearDraftBeforeCartMutationV185()) {\n                        ticketMessage ="))
+        assertTrue(main.contains("if (!clearDraftBeforeCartMutationV185()) return"))
+    }
+
     @Test fun allOtherClearPathsMustPreserveUnconfirmedTenderEvidence() {
         val store = code("PaymentDraftStore.kt")
         val clear = store.substringAfter("    fun clear() {")
