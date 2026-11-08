@@ -70,6 +70,8 @@ class V187TenderCancellationSafetyTest {
         assertTrue(ui.contains("onCancelAllocation(cancelIndex, true)"))
         assertTrue(ui.contains("onCancelAllocation(index, false)"))
         assertFalse(ui.contains("onStateChange(PaymentEngine.removeAt(state, index))"))
+        assertFalse(main.contains("onStateChange(PaymentEngine.removeAt(state, index))"))
+        assertTrue(main.contains("pendingTenderCancelIndexV187"))
         val controller = main.substringAfter("onCancelAllocation = cancelTender@")
             .substringBefore("onBack = ::returnFromPayment")
         assertTrue(controller.contains("paymentDraftStore.cancelAllocation("))

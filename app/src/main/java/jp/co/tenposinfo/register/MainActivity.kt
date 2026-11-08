@@ -2804,6 +2804,7 @@ private fun PaymentScreen(
     completing: Boolean,
     externalMessage: String?,
     onStateChange: (PaymentState) -> Unit,
+    onCancelAllocation: (Int, Boolean) -> Boolean,
     onBack: () -> Unit,
     onComplete: () -> Unit,
 ) {
@@ -2818,6 +2819,7 @@ private fun PaymentScreen(
     var input by remember { mutableStateOf("") }
     var paymentPadOpenV179 by remember { mutableStateOf(false) }
     var operationMessage by remember { mutableStateOf<String?>(null) }
+    var pendingTenderCancelIndexV187 by remember { mutableStateOf<Int?>(null) }
     var acknowledgedMixedTax by remember { mutableStateOf(false) }
     val mixed = TaxEngine.validateMixedTax(items, MixedTaxPolicy.ALLOW)
     val mixedBlocked = mixed.hasMixedTax && mixedPolicy == MixedTaxPolicy.BLOCK
@@ -2849,6 +2851,34 @@ private fun PaymentScreen(
             .onFailure { error ->
                 operationMessage = error.message ?: "支払を追加できませんでした"
             }
+    }
+
+    val pendingCancelIndex = pendingTenderCancelIndexV187
+    if (pendingCancelIndex != null && !completing) {
+        val target = state.allocations.getOrNull(pendingCancelIndex)
+        if (target != null) {
+            AlertDialog(
+                onDismissRequest = { pendingTenderCancelIndexV187 = null },
+                title = { Text("${target.method.displayName}の支払取消") },
+                text = {
+                    Text(
+                        "外部端末の取消・返金または金券の返却を確認してください。" +
+                            "このアプリでは外部決済を自動で取り消しません。",
+                    )
+                },
+                confirmButton = {
+                    OutlinedButton(onClick = {
+                        onCancelAllocation(pendingCancelIndex, true)
+                        pendingTenderCancelIndexV187 = null
+                    }) { Text("取消・返金確認済み") }
+                },
+                dismissButton = {
+                    OutlinedButton(onClick = { pendingTenderCancelIndexV187 = null }) {
+                        Text("やめる")
+                    }
+                },
+            )
+        }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -2953,7 +2983,13 @@ private fun PaymentScreen(
                                         maxLines = 1,
                                     )
                                     OutlinedButton(
-                                        onClick = { onStateChange(PaymentEngine.removeAt(state, index)) },
+                                        onClick = {
+                                            if (PaymentTenderCancellationPolicyV187.needsReversalVerification(payment.method)) {
+                                                pendingTenderCancelIndexV187 = index
+                                            } else {
+                                                onCancelAllocation(index, false)
+                                            }
+                                        },
                                         enabled = !completing,
                                     ) {
                                         Text("取消", maxLines = 1)

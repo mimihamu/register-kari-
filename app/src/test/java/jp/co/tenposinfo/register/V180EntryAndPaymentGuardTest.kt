@@ -73,8 +73,12 @@ class V180EntryAndPaymentGuardTest {
         assertTrue(main.contains("saleCommitGuard.tryBegin()"))
         assertTrue(main.contains("paymentDraftStore.loadOrCreate(cart.toList())"))
         assertTrue(main.contains("paymentDraftStore.save(cart.toList(), it, commitKey)"))
-        assertTrue(main.contains("onStateChange(PaymentEngine.removeAt(state, index))"))
-        assertTrue(payment.contains("onStateChange(PaymentEngine.removeAt(state, index))"))
+        // v1.87: the old overload must not bypass durable cancellation/audit.
+        assertFalse(main.contains("onStateChange(PaymentEngine.removeAt(state, index))"))
+        assertFalse(payment.contains("onStateChange(PaymentEngine.removeAt(state, index))"))
+        assertTrue(main.contains("paymentDraftStore.cancelAllocation("))
+        assertTrue(main.contains("onCancelAllocation(index, false)"))
+        assertTrue(payment.contains("onCancelAllocation(cancelIndex, true)"))
         assertTrue(payment.contains("MixedTaxPaymentAcknowledgementV135.record"))
     }
 }
