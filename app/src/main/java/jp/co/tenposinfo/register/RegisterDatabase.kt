@@ -387,6 +387,11 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                         cartFingerprint = cartFingerprint,
                         totalAmount = summary.grossAmount,
                     )
+                    // A retry with the same total but a different card/cash split
+                    // or received cash amount is NOT the same transaction.
+                    require(SaleCommitIdempotencySchema.recordedPaymentsMatch(
+                        this, existing.saleId, paymentState.allocations,
+                    )) { SaleCommitPaymentMatchV189.REVIEW_MESSAGE }
                     delete("cart_items", null, null)
                     delete(
                         "line_tax_snapshots",

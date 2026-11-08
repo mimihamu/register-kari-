@@ -566,6 +566,8 @@ internal class PaymentDraftStore(
             }
             if (!PaymentDraftCommittedRecoveryV185.canRelease(
                     metadata.first, allocations, confirmedSale,
+                ) || !SaleCommitIdempotencySchema.recordedPaymentsMatch(
+                    db, confirmedSale.saleId, allocations,
                 )
             ) {
                 return PaymentDraftLoadResult(
@@ -661,7 +663,11 @@ internal class PaymentDraftStore(
                     ?.let { SaleCommitIdempotencySchema.findConfirmed(db, it) }
                 require(PaymentDraftCommittedRecoveryV185.canRelease(
                     identity.first, persisted, confirmed,
-                )) { "未確定の支払記録は削除できません。売上履歴と決済端末を確認してください" }
+                ) && confirmed != null &&
+                    SaleCommitIdempotencySchema.recordedPaymentsMatch(
+                        db, confirmed.saleId, persisted,
+                    )
+                ) { "保存済み支払と売上支払内訳が一致しません。履歴・決済端末を確認してください" }
             }
             db.delete(TABLE_ALLOCATIONS, null, null)
             db.delete(TABLE_META, null, null)
