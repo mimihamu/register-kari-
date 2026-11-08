@@ -566,10 +566,11 @@ private fun RegisterApp() {
                     accessMessage = null
                     paymentState = draft.state
                     paymentCommitKey = draft.commitKey
-                    paymentMessage = if (draft.restored) {
-                        "前回中断した支払入力を復元しました"
-                    } else {
-                        null
+                    paymentMessage = when {
+                        draft.recoveredConfirmedSaleId != null ->
+                            "前回の売上番号 ${draft.recoveredConfirmedSaleId} は確定済みです。今回は別の会計です"
+                        draft.restored -> "前回中断した支払入力を復元しました"
+                        else -> null
                     }
                     saleCommitInProgress = false
                     saleCommitGuard.resetForNewPayment()

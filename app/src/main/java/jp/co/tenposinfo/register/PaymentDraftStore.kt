@@ -11,6 +11,7 @@ internal data class PaymentDraftLoadResult(
     val updatedAt: Long?,
     val commitKey: String?,
     val integrityIssue: String? = null,
+    val recoveredConfirmedSaleId: Long? = null,
 )
 
 internal object PaymentDraftFingerprint {
@@ -189,6 +190,29 @@ internal class PaymentDraftStore(
             )
         }
 
+        // On restart the committed sale may already have atomically cleared the cart,
+        // while the separate payment-draft cleanup was interrupted. Verify the sale row
+        // AND its idempotency key before releasing any persisted tender evidence.
+        val confirmedSale = metadata.third
+            ?.takeIf(PaymentCommitKey::isValid)
+            ?.let { SaleCommitIdempotencySchema.findConfirmed(db, it) }
+        if (confirmedSale != null) {
+            if (!PaymentDraftCommittedRecoveryV185.canRelease(
+                    metadata.first, allocations, confirmedSale,
+                )
+            ) {
+                return PaymentDraftLoadResult(
+                    PaymentState(), false, metadata.second, metadata.third,
+                    PaymentDraftIntegrityV181.REVIEW_MESSAGE,
+                )
+            }
+            clear()
+            return PaymentDraftLoadResult(
+                PaymentState(), false, null, null,
+                recoveredConfirmedSaleId = confirmedSale.saleId,
+            )
+        }
+
         if (metadata.first != PaymentDraftFingerprint.of(items)) {
             // Do not silently erase a paid draft for a completely different cart either.
             // Every non-empty persisted allocation is evidence of a possibly processed tender.
@@ -228,6 +252,48 @@ internal class PaymentDraftStore(
         val db = database.writableDatabase
         db.beginTransaction()
         try {
+            val hasAllocations = db.query(
+                TABLE_ALLOCATIONS, arrayOf("sequence_no"),
+                null, null, null, null, null, "1",
+            ).use { it.moveToFirst() }
+            if (hasAllocations) {
+                // A call from cancel/hold/correction must never silently erase an
+                // unconfirmed or externally processed tender, even after a restart.
+                val identity = db.query(
+                    TABLE_META, arrayOf("cart_fingerprint", "commit_key"),
+                    "id = ?", arrayOf(SINGLETON_ID.toString()),
+                    null, null, null,
+                ).use { cursor ->
+                    if (!cursor.moveToFirst()) null else (
+                        cursor.getString(0) to
+                            (if (cursor.isNull(1)) null else cursor.getString(1))
+                    )
+                }
+                require(identity != null) { "未確認の支払履歴が残っています（伝票識別情報なし）" }
+                val persisted = db.query(
+                    TABLE_ALLOCATIONS,
+                    arrayOf("payment_method", "applied_amount", "received_amount"),
+                    null, null, null, null, "sequence_no ASC",
+                ).use { cursor ->
+                    buildList {
+                        while (cursor.moveToNext()) {
+                            add(
+                                PaymentAllocation(
+                                    method = PaymentMethod.valueOf(cursor.getString(0)),
+                                    appliedAmount = cursor.getLong(1),
+                                    receivedAmount = cursor.getLong(2),
+                                ),
+                            )
+                        }
+                    }
+                }
+                val confirmed = identity.second
+                    ?.takeIf(PaymentCommitKey::isValid)
+                    ?.let { SaleCommitIdempotencySchema.findConfirmed(db, it) }
+                require(PaymentDraftCommittedRecoveryV185.canRelease(
+                    identity.first, persisted, confirmed,
+                )) { "未確定の支払記録は削除できません。売上履歴と決済端末を確認してください" }
+            }
             db.delete(TABLE_ALLOCATIONS, null, null)
             db.delete(TABLE_META, null, null)
             db.setTransactionSuccessful()

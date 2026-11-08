@@ -50,6 +50,27 @@ internal object SaleCommitIdempotencySchema {
         }
     }
 
+    /** The commit key alone is not sufficient: verify that the sale row still exists. */
+    fun findConfirmed(db: SQLiteDatabase, commitKey: String): ExistingCommit? {
+        ensure(db)
+        return db.rawQuery(
+            """
+            SELECT k.sale_id, k.cart_fingerprint, k.total_amount
+            FROM $TABLE AS k
+            INNER JOIN sales AS s
+              ON s.id = k.sale_id AND s.total_amount = k.total_amount
+            WHERE k.commit_key = ?
+            """.trimIndent(),
+            arrayOf(commitKey),
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) null else ExistingCommit(
+                saleId = cursor.getLong(0),
+                cartFingerprint = cursor.getString(1),
+                totalAmount = cursor.getLong(2),
+            )
+        }
+    }
+
     fun record(
         db: SQLiteDatabase,
         commitKey: String,
