@@ -26,6 +26,16 @@ internal object ExternalTenderLedgerV188 {
         else -> false
     }
 
+    fun requireNoDirectTerminalAppend(
+        previousCount: Int,
+        requested: List<PaymentAllocation>,
+    ) {
+        require(previousCount in 0..requested.size) { REVIEW_MESSAGE }
+        require(requested.drop(previousCount).none { requiresHandoff(it.method) }) {
+            "カード・電子マネー・QRは端末確認待ちを保存してから登録してください"
+        }
+    }
+
     fun ensure(db: SQLiteDatabase) {
         db.execSQL(
             """

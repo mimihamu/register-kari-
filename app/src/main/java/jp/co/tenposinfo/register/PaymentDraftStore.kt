@@ -83,6 +83,7 @@ internal class PaymentDraftStore(
                 TABLE_ALLOCATIONS, arrayOf("sequence_no"),
                 null, null, null, null, null, "1",
             ).use { it.moveToFirst() }
+            var savedAllocationCountV188 = 0
             if (hasSavedAllocations) {
                 val savedIdentity = db.query(
                     TABLE_META, arrayOf("cart_fingerprint", "commit_key"),
@@ -127,7 +128,13 @@ internal class PaymentDraftStore(
                 PaymentTenderCancellationPolicyV187.requireAppendOnly(
                     previousAllocations, state.allocations,
                 )
+                savedAllocationCountV188 = previousAllocations.size
             }
+            // No normal save path may introduce a new terminal payment: begin
+            // an audited, durable external handoff and resolve it instead.
+            ExternalTenderLedgerV188.requireNoDirectTerminalAppend(
+                savedAllocationCountV188, state.allocations,
+            )
             // Even with no saved allocations, a committed key must never be reused.
             require(SaleCommitIdempotencySchema.find(db, commitKey) == null) {
                 "確定済みの会計キーは再利用できません。売上履歴を確認してください"

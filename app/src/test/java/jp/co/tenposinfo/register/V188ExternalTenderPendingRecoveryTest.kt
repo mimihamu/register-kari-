@@ -33,6 +33,25 @@ class V188ExternalTenderPendingRecoveryTest {
         ))
     }
 
+    @Test fun ordinarySaveCannotBypassExternalHandoff() {
+        val cash = PaymentAllocation(PaymentMethod.CASH, 300L, 300L)
+        val card = PaymentAllocation(PaymentMethod.CARD, 400L, 400L)
+        ExternalTenderLedgerV188.requireNoDirectTerminalAppend(0, listOf(cash))
+        ExternalTenderLedgerV188.requireNoDirectTerminalAppend(1, listOf(card, cash))
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            ExternalTenderLedgerV188.requireNoDirectTerminalAppend(0, listOf(card))
+        }
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            ExternalTenderLedgerV188.requireNoDirectTerminalAppend(1, listOf(cash, card))
+        }
+        val store = source("PaymentDraftStore.kt")
+        val save = store.substringAfter("    fun save(items: List<CartItem>, state: PaymentState, commitKey: String) {")
+            .substringBefore("    fun cancelAllocation(")
+        assertTrue(save.contains("ExternalTenderLedgerV188.requireNoDirectTerminalAppend("))
+        assertTrue(save.indexOf("ExternalTenderLedgerV188.requireNoDirectTerminalAppend(") <
+            save.indexOf("db.delete(TABLE_ALLOCATIONS, null, null)"))
+    }
+
     @Test fun beginMustPersistHandoffAndAuditBeforeTerminalOperation() {
         val store = source("PaymentDraftStore.kt")
         val begin = store.substringAfter("    fun beginExternalTender(")
