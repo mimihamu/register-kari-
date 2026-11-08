@@ -324,9 +324,20 @@ jobs:
           echo "Using preinstalled Android SDK: $SDK"
 
       - name: Set up Gradle 9.5
+        id: gradle_setup
         uses: gradle/actions/setup-gradle@v4
+        continue-on-error: true
         with:
           gradle-version: "9.5.0"
+
+      - name: Recover Gradle 9.5 from official distribution
+        if: steps.gradle_setup.outcome == 'failure'
+        shell: bash
+        run: bash ci/gradle-9.5-official-fallback.sh
+
+      - name: Prepare verified Kotlin compiler artifact fallback
+        shell: bash
+        run: bash ci/prepare-kotlin-compiler-2.3.21.sh
 
       - name: Verify cumulative v0.14-v1.34 sources
         shell: bash
