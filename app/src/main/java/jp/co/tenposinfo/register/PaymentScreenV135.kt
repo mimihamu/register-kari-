@@ -21,7 +21,9 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -65,6 +67,7 @@ internal fun PaymentScreen(
     completing: Boolean,
     externalMessage: String?,
     onStateChange: (PaymentState) -> Unit,
+    onCancelAllocation: (Int, Boolean) -> Boolean,
     onBack: () -> Unit,
     onComplete: () -> Unit,
 ) {
@@ -84,6 +87,7 @@ internal fun PaymentScreen(
         }
     }
     var operationMessage by remember { mutableStateOf<String?>(null) }
+    var pendingTenderCancelIndexV187 by remember { mutableStateOf<Int?>(null) }
     var acknowledgedMixedTax by remember { mutableStateOf(false) }
     val mixed = TaxEngine.validateMixedTax(items, MixedTaxPolicy.ALLOW)
     val mixedBlocked = mixed.hasMixedTax && mixedPolicy == MixedTaxPolicy.BLOCK
@@ -114,6 +118,37 @@ internal fun PaymentScreen(
             .onFailure { error ->
                 operationMessage = error.message ?: "支払を追加できませんでした"
             }
+    }
+
+    val cancelIndex = pendingTenderCancelIndexV187
+    if (cancelIndex != null) {
+        val pending = state.allocations.getOrNull(cancelIndex)
+        if (pending == null || completing) {
+            pendingTenderCancelIndexV187 = null
+        } else {
+            AlertDialog(
+                onDismissRequest = { pendingTenderCancelIndexV187 = null },
+                title = { Text("${pending.method.displayName}の支払取消") },
+                text = {
+                    Text(
+                        "決済端末の取消・返金、または金券の返却を確認してください。" +
+                            "この操作では外部決済を自動で取り消しません。確認済みの場合のみ支払記録から取り消せます。",
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        onCancelAllocation(cancelIndex, true)
+                        // Dismiss on failure as well, so the durable-save error is visible.
+                        pendingTenderCancelIndexV187 = null
+                    }) { Text("取消・返金確認済み") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingTenderCancelIndexV187 = null }) {
+                        Text("やめる")
+                    }
+                },
+            )
+        }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -215,7 +250,13 @@ internal fun PaymentScreen(
                                 maxLines = 1,
                             )
                             OutlinedButton(
-                                onClick = { onStateChange(PaymentEngine.removeAt(state, index)) },
+                                onClick = {
+                                    if (PaymentTenderCancellationPolicyV187.needsReversalVerification(payment.method)) {
+                                        pendingTenderCancelIndexV187 = index
+                                    } else {
+                                        onCancelAllocation(index, false)
+                                    }
+                                },
                                 enabled = !completing,
                                 modifier = Modifier.height(34.dp),
                             ) { Text("取消", maxLines = 1, fontSize = 12.sp) }

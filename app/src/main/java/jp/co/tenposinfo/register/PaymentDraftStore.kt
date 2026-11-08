@@ -120,6 +120,11 @@ internal class PaymentDraftStore(
                 require(PaymentDraftIntegrityV181.validAllocations(
                     previousAllocations, TaxEngine.calculate(items).grossAmount,
                 )) { "保存済みの支払記録を確認できません。再決済せず売上履歴を確認してください" }
+                // A normal save may append a tender, never replace or remove one.
+                // Cancellation must use cancelAllocation() so audit and mutation are atomic.
+                PaymentTenderCancellationPolicyV187.requireAppendOnly(
+                    previousAllocations, state.allocations,
+                )
             }
             // Even with no saved allocations, a committed key must never be reused.
             require(SaleCommitIdempotencySchema.find(db, commitKey) == null) {
@@ -151,6 +156,114 @@ internal class PaymentDraftStore(
                 )
             }
             db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    /**
+     * Cancel exactly one persisted allocation and record an audit row in the
+     * same SQLite transaction. Non-cash removal requires operator verification
+     * of the external reversal; this app does not itself cancel a CAT payment.
+     */
+    fun cancelAllocation(
+        items: List<CartItem>,
+        expectedState: PaymentState,
+        commitKey: String,
+        allocationIndex: Int,
+        operatorName: String,
+        reversalVerified: Boolean,
+    ): PaymentState {
+        require(items.isNotEmpty()) { "会計中の伝票がありません" }
+        require(PaymentCommitKey.isValid(commitKey)) { "会計キーが不正です" }
+        require(operatorName.isNotBlank()) { "担当者を確認してください" }
+        val fingerprint = PaymentDraftFingerprint.of(items)
+        val total = TaxEngine.calculate(items).grossAmount
+        val db = database.writableDatabase
+        ensureSchema()
+        db.beginTransaction()
+        try {
+            val savedIdentity = db.query(
+                TABLE_META, arrayOf("cart_fingerprint", "commit_key"),
+                "id = ?", arrayOf(SINGLETON_ID.toString()),
+                null, null, null,
+            ).use { cursor ->
+                if (!cursor.moveToFirst()) null else (
+                    cursor.getString(0) to
+                        (if (cursor.isNull(1)) null else cursor.getString(1))
+                )
+            }
+            require(savedIdentity?.first == fingerprint && savedIdentity?.second == commitKey) {
+                "支払データが現在の伝票と一致しません。再決済せず履歴を確認してください"
+            }
+            require(SaleCommitIdempotencySchema.find(db, commitKey) == null) {
+                "売上確定済みのため支払取消はできません。売上履歴を確認してください"
+            }
+            val persisted = db.query(
+                TABLE_ALLOCATIONS,
+                arrayOf("payment_method", "applied_amount", "received_amount"),
+                null, null, null, null, "sequence_no ASC",
+            ).use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) {
+                        add(PaymentAllocation(
+                            PaymentMethod.valueOf(cursor.getString(0)),
+                            cursor.getLong(1), cursor.getLong(2),
+                        ))
+                    }
+                }
+            }
+            require(persisted == expectedState.allocations &&
+                PaymentDraftIntegrityV181.validAllocations(persisted, total)
+            ) { "保存済みの支払記録に変更があります。会計を確認してください" }
+            require(allocationIndex in persisted.indices) { "取消する支払が見つかりません" }
+            val removed = persisted[allocationIndex]
+            PaymentTenderCancellationPolicyV187.requireReversalVerification(
+                removed.method, reversalVerified,
+            )
+            val next = PaymentEngine.removeAt(expectedState, allocationIndex)
+
+            // Insert audit first; if insertion or the following rewrite fails,
+            // the whole transaction rolls back, retaining original tender.
+            OperationAuditSchemaV136.ensure(db)
+            db.insertOrThrow(
+                "operation_audit", null,
+                ContentValues().apply {
+                    put("event_type", "PAYMENT_TENDER_CANCELLED")
+                    put("reference_id", 0L) // draft has no sale ID yet
+                    put(
+                        "detail",
+                        "commit_key=$commitKey; cart_fingerprint=$fingerprint; " +
+                            "sequence_no=${allocationIndex + 1}; " +
+                            "method=${removed.method.name}; " +
+                            "applied_amount=${removed.appliedAmount}; " +
+                            "received_amount=${removed.receivedAmount}; " +
+                            "external_reversal_verified=$reversalVerified",
+                    )
+                    put("operator_name", operatorName.trim().take(100))
+                    put("created_at", System.currentTimeMillis())
+                },
+            )
+            db.delete(TABLE_ALLOCATIONS, null, null)
+            next.allocations.forEachIndexed { index, allocation ->
+                db.insertOrThrow(
+                    TABLE_ALLOCATIONS, null,
+                    ContentValues().apply {
+                        put("sequence_no", index + 1)
+                        put("payment_method", allocation.method.name)
+                        put("applied_amount", allocation.appliedAmount)
+                        put("received_amount", allocation.receivedAmount)
+                    },
+                )
+            }
+            check(db.update(
+                TABLE_META,
+                ContentValues().apply { put("updated_at", System.currentTimeMillis()) },
+                "id = ? AND commit_key = ?",
+                arrayOf(SINGLETON_ID.toString(), commitKey),
+            ) == 1) { "支払記録の確定に失敗しました" }
+            db.setTransactionSuccessful()
+            return next
         } finally {
             db.endTransaction()
         }

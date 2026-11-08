@@ -842,6 +842,47 @@ private fun RegisterApp() {
                         ),
                     )
                 },
+                onCancelAllocation = cancelTender@{ index, reversalVerified ->
+                    if (saleCommitInProgress) {
+                        paymentMessage = "会計確定中は支払を取り消せません"
+                        return@cancelTender false
+                    }
+                    val key = paymentCommitKey
+                    if (key == null) {
+                        paymentMessage = PaymentDraftRecoveryPolicyV182.STORAGE_REVIEW_MESSAGE
+                        return@cancelTender false
+                    }
+                    val cancelled = runCatching {
+                        paymentDraftStore.cancelAllocation(
+                            items = cart.toList(),
+                            expectedState = paymentState,
+                            commitKey = key,
+                            allocationIndex = index,
+                            operatorName = operatorName,
+                            reversalVerified = reversalVerified,
+                        )
+                    }
+                    cancelled.fold(
+                        onSuccess = { newState ->
+                            paymentState = newState
+                            paymentMessage = null
+                            paymentIntegrityWarningV181 = null
+                            CustomerDisplayRuntime.publish(
+                                CustomerDisplaySnapshotFactory.accounting(
+                                    cart.toList(),
+                                    newState,
+                                    CustomerDisplaySettingsStore(context.applicationContext).load().storeName,
+                                ),
+                            )
+                            true
+                        },
+                        onFailure = { error ->
+                            paymentMessage = error.message
+                                ?: PaymentDraftRecoveryPolicyV182.STORAGE_REVIEW_MESSAGE
+                            false
+                        },
+                    )
+                },
                 onBack = ::returnFromPayment,
                 onComplete = complete@{
                     if (!saleCommitGuard.tryBegin()) {
