@@ -15,6 +15,7 @@ trap 'rm -f "$tmp"' EXIT
 # the jar must match the checksum published by the compiler's own source project.
 urls=(
   "https://maven.wso2.org/nexus/content/repositories/central/$group_path/$filename"
+  "https://maven.aliyun.com/repository/public/$group_path/$filename"
   "https://repo.maven.apache.org/maven2/$group_path/$filename"
 )
 verified=false
