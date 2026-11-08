@@ -156,8 +156,9 @@ android {
         // v1.74 stable CI development build
         // versionCode = 194
         // versionName = "1.34.30-dev.1"
-        versionCode = 205
-        versionName = "1.34.41-dev.1"
+        // v1.85 previous build: versionCode 205 / versionName 1.34.41-dev.1
+        versionCode = 206
+        versionName = "1.34.42-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

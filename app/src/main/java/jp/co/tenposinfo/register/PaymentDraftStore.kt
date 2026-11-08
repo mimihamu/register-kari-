@@ -75,6 +75,56 @@ internal class PaymentDraftStore(
         ensureSchema()
         db.beginTransaction()
         try {
+            // v1.86: save() must not bypass the v1.85 clear() protection by
+            // replacing another interrupted transaction's persisted tender.
+            val hasSavedAllocations = db.query(
+                TABLE_ALLOCATIONS, arrayOf("sequence_no"),
+                null, null, null, null, null, "1",
+            ).use { it.moveToFirst() }
+            if (hasSavedAllocations) {
+                val savedIdentity = db.query(
+                    TABLE_META, arrayOf("cart_fingerprint", "commit_key"),
+                    "id = ?", arrayOf(SINGLETON_ID.toString()),
+                    null, null, null,
+                ).use { cursor ->
+                    if (!cursor.moveToFirst()) null else (
+                        cursor.getString(0) to
+                            (if (cursor.isNull(1)) null else cursor.getString(1))
+                    )
+                }
+                PaymentDraftSaveFenceV186.requireSameDraft(
+                    hasSavedAllocations = true,
+                    savedFingerprint = savedIdentity?.first,
+                    savedCommitKey = savedIdentity?.second,
+                    nextFingerprint = PaymentDraftFingerprint.of(items),
+                    nextCommitKey = commitKey,
+                )
+                // Corrupt or orphaned tender evidence must not be overwritten either.
+                val previousAllocations = db.query(
+                    TABLE_ALLOCATIONS,
+                    arrayOf("payment_method", "applied_amount", "received_amount"),
+                    null, null, null, null, "sequence_no ASC",
+                ).use { cursor ->
+                    buildList {
+                        while (cursor.moveToNext()) {
+                            add(
+                                PaymentAllocation(
+                                    PaymentMethod.valueOf(cursor.getString(0)),
+                                    cursor.getLong(1),
+                                    cursor.getLong(2),
+                                ),
+                            )
+                        }
+                    }
+                }
+                require(PaymentDraftIntegrityV181.validAllocations(
+                    previousAllocations, TaxEngine.calculate(items).grossAmount,
+                )) { "保存済みの支払記録を確認できません。再決済せず売上履歴を確認してください" }
+            }
+            // Even with no saved allocations, a committed key must never be reused.
+            require(SaleCommitIdempotencySchema.find(db, commitKey) == null) {
+                "確定済みの会計キーは再利用できません。売上履歴を確認してください"
+            }
             db.delete(TABLE_ALLOCATIONS, null, null)
             db.delete(TABLE_META, null, null)
             val updatedAt = System.currentTimeMillis()
