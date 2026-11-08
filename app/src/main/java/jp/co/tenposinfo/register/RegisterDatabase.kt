@@ -376,6 +376,9 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         BusinessSessionSchema.ensure(writableDatabase)
         val createdAt = System.currentTimeMillis()
         return writableDatabase.runInTransactionWithResult {
+            // A terminal operation with unknown outcome blocks sale finalization,
+            // even if some other caller bypasses the payment-screen UI.
+            ExternalTenderLedgerV188.requireAbsent(this)
             if (normalizedCommitKey != null) {
                 val existing = SaleCommitIdempotencySchema.find(this, normalizedCommitKey)
                 if (existing != null) {

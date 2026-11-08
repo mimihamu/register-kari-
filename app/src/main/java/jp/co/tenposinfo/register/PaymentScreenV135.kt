@@ -66,6 +66,9 @@ internal fun PaymentScreen(
     state: PaymentState,
     completing: Boolean,
     externalMessage: String?,
+    pendingExternalV188: ExternalTenderPendingV188?,
+    onStartExternalV188: (PaymentState) -> Boolean,
+    onResolveExternalV188: (ExternalTenderResolutionV188) -> Boolean,
     onStateChange: (PaymentState) -> Unit,
     onCancelAllocation: (Int, Boolean) -> Boolean,
     onBack: () -> Unit,
@@ -94,7 +97,7 @@ internal fun PaymentScreen(
     val mixedNeedsAcknowledgement = mixed.hasMixedTax && mixedPolicy == MixedTaxPolicy.WARN
 
     fun add(method: PaymentMethod) {
-        if (completing) return
+        if (completing || pendingExternalV188 != null) return
         if (remaining <= 0L) return
         val amount = input.toLongOrNull()
         if (method !in paymentSettings.enabledMethods()) {
@@ -111,13 +114,50 @@ internal fun PaymentScreen(
             )
         }
             .onSuccess {
-                onStateChange(it)
-                input = ""
-                operationMessage = null
+                if (ExternalTenderLedgerV188.requiresHandoff(method)) {
+                    if (onStartExternalV188(it)) {
+                        input = ""
+                        operationMessage = null
+                    }
+                } else {
+                    onStateChange(it)
+                    input = ""
+                    operationMessage = null
+                }
             }
             .onFailure { error ->
                 operationMessage = error.message ?: "支払を追加できませんでした"
             }
+    }
+
+    if (pendingExternalV188 != null) {
+        AlertDialog(
+            onDismissRequest = {
+                // Do not dismiss an unverified terminal payment with Back / outside tap.
+            },
+            title = { Text("外部決済の結果確認待ち") },
+            text = {
+                Text(
+                    "${pendingExternalV188.allocation.method.displayName} " +
+                        "${uc08Yen(pendingExternalV188.allocation.appliedAmount)}\n" +
+                        "レジ側には未登録です。端末の取引履歴で実行結果を確認してください。" +
+                        "結果が不明な場合は、再決済しないでください。",
+                )
+            },
+            confirmButton = {
+                Column {
+                    Button(onClick = {
+                        onResolveExternalV188(ExternalTenderResolutionV188.APPROVED_BY_OPERATOR)
+                    }) { Text("端末で承認確認済み → 支払登録") }
+                    OutlinedButton(onClick = {
+                        onResolveExternalV188(
+                            ExternalTenderResolutionV188.NOT_EXECUTED_OR_REVERSED_BY_OPERATOR,
+                        )
+                    }) { Text("未実行・取消済みを確認 → 中止") }
+                }
+            },
+            dismissButton = { Text("結果不明の場合は保留して端末履歴を照合") },
+        )
     }
 
     val cancelIndex = pendingTenderCancelIndexV187
@@ -349,7 +389,7 @@ internal fun PaymentScreen(
             }
             Button(
                 onClick = onComplete,
-                enabled = remaining == 0L && !mixedBlocked && (!mixedNeedsAcknowledgement || acknowledgedMixedTax) && !completing,
+                enabled = remaining == 0L && pendingExternalV188 == null && !mixedBlocked && (!mixedNeedsAcknowledgement || acknowledgedMixedTax) && !completing,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 colors = ButtonDefaults.buttonColors(containerColor = Uc08Blue),
             ) {

@@ -12,6 +12,7 @@ internal data class PaymentDraftLoadResult(
     val commitKey: String?,
     val integrityIssue: String? = null,
     val recoveredConfirmedSaleId: Long? = null,
+    val pendingExternalV188: ExternalTenderPendingV188? = null,
 )
 
 internal object PaymentDraftFingerprint {
@@ -75,6 +76,7 @@ internal class PaymentDraftStore(
         ensureSchema()
         db.beginTransaction()
         try {
+            ExternalTenderLedgerV188.requireAbsent(db)
             // v1.86: save() must not bypass the v1.85 clear() protection by
             // replacing another interrupted transaction's persisted tender.
             val hasSavedAllocations = db.query(
@@ -183,6 +185,7 @@ internal class PaymentDraftStore(
         ensureSchema()
         db.beginTransaction()
         try {
+            ExternalTenderLedgerV188.requireAbsent(db)
             val savedIdentity = db.query(
                 TABLE_META, arrayOf("cart_fingerprint", "commit_key"),
                 "id = ?", arrayOf(SINGLETON_ID.toString()),
@@ -269,6 +272,175 @@ internal class PaymentDraftStore(
         }
     }
 
+    /**
+     * Persist terminal work BEFORE the operator starts an external payment.
+     * A crash leaves this record in place until the terminal outcome is checked.
+     */
+    fun beginExternalTender(
+        items: List<CartItem>,
+        expectedState: PaymentState,
+        proposedState: PaymentState,
+        commitKey: String,
+        operatorName: String,
+    ): ExternalTenderPendingV188 {
+        require(items.isNotEmpty()) { "会計中の伝票がありません" }
+        require(PaymentCommitKey.isValid(commitKey)) { "会計キーが不正です" }
+        val fingerprint = PaymentDraftFingerprint.of(items)
+        val total = TaxEngine.calculate(items).grossAmount
+        val oldAllocations = expectedState.allocations
+        require(proposedState.allocations.size == oldAllocations.size + 1 &&
+            proposedState.allocations.take(oldAllocations.size) == oldAllocations
+        ) { "外部決済の支払配分が一致しません" }
+        val last = proposedState.allocations.last()
+        require(ExternalTenderLedgerV188.requiresHandoff(last.method)) {
+            "この支払方法は外部決済確認の対象外です"
+        }
+        require(PaymentDraftIntegrityV181.validAllocations(proposedState.allocations, total)) {
+            "外部決済額が伝票合計を超えています"
+        }
+        val db = database.writableDatabase
+        ensureSchema()
+        db.beginTransaction()
+        try {
+            ExternalTenderLedgerV188.requireAbsent(db)
+            val identity = db.query(
+                TABLE_META, arrayOf("cart_fingerprint", "commit_key"),
+                "id = ?", arrayOf(SINGLETON_ID.toString()), null, null, null,
+            ).use { cursor ->
+                if (!cursor.moveToFirst()) null else (
+                    cursor.getString(0) to
+                        (if (cursor.isNull(1)) null else cursor.getString(1))
+                )
+            }
+            require(identity?.first == fingerprint && identity?.second == commitKey) {
+                ExternalTenderLedgerV188.REVIEW_MESSAGE
+            }
+            require(SaleCommitIdempotencySchema.find(db, commitKey) == null) {
+                "売上確定済みの会計では外部決済を開始できません"
+            }
+            val persisted = db.query(
+                TABLE_ALLOCATIONS,
+                arrayOf("payment_method", "applied_amount", "received_amount"),
+                null, null, null, null, "sequence_no ASC",
+            ).use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) {
+                        add(PaymentAllocation(
+                            PaymentMethod.valueOf(cursor.getString(0)),
+                            cursor.getLong(1), cursor.getLong(2),
+                        ))
+                    }
+                }
+            }
+            require(persisted == oldAllocations &&
+                PaymentDraftIntegrityV181.validAllocations(persisted, total)
+            ) { ExternalTenderLedgerV188.REVIEW_MESSAGE }
+            val pending = ExternalTenderPendingV188(
+                fingerprint, commitKey, last, System.currentTimeMillis(),
+            )
+            ExternalTenderLedgerV188.insert(db, pending)
+            ExternalTenderLedgerV188.audit(
+                db, "PAYMENT_EXTERNAL_HANDOFF_STARTED", pending, operatorName,
+            )
+            db.setTransactionSuccessful()
+            return pending
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    /**
+     * These resolutions are the operator's manual attestation, never a CAT API
+     * response. Both the allocation mutation and audit are atomic.
+     */
+    fun resolveExternalTender(
+        items: List<CartItem>,
+        expectedState: PaymentState,
+        expectedPending: ExternalTenderPendingV188,
+        commitKey: String,
+        operatorName: String,
+        resolution: ExternalTenderResolutionV188,
+    ): PaymentState {
+        require(PaymentCommitKey.isValid(commitKey)) { "会計キーが不正です" }
+        val total = TaxEngine.calculate(items).grossAmount
+        val fingerprint = PaymentDraftFingerprint.of(items)
+        val db = database.writableDatabase
+        ensureSchema()
+        db.beginTransaction()
+        try {
+            val pending = ExternalTenderLedgerV188.read(db)
+            require(pending == expectedPending && pending != null) {
+                ExternalTenderLedgerV188.REVIEW_MESSAGE
+            }
+            val identity = db.query(
+                TABLE_META, arrayOf("cart_fingerprint", "commit_key"),
+                "id = ?", arrayOf(SINGLETON_ID.toString()), null, null, null,
+            ).use { cursor ->
+                if (!cursor.moveToFirst()) null else (
+                    cursor.getString(0) to
+                        (if (cursor.isNull(1)) null else cursor.getString(1))
+                )
+            }
+            require(identity?.first == fingerprint && identity?.second == commitKey &&
+                ExternalTenderLedgerV188.matchesDraft(
+                    pending, fingerprint, commitKey, expectedState.allocations, total,
+                )
+            ) { ExternalTenderLedgerV188.REVIEW_MESSAGE }
+            require(SaleCommitIdempotencySchema.find(db, commitKey) == null) {
+                "売上確定済みの会計は変更できません"
+            }
+            val persisted = db.query(
+                TABLE_ALLOCATIONS,
+                arrayOf("payment_method", "applied_amount", "received_amount"),
+                null, null, null, null, "sequence_no ASC",
+            ).use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) {
+                        add(PaymentAllocation(
+                            PaymentMethod.valueOf(cursor.getString(0)),
+                            cursor.getLong(1), cursor.getLong(2),
+                        ))
+                    }
+                }
+            }
+            require(persisted == expectedState.allocations) {
+                ExternalTenderLedgerV188.REVIEW_MESSAGE
+            }
+            val approved = resolution == ExternalTenderResolutionV188.APPROVED_BY_OPERATOR
+            val next = if (approved) {
+                expectedState.copy(allocations = persisted + pending.allocation)
+            } else expectedState
+            ExternalTenderLedgerV188.audit(
+                db,
+                if (approved) "PAYMENT_EXTERNAL_APPROVED_BY_OPERATOR"
+                else "PAYMENT_EXTERNAL_NOT_EXECUTED_OR_REVERSED_BY_OPERATOR",
+                pending,
+                operatorName,
+            )
+            if (approved) {
+                db.insertOrThrow(
+                    TABLE_ALLOCATIONS, null, ContentValues().apply {
+                        put("sequence_no", persisted.size + 1)
+                        put("payment_method", pending.allocation.method.name)
+                        put("applied_amount", pending.allocation.appliedAmount)
+                        put("received_amount", pending.allocation.receivedAmount)
+                    },
+                )
+            }
+            ExternalTenderLedgerV188.remove(db, pending)
+            check(db.update(
+                TABLE_META,
+                ContentValues().apply { put("updated_at", System.currentTimeMillis()) },
+                "id = ? AND commit_key = ?",
+                arrayOf(SINGLETON_ID.toString(), commitKey),
+            ) == 1) { ExternalTenderLedgerV188.REVIEW_MESSAGE }
+            db.setTransactionSuccessful()
+            return next
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     fun loadOrCreate(items: List<CartItem>): PaymentDraftLoadResult {
         require(items.isNotEmpty()) { "空の伝票では支払を開始できません" }
         val loaded = load(items)
@@ -308,7 +480,7 @@ internal class PaymentDraftStore(
             // Metadata can be missing after an interrupted / incomplete migration.
             // The remaining allocation rows must never be silently discarded.
             val orphanedAllocations = runCatching {
-                db.query(
+                ExternalTenderLedgerV188.read(db) != null || db.query(
                     TABLE_ALLOCATIONS,
                     arrayOf("sequence_no"),
                     null, null, null, null, null, "1",
@@ -353,6 +525,25 @@ internal class PaymentDraftStore(
             )
         }
 
+        val pendingExternalV188 = runCatching {
+            ExternalTenderLedgerV188.read(db)
+        }.getOrElse {
+            return PaymentDraftLoadResult(
+                PaymentState(), false, metadata.second, metadata.third,
+                ExternalTenderLedgerV188.REVIEW_MESSAGE,
+            )
+        }
+        if (pendingExternalV188 != null && !ExternalTenderLedgerV188.matchesDraft(
+                pendingExternalV188, metadata.first, metadata.third,
+                allocations, TaxEngine.calculate(items).grossAmount,
+            )
+        ) {
+            return PaymentDraftLoadResult(
+                PaymentState(), false, metadata.second, metadata.third,
+                ExternalTenderLedgerV188.REVIEW_MESSAGE,
+            )
+        }
+
         // On restart the committed sale may already have atomically cleared the cart,
         // while the separate payment-draft cleanup was interrupted. Verify the sale row
         // AND its idempotency key before releasing any persisted tender evidence.
@@ -360,6 +551,12 @@ internal class PaymentDraftStore(
             ?.takeIf(PaymentCommitKey::isValid)
             ?.let { SaleCommitIdempotencySchema.findConfirmed(db, it) }
         if (confirmedSale != null) {
+            if (pendingExternalV188 != null) {
+                return PaymentDraftLoadResult(
+                    PaymentState(), false, metadata.second, metadata.third,
+                    ExternalTenderLedgerV188.REVIEW_MESSAGE,
+                )
+            }
             if (!PaymentDraftCommittedRecoveryV185.canRelease(
                     metadata.first, allocations, confirmedSale,
                 )
@@ -381,7 +578,7 @@ internal class PaymentDraftStore(
             // Every non-empty persisted allocation is evidence of a possibly processed tender.
             val matchingOldFormat =
                 metadata.first == PaymentDraftFingerprint.legacyV180Of(items)
-            if (PaymentDraftRecoveryPolicyV182.mustPreserveDifferentCart(allocations.size)) {
+            if (pendingExternalV188 != null || PaymentDraftRecoveryPolicyV182.mustPreserveDifferentCart(allocations.size)) {
                 return PaymentDraftLoadResult(
                     PaymentState(), false, metadata.second, metadata.third,
                     if (matchingOldFormat) PaymentDraftIntegrityV181.REVIEW_MESSAGE
@@ -404,9 +601,10 @@ internal class PaymentDraftStore(
 
         return PaymentDraftLoadResult(
             state = PaymentState(allocations),
-            restored = allocations.isNotEmpty(),
+            restored = allocations.isNotEmpty() || pendingExternalV188 != null,
             updatedAt = metadata.second,
             commitKey = metadata.third,
+            pendingExternalV188 = pendingExternalV188,
         )
     }
 
@@ -415,6 +613,7 @@ internal class PaymentDraftStore(
         val db = database.writableDatabase
         db.beginTransaction()
         try {
+            ExternalTenderLedgerV188.requireAbsent(db)
             val hasAllocations = db.query(
                 TABLE_ALLOCATIONS, arrayOf("sequence_no"),
                 null, null, null, null, null, "1",
@@ -485,6 +684,7 @@ internal class PaymentDraftStore(
         if ("commit_key" !in metadataColumns) {
             db.execSQL("ALTER TABLE $TABLE_META ADD COLUMN commit_key TEXT")
         }
+        ExternalTenderLedgerV188.ensure(db)
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS $TABLE_ALLOCATIONS (

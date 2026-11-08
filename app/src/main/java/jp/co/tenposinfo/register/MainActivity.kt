@@ -248,6 +248,7 @@ private fun RegisterApp() {
     var paymentIntegrityWarningV181 by remember { mutableStateOf<String?>(null) }
     var paymentExitWarningV183 by remember { mutableStateOf(false) }
     var paymentCommitKey by remember { mutableStateOf<String?>(null) }
+    var pendingExternalV188 by remember { mutableStateOf<ExternalTenderPendingV188?>(null) }
     var saleCommitInProgress by remember { mutableStateOf(false) }
     var completedDraftCleanupPendingV184 by remember { mutableStateOf(false) }
     var completedSaleNoticeV184 by remember { mutableStateOf<String?>(null) }
@@ -278,6 +279,10 @@ private fun RegisterApp() {
 
     fun returnFromPayment() {
         if (saleCommitInProgress) return
+        if (pendingExternalV188 != null) {
+            paymentMessage = ExternalTenderLedgerV188.REVIEW_MESSAGE
+            return
+        }
         if (PaymentExitPolicyV183.mustKeepPaymentOpen(paymentState.allocations.size)) {
             // Returning here used to delete the persisted tender and its idempotency key.
             paymentExitWarningV183 = true
@@ -310,6 +315,7 @@ private fun RegisterApp() {
         }
         completedSaleNoticeV184 = null
         paymentCommitKey = null
+        pendingExternalV188 = null
         paymentState = PaymentState()
         saleCommitInProgress = false
         saleCommitGuard.resetForNewPayment()
@@ -576,7 +582,9 @@ private fun RegisterApp() {
                     accessMessage = null
                     paymentState = draft.state
                     paymentCommitKey = draft.commitKey
+                    pendingExternalV188 = draft.pendingExternalV188
                     paymentMessage = when {
+                        draft.pendingExternalV188 != null -> ExternalTenderLedgerV188.REVIEW_MESSAGE
                         draft.recoveredConfirmedSaleId != null ->
                             "前回の売上番号 ${draft.recoveredConfirmedSaleId} は確定済みです。今回は別の会計です"
                         draft.restored -> "前回中断した支払入力を復元しました"
@@ -819,6 +827,64 @@ private fun RegisterApp() {
                 state = paymentState,
                 completing = saleCommitInProgress,
                 externalMessage = paymentMessage,
+                pendingExternalV188 = pendingExternalV188,
+                onStartExternalV188 = beginExternal@{ proposed ->
+                    if (saleCommitInProgress || pendingExternalV188 != null) {
+                        paymentMessage = ExternalTenderLedgerV188.REVIEW_MESSAGE
+                        return@beginExternal false
+                    }
+                    val key = paymentCommitKey
+                    if (key == null) {
+                        paymentMessage = PaymentDraftRecoveryPolicyV182.STORAGE_REVIEW_MESSAGE
+                        return@beginExternal false
+                    }
+                    val result = runCatching {
+                        paymentDraftStore.beginExternalTender(
+                            cart.toList(), paymentState, proposed, key, operatorName,
+                        )
+                    }
+                    result.fold(
+                        onSuccess = { pending ->
+                            pendingExternalV188 = pending
+                            paymentMessage = ExternalTenderLedgerV188.REVIEW_MESSAGE
+                            true
+                        },
+                        onFailure = { error ->
+                            paymentMessage = error.message ?: ExternalTenderLedgerV188.REVIEW_MESSAGE
+                            false
+                        },
+                    )
+                },
+                onResolveExternalV188 = resolveExternal@{ resolution ->
+                    val pending = pendingExternalV188
+                    val key = paymentCommitKey
+                    if (pending == null || key == null || saleCommitInProgress) {
+                        paymentMessage = ExternalTenderLedgerV188.REVIEW_MESSAGE
+                        return@resolveExternal false
+                    }
+                    runCatching {
+                        paymentDraftStore.resolveExternalTender(
+                            cart.toList(), paymentState, pending, key, operatorName, resolution,
+                        )
+                    }.fold(
+                        onSuccess = { newState ->
+                            paymentState = newState
+                            pendingExternalV188 = null
+                            paymentMessage = null
+                            CustomerDisplayRuntime.publish(
+                                CustomerDisplaySnapshotFactory.accounting(
+                                    cart.toList(), newState,
+                                    CustomerDisplaySettingsStore(context.applicationContext).load().storeName,
+                                ),
+                            )
+                            true
+                        },
+                        onFailure = { error ->
+                            paymentMessage = error.message ?: ExternalTenderLedgerV188.REVIEW_MESSAGE
+                            false
+                        },
+                    )
+                },
                 onStateChange = tenderUpdate@{
                     val commitKey = paymentCommitKey ?: PaymentCommitKey.newKey()
                     // Never show a tender as accepted before its durable draft is stored.
@@ -885,6 +951,10 @@ private fun RegisterApp() {
                 },
                 onBack = ::returnFromPayment,
                 onComplete = complete@{
+                    if (pendingExternalV188 != null) {
+                        paymentMessage = ExternalTenderLedgerV188.REVIEW_MESSAGE
+                        return@complete
+                    }
                     if (!saleCommitGuard.tryBegin()) {
                         paymentMessage = "会計確定処理中です。完了まで操作しないでください"
                         return@complete
@@ -912,6 +982,7 @@ private fun RegisterApp() {
                         corrections.clear()
                         selectedIndex = null
                         paymentMessage = null
+                        pendingExternalV188 = null
                         completedSaleNoticeV184 = null
                         screen = AppScreen.COMPLETE
 
@@ -2803,6 +2874,9 @@ private fun PaymentScreen(
     state: PaymentState,
     completing: Boolean,
     externalMessage: String?,
+    pendingExternalV188: ExternalTenderPendingV188? = null,
+    onStartExternalV188: (PaymentState) -> Boolean = { false },
+    onResolveExternalV188: (ExternalTenderResolutionV188) -> Boolean = { false },
     onStateChange: (PaymentState) -> Unit,
     onCancelAllocation: (Int, Boolean) -> Boolean,
     onBack: () -> Unit,
@@ -2828,7 +2902,7 @@ private fun PaymentScreen(
 
     fun add(method: PaymentMethod) {
         val amount = input.toLongOrNull()
-        if (completing) return
+        if (completing || pendingExternalV188 != null) return
         if (remaining <= 0L) return
         if (method !in paymentSettings.enabledMethods()) {
             operationMessage = "この支払方法は設定で無効です"
@@ -2844,15 +2918,49 @@ private fun PaymentScreen(
             )
         }
             .onSuccess {
-                onStateChange(it)
-                input = ""
-                operationMessage = null
+                if (ExternalTenderLedgerV188.requiresHandoff(method)) {
+                    if (onStartExternalV188(it)) {
+                        input = ""
+                        operationMessage = null
+                    }
+                } else {
+                    onStateChange(it)
+                    input = ""
+                    operationMessage = null
+                }
             }
             .onFailure { error ->
                 operationMessage = error.message ?: "支払を追加できませんでした"
             }
     }
 
+    if (pendingExternalV188 != null) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text("外部決済の結果確認待ち") },
+            text = {
+                Text(
+                    "${pendingExternalV188.allocation.method.displayName} " +
+                        "${yen(pendingExternalV188.allocation.appliedAmount)}。" +
+                        "端末で成功・未実行・取消済みを確認してください。" +
+                        "結果不明なら再決済しないでください。",
+                )
+            },
+            confirmButton = {
+                Column {
+                    Button(onClick = {
+                        onResolveExternalV188(ExternalTenderResolutionV188.APPROVED_BY_OPERATOR)
+                    }) { Text("端末承認確認済み → 支払登録") }
+                    OutlinedButton(onClick = {
+                        onResolveExternalV188(
+                            ExternalTenderResolutionV188.NOT_EXECUTED_OR_REVERSED_BY_OPERATOR,
+                        )
+                    }) { Text("未実行・取消済み確認 → 中止") }
+                }
+            },
+            dismissButton = { Text("結果不明は保留して端末履歴を照合") },
+        )
+    }
     val pendingCancelIndex = pendingTenderCancelIndexV187
     if (pendingCancelIndex != null && !completing) {
         val target = state.allocations.getOrNull(pendingCancelIndex)
