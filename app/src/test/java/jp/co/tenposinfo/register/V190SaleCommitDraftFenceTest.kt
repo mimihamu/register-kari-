@@ -49,12 +49,16 @@ class V190SaleCommitDraftFenceTest {
     }
 
     @Test fun invalidOrOverpaidTendersAreNeverAccepted() {
-        assertFalse(ok(requested = listOf(
-            PaymentAllocation(PaymentMethod.CARD, 400L, 400L),
-            PaymentAllocation(PaymentMethod.CASH, 600L, 599L),
-        )))
+        // The PaymentAllocation domain model rejects impossible tenders at
+        // construction, before a transaction-level draft comparison is reached.
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            PaymentAllocation(PaymentMethod.CASH, 600L, 599L)
+        }
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            split.first().copy(appliedAmount = -1L)
+        }
+        // Individually legal rows can still overpay the whole sale.
         assertFalse(ok(requested = split + PaymentAllocation(PaymentMethod.CARD, 1L, 1L)))
-        assertFalse(ok(saved = listOf(split.first().copy(appliedAmount = -1L), split.last())))
     }
 
     @Test fun realSaleInsertMustVerifyDraftInsideTheSameTransaction() {
