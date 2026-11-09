@@ -365,6 +365,9 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
         )
         TaxEngine.validateMixedTax(items, mixedTaxPolicy)
         val summary = TaxEngine.calculate(items)
+        require(PaymentDraftIntegrityV181.validAllocations(
+            paymentState.allocations, summary.grossAmount,
+        )) { PaymentCommitDraftFenceV190.REVIEW_MESSAGE }
         require(paymentState.remaining(summary.grossAmount) == 0L) { "Payment is incomplete" }
         val normalizedCommitKey = commitKey?.trim()?.takeIf { it.isNotEmpty() }
         if (normalizedCommitKey != null) {
@@ -401,6 +404,18 @@ class RegisterDatabase(context: Context) : SQLiteOpenHelper(
                     CartCorrectionSchemaV135.clear(this)
                     return@runInTransactionWithResult existing.saleId
                 }
+            }
+            // v1.90: before creating a NEW sale, compare against the durable
+            // draft within this very same SQLite transaction. Existing committed
+            // retries are handled above and need not retain draft rows.
+            if (normalizedCommitKey != null) {
+                PaymentCommitDraftFenceV190.requireMatches(
+                    this, normalizedCommitKey, cartFingerprint,
+                    paymentState.allocations, summary.grossAmount,
+                )
+            } else {
+                // Legacy unkeyed writes cannot bypass an active keyed payment.
+                PaymentCommitDraftFenceV190.requireNoActiveDraftForLegacy(this)
             }
             val businessLink = BusinessSessionSchema.currentOpen(this)
                 ?: throw IllegalStateException("営業開始後に会計してください")
