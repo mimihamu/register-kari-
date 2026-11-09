@@ -159,8 +159,8 @@ android {
         // v1.85 previous build: versionCode 205 / versionName 1.34.41-dev.1
         // v1.86 previous: versionCode 206 / versionName 1.34.42-dev.1
         // v1.87 previous: versionCode 207 / versionName 1.34.43-dev.1
-        versionCode = 210
-        versionName = "1.34.46-dev.1"
+        versionCode = 211
+        versionName = "1.34.47-dev.1"
         manifestPlaceholders["appLabel"] = "つぐレジ"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

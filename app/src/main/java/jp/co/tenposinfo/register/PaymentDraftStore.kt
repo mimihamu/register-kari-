@@ -85,6 +85,7 @@ internal class PaymentDraftStore(
             ).use { it.moveToFirst() }
             var savedAllocationCountV188 = 0
             if (hasSavedAllocations) {
+                PaymentDraftSequenceV191.requireContiguous(db)
                 val savedIdentity = db.query(
                     TABLE_META, arrayOf("cart_fingerprint", "commit_key"),
                     "id = ?", arrayOf(SINGLETON_ID.toString()),
@@ -209,6 +210,7 @@ internal class PaymentDraftStore(
             require(SaleCommitIdempotencySchema.find(db, commitKey) == null) {
                 "売上確定済みのため支払取消はできません。売上履歴を確認してください"
             }
+            PaymentDraftSequenceV191.requireContiguous(db)
             val persisted = db.query(
                 TABLE_ALLOCATIONS,
                 arrayOf("payment_method", "applied_amount", "received_amount"),
@@ -325,6 +327,7 @@ internal class PaymentDraftStore(
             require(SaleCommitIdempotencySchema.find(db, commitKey) == null) {
                 "売上確定済みの会計では外部決済を開始できません"
             }
+            PaymentDraftSequenceV191.requireContiguous(db)
             val persisted = db.query(
                 TABLE_ALLOCATIONS,
                 arrayOf("payment_method", "applied_amount", "received_amount"),
@@ -396,6 +399,7 @@ internal class PaymentDraftStore(
             require(SaleCommitIdempotencySchema.find(db, commitKey) == null) {
                 "売上確定済みの会計は変更できません"
             }
+            PaymentDraftSequenceV191.requireContiguous(db)
             val persisted = db.query(
                 TABLE_ALLOCATIONS,
                 arrayOf("payment_method", "applied_amount", "received_amount"),
@@ -504,6 +508,7 @@ internal class PaymentDraftStore(
         }
 
         val allocations = runCatching {
+            PaymentDraftSequenceV191.requireContiguous(db)
             db.query(
                 TABLE_ALLOCATIONS,
                 arrayOf("payment_method", "applied_amount", "received_amount"),
@@ -641,6 +646,7 @@ internal class PaymentDraftStore(
                     )
                 }
                 require(identity != null) { "未確認の支払履歴が残っています（伝票識別情報なし）" }
+                PaymentDraftSequenceV191.requireContiguous(db)
                 val persisted = db.query(
                     TABLE_ALLOCATIONS,
                     arrayOf("payment_method", "applied_amount", "received_amount"),
