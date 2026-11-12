@@ -38,6 +38,22 @@ class V013CustomerDisplayTest {
     }
 
     @Test
+    fun salesSnapshotCarriesFractionalQuantityExactly() {
+        val item = CartItem(
+            product("weight", "量り売り", 250),
+            quantity = 1,
+            quantityHundredths = 150L,
+        )
+
+        val snapshot = CustomerDisplaySnapshotFactory.sales(listOf(item), "テンポス食堂")
+        val orderItem = snapshot.orderItems.single()
+
+        assertEquals(150L, orderItem.quantityHundredths)
+        assertEquals("1.5", orderItem.quantityText)
+        assertEquals(375L, orderItem.amount)
+    }
+
+    @Test
     fun emptyCartReturnsStandby() {
         val snapshot = CustomerDisplaySnapshotFactory.sales(emptyList(), "テンポス食堂")
         assertEquals(CustomerDisplayMode.STANDBY, snapshot.mode)

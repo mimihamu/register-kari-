@@ -76,7 +76,8 @@ class V095SalesEditResponsiveTest {
         val discount = discountSource()
 
         assertTrue(line.contains("product = item.product.withLegacyTaxCategory(category)"))
-        assertTrue(line.contains("quantity = parsedQuantity"))
+        assertTrue(line.contains("quantity = QuantityCompatibilityV136.legacyPositiveInt(effectiveQuantityHundredths)"))
+        assertTrue(line.contains("quantityHundredths = effectiveQuantityHundredths"))
         assertTrue(line.contains("unitPrice = parsedUnitPrice"))
         assertTrue(line.contains("discountAmount = parsedDiscount"))
         assertTrue(line.contains("note = note.trim()"))

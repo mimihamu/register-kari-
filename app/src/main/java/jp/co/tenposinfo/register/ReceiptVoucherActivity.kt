@@ -95,11 +95,14 @@ class ReceiptVoucherActivity : ComponentActivity() {
         configureRegisterSystemBars(window)
         val requestedSaleId = ReceiptVoucherNavigation.requestedSaleId(intent)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 ReceiptVoucherRoute(
                     requestedSaleId = requestedSaleId,
                     onClose = { finish() },
                 )
+            }
+        
             }
         }
     }
@@ -198,7 +201,7 @@ private fun ReceiptVoucherOperationsScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        VoucherHeader()
+        VoucherHeader(onClose)
         Row(
             Modifier.weight(1f).fillMaxWidth().padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -373,6 +376,29 @@ private fun ReceiptVoucherOperationsScreen(
                                     if ((calculation?.copies ?: 0) > 1) {
                                         Text("複数枚は補助領収書として発行し、各票に『${ReceiptVoucherRenderer.NOT_QUALIFIED_LABEL}』を印字します。", fontSize = 12.sp)
                                     }
+                                    calculation?.let { calc ->
+                                        Spacer(Modifier.height(8.dp))
+                                        Text("代表票プレビュー（全票は描画しません）", fontWeight = FontWeight.Bold, color = VoucherNavy)
+                                        ReceiptVoucherBatchPreviewPolicyV136.representatives(calc.copies).forEach { representative ->
+                                            Card(
+                                                modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
+                                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                                border = BorderStroke(1.dp, VoucherBorder),
+                                            ) {
+                                                Row(
+                                                    Modifier.fillMaxWidth().padding(8.dp),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                ) {
+                                                    Column {
+                                                        Text("${representative.label}  ${representative.sequenceNo}/${calc.copies}", fontWeight = FontWeight.Bold)
+                                                        Text("${addressee.ifBlank { "宛名空欄" }} / $purpose", fontSize = 12.sp, color = Color.DarkGray)
+                                                    }
+                                                    Text(voucherYen(calc.unitAmount), fontWeight = FontWeight.Bold, color = VoucherNavy)
+                                                }
+                                            }
+                                        }
+                                    }
                                     Spacer(Modifier.height(8.dp))
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         OutlinedButton(onClick = { issueConfirmation = false; message = null }, modifier = Modifier.weight(1f)) {
@@ -516,17 +542,14 @@ private fun ReceiptVoucherOperationsScreen(
             }
         }
         Row(
-            Modifier.fillMaxWidth().height(64.dp).background(Color.White).padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.End,
         ) {
-            Text("領収書履歴は削除せず、再発行も履歴へ追記します", color = Color.DarkGray)
-            Spacer(Modifier.weight(1f))
-            OutlinedButton(
-                onClick = { context.startActivity(ReceiptVoucherNavigation.ledgerIntent(context, selectedSaleId)) },
-                modifier = Modifier.heightIn(min = 46.dp),
-            ) { Text("運用台帳・印刷状態") }
-            Spacer(Modifier.width(8.dp))
-            OutlinedButton(onClick = onClose, modifier = Modifier.heightIn(min = 46.dp)) { Text("管理メニューへ戻る") }
+        OutlinedButton(
+            onClick = { context.startActivity(ReceiptVoucherNavigation.ledgerIntent(context, selectedSaleId)) },
+            modifier = Modifier.heightIn(min = 46.dp),
+        ) { Text("運用台帳・印刷状態") }
+
         }
     }
 }
@@ -545,15 +568,8 @@ private fun VoucherAmountRow(label: String, value: String, emphasized: Boolean =
 }
 
 @Composable
-private fun VoucherHeader() {
-    Row(
-        Modifier.fillMaxWidth().height(58.dp).background(VoucherNavy).padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(20.dp))
-        Text("領収書発行・再発行", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-    }
+private fun VoucherHeader(onClose: () -> Unit) {
+    RegisterTopBarV141(title = "領収書発行・再発行", onBack = onClose)
 }
 
 @Composable

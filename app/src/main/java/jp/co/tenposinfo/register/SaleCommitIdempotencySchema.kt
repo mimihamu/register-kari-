@@ -50,6 +50,60 @@ internal object SaleCommitIdempotencySchema {
         }
     }
 
+    /**
+     * Verify the original persisted sale payment rows, including method, applied
+     * amount, received amount (cash change) and original sequence.
+     * Any malformed row or missing/duplicate sequence fails closed.
+     */
+    fun recordedPaymentsMatch(
+        db: SQLiteDatabase,
+        saleId: Long,
+        expected: List<PaymentAllocation>,
+    ): Boolean = runCatching {
+        require(saleId > 0L)
+        val sequences = mutableListOf<Int>()
+        val recorded = db.query(
+            "sale_payments",
+            arrayOf("sequence_no", "payment_method", "applied_amount", "received_amount"),
+            "sale_id = ?", arrayOf(saleId.toString()),
+            null, null, "sequence_no ASC",
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    sequences += cursor.getInt(0)
+                    add(PaymentAllocation(
+                        PaymentMethod.valueOf(cursor.getString(1)),
+                        cursor.getLong(2),
+                        cursor.getLong(3),
+                    ))
+                }
+            }
+        }
+        SaleCommitPaymentMatchV189.contiguousSequenceNumbers(sequences) &&
+            SaleCommitPaymentMatchV189.sameSequence(recorded, expected)
+    }.getOrDefault(false)
+
+    /** The commit key alone is not sufficient: verify that the sale row still exists. */
+    fun findConfirmed(db: SQLiteDatabase, commitKey: String): ExistingCommit? {
+        ensure(db)
+        return db.rawQuery(
+            """
+            SELECT k.sale_id, k.cart_fingerprint, k.total_amount
+            FROM $TABLE AS k
+            INNER JOIN sales AS s
+              ON s.id = k.sale_id AND s.total_amount = k.total_amount
+            WHERE k.commit_key = ?
+            """.trimIndent(),
+            arrayOf(commitKey),
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) null else ExistingCommit(
+                saleId = cursor.getLong(0),
+                cartFingerprint = cursor.getString(1),
+                totalAmount = cursor.getLong(2),
+            )
+        }
+    }
+
     fun record(
         db: SQLiteDatabase,
         commitKey: String,

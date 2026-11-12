@@ -103,10 +103,10 @@ internal object DatabaseStartupSchemaBootstrapV085 {
     )
 
     private val REQUIRED_COLUMNS = mapOf(
-        "cart_items" to setOf("line_no", "discount_amount", "note"),
+        "cart_items" to setOf("line_no", "discount_amount", "note", "quantity_hundredths"),
         "sales" to setOf("print_count", "business_session_id", "business_date"),
-        "sale_items" to setOf("discount_amount", "note"),
-        "held_ticket_items" to setOf("discount_amount", "note"),
+        "sale_items" to setOf("discount_amount", "note", "quantity_hundredths"),
+        "held_ticket_items" to setOf("discount_amount", "note", "quantity_hundredths"),
         "reversal_items" to setOf(
             "tax_key",
             "tax_label",
@@ -115,6 +115,8 @@ internal object DatabaseStartupSchemaBootstrapV085 {
             "taxable",
             "reduced",
             "tax_symbol",
+            "original_quantity_hundredths",
+            "return_quantity_hundredths",
         ),
         "settlement_reports" to setOf("opening_cash", "cash_in", "cash_out", "snapshot_version"),
     )

@@ -70,13 +70,17 @@ class V037CustomerDisplayPresentationTest {
         val cdBuild = File("../customer-display/build.gradle.kts").readText()
 
         assertTrue(settings.contains("presentation = CustomerDisplayPresentation"))
-        assertTrue(screen.contains("表示デザイン（つぐレジ CDへ自動同期）"))
+        assertTrue(screen.contains("Text(\"表示デザイン\""))
         assertTrue(runtime.contains("config.presentation"))
         assertTrue(protocol.contains("put(\"presentation\""))
         assertTrue(protocol.contains("taxSymbol = item.product.taxSymbol"))
         assertTrue(cdModel.contains("root.optJSONObject(\"presentation\")"))
         assertTrue(cdScreen.contains("CustomerDisplayPresentationPolicy.visibleItems"))
-        assertTrue(cdScreen.contains("snapshotStore.save(snapshot)"))
+        // v1.37+: only a reducer-accepted snapshot from the current endpoint
+        // may enter the credential-partitioned persistent cache.
+        assertTrue(cdScreen.contains("snapshotStore.save(snapshot, boundSettings)"))
+        assertTrue(cdScreen.contains("connectionEpoch.accepts(epoch)"))
+        assertTrue(cdCache.contains("CustomerDisplaySnapshotCachePolicy.belongsTo("))
         assertTrue(cdCache.contains("MAX_AGE_MS"))
         assertTrue(build.contains("applicationId = \"jp.co.tenposinfo.register\""))
         assertTrue(build.contains("compileSdk = 36"))

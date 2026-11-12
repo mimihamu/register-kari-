@@ -1,13 +1,16 @@
 package jp.co.tenposinfo.register
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -39,6 +43,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,12 +76,17 @@ class OperationsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         val requestedReversalSaleId = ReversalNavigation.requestedSaleId(intent)
+        val requestedLegacyRoute = OperationsLegacyRouteV140.requested(intent)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 OperationsApp(
                     requestedReversalSaleId = requestedReversalSaleId,
+                    requestedLegacyRoute = requestedLegacyRoute,
                     onClose = { finish() },
                 )
+            }
+        
             }
         }
     }
@@ -96,6 +106,7 @@ private enum class OperationsScreen {
 @Composable
 private fun OperationsApp(
     requestedReversalSaleId: Long?,
+    requestedLegacyRoute: String?,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -110,6 +121,29 @@ private fun OperationsApp(
     var activeOperator by remember { mutableStateOf(OperatorSessionRegistry.current(appContext)) }
     var reversalContextSaleId by remember { mutableStateOf<Long?>(null) }
     var requestedReversalHandled by remember(requestedReversalSaleId) { mutableStateOf(false) }
+    var requestedLegacyHandled by remember(requestedLegacyRoute) { mutableStateOf(false) }
+
+    androidx.compose.runtime.LaunchedEffect(requestedLegacyRoute) {
+        if (requestedLegacyRoute != null && requestedReversalSaleId == null && !requestedLegacyHandled) {
+            val required = OperationsLegacyRouteV140.requiredPermission(requestedLegacyRoute)
+            val destination = when (requestedLegacyRoute) {
+                OperationsLegacyRouteV140.DAILY_SALES -> OperationsScreen.DAILY_SALES
+                OperationsLegacyRouteV140.CASH_MOVEMENT -> OperationsScreen.CASH_MOVEMENT
+                OperationsLegacyRouteV140.REVERSAL -> OperationsScreen.REVERSAL
+                else -> OperationsScreen.MENU
+            }
+            val current = OperatorSessionRegistry.current(appContext)
+            activeOperator = current
+            if (required != null && current?.allows(required) == true) {
+                screen = destination
+                message = null
+            } else {
+                screen = OperationsScreen.MENU
+                message = "この管理操作を開く権限がありません"
+            }
+            requestedLegacyHandled = true
+        }
+    }
 
     androidx.compose.runtime.LaunchedEffect(requestedReversalSaleId) {
         val requested = requestedReversalSaleId
@@ -148,6 +182,16 @@ private fun OperationsApp(
             store.close()
             registerDatabase.close()
         }
+    }
+
+    fun returnToHubOrMenu() {
+        if (requestedLegacyRoute != null || requestedReversalSaleId != null) onClose()
+        else screen = OperationsScreen.MENU
+    }
+
+    BackHandler(enabled = screen != OperationsScreen.MENU) {
+        if (screen == OperationsScreen.REVERSAL) reversalContextSaleId = null
+        returnToHubOrMenu()
     }
 
     fun openScreen(permission: RegisterPermission, destination: OperationsScreen) {
@@ -249,7 +293,7 @@ private fun OperationsApp(
                     if (result.isSuccess) revision++
                     activeOperator = OperatorSessionRegistry.current(appContext)
                 },
-                onBack = { screen = OperationsScreen.MENU },
+                onBack = { returnToHubOrMenu() },
             )
 
             OperationsScreen.DAILY_SALES -> DailySalesScreen(
@@ -259,7 +303,7 @@ private fun OperationsApp(
                         BusinessDateSalesLookupNavigation.intent(context, businessDate, businessSessionId),
                     )
                 },
-                onBack = { screen = OperationsScreen.MENU },
+                onBack = { returnToHubOrMenu() },
             )
 
             OperationsScreen.X_INSPECTION -> SettlementScreen(
@@ -283,7 +327,7 @@ private fun OperationsApp(
                     )
                 },
                 message = message,
-                onBack = { screen = OperationsScreen.MENU },
+                onBack = { returnToHubOrMenu() },
             )
 
             OperationsScreen.Z_SETTLEMENT -> SettlementScreen(
@@ -307,7 +351,7 @@ private fun OperationsApp(
                     )
                 },
                 message = message,
-                onBack = { screen = OperationsScreen.MENU },
+                onBack = { returnToHubOrMenu() },
             )
 
             OperationsScreen.SETTLEMENT_HISTORY -> SettlementHistoryScreenV027(
@@ -367,7 +411,7 @@ private fun OperationsApp(
                     if (result.isSuccess) revision++
                     activeOperator = OperatorSessionRegistry.current(appContext)
                 },
-                onBack = { screen = OperationsScreen.MENU },
+                onBack = { returnToHubOrMenu() },
             )
 
             OperationsScreen.CASH_MOVEMENT -> CashMovementScreen(
@@ -384,7 +428,7 @@ private fun OperationsApp(
                     if (result.isSuccess) revision++
                     activeOperator = OperatorSessionRegistry.current(appContext)
                 },
-                onBack = { screen = OperationsScreen.MENU },
+                onBack = { returnToHubOrMenu() },
             )
 
             OperationsScreen.REVERSAL -> ReversalScreen(
@@ -400,7 +444,7 @@ private fun OperationsApp(
                 lookupSale = { saleId -> registerDatabase.loadSaleDetail(saleId)?.summary },
                 onExecute = { saleId, type, quantities, reason, pin, requestId ->
                     val result = runCatching {
-                        secureStore.createReversal(
+                        secureStore.createReversalHundredths(
                             saleId,
                             type,
                             quantities,
@@ -421,9 +465,12 @@ private fun OperationsApp(
                     activeOperator = OperatorSessionRegistry.current(appContext)
                     result.getOrNull()
                 },
+                onManualReturn = {
+                    context.startActivity(Intent(context, ManualReturnActivityV135::class.java))
+                },
                 onBack = {
                     reversalContextSaleId = null
-                    screen = OperationsScreen.MENU
+                    returnToHubOrMenu()
                 },
             )
         }
@@ -786,6 +833,7 @@ private fun SettlementScreen(
     var showZConfirmation by remember { mutableStateOf(false) }
     @Suppress("UNUSED_VARIABLE") val refresh = revision
     val isZSettlement = reportType == SettlementReportType.Z_SETTLEMENT
+    val pinFreeManagerApproved = ManagerApprovalV145.canUseCurrentManagerSession(LocalContext.current)
     val actual = actualCash.toLongOrNull()
     val previewActual = if (isZSettlement) actual else actual ?: summary.expectedCash
     val variance = previewActual?.let { OperationsMath.variance(it, summary.expectedCash) }
@@ -805,7 +853,8 @@ private fun SettlementScreen(
     }
 
     if (showZConfirmation && previewActual != null && variance != null) {
-        AlertDialog(
+        RegisterModalV154(
+            destructive = true,
             onDismissRequest = { showZConfirmation = false },
             title = { Text("Z精算して営業を終了しますか？", fontWeight = FontWeight.Bold) },
             text = {
@@ -820,17 +869,19 @@ private fun SettlementScreen(
                 }
             },
             confirmButton = {
-                Button(
+                RegisterModalConfirmV154(
+                    label = "Z精算して営業終了",
+                    destructive = true,
                     onClick = {
                         showZConfirmation = false
                         onExecute(actual, pin, pendingPrintsAcknowledged, backupFailureAcknowledged)
                     },
-                    enabled = pin.isNotBlank() && zPreflight.mayProceed,
-                    colors = ButtonDefaults.buttonColors(containerColor = OpDanger),
-                ) { Text("Z精算して営業終了") }
+                    enabled = (pinFreeManagerApproved || pin.isNotBlank()) &&
+                        zPreflight.mayProceed,
+                )
             },
             dismissButton = {
-                OutlinedButton(onClick = { showZConfirmation = false }) { Text("戻る") }
+                RegisterModalCancelV154(onClick = { showZConfirmation = false })
             },
         )
     }
@@ -859,14 +910,18 @@ private fun SettlementScreen(
                 OpAuthenticatedOperator(operatorName)
                 if (isZSettlement) {
                     Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = pin,
-                        onValueChange = { pin = it.filter(Char::isDigit).take(8) },
-                        label = { Text("責任者PIN") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    if (pinFreeManagerApproved) {
+                        Text("責任者承認済み（PIN不要）", color = OpGreen, fontWeight = FontWeight.Bold)
+                    } else {
+                        OutlinedTextField(
+                            value = pin,
+                            onValueChange = { pin = it.filter(Char::isDigit).take(8) },
+                            label = { Text("責任者PIN") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
                     Text("精算前確認（REP-003）", fontWeight = FontWeight.Bold, color = OpNavy)
                     zPreflight.items.forEach { item ->
@@ -1009,7 +1064,7 @@ private fun CashMovementScreen(
                 OutlinedTextField(
                     value = reason,
                     onValueChange = { reason = it.take(100) },
-                    label = { Text("理由（必須）") },
+                    label = { Text("コメント（任意）") },
                     modifier = Modifier.fillMaxWidth().height(110.dp),
                 )
                 Spacer(Modifier.height(8.dp))
@@ -1022,7 +1077,13 @@ private fun CashMovementScreen(
                         reason = ""
                     },
                     modifier = Modifier.fillMaxWidth().height(56.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = if (type == CashMovementType.IN) OpBlue else OpDanger),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = when (type) {
+                            CashMovementType.IN -> OpBlue
+                            CashMovementType.OUT -> OpDanger
+                            CashMovementType.EXCHANGE -> OpNavy
+                        },
+                    ),
                 ) { Text("${type.displayName}を保存", fontWeight = FontWeight.Bold) }
                 if (message != null) {
                     Spacer(Modifier.height(8.dp))
@@ -1039,14 +1100,26 @@ private fun CashMovementScreen(
                     LazyColumn {
                         itemsIndexed(records) { _, record ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(record.type.displayName, color = if (record.type == CashMovementType.IN) OpBlue else OpDanger, fontWeight = FontWeight.Bold)
+                                Text(
+                                    record.type.displayName,
+                                    color = when (record.type) {
+                                        CashMovementType.IN -> OpBlue
+                                        CashMovementType.OUT -> OpDanger
+                                        CashMovementType.EXCHANGE -> OpNavy
+                                    },
+                                    fontWeight = FontWeight.Bold,
+                                )
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text(record.reason, fontWeight = FontWeight.Medium)
+                                    if (record.reason.isNotBlank()) Text(record.reason, fontWeight = FontWeight.Medium)
                                     Text("${opDateTime(record.createdAt)} / ${record.operatorName}", color = Color.Gray)
                                 }
                                 Text(
-                                    if (record.type == CashMovementType.IN) "+${opYen(record.amount)}" else "-${opYen(record.amount)}",
+                                    when (record.type) {
+                                        CashMovementType.IN -> "+${opYen(record.amount)}"
+                                        CashMovementType.OUT -> "-${opYen(record.amount)}"
+                                        CashMovementType.EXCHANGE -> "±${opYen(record.amount)}"
+                                    },
                                     fontSize = 19.sp,
                                     fontWeight = FontWeight.Bold,
                                 )
@@ -1057,6 +1130,19 @@ private fun CashMovementScreen(
             }
         }
         OpBottomBar("レジ管理へ戻る", onBack)
+    }
+}
+
+/** Three columns only when the search and approval panels leave usable line-edit space. */
+internal object ReversalLayoutPolicyV175 {
+    const val THREE_PANE_MIN_WIDTH_DP = 1_250
+    fun useSteps(widthDp: Int, fontScale: Float = 1f): Boolean {
+        val minimum = when {
+            fontScale >= 1.5f -> 1_850
+            fontScale >= 1.2f -> 1_500
+            else -> THREE_PANE_MIN_WIDTH_DP
+        }
+        return widthDp < minimum
     }
 }
 
@@ -1072,17 +1158,22 @@ private fun ReversalScreen(
     printerPaperWidthMm: Int,
     loadLines: (Long) -> List<ReturnableSaleLine>,
     lookupSale: (Long) -> SaleSummaryRecord?,
-    onExecute: (Long, ReversalType, Map<Long, Int>, String, String, String) -> PartialReversalResult?,
+    onExecute: (Long, ReversalType, Map<Long, Long>, String, String, String) -> PartialReversalResult?,
+    onManualReturn: () -> Unit,
     onBack: () -> Unit,
 ) {
-    var selectedSaleId by remember(initialSaleId) { mutableStateOf<Long?>(initialSaleId) }
-    var contextSaleLocked by remember(initialSaleId) { mutableStateOf(initialSaleId != null) }
+    var selectedSaleId by rememberSaveable(initialSaleId) { mutableStateOf<Long?>(initialSaleId) }
+    var contextSaleLocked by rememberSaveable(initialSaleId) { mutableStateOf(initialSaleId != null) }
     var lines by remember { mutableStateOf<List<ReturnableSaleLine>>(emptyList()) }
-    var quantities by remember { mutableStateOf<Map<Long, Int>>(emptyMap()) }
-    var type by remember { mutableStateOf(ReversalType.RETURN) }
-    var reason by remember { mutableStateOf("") }
+    // Retain the original request inputs with the idempotency key on Activity recreation.
+    var quantityInputs by rememberSaveable(initialSaleId) { mutableStateOf<Map<Long, String>>(emptyMap()) }
+    var type by rememberSaveable(initialSaleId) { mutableStateOf(ReversalType.RETURN) }
+    var reason by rememberSaveable(initialSaleId) { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
-    var requestId by remember { mutableStateOf(UUID.randomUUID().toString()) }
+    // Preserve the idempotency key across activity recreation after an uncertain commit.
+    var requestId by rememberSaveable(initialSaleId) { mutableStateOf(UUID.randomUUID().toString()) }
+    var requestScopeSaleId by rememberSaveable(initialSaleId) { mutableStateOf(initialSaleId) }
+    var showReversalConfirm by remember { mutableStateOf(false) }
     var savedResult by remember { mutableStateOf<PartialReversalResult?>(null) }
     var localMessage by remember { mutableStateOf<String?>(null) }
     var saleQuery by remember { mutableStateOf("") }
@@ -1093,12 +1184,34 @@ private fun ReversalScreen(
     val directSaleId = SalesHistoryLookupPolicy.parseDirectSaleId(directSaleIdText)
     val selected = directSaleOverride?.takeIf { it.id == selectedSaleId }
         ?: sales.firstOrNull { it.id == selectedSaleId }
-    val selectedItems = runCatching { PartialReturnPolicy.select(type, lines, quantities) }.getOrNull().orEmpty()
+    val quantityHundredths = lines.mapNotNull { line ->
+        val parsed = reversalQuantityInputHundredths(quantityInputs[line.saleItemId].orEmpty())
+        if (parsed != null && parsed > 0L) line.saleItemId to parsed else null
+    }.toMap()
+    val hasQuantityInputError = type == ReversalType.RETURN && lines.any { line ->
+        val raw = quantityInputs[line.saleItemId].orEmpty()
+        val parsed = reversalQuantityInputHundredths(raw)
+        raw.isNotBlank() && (
+            parsed == null ||
+                parsed > line.remainingQuantityHundredths ||
+                (line.quantityMode == QuantityMode.INTEGER && parsed % QuantityV136.SCALE != 0L)
+            )
+    }
+    val selectedItems = runCatching {
+        PartialReturnPolicy.selectHundredths(type, lines, quantityHundredths)
+    }.getOrNull().orEmpty()
     val previewSummary = selectedItems.takeIf { it.isNotEmpty() }?.let { TaxEngine.calculate(it.map { pair -> pair.second }) }
-    val canCancel = lines.isNotEmpty() && lines.all { it.returnedQuantity == 0 && it.remainingQuantity > 0 }
-    val canExecute = selected != null && reason.isNotBlank() && pin.isNotBlank() && when (type) {
+    val canCancel = lines.isNotEmpty() && lines.all {
+        it.returnedQuantityHundredths == 0L && it.remainingQuantityHundredths > 0L
+    }
+    val managerApproved = pin.isNotBlank() || ManagerApprovalV145.canUseCurrentManagerSession(LocalContext.current)
+    // Persist the chosen step; an invalid deep-link must return to sale search.
+    var compactStepV175 by rememberSaveable(initialSaleId) {
+        androidx.compose.runtime.mutableIntStateOf(if (initialSaleId != null) 1 else 0)
+    }
+    val canExecute = selected != null && managerApproved && when (type) {
         ReversalType.CANCEL -> canCancel
-        ReversalType.RETURN -> selectedItems.isNotEmpty()
+        ReversalType.RETURN -> selectedItems.isNotEmpty() && !hasQuantityInputError
     }
 
     androidx.compose.runtime.LaunchedEffect(initialSaleId) {
@@ -1115,9 +1228,11 @@ private fun ReversalScreen(
                 directSaleOverride = null
                 contextSaleLocked = false
                 lines = emptyList()
-                quantities = emptyMap()
+                quantityInputs = emptyMap()
                 savedResult = null
                 requestId = UUID.randomUUID().toString()
+                requestScopeSaleId = null
+                compactStepV175 = 0
                 localMessage = "指定された売上No.$saleId は見つかりません。元売上は選択していません"
             }
             context.alreadyCompleted -> {
@@ -1125,9 +1240,11 @@ private fun ReversalScreen(
                 directSaleOverride = null
                 contextSaleLocked = false
                 lines = emptyList()
-                quantities = emptyMap()
+                quantityInputs = emptyMap()
                 savedResult = null
                 requestId = UUID.randomUUID().toString()
+                requestScopeSaleId = null
+                compactStepV175 = 0
                 localMessage = "売上No.$saleId は全量返品・取消済みです。元売上は選択していません"
             }
             context.mayOpenLocked && sale != null -> {
@@ -1137,13 +1254,14 @@ private fun ReversalScreen(
                     localMessage = it.message ?: "明細取得に失敗しました"
                     emptyList()
                 }
-                quantities = emptyMap()
                 savedResult = null
-                requestId = UUID.randomUUID().toString()
+                // On Activity recreation preserve the existing sale-bound requestId and quantities.
+                // A new initialSaleId automatically gets a new rememberSaveable identity.
                 if (lines.isEmpty()) {
                     selectedSaleId = null
                     directSaleOverride = null
                     contextSaleLocked = false
+                    compactStepV175 = 0
                     localMessage = "売上No.${sale.id} に返品可能な明細がありません。元売上は選択していません"
                 } else {
                     contextSaleLocked = true
@@ -1153,11 +1271,73 @@ private fun ReversalScreen(
         }
     }
 
+    // Restore the selected source after Android recreates a general-menu reversal Activity.
+    androidx.compose.runtime.LaunchedEffect(initialSaleId, selectedSaleId) {
+        if (initialSaleId != null || lines.isNotEmpty()) return@LaunchedEffect
+        val restoredId = selectedSaleId ?: return@LaunchedEffect
+        val restoredSale = lookupSale(restoredId)
+        val restoredLines = if (restoredSale != null && restoredId !in reversedSaleIds) {
+            runCatching { loadLines(restoredId) }.getOrElse {
+                localMessage = it.message ?: "返品可能な明細を復元できませんでした"
+                emptyList()
+            }
+        } else emptyList()
+        if (restoredSale == null || restoredLines.isEmpty()) {
+            selectedSaleId = null
+            directSaleOverride = null
+            quantityInputs = emptyMap()
+            requestScopeSaleId = null
+            requestId = UUID.randomUUID().toString()
+            compactStepV175 = 0
+            localMessage = "元売上の返品可能明細を確認できません。元売上を選び直してください"
+        } else {
+            lines = restoredLines
+            directSaleOverride = restoredSale.takeIf { candidate -> sales.none { it.id == candidate.id } }
+        }
+    }
+
     Column(Modifier.fillMaxSize()) {
-        OpHeader("SCR-400/410", "返品・取消")
-        Row(Modifier.weight(1f).padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OpPanel(Modifier.width(355.dp).fillMaxHeight()) {
+        OpHeader("SCR-400/410", "元売上から返品・取消")
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val compactReversal = ReversalLayoutPolicyV175.useSteps(
+                maxWidth.value.toInt(),
+                androidx.compose.ui.platform.LocalConfiguration.current.fontScale,
+            )
+            Column(Modifier.fillMaxSize()) {
+                if (compactReversal) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf("元売上", "商品・数量", "確定").forEachIndexed { index, label ->
+                            OpChoiceButton(label, compactStepV175 == index, Modifier.weight(1f)) {
+                                compactStepV175 = index
+                            }
+                        }
+                    }
+                }
+                Row(
+                    Modifier.weight(1f).fillMaxWidth().padding(14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+            if (!compactReversal || compactStepV175 == 0) {
+            OpPanel(
+                if (compactReversal) Modifier.weight(1f).fillMaxHeight()
+                else Modifier.width(355.dp).fillMaxHeight(),
+            ) {
                 Text("元売上を検索・選択", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = OpNavy)
+                if (!contextSaleLocked) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = onManualReturn,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+                        border = BorderStroke(2.dp, OpDanger),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = Color(0xFFFFEBEE),
+                            contentColor = OpDanger,
+                        ),
+                    ) { Text("元取引なし → レジマイナス", fontWeight = FontWeight.Bold) }
+                }
                 if (contextSaleLocked && selectedSaleId != null) {
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
@@ -1178,9 +1358,8 @@ private fun ReversalScreen(
                                     selectedSaleId = null
                                     directSaleOverride = null
                                     lines = emptyList()
-                                    quantities = emptyMap()
+                                    // Keep the pending ID and quantities until a different sale is selected.
                                     savedResult = null
-                                    requestId = UUID.randomUUID().toString()
                                     localMessage = "元売上固定を解除しました。別売上を検索してください"
                                 },
                                 modifier = Modifier.fillMaxWidth(),
@@ -1223,31 +1402,37 @@ private fun ReversalScreen(
                                     selectedSaleId = null
                                     directSaleOverride = null
                                     lines = emptyList()
-                                    quantities = emptyMap()
+                                    quantityInputs = emptyMap()
                                     savedResult = null
                                     requestId = UUID.randomUUID().toString()
+                                    requestScopeSaleId = null
                                     localMessage = "売上No.$saleId は見つかりません。元売上の選択を解除しました"
                                 }
                                 sale.id in reversedSaleIds -> {
                                     selectedSaleId = null
                                     directSaleOverride = null
                                     lines = emptyList()
-                                    quantities = emptyMap()
+                                    quantityInputs = emptyMap()
                                     savedResult = null
                                     requestId = UUID.randomUUID().toString()
+                                    requestScopeSaleId = null
                                     localMessage = "売上No.${sale.id} は全量返品・取消済みです。元売上の選択を解除しました"
                                 }
                                 else -> {
                                     selectedSaleId = sale.id
+                                    if (ReversalRetryScopeV178.requiresNewId(requestScopeSaleId, sale.id)) {
+                                        requestScopeSaleId = sale.id
+                                        requestId = UUID.randomUUID().toString()
+                                        quantityInputs = emptyMap()
+                                    }
                                     directSaleOverride = sale.takeIf { candidate -> sales.none { it.id == candidate.id } }
                                     lines = runCatching { loadLines(sale.id) }.getOrElse {
                                         localMessage = it.message ?: "明細取得に失敗しました"
                                         emptyList()
                                     }
-                                    quantities = emptyMap()
                                     savedResult = null
-                                    requestId = UUID.randomUUID().toString()
                                     localMessage = if (lines.isEmpty()) "返品可能な明細がありません" else null
+                                    if (lines.isNotEmpty() && compactReversal) compactStepV175 = 1
                                 }
                             }
                         },
@@ -1284,15 +1469,19 @@ private fun ReversalScreen(
                                 .background(if (selectedRow) OpPaleBlue else Color.Transparent)
                                 .clickable(enabled = !completed && !contextSaleLocked) {
                                     selectedSaleId = sale.id
+                                    if (ReversalRetryScopeV178.requiresNewId(requestScopeSaleId, sale.id)) {
+                                        requestScopeSaleId = sale.id
+                                        requestId = UUID.randomUUID().toString()
+                                        quantityInputs = emptyMap()
+                                    }
                                     directSaleOverride = null
                                     lines = runCatching { loadLines(sale.id) }.getOrElse {
                                         localMessage = it.message ?: "明細取得に失敗しました"
                                         emptyList()
                                     }
-                                    quantities = emptyMap()
                                     savedResult = null
-                                    requestId = UUID.randomUUID().toString()
                                     localMessage = if (lines.isEmpty()) "返品可能な明細がありません" else null
+                                    if (lines.isNotEmpty() && compactReversal) compactStepV175 = 1
                                 }
                                 .padding(horizontal = 7.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -1312,7 +1501,9 @@ private fun ReversalScreen(
                     Text("${record.type.displayName} No.${record.originalSaleId}  -${opYen(record.grossAmount)}", fontSize = 12.sp)
                 }
             }
+            }
 
+            if (!compactReversal || compactStepV175 == 1) {
             OpPanel(Modifier.weight(1f).fillMaxHeight()) {
                 Text("返品商品・数量", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = OpNavy)
                 Spacer(Modifier.height(5.dp))
@@ -1322,64 +1513,147 @@ private fun ReversalScreen(
                 )
                 Spacer(Modifier.height(8.dp))
                 if (selected == null) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("元売上を選択してください", color = Color.Gray) }
+                    Column(
+                        Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text("元売上を選択してください", color = Color.Gray)
+                        Spacer(Modifier.height(18.dp))
+                        if (compactReversal) {
+                            OutlinedButton(
+                                onClick = { compactStepV175 = 0 },
+                                modifier = Modifier.heightIn(min = 50.dp),
+                            ) { Text("元売上を選ぶ") }
+                        }
+                    }
                 } else if (lines.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("返品可能な明細がありません", color = OpDanger) }
                 } else {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         itemsIndexed(lines) { _, line ->
-                            val requested = if (type == ReversalType.CANCEL) line.remainingQuantity else quantities[line.saleItemId] ?: 0
+                            val inputText = quantityInputs[line.saleItemId].orEmpty()
+                            val parsedRequested = reversalQuantityInputHundredths(inputText)
+                            val requestedHundredths = if (type == ReversalType.CANCEL) {
+                                line.remainingQuantityHundredths
+                            } else {
+                                parsedRequested ?: 0L
+                            }
+                            val inputError = when {
+                                type != ReversalType.RETURN || inputText.isBlank() -> null
+                                parsedRequested == null -> "数量は整数または小数2桁までで入力してください"
+                                parsedRequested > line.remainingQuantityHundredths -> "残数 ${line.remainingQuantityText} を超えています"
+                                line.quantityMode == QuantityMode.INTEGER &&
+                                    parsedRequested % QuantityV136.SCALE != 0L -> "通常商品は整数数量で入力してください"
+                                else -> null
+                            }
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = if (line.remainingQuantity == 0) Color(0xFFF1F1F1) else Color.White),
+                                colors = CardDefaults.cardColors(containerColor = if (line.remainingQuantityHundredths == 0L) Color(0xFFF1F1F1) else Color.White),
                                 border = BorderStroke(1.dp, OpBorder),
                             ) {
-                                Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Column(Modifier.weight(1f)) {
-                                        Text("${line.productName} [${line.taxSymbol}]", fontWeight = FontWeight.Bold)
-                                        Text(
-                                            "${opYen(line.unitPrice)} / 販売 ${line.originalQuantity}・返品済 ${line.returnedQuantity}・残 ${line.remainingQuantity}",
-                                            color = Color.Gray,
-                                            fontSize = 12.sp,
-                                        )
-                                        if (line.remainingDiscount > 0) Text("値引残 ${opYen(line.remainingDiscount)}", color = Color.Gray, fontSize = 12.sp)
+                                Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text("${line.productName} [${line.taxSymbol}]", fontWeight = FontWeight.Bold)
+                                            Text(
+                                                "${opYen(line.unitPrice)} / 販売 ${line.originalQuantityText}・返品済 ${line.returnedQuantityText}・残 ${line.remainingQuantityText}",
+                                                color = Color.Gray,
+                                                fontSize = 12.sp,
+                                            )
+                                            if (line.remainingDiscount > 0) Text("値引残 ${opYen(line.remainingDiscount)}", color = Color.Gray, fontSize = 12.sp)
+                                        }
+                                        if (type == ReversalType.CANCEL) {
+                                            Text(
+                                                line.remainingQuantityText,
+                                                modifier = Modifier.width(92.dp),
+                                                textAlign = TextAlign.Center,
+                                                fontWeight = FontWeight.Bold,
+                                            )
+                                        } else {
+                                            OutlinedButton(
+                                                onClick = {
+                                                    val current = parsedRequested ?: 0L
+                                                    val next = (current - QuantityV136.SCALE).coerceAtLeast(0L)
+                                                    quantityInputs = if (next == 0L) {
+                                                        quantityInputs - line.saleItemId
+                                                    } else {
+                                                        quantityInputs + (line.saleItemId to reversalQuantityText(next))
+                                                    }
+                                                },
+                                                enabled = requestedHundredths > 0L,
+                                                modifier = Modifier.width(48.dp),
+                                            ) { Text("−") }
+                                            OutlinedTextField(
+                                                value = inputText,
+                                                onValueChange = { candidate ->
+                                                    if (candidate.length <= 12 && reversalQuantityInputRegex.matches(candidate)) {
+                                                        quantityInputs = if (candidate.isBlank()) {
+                                                            quantityInputs - line.saleItemId
+                                                        } else {
+                                                            quantityInputs + (line.saleItemId to candidate)
+                                                        }
+                                                    }
+                                                },
+                                                label = { Text("数量") },
+                                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                                singleLine = true,
+                                                modifier = Modifier.width(104.dp),
+                                            )
+                                            OutlinedButton(
+                                                onClick = {
+                                                    val current = parsedRequested ?: 0L
+                                                    val next = Math.addExact(current, QuantityV136.SCALE)
+                                                        .coerceAtMost(line.remainingQuantityHundredths)
+                                                    quantityInputs = quantityInputs + (line.saleItemId to reversalQuantityText(next))
+                                                },
+                                                enabled = parsedRequested != null && requestedHundredths < line.remainingQuantityHundredths,
+                                                modifier = Modifier.width(48.dp),
+                                            ) { Text("＋") }
+                                        }
                                     }
-                                    OutlinedButton(
-                                        onClick = {
-                                            val next = (requested - 1).coerceAtLeast(0)
-                                            quantities = quantities + (line.saleItemId to next)
-                                        },
-                                        enabled = type == ReversalType.RETURN && requested > 0,
-                                        modifier = Modifier.width(48.dp),
-                                    ) { Text("−") }
-                                    Text("$requested", modifier = Modifier.width(42.dp), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold)
-                                    OutlinedButton(
-                                        onClick = {
-                                            val next = (requested + 1).coerceAtMost(line.remainingQuantity)
-                                            quantities = quantities + (line.saleItemId to next)
-                                        },
-                                        enabled = type == ReversalType.RETURN && requested < line.remainingQuantity,
-                                        modifier = Modifier.width(48.dp),
-                                    ) { Text("＋") }
+                                    inputError?.let {
+                                        Text(it, color = OpDanger, fontSize = 11.sp)
+                                    }
                                 }
                             }
                         }
                     }
+                    if (compactReversal) {
+                        Spacer(Modifier.height(8.dp))
+                        Button(
+                            onClick = { compactStepV175 = 2 },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = OpBlue),
+                        ) { Text("返金内容を確認", fontWeight = FontWeight.Bold) }
+                    }
                 }
             }
+            }
 
-            OpPanel(Modifier.width(390.dp).fillMaxHeight()) {
+            if (!compactReversal || compactStepV175 == 2) {
+            OpPanel(
+                if (compactReversal) Modifier.weight(1f).fillMaxHeight()
+                else Modifier.width(390.dp).fillMaxHeight(),
+            ) {
+                Column(
+                    Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                ) {
                 Text("返品・取消確定", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = OpNavy)
                 Spacer(Modifier.height(8.dp))
                 OpAmountRow("元売上", selected?.let { "No.${it.id}" } ?: "未選択")
                 OpAmountRow("返金予定", opYen(previewSummary?.grossAmount ?: 0L), emphasized = true)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OpChoiceButton("返品", type == ReversalType.RETURN, Modifier.weight(1f)) {
-                        type = ReversalType.RETURN
-                        requestId = UUID.randomUUID().toString()
+                        if (type != ReversalType.RETURN) {
+                            type = ReversalType.RETURN
+                            requestId = UUID.randomUUID().toString()
+                        }
                     }
                     OpChoiceButton("取消", type == ReversalType.CANCEL, Modifier.weight(1f)) {
-                        type = ReversalType.CANCEL
-                        requestId = UUID.randomUUID().toString()
+                        if (type != ReversalType.CANCEL) {
+                            type = ReversalType.CANCEL
+                            requestId = UUID.randomUUID().toString()
+                        }
                     }
                 }
                 Spacer(Modifier.height(7.dp))
@@ -1392,38 +1666,30 @@ private fun ReversalScreen(
                 OutlinedTextField(
                     value = reason,
                     onValueChange = { reason = it.take(100) },
-                    label = { Text("理由（必須）") },
+                    label = { Text("理由（任意）") },
                     modifier = Modifier.fillMaxWidth().height(82.dp),
                 )
                 Spacer(Modifier.height(7.dp))
                 OpAuthenticatedOperator(operatorName)
                 Spacer(Modifier.height(7.dp))
-                OutlinedTextField(
-                    value = pin,
-                    onValueChange = { pin = it.filter(Char::isDigit).take(8) },
-                    label = { Text("責任者PIN") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (!ManagerApprovalV145.canUseCurrentManagerSession(LocalContext.current)) {
+                    OutlinedTextField(
+                        value = pin,
+                        onValueChange = { pin = it.filter(Char::isDigit).take(8) },
+                        label = { Text("責任者PIN") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                }
                 Spacer(Modifier.height(8.dp))
                 Button(
-                    onClick = {
-                        val saleId = selectedSaleId ?: return@Button
-                        val result = onExecute(saleId, type, quantities, reason, pin, requestId)
-                        if (result != null) {
-                            savedResult = result
-                            lines = loadLines(saleId)
-                            quantities = emptyMap()
-                            reason = ""
-                            pin = ""
-                            requestId = UUID.randomUUID().toString()
-                        }
-                    },
+                    onClick = { showReversalConfirm = true },
                     enabled = canExecute,
                     modifier = Modifier.fillMaxWidth().height(53.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = OpDanger),
-                ) { Text("${type.displayName}を確定", fontWeight = FontWeight.Bold) }
+                ) { Text("${type.displayName}内容を確認", fontWeight = FontWeight.Bold) }
                 (localMessage ?: message)?.let {
                     Spacer(Modifier.height(6.dp))
                     Text(it, color = if (it.contains("失敗") || it.contains("違い") || it.contains("超え") || it.contains("できません")) OpDanger else OpGreen, fontSize = 12.sp)
@@ -1435,15 +1701,76 @@ private fun ReversalScreen(
                         result.previewText,
                         fontSize = 9.sp,
                         lineHeight = 11.sp,
-                        modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 80.dp)
+                            .verticalScroll(rememberScrollState()),
                     )
-                } ?: Spacer(Modifier.weight(1f))
+                } ?: Spacer(Modifier.height(4.dp))
                 Text("元売上は変更せず、返品明細と反対支払を追記します。", color = Color.DarkGray, fontSize = 11.sp)
             }
+            }
+                }
+            }
         }
-        OpBottomBar("レジ管理へ戻る", onBack)
+        OpBottomBar(if (initialSaleId != null) "売上詳細へ戻る" else "レジ管理へ戻る", onBack)
+    }
+    if (showReversalConfirm) {
+        RegisterModalV154(
+            onDismissRequest = {},
+            title = { Text("${type.displayName}を確定しますか？", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("元売上 No.${selectedSaleId ?: "-"}", fontWeight = FontWeight.Bold)
+                    Text("処理：${type.displayName}")
+                    Text("対象商品：${selectedItems.size}種類")
+                    Text(
+                        "返金予定 ${opYen(previewSummary?.grossAmount ?: 0L)}",
+                        color = OpDanger,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text("元売上を残し、返品・取消の記録を追加します。")
+                }
+            },
+            confirmButton = {
+                RegisterModalConfirmV154(
+                    label = "${type.displayName}を確定",
+                    destructive = true,
+                    enabled = canExecute,
+                    onClick = {
+                        showReversalConfirm = false
+                        val saleId = selectedSaleId
+                        if (saleId != null && canExecute) {
+                            val result = onExecute(saleId, type, quantityHundredths, reason, pin, requestId)
+                            if (result != null) {
+                                savedResult = result
+                                lines = loadLines(saleId)
+                                quantityInputs = emptyMap()
+                                reason = ""
+                                pin = ""
+                                requestId = UUID.randomUUID().toString()
+                            }
+                        }
+                    },
+                )
+            },
+            dismissButton = {
+                RegisterModalCancelV154(onClick = { showReversalConfirm = false })
+            },
+            destructive = true,
+        )
     }
 }
+
+private val reversalQuantityInputRegex = Regex("\\d*(?:\\.\\d{0,2})?")
+
+private fun reversalQuantityInputHundredths(text: String): Long? {
+    val normalized = text.trim()
+    if (normalized.isBlank()) return 0L
+    if (Regex("0(?:\\.0{0,2})?").matches(normalized)) return 0L
+    return runCatching { QuantityV136.parse(normalized).hundredths }.getOrNull()
+}
+
+private fun reversalQuantityText(quantityHundredths: Long): String =
+    if (quantityHundredths <= 0L) "0" else QuantityV136.fromHundredths(quantityHundredths).format()
 
 @Composable
 private fun OperationsAccessDeniedScreen(onClose: () -> Unit) {
@@ -1474,16 +1801,7 @@ private fun OpAuthenticatedOperator(operatorName: String) {
 
 @Composable
 private fun OpHeader(screenId: String, title: String) {
-    Row(
-        Modifier.fillMaxWidth().height(62.dp).background(OpNavy).padding(horizontal = 20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(24.dp))
-        Text("$screenId  $title", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
-        Text("オフライン管理", color = Color.White, fontSize = 14.sp)
-    }
+    RegisterTopBarV141(title)
 }
 
 @Composable
@@ -1530,7 +1848,7 @@ private fun OpNumericField(label: String, value: String, onValueChange: (String)
 @Composable
 private fun OpBottomBar(label: String, onBack: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().height(72.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
+        Modifier.fillMaxWidth().height(72.dp).background(RegisterSecondaryActionBarColorV159).padding(horizontal = 18.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         OutlinedButton(onClick = onBack, modifier = Modifier.width(220.dp).fillMaxHeight()) {

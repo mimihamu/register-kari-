@@ -46,7 +46,9 @@ class V013CustomerDisplayAccountingTest {
         val snapshot = CustomerDisplaySnapshotFactory.accounting(items, state, "テスト店")
 
         assertEquals(0L, snapshot.shortageAmount)
-        assertEquals(200L, snapshot.changeAmount)
+        // Change is provisional here: it must be hidden until the sale is committed.
+        assertEquals(0L, snapshot.changeAmount)
+        assertEquals("CASH_RECEIVED", org.json.JSONObject(snapshot.toJson()).getString("canonicalMode"))
         assertEquals(500L, snapshot.receivedAmount)
     }
 }

@@ -41,7 +41,7 @@ class V091DataProtectionResponsiveTest {
         assertTrue(source.contains("if (responsive.isCompact) Modifier.verticalScroll(rightScroll)"))
         assertTrue(source.contains("Modifier.width(if (responsive.isCompact) 360.dp else 470.dp)"))
         assertTrue(source.contains("heightIn(min = 80.dp, max = 150.dp)"))
-        assertTrue(source.contains("responsive.headerHeightDp.dp"))
+        assertTrue(source.contains("RegisterTopBarV141(title = \"データ保全・バックアップ・復元\""))
         assertTrue(source.contains("responsive.bottomBarHeightDp.dp"))
         assertTrue(source.contains("responsive.screenPaddingDp.dp"))
         assertTrue(source.contains("responsive.cardPaddingDp.dp"))
@@ -70,7 +70,9 @@ class V091DataProtectionResponsiveTest {
         ).readText()
 
         assertTrue(source.contains("manager.createBackup(actor)"))
-        assertTrue(source.contains("manager.verifyBackup(file)"))
+        // BKP-004 strengthens the restore-side verification contract: the UI must run the full
+        // preflight (version/schema/identity/hash/capacity/Drive destination), not only DB verify.
+        assertTrue(source.contains("manager.preflightRestore(file)"))
         assertTrue(source.contains("RestoreReservationCoordinatorV116.stage(appContext, manager, file, pin)"))
         assertTrue(source.contains("RestoreReservationCoordinatorV116.cancel(appContext, manager, pin)"))
         assertTrue(source.contains("report?.restoreReady == true"))

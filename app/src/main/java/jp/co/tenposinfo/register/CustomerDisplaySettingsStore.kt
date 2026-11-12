@@ -13,12 +13,16 @@ data class CustomerDisplayServerConfig(
     val storeName: String,
     val completeSeconds: Int,
     val presentation: CustomerDisplayPresentation = CustomerDisplayPresentation(),
+    val changeSeconds: Int = 5,
+    val storeId: String = "",
+    val registerTerminalId: String = "",
 ) {
     init {
         require(port in 1024..65535) { "port must be between 1024 and 65535" }
         require(path.startsWith('/')) { "path must start with /" }
         require(token.length >= 16) { "token is too short" }
         require(completeSeconds in 1..30) { "completeSeconds must be between 1 and 30" }
+        require(changeSeconds in 1..30) { "changeSeconds must be between 1 and 30" }
     }
 
     fun connectionUrl(host: String): String = "ws://$host:$port$path?token=$token"
@@ -32,6 +36,8 @@ class CustomerDisplaySettingsStore(context: Context) {
             ?.takeIf { it.length >= 16 }
             ?: generateToken().also { preferences.edit().putString(KEY_TOKEN, it).apply() }
         return CustomerDisplayServerConfig(
+            storeId = persistentId(KEY_STORE_ID),
+            registerTerminalId = persistentId(KEY_REGISTER_TERMINAL_ID),
             enabled = preferences.getBoolean(KEY_ENABLED, false),
             port = preferences.getInt(KEY_PORT, DEFAULT_PORT).coerceIn(1024, 65535),
             path = CUSTOMER_DISPLAY_PATH,
@@ -41,6 +47,7 @@ class CustomerDisplaySettingsStore(context: Context) {
                 ?.takeIf { it.isNotEmpty() }
                 ?: DEFAULT_STORE_NAME,
             completeSeconds = preferences.getInt(KEY_COMPLETE_SECONDS, DEFAULT_COMPLETE_SECONDS).coerceIn(1, 30),
+            changeSeconds = preferences.getInt(KEY_CHANGE_SECONDS, DEFAULT_CHANGE_SECONDS).coerceIn(1, 30),
             presentation = CustomerDisplayPresentation(
                 theme = runCatching {
                     CustomerDisplayTheme.valueOf(
@@ -67,8 +74,11 @@ class CustomerDisplaySettingsStore(context: Context) {
             .putBoolean(KEY_ENABLED, config.enabled)
             .putInt(KEY_PORT, config.port)
             .putString(KEY_TOKEN, config.token)
+            .putString(KEY_STORE_ID, config.storeId.ifBlank { persistentId(KEY_STORE_ID) })
+            .putString(KEY_REGISTER_TERMINAL_ID, config.registerTerminalId.ifBlank { persistentId(KEY_REGISTER_TERMINAL_ID) })
             .putString(KEY_STORE_NAME, config.storeName.trim().ifEmpty { DEFAULT_STORE_NAME })
             .putInt(KEY_COMPLETE_SECONDS, config.completeSeconds)
+            .putInt(KEY_CHANGE_SECONDS, config.changeSeconds)
             .putString(KEY_THEME, config.presentation.theme.name)
             .putBoolean(KEY_SHOW_LOGO, config.presentation.showLogo)
             .putString(KEY_LOGO_TEXT, config.presentation.logoText)
@@ -81,6 +91,14 @@ class CustomerDisplaySettingsStore(context: Context) {
             .apply()
     }
 
+    private fun persistentId(key: String): String {
+        val saved = preferences.getString(key, null)?.takeIf { it.isNotBlank() }
+        if (saved != null) return saved
+        return UUID.randomUUID().toString().also {
+            preferences.edit().putString(key, it).apply()
+        }
+    }
+
     fun regenerateToken(): String = generateToken().also {
         preferences.edit().putString(KEY_TOKEN, it).apply()
     }
@@ -88,14 +106,18 @@ class CustomerDisplaySettingsStore(context: Context) {
     companion object {
         const val DEFAULT_PORT = 18080
         const val DEFAULT_STORE_NAME = "つぐレジ"
-        const val DEFAULT_COMPLETE_SECONDS = 5
+        const val DEFAULT_COMPLETE_SECONDS = 3
+        const val DEFAULT_CHANGE_SECONDS = 5
 
         private const val PREFS_NAME = "customer_display_server"
         private const val KEY_ENABLED = "enabled"
         private const val KEY_PORT = "port"
         private const val KEY_TOKEN = "token"
+        private const val KEY_STORE_ID = "store_id"
+        private const val KEY_REGISTER_TERMINAL_ID = "register_terminal_id"
         private const val KEY_STORE_NAME = "store_name"
         private const val KEY_COMPLETE_SECONDS = "complete_seconds"
+        private const val KEY_CHANGE_SECONDS = "change_seconds"
         private const val KEY_THEME = "presentation_theme"
         private const val KEY_SHOW_LOGO = "presentation_show_logo"
         private const val KEY_LOGO_TEXT = "presentation_logo_text"

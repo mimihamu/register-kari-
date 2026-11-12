@@ -62,8 +62,11 @@ class SettlementReconciliationAuditCsvExportActivityV082 : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 SettlementReconciliationAuditCsvExportRouteV082(onClose = { finish() })
+            }
+        
             }
         }
     }
@@ -144,18 +147,7 @@ private fun SettlementReconciliationAuditCsvExportRouteV082(onClose: () -> Unit)
         OperatorSessionRegistry.touch(appContext)
         val metrics = rememberRegisterResponsiveMetrics()
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(metrics.headerHeightDp.dp).background(AuditCsvNavyV082)
-                    .padding(horizontal = metrics.screenPaddingDp.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("つぐレジ", color = Color.White, fontSize = if (metrics.isCompact) 19.sp else 23.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(20.dp))
-                Text("SCR-522  整合確認監査 CSV出力", color = Color.White, fontSize = if (metrics.isCompact) 17.sp else 21.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                Text("担当 ${current.name}", color = Color.White, fontSize = 13.sp)
-            }
-
+            RegisterTopBarV141(title = "整合確認監査 CSV出力", onBack = onClose)
             Column(
                 Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
                     .padding(metrics.screenPaddingDp.dp),
@@ -291,14 +283,6 @@ private fun SettlementReconciliationAuditCsvExportRouteV082(onClose: () -> Unit)
                 }
             }
 
-            Row(
-                Modifier.fillMaxWidth().height(metrics.bottomBarHeightDp.dp).background(Color.White)
-                    .padding(horizontal = metrics.screenPaddingDp.dp, vertical = 8.dp),
-            ) {
-                OutlinedButton(onClick = onClose, modifier = Modifier.weight(1f).fillMaxHeight()) {
-                    Text("点検・精算履歴へ戻る", fontWeight = FontWeight.Bold)
-                }
-            }
         }
     }
 }
