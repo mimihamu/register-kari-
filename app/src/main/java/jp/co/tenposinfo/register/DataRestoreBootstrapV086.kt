@@ -224,6 +224,22 @@ internal object PendingRestoreApplierV086 {
         database.parentFile?.mkdirs()
         val hadCurrent = database.isFile
 
+        // A staged backup must never erase an unresolved payment discovered
+        // after the reservation was created or left as an orphaned draft.
+        // Check before any WAL deletion / atomic database replacement.
+        if (hadCurrent) {
+            val paymentBlock = runCatching {
+                RestoreFinancialEvidenceV192.requireSafeToReplace(database)
+            }.exceptionOrNull()
+            if (paymentBlock != null) {
+                return failWithoutReplacement(
+                    context, planFile, pending, resultFile, database,
+                    "復元中止・元DB保持。支払の照合が必要です: " +
+                        (paymentBlock.message ?: paymentBlock.javaClass.simpleName),
+                )
+            }
+        }
+
         val rollback = if (hadCurrent) {
             runCatching {
                 RestoreRollbackSafetyV086.createVerifiedSnapshot(database, restoreDir)

@@ -483,6 +483,10 @@ class DataProtectionManager(context: Context) {
         migrationRequest: RestoreTerminalMigrationRequestV136,
     ): RestoreStageResult {
         val actorName = AdminSettingsStore(appContext).use { it.managerNameForPin(managerPin) } ?: error("責任者PINが違います")
+        // Direct calls to stageRestore must not bypass the coordinator precheck.
+        RestoreFinancialEvidenceV192.requireSafeToReplace(
+            appContext.getDatabasePath("register.db"),
+        )
         val currentReport = diagnose()
         val reasons = DataRestorePolicy.reasons(currentReport.restoreBlockers)
         require(currentReport.healthy) { "現在DBに整合性エラーがあるため復元予約できません" }

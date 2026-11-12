@@ -202,6 +202,11 @@ internal object RestoreReservationCoordinatorV116 {
         migrationRequest: RestoreTerminalMigrationRequestV136,
     ): RestoreStageResult {
         val appContext = context.applicationContext
+        // Before installing any write fence, protect orphaned card/QR receipts
+        // even when cartItems == 0 and ordinary restore blockers are empty.
+        RestoreFinancialEvidenceV192.requireSafeToReplace(
+            appContext.getDatabasePath("register.db"),
+        )
         PendingRestoreWriteFenceV116.install(appContext)
         return try {
             if (migrationRequest.mode == RestoreTerminalModeV136.SAME_TERMINAL) {
