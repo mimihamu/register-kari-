@@ -689,6 +689,10 @@ class DataProtectionManager(context: Context) {
             ConsistencyCheck("ORPHAN_REVERSAL_ITEM", setOf("reversal_items", "reversal_transactions", "sale_items"), "SELECT COUNT(*) FROM reversal_items i LEFT JOIN reversal_transactions r ON r.id=i.reversal_id LEFT JOIN sale_items s ON s.id=i.sale_item_id WHERE r.id IS NULL OR s.id IS NULL", "返品明細の参照先がありません"),
             ConsistencyCheck("ORPHAN_SYNC_OUTBOX", setOf("sync_outbox", "sales_journal"), "SELECT COUNT(*) FROM sync_outbox o LEFT JOIN sales_journal j ON j.event_id=o.event_id WHERE j.event_id IS NULL", "Drive同期キューのジャーナルがありません"),
             ConsistencyCheck("SALE_PAYMENT_MISMATCH", setOf("sales", "sale_payments"), "SELECT COUNT(*) FROM sales s LEFT JOIN (SELECT sale_id,SUM(applied_amount) amount FROM sale_payments GROUP BY sale_id) p ON p.sale_id=s.id WHERE COALESCE(p.amount,0)<>s.total_amount", "売上合計と支払配賦が一致しません"),
+            // v1.93: aggregate totals alone miss duplicate/missing payment sequence
+            // and invalid tender rows (e.g. an altered card method or cash change).
+            ConsistencyCheck("SALE_PAYMENT_ROW_INVALID", setOf("sale_payments"), SalePaymentLedgerIntegrityV193.INVALID_ROW_SQL, "売上支払明細の方法または金額が不正です"),
+            ConsistencyCheck("SALE_PAYMENT_SEQUENCE_INVALID", setOf("sale_payments"), SalePaymentLedgerIntegrityV193.INVALID_SEQUENCE_SQL, "売上支払明細の番号に欠落・重複があります"),
             ConsistencyCheck("REVERSAL_PAYMENT_MISMATCH", setOf("reversal_transactions", "reversal_payments"), "SELECT COUNT(*) FROM reversal_transactions r LEFT JOIN (SELECT reversal_id,SUM(amount) amount FROM reversal_payments GROUP BY reversal_id) p ON p.reversal_id=r.id WHERE COALESCE(p.amount,0)<>r.gross_amount", "返品合計と返金配賦が一致しません"),
             ConsistencyCheck("MULTIPLE_ACTIVE_BUSINESS", setOf("business_sessions"), "SELECT CASE WHEN COUNT(*)>1 THEN COUNT(*) ELSE 0 END FROM business_sessions WHERE status = 'OPEN'", "営業中の営業セッションが複数あります"),
         )
