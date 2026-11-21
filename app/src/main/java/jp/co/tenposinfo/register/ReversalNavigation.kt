@@ -35,3 +35,11 @@ internal object ReversalNavigation {
         alreadyCompleted = requestedSaleId != null && alreadyCompleted,
     )
 }
+
+/** A pending retry ID is scoped to its original sale, not a row click. */
+internal object ReversalRetryScopeV178 {
+    fun requiresNewId(boundSaleId: Long?, candidateSaleId: Long): Boolean {
+        require(candidateSaleId > 0L)
+        return boundSaleId != candidateSaleId
+    }
+}

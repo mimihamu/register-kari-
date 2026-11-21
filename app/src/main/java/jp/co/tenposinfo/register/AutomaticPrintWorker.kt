@@ -103,7 +103,7 @@ internal object AutomaticPrintWorkerRunGate {
 }
 
 /**
- * 設定済みTCPプリンターへ、売上レシートと業務帳票の待機ジョブを古い順に送信する。
+ * 各印刷ジョブに凍結したprinterIdから出力先を解決し、売上レシートと業務帳票を古い順に送信する。
  * 印刷前状態確認が有効な場合は、メーカー仕様を確認済みの状態方式だけを使用する。
  * 未検証のSTAR／汎用互換方式ではジョブ状態を変更せず再試行待ちとし、
  * 自動印刷前診断を無効にするまで送信を開始しない。
@@ -111,86 +111,114 @@ internal object AutomaticPrintWorkerRunGate {
  * 1件でも送信に失敗したrunでは後続ジョブへ進まない。
  * これにより紙の排出結果を確認する前に別帳票が続けて送られることを防ぐ。
  *
- * v0.99では候補選択から状態遷移・TCP送信完了までをendpoint送信ゲート内で実行する。
- * 手動印刷と同じジョブを同時に選択して順番に二重送信する競合も防止する。
+ * v1.36では候補ジョブのprinterIdを解決した後、そのendpoint送信ゲート内で状態を再確認して
+ * claimから送信完了までを直列化する。手動印刷との二重送信競合も防止する。
  */
 class AutomaticPrintWorker(
     appContext: Context,
     params: androidx.work.WorkerParameters,
 ) : androidx.work.Worker(appContext, params) {
     override fun doWork(): androidx.work.ListenableWorker.Result {
-        val settingsStore = AdminSettingsStore(applicationContext)
-        val configuration = try {
-            settingsStore.loadPrinterConfiguration()
-        } finally {
-            settingsStore.close()
-        }
-        if (!configuration.usable) return androidx.work.ListenableWorker.Result.success()
-
         if (!AutomaticPrintWorkerRunGate.tryAcquire()) {
             return androidx.work.ListenableWorker.Result.retry()
         }
         return try {
-            runSingleFlight(configuration)
+            runSingleFlight()
         } finally {
             AutomaticPrintWorkerRunGate.release()
         }
     }
 
-    private fun runSingleFlight(configuration: PrinterConfiguration): androidx.work.ListenableWorker.Result {
-        val preflightAllowed = PrinterMonitoringStore(applicationContext).use { monitoringStore ->
-            val runtime = monitoringStore.loadSettings()
-            if (!runtime.preflightEnabled) {
-                true
-            } else if (!AutomaticPrinterPreflightPolicy.mayRunStatusQuery(configuration.profile, enabled = true)) {
-                false
-            } else {
-                val result = TcpPrinterStatusClient(configuration).query(
-                    purpose = PrinterStatusCheckPurpose.AUTOMATIC_PREFLIGHT,
-                )
-                result.fold(
-                    onSuccess = { status ->
-                        monitoringStore.recordStatus(configuration, status, "自動印刷")
-                        AutomaticPrinterPreflightPolicy.mayContinue(true, status)
-                    },
-                    onFailure = { error ->
-                        monitoringStore.recordFailure(configuration, error, "自動印刷")
-                        false
-                    },
-                )
-            }
-        }
-        if (!preflightAllowed) return androidx.work.ListenableWorker.Result.retry()
-
+    private fun runSingleFlight(): androidx.work.ListenableWorker.Result {
         var attempted = 0
         var failures = 0
         var pendingAfterBatch = false
 
         val database = RegisterDatabase(applicationContext)
         val operations = AdvancedOperationsStore(applicationContext)
+        val monitoringStore = PrinterMonitoringStore(applicationContext)
+        val saleReceiptSetting = DocumentPrintSettingsStoreV136(applicationContext)
+            .load(DocumentPrintKindV136.SALE_RECEIPT)
         try {
             while (!AutomaticPrintQueuePolicy.batchLimitReached(attempted)) {
+                val candidate = AutomaticPrintQueuePolicy.oldestCandidate(
+                    saleJob = database.nextPrintableJob(),
+                    documentJobs = operations.listDocumentPrintJobs(500),
+                ) ?: break
+
+                val configuration = resolveCandidateConfiguration(candidate, database, operations)
+                if (configuration == null || !configuration.usable) {
+                    failures++
+                    pendingAfterBatch = true
+                    break
+                }
+
+                if (!preflightAllowed(configuration, monitoringStore)) {
+                    failures++
+                    pendingAfterBatch = true
+                    break
+                }
+
                 val dispatch = runCatching {
                     PrinterEndpointSendGate.withPermit(
-                        host = configuration.host,
-                        port = configuration.port,
+                        endpoint = PrinterTransportPolicyV136.endpointKey(configuration),
                         waitMillis = configuration.timeoutMillis.toLong(),
                     ) {
-                        val candidate = AutomaticPrintQueuePolicy.oldestCandidate(
-                            saleJob = database.nextPrintableJob(),
-                            documentJobs = operations.listDocumentPrintJobs(500),
-                        ) ?: return@withPermit null
+                        val currentConfiguration = resolveCandidateConfiguration(
+                            candidate,
+                            database,
+                            operations,
+                        ) ?: run {
+                            pendingAfterBatch = true
+                            return@withPermit null
+                        }
+                        require(
+                            currentConfiguration.printerId == configuration.printerId &&
+                                currentConfiguration.paperWidthMm == configuration.paperWidthMm &&
+                                currentConfiguration.printableDotWidth == configuration.printableDotWidth
+                        ) {
+                            "印刷ジョブの出力先スナップショットが変更されたため送信を中止しました"
+                        }
 
-                        val gateway = TcpEscPosPrinterGateway(
-                            host = configuration.host,
-                            port = configuration.port,
-                            timeoutMillis = configuration.timeoutMillis,
+                        val rawGateway = PrinterGatewayFactoryV136.create(
+                            applicationContext,
+                            configuration,
                         )
                         val success = when (candidate.source) {
-                            AutomaticPrintCandidateSource.SALE_RECEIPT ->
-                                PrintQueueProcessor(database, gateway).processNext()
-                            AutomaticPrintCandidateSource.DOCUMENT ->
-                                operations.processDocumentPrint(candidate.sourceId, gateway).isSuccess
+                            AutomaticPrintCandidateSource.SALE_RECEIPT -> {
+                                val deliveryGateway = DeliveryConfirmingPrinterGatewayV136(
+                                    context = applicationContext,
+                                    configuration = configuration,
+                                    kind = PrintDeliveryJobKindV136.SALE_RECEIPT,
+                                    jobId = candidate.sourceId,
+                                    delegate = rawGateway,
+                                )
+                                PrintQueueProcessor(
+                                    database = database,
+                                    gateway = deliveryGateway,
+                                    saleReceiptSetting = saleReceiptSetting,
+                                    printerConfiguration = configuration,
+                                ).processJob(candidate.sourceId)
+                            }
+
+                            AutomaticPrintCandidateSource.DOCUMENT -> {
+                                val current = operations.loadDocumentPrintJob(candidate.sourceId)
+                                    ?: throw IllegalArgumentException("業務帳票の印刷ジョブが見つかりません")
+                                require(
+                                    current.status == PrintJobStatus.PENDING ||
+                                        current.status == PrintJobStatus.RETRY
+                                ) {
+                                    "業務帳票の印刷ジョブ状態が変更されたため送信を中止しました"
+                                }
+                                val deliveryGateway = DeliveryConfirmingPrinterGatewayV136(
+                                    context = applicationContext,
+                                    configuration = configuration,
+                                    kind = PrintDeliveryJobKindV136.DOCUMENT,
+                                    jobId = candidate.sourceId,
+                                    delegate = rawGateway,
+                                )
+                                operations.processDocumentPrint(candidate.sourceId, deliveryGateway).isSuccess
+                            }
                         }
                         candidate to success
                     }
@@ -216,13 +244,14 @@ class AutomaticPrintWorker(
                 ) != null
             }
         } finally {
+            monitoringStore.close()
             operations.close()
             database.close()
         }
 
         return if (
             AutomaticPrintPolicy.shouldRetry(
-                configurationUsable = configuration.usable,
+                configurationUsable = true,
                 attempted = attempted,
                 failures = failures,
                 pendingAfterBatch = pendingAfterBatch,
@@ -233,6 +262,53 @@ class AutomaticPrintWorker(
             androidx.work.ListenableWorker.Result.success()
         }
     }
+
+    private fun resolveCandidateConfiguration(
+        candidate: AutomaticPrintCandidate,
+        database: RegisterDatabase,
+        operations: AdvancedOperationsStore,
+    ): PrinterConfiguration? {
+        val snapshot = when (candidate.source) {
+            AutomaticPrintCandidateSource.SALE_RECEIPT -> {
+                val job = database.loadPrintJob(candidate.sourceId) ?: return null
+                if (job.status != PrintJobStatus.PENDING && job.status != PrintJobStatus.RETRY) return null
+                Triple(job.printerId, job.paperWidthMm, job.printableDotWidth)
+            }
+            AutomaticPrintCandidateSource.DOCUMENT -> {
+                val job = operations.loadDocumentPrintJob(candidate.sourceId) ?: return null
+                if (job.status != PrintJobStatus.PENDING && job.status != PrintJobStatus.RETRY) return null
+                Triple(job.printerId, job.paperWidthMm, job.printableDotWidth)
+            }
+        }
+        return PrinterRoutingV136.loadById(applicationContext, snapshot.first)?.copy(
+            paperWidthMm = snapshot.second,
+            printableDotWidth = snapshot.third,
+        )
+    }
+
+    private fun preflightAllowed(
+        configuration: PrinterConfiguration,
+        monitoringStore: PrinterMonitoringStore,
+    ): Boolean {
+        val runtime = monitoringStore.loadSettings()
+        if (!runtime.preflightEnabled) return true
+        if (!PrinterTransportPolicyV136.supportsRealtimeStatus(configuration)) return true
+        if (!AutomaticPrinterPreflightPolicy.mayRunStatusQuery(configuration.profile, enabled = true)) {
+            return false
+        }
+        return TcpPrinterStatusClient(configuration).query(
+            purpose = PrinterStatusCheckPurpose.AUTOMATIC_PREFLIGHT,
+        ).fold(
+            onSuccess = { status ->
+                monitoringStore.recordStatus(configuration, status, "自動印刷")
+                AutomaticPrinterPreflightPolicy.mayContinue(true, status)
+            },
+            onFailure = { error ->
+                monitoringStore.recordFailure(configuration, error, "自動印刷")
+                false
+            },
+        )
+    }
 }
 
 object AutomaticPrintScheduler {
@@ -241,7 +317,7 @@ object AutomaticPrintScheduler {
 
     fun schedule(context: Context) {
         val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
             .build()
         val periodic = PeriodicWorkRequestBuilder<AutomaticPrintWorker>(15, TimeUnit.MINUTES)
             .setConstraints(constraints)
@@ -258,7 +334,7 @@ object AutomaticPrintScheduler {
         val request = OneTimeWorkRequestBuilder<AutomaticPrintWorker>()
             .setConstraints(
                 Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
                     .build(),
             )
             .build()

@@ -65,9 +65,13 @@ private val PaBorder = Color(0xFFD5DEE7)
 class PrinterStatusAnalysisActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 PrinterStatusAnalysisScreen(onClose = { finish() })
+            }
+        
             }
         }
     }
@@ -126,17 +130,7 @@ private fun PrinterStatusAnalysisScreen(onClose: () -> Unit) {
 
     Surface(Modifier.fillMaxSize(), color = PaBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(64.dp).background(PaNavy).padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(24.dp))
-                Text("プリンター状態 応答分析", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                Text("条件採取進捗・変化ビット候補", color = Color.White, fontSize = 14.sp)
-            }
-
+            RegisterTopBarV141(title = "プリンター応答分析", onBack = onClose)
             if (analyses.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -298,13 +292,9 @@ private fun PrinterStatusAnalysisScreen(onClose: () -> Unit) {
             }
 
             Row(
-                Modifier.fillMaxWidth().height(72.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
+                Modifier.fillMaxWidth().height(72.dp).background(RegisterSecondaryActionBarColorV159).padding(horizontal = 18.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(onClick = onClose, modifier = Modifier.width(220.dp).fillMaxHeight()) {
-                    Text("閉じる", fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.width(16.dp))
                 Text(message, color = messageColor, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Text(
                     "候補は自動判定や正式プロトコルではありません",

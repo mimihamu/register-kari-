@@ -353,7 +353,9 @@ class GoogleDriveSyncVerificationActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configurePlusSystemBarsV148(window)
         setContent {
+            PlusSafeAreaV148 {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GoogleDriveSyncVerificationScreen(
@@ -370,6 +372,7 @@ class GoogleDriveSyncVerificationActivity : ComponentActivity() {
                         onClose = ::finish,
                     )
                 }
+            }
             }
         }
         refresh()
@@ -669,28 +672,13 @@ private fun GoogleDriveSyncVerificationScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+    Column(Modifier.fillMaxSize()) {
+        PlusTopBarV155(title = "同期運用ダッシュボード", onBack = onClose)
+        Column(
+            modifier = Modifier.weight(1f).fillMaxWidth()
+                .verticalScroll(rememberScrollState()).padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "同期運用ダッシュボード",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text("日常確認、差分同期、停止復旧、安全な個別再試行をまとめて管理します")
-            }
-            OutlinedButton(onClick = onClose) { Text("戻る") }
-        }
-
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text("状態：${verificationHealthLabel(health)}", fontWeight = FontWeight.Bold)
@@ -839,6 +827,7 @@ private fun GoogleDriveSyncVerificationScreen(
             "履歴消去、設定修復、個別再試行では、取込済み売上、SQLite、Drive上のJSON、同期指紋、過去の隔離履歴を削除しません。",
             style = MaterialTheme.typography.bodySmall,
         )
+        }
     }
 }
 

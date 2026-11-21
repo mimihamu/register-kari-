@@ -73,9 +73,13 @@ private val StBorder = Color(0xFFD5DEE7)
 class PrinterSoakTestActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 PrinterSoakTestScreen(onClose = { finish() })
+            }
+        
             }
         }
     }
@@ -256,7 +260,9 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
 
         testJob = scope.launch {
             val configuration = withContext(Dispatchers.IO) {
-                AdminSettingsStore(context.applicationContext).use { it.loadPrinterConfiguration() }
+                PrinterProfileStoreV136(context.applicationContext).use {
+                    it.resolve(DocumentPrintKindV136.SALE_RECEIPT)
+                } ?: PrinterConfiguration(enabled = false)
             }
             if (!configuration.usable) {
                 running = false
@@ -264,6 +270,14 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
                 statusMessage = "プリンターが未設定または無効です"
                 statusColor = StRed
                 addLog(statusMessage)
+                return@launch
+            }
+            if (!PrinterTransportPolicyV136.supportsRealtimeStatus(configuration)) {
+                running = false
+                testJob = null
+                statusMessage = "連続印刷試験はTCP/LAN接続の状態取得対応プリンターで実行してください"
+                statusColor = StRed
+                addLog("開始拒否：$statusMessage / ${configuration.connectionType.displayName}")
                 return@launch
             }
             val capabilityDecision = PrinterSoakTestCapabilityPolicy.evaluate(
@@ -284,7 +298,7 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
                 resultStore.start(plan, configuration, actor, startedAt)
             }
             recentRuns = withContext(Dispatchers.IO) { resultStore.listRecent(5) }
-            addLog("開始 ID=$activeRunId ${configuration.name} ${configuration.host}:${configuration.port}")
+            addLog("開始 ID=$activeRunId ${configuration.name} ${PrinterTransportPolicyV136.endpointDisplay(configuration)}")
 
             for (sequence in 1..plan.totalPrints) {
                 if (!isActive) return@launch
@@ -351,11 +365,12 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
                 )
                 val sentAt = System.currentTimeMillis()
                 val sendResult = withContext(Dispatchers.IO) {
-                    TcpEscPosPrinterGateway(
-                        host = configuration.host,
-                        port = configuration.port,
-                        timeoutMillis = configuration.timeoutMillis,
-                    ).send(payload)
+                    runCatching {
+                        PrinterGatewayFactoryV136.create(context.applicationContext, configuration)
+                    }.fold(
+                        onSuccess = { gateway -> gateway.send(payload) },
+                        onFailure = { error -> Result.failure(error) },
+                    )
                 }
                 if (sendResult.isFailure) {
                     val error = sendResult.exceptionOrNull() ?: IllegalStateException("印刷送信失敗")
@@ -413,17 +428,7 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
 
     Surface(Modifier.fillMaxSize(), color = StBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(64.dp).background(StNavy).padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(24.dp))
-                Text("プリンター連続印刷試験", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                Text("結果保存・CSV対応", color = Color.White, fontSize = 14.sp)
-            }
-
+            RegisterTopBarV141(title = "プリンター連続印刷試験", onBack = { if (!running) onClose() })
             Row(
                 Modifier.weight(1f).fillMaxWidth().padding(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -554,15 +559,11 @@ private fun PrinterSoakTestScreen(onClose: () -> Unit) {
             }
 
             Row(
-                Modifier.fillMaxWidth().height(72.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
+                Modifier.fillMaxWidth().height(72.dp).background(RegisterSecondaryActionBarColorV159).padding(horizontal = 18.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                OutlinedButton(
-                    onClick = onClose,
-                    enabled = !running,
-                    modifier = Modifier.width(220.dp).fillMaxHeight(),
-                ) { Text("閉じる", fontWeight = FontWeight.Bold) }
+
                 Button(
                     onClick = {
                         val result = lastResult ?: return@Button

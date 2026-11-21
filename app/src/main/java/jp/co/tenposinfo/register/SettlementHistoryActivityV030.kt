@@ -70,8 +70,11 @@ class SettlementHistoryActivityV030 : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 SettlementHistoryRouteV030(onClose = { finish() })
+            }
+        
             }
         }
     }
@@ -142,6 +145,7 @@ private fun SettlementHistoryScreenV030(
     var selectedType by remember { mutableStateOf<SettlementReportType?>(null) }
     var selectedReportId by remember { mutableStateOf<Long?>(settlements.firstOrNull()?.id) }
     var managerPin by remember { mutableStateOf("") }
+    var detailPaneV152 by remember { mutableStateOf(0) }
 
     val filtered = SettlementHistoryPolicyV027.filter(
         records = settlements,
@@ -158,9 +162,10 @@ private fun SettlementHistoryScreenV030(
     }
 
     Column(Modifier.fillMaxSize()) {
-        HistoryHeaderV030(metrics)
+        HistoryHeaderV030(metrics, onClose)
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-            val compact = metrics.isCompact || maxWidth < 1_100.dp || maxHeight < 560.dp
+            val compact = maxWidth < 700.dp
+            val twoPane = maxWidth < 1_100.dp
             if (compact) {
                 Column(
                     Modifier
@@ -204,6 +209,68 @@ private fun SettlementHistoryScreenV030(
                         onReprint = onReprint,
                     )
                 }
+            } else if (twoPane) {
+                Row(
+                    Modifier.fillMaxSize().padding(metrics.screenPaddingDp.dp),
+                    horizontalArrangement = Arrangement.spacedBy(metrics.panelGapDp.dp),
+                ) {
+                    HistoryFilterAndListV030(
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        sessions = sessions,
+                        filtered = filtered,
+                        selectedSessionId = selectedSessionId,
+                        selectedType = selectedType,
+                        selectedReportId = selected?.id,
+                        onSessionChanged = {
+                            selectedSessionId = it
+                            selectedReportId = null
+                            managerPin = ""
+                        },
+                        onTypeChanged = {
+                            selectedType = it
+                            selectedReportId = null
+                            managerPin = ""
+                        },
+                        onReportSelected = {
+                            selectedReportId = it
+                            managerPin = ""
+                        },
+                    )
+                    Column(Modifier.weight(1f).fillMaxHeight()) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { detailPaneV152 = 0 },
+                                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                border = BorderStroke(if (detailPaneV152 == 0) 2.dp else 1.dp, if (detailPaneV152 == 0) HistoryDangerV030 else HistoryBorderV030),
+                            ) { Text("保存内容") }
+                            OutlinedButton(
+                                onClick = { detailPaneV152 = 1 },
+                                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                border = BorderStroke(if (detailPaneV152 == 1) 2.dp else 1.dp, if (detailPaneV152 == 1) HistoryDangerV030 else HistoryBorderV030),
+                            ) { Text("印字・再印字") }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        if (detailPaneV152 == 0) {
+                            HistoryDetailV030(
+                                Modifier.weight(1f).fillMaxWidth(), selected, operatorName,
+                                scrollPanel = true,
+                            )
+                        } else {
+                            HistoryPreviewV030(
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                selected = selected,
+                                permissions = permissions,
+                                printerPaperWidthMm = printerPaperWidthMm,
+                                managerPin = managerPin,
+                                message = message,
+                                previewLoader = previewLoader,
+                                onManagerPinChanged = { managerPin = it.filter(Char::isDigit).take(8) },
+                                onReprint = onReprint,
+                                scrollPanel = true,
+                            )
+                        }
+                    }
+                }
             } else {
                 Row(
                     Modifier.fillMaxSize().padding(metrics.screenPaddingDp.dp),
@@ -246,7 +313,6 @@ private fun SettlementHistoryScreenV030(
                 }
             }
         }
-        HistoryBottomV030(metrics, onClose)
     }
 }
 
@@ -337,8 +403,9 @@ private fun HistoryDetailV030(
     modifier: Modifier,
     selected: SettlementRecord?,
     operatorName: String,
+    scrollPanel: Boolean = false,
 ) {
-    HistoryPanelV030(modifier) {
+    HistoryPanelV030(modifier, scrollable = scrollPanel) {
         Text("保存内容", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = HistoryNavyV030)
         Spacer(Modifier.height(8.dp))
         if (selected == null) {
@@ -378,8 +445,9 @@ private fun HistoryPreviewV030(
     previewLoader: (Long) -> String,
     onManagerPinChanged: (String) -> Unit,
     onReprint: (SettlementRecord, String) -> Unit,
+    scrollPanel: Boolean = false,
 ) {
-    HistoryPanelV030(modifier) {
+    HistoryPanelV030(modifier, scrollable = scrollPanel) {
         Text("印字プレビュー・再印字", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = HistoryNavyV030)
         Spacer(Modifier.height(8.dp))
         if (selected == null) {
@@ -398,7 +466,6 @@ private fun HistoryPreviewV030(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .weight(1f, fill = false)
                     .heightIn(min = 180.dp, max = 420.dp)
                     .verticalScroll(rememberScrollState())
                     .padding(8.dp),
@@ -440,7 +507,8 @@ private fun HistoryPreviewV030(
                 enabled = SettlementHistoryPolicyV027.canReprint(
                     record = selected,
                     permissions = permissions,
-                    managerPinProvided = managerPin.isNotBlank(),
+                    managerPinProvided = managerPin.isNotBlank() ||
+                        ManagerApprovalV145.canUseCurrentManagerSession(LocalContext.current),
                 ),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 colors = ButtonDefaults.buttonColors(
@@ -462,6 +530,7 @@ private fun HistoryPreviewV030(
 @Composable
 private fun HistoryPanelV030(
     modifier: Modifier,
+    scrollable: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val metrics = rememberRegisterResponsiveMetrics()
@@ -471,7 +540,11 @@ private fun HistoryPanelV030(
         border = BorderStroke(1.dp, HistoryBorderV030),
         shape = RoundedCornerShape(10.dp),
     ) {
-        Column(Modifier.fillMaxSize().padding(metrics.cardPaddingDp.dp), content = content)
+        Column(
+            Modifier.fillMaxSize().padding(metrics.cardPaddingDp.dp)
+                .then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier),
+            content = content,
+        )
     }
 }
 
@@ -508,37 +581,8 @@ private fun HistoryAmountV030(label: String, value: String, emphasized: Boolean 
 }
 
 @Composable
-private fun HistoryHeaderV030(metrics: RegisterResponsiveMetrics) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(metrics.headerHeightDp.dp)
-            .background(HistoryNavyV030)
-            .padding(horizontal = metrics.screenPaddingDp.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("つぐレジ", color = Color.White, fontSize = if (metrics.isCompact) 19.sp else 23.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(if (metrics.isCompact) 12.dp else 24.dp))
-        Text("SCR-520  点検・精算履歴", color = Color.White, fontSize = if (metrics.isCompact) 17.sp else 21.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
-        if (!metrics.isCompact) Text("オフライン管理", color = Color.White, fontSize = 14.sp)
-    }
-}
-
-@Composable
-private fun HistoryBottomV030(metrics: RegisterResponsiveMetrics, onClose: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(metrics.bottomBarHeightDp.dp)
-            .background(Color.White)
-            .padding(horizontal = metrics.screenPaddingDp.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        OutlinedButton(onClick = onClose, modifier = Modifier.weight(1f).fillMaxHeight()) {
-            Text("レジ管理へ戻る", fontWeight = FontWeight.Bold)
-        }
-    }
+private fun HistoryHeaderV030(metrics: RegisterResponsiveMetrics, onClose: () -> Unit) {
+    RegisterTopBarV141(title = "点検・精算履歴", onBack = onClose)
 }
 
 @Composable

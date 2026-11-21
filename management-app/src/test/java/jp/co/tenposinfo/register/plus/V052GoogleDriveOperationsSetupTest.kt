@@ -89,7 +89,7 @@ class V052GoogleDriveOperationsSetupTest {
         }
 
         for (token in listOf(
-            "Google Drive運用セットアップ・復旧",
+            "PlusTopBarV155(title = \"Google Drive運用・復旧\"",
             "推奨設定を一括適用",
             "DriveSyncPreferences(applicationContext).setAutoImportOnLaunch(false)",
             "GoogleDriveDirectSyncScheduler.setAutomaticSyncEnabled(applicationContext, enabled = true)",

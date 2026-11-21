@@ -8,7 +8,7 @@ object SalesJournalProcessorSignatureV124 {
      * Bump this when parser acceptance/validation semantics change without changing
      * the declared schema/version/event/payload sets below.
      */
-    const val RULE_VERSION = 1
+    const val RULE_VERSION = 2
 
     fun current(): String {
         val material = buildList {

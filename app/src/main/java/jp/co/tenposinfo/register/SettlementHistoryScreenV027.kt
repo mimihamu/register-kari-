@@ -356,7 +356,8 @@ internal fun SettlementHistoryScreenV027(
                         enabled = SettlementHistoryPolicyV027.canReprint(
                             record = selected,
                             permissions = permissions,
-                            managerPinProvided = managerPin.isNotBlank(),
+                            managerPinProvided = managerPin.isNotBlank() ||
+                                ManagerApprovalV145.canUseCurrentManagerSession(androidx.compose.ui.platform.LocalContext.current),
                         ),
                         modifier = Modifier.fillMaxWidth().height(52.dp),
                         colors = ButtonDefaults.buttonColors(

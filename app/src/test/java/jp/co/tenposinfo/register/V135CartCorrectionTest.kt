@@ -61,6 +61,29 @@ class V135CartCorrectionTest {
         assertEquals(2, result.record.quantityAfter)
     }
 
+    @Test
+    fun partialCorrectionPreservesFractionalQuantityAndAmount() {
+        val item = CartItem(
+            product = product,
+            quantity = 3,
+            quantityHundredths = 150L,
+            discountAmount = 30L,
+            lineId = "line-fractional",
+        )
+        val result = CartCorrectionPolicyV135.apply(
+            items = listOf(item),
+            targetIndex = 0,
+            cancelQuantity = 1,
+            correctionType = CartCorrectionTypeV135.SELECTED_LINE,
+            operatorName = "担当F",
+            createdAt = 250L,
+        )
+
+        assertEquals(100L, result.items.single().quantityHundredths)
+        assertEquals(40L, result.record.cancelledAmount)
+        assertEquals(item.baseAmount, result.items.single().baseAmount + result.record.cancelledAmount)
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun cancellationCannotExceedCurrentQuantity() {
         CartCorrectionPolicyV135.apply(
@@ -82,12 +105,12 @@ class V135CartCorrectionTest {
 
         assertTrue(salesScreen.contains("if (NumericCorrectionPolicyV135.shouldClearInput(numericInput))"))
         assertTrue(salesScreen.contains("onRemove()"))
-        assertTrue(salesScreen.contains("onCancelSelected(quantity)"))
+        assertTrue(salesScreen.contains("onCancelSelected(quantityHundredths)"))
         assertTrue(salesScreen.contains("Text(\"行取消\""))
         assertTrue(salesScreen.contains("訂正履歴"))
 
         val registerApp = source.substringBefore("@Composable\nprivate fun Header(")
-        assertTrue(registerApp.contains("edited.quantity < original.quantity"))
+        assertTrue(registerApp.contains("edited.quantityHundredths < original.quantityHundredths"))
         assertTrue(registerApp.contains("CartCorrectionTypeV135.SELECTED_LINE"))
     }
 

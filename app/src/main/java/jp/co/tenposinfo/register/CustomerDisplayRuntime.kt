@@ -11,6 +11,7 @@ object CustomerDisplayRuntime {
     private val lock = Any()
     private val sequence = AtomicLong(System.currentTimeMillis())
     private val serverInstanceId = UUID.randomUUID().toString()
+    private var displaySessionId = UUID.randomUUID().toString()
 
     @Volatile
     private var currentConfig: CustomerDisplayServerConfig? = null
@@ -24,6 +25,9 @@ object CustomerDisplayRuntime {
     private var lastClientCountChangedAt: Long = 0L
     private var server: CustomerDisplayWebSocketServer? = null
     private var poller: CustomerDisplayPoller? = null
+    // A stopped poller may finish an in-flight database read after reconfigure.
+    // Its final callback must never publish into the newly configured server.
+    @Volatile private var runtimeGeneration = 0L
 
     fun ensureStarted(context: Context) {
         applySettings(context, CustomerDisplaySettingsStore(context).load())
@@ -35,10 +39,22 @@ object CustomerDisplayRuntime {
             val existing = currentConfig
             if (existing == config && ((config.enabled && server != null) || (!config.enabled && server == null))) return
             stopLocked()
+            val generation = runtimeGeneration
             currentConfig = config
-            latestSnapshot = latestSnapshot.copy(
-                storeName = config.storeName,
-                presentation = config.presentation,
+            // Never reopen a newly configured socket with the prior cash/payment
+            // screen before this process has polled the current register database.
+            displaySessionId = UUID.randomUUID().toString()
+            latestSnapshot = CustomerDisplaySnapshotFactory.standby(
+                config.storeName,
+                config.presentation,
+            ).copy(
+                sequence = sequence.incrementAndGet(),
+                serverInstanceId = serverInstanceId,
+                sentAtMillis = System.currentTimeMillis(),
+                sessionId = displaySessionId,
+                storeId = config.storeId,
+                registerTerminalId = config.registerTerminalId,
+                messageType = CustomerDisplayMessageType.SNAPSHOT,
             )
             lastError = null
             connectedClients = 0
@@ -46,11 +62,21 @@ object CustomerDisplayRuntime {
 
             val newServer = CustomerDisplayWebSocketServer(
                 config = config,
-                latestPayload = { latestSnapshot.toJson() },
-                onError = { message -> lastError = message },
+                latestPayload = {
+                    latestSnapshot.copy(messageType = CustomerDisplayMessageType.SNAPSHOT).toJson()
+                },
+                onError = { message ->
+                    synchronized(lock) {
+                        if (runtimeGeneration == generation) lastError = message
+                    }
+                },
                 onClientCountChanged = { count ->
-                    connectedClients = count
-                    lastClientCountChangedAt = System.currentTimeMillis()
+                    synchronized(lock) {
+                        if (runtimeGeneration == generation) {
+                            connectedClients = count
+                            lastClientCountChangedAt = System.currentTimeMillis()
+                        }
+                    }
                 },
             )
             server = newServer
@@ -58,20 +84,41 @@ object CustomerDisplayRuntime {
             poller = CustomerDisplayPoller(
                 context = appContext,
                 config = config,
-                publish = ::publish,
-                onError = { message -> lastError = message },
+                publish = { snapshot ->
+                    synchronized(lock) {
+                        if (runtimeGeneration == generation) publish(snapshot)
+                    }
+                },
+                onError = { message ->
+                    synchronized(lock) {
+                        if (runtimeGeneration == generation) lastError = message
+                    }
+                },
             ).also { it.start() }
         }
     }
 
     fun publish(snapshot: CustomerDisplaySnapshot) {
-        val normalized = snapshot.copy(
-            sequence = sequence.incrementAndGet(),
-            serverInstanceId = serverInstanceId,
-            sentAtMillis = System.currentTimeMillis(),
-        )
-        latestSnapshot = normalized
-        server?.broadcast(normalized.toJson())
+        synchronized(lock) {
+            // Calls arrive from both the cart poller and checkout UI.
+            // Assign sequence, replace latest, and enqueue delivery in one order.
+            val newSession = CustomerDisplaySessionBoundary.startsNewSession(
+                latestSnapshot, snapshot,
+            )
+            if (newSession) displaySessionId = UUID.randomUUID().toString()
+            val normalized = snapshot.copy(
+                sequence = sequence.incrementAndGet(),
+                serverInstanceId = serverInstanceId,
+                sentAtMillis = System.currentTimeMillis(),
+                sessionId = displaySessionId,
+                storeId = currentConfig?.storeId ?: snapshot.storeId,
+                registerTerminalId = currentConfig?.registerTerminalId ?: snapshot.registerTerminalId,
+                messageType = if (newSession) CustomerDisplayMessageType.SNAPSHOT
+                    else CustomerDisplayMessageType.STATE_UPDATE,
+            )
+            latestSnapshot = normalized
+            server?.broadcast(normalized.toJson())
+        }
     }
 
     fun stop() {
@@ -94,12 +141,35 @@ object CustomerDisplayRuntime {
     )
 
     private fun stopLocked() {
+        // Invalidate all old asynchronous callbacks *before* stopping sockets.
+        runtimeGeneration++
         poller?.stop()
         poller = null
         server?.stop()
         server = null
         connectedClients = 0
         lastClientCountChangedAt = System.currentTimeMillis()
+    }
+}
+
+/**
+ * Session identity belongs to a transaction, not each visual phase.
+ * In particular CHANGE -> COMPLETE for the same sale must keep sessionId.
+ * A genuinely new sale must still start its own session.
+ */
+internal object CustomerDisplaySessionBoundary {
+    fun startsNewSession(
+        previous: CustomerDisplaySnapshot,
+        next: CustomerDisplaySnapshot,
+    ): Boolean = when {
+        next.mode == CustomerDisplayMode.STANDBY ->
+            previous.mode != CustomerDisplayMode.STANDBY
+        previous.mode == CustomerDisplayMode.STANDBY ||
+            previous.mode == CustomerDisplayMode.DISCONNECTED -> true
+        previous.mode == CustomerDisplayMode.COMPLETE ->
+            next.mode != CustomerDisplayMode.COMPLETE ||
+                previous.transactionId != next.transactionId
+        else -> false
     }
 }
 
@@ -128,7 +198,9 @@ internal class CustomerDisplayPoller(
     private var lastSeenSaleId: Long = 0L
     private var lastPublishedSaleId: Long = 0L
     private var completeUntil: Long = 0L
-    private var latestProductId: String? = null
+    private var changeUntil: Long = 0L
+    private var changeSnapshot: CustomerDisplaySnapshot? = null
+    private var latestLineId: String? = null
     private var initialized = false
 
     fun start() {
@@ -155,29 +227,38 @@ internal class CustomerDisplayPoller(
     private fun poll() {
         val cart = database.loadCart()
         val latestSale = database.listSales(limit = 1).firstOrNull()
-        val now = System.currentTimeMillis()
+        // Payment display durations must survive wall-clock/NTP corrections.
+        val now = android.os.SystemClock.elapsedRealtime()
 
         if (!initialized) {
             initialized = true
             previousCart = cart
-            lastCartFingerprint = fingerprint(cart)
+            lastCartFingerprint = CustomerDisplayCartChangePolicy.fingerprint(cart)
             lastSeenSaleId = latestSale?.id ?: 0L
             if (cart.isEmpty()) {
                 publish(CustomerDisplaySnapshotFactory.standby(config.storeName, config.presentation))
             } else {
-                latestProductId = cart.lastOrNull()?.product?.id
-                publish(CustomerDisplaySnapshotFactory.sales(cart, config.storeName, latestProductId, config.presentation))
+                latestLineId = cart.lastOrNull()?.lineId?.takeIf { it.isNotBlank() }
+                    ?: "legacy-line-${cart.size}"
+                publish(CustomerDisplaySnapshotFactory.sales(
+                    items = cart, storeName = config.storeName,
+                    presentation = config.presentation, latestLineId = latestLineId,
+                ))
             }
             return
         }
 
-        val cartFingerprint = fingerprint(cart)
+        val cartFingerprint = CustomerDisplayCartChangePolicy.fingerprint(cart)
         if (cart.isNotEmpty()) {
             completeUntil = 0L
-            val detectedLatest = detectLatestProduct(previousCart, cart)
-            if (detectedLatest != null) latestProductId = detectedLatest
+            changeUntil = 0L
+            changeSnapshot = null
             if (cartFingerprint != lastCartFingerprint) {
-                publish(CustomerDisplaySnapshotFactory.sales(cart, config.storeName, latestProductId, config.presentation))
+                latestLineId = CustomerDisplayCartChangePolicy.latestChangedLineId(previousCart, cart)
+                publish(CustomerDisplaySnapshotFactory.sales(
+                    items = cart, storeName = config.storeName,
+                    presentation = config.presentation, latestLineId = latestLineId,
+                ))
             }
         } else {
             val saleId = latestSale?.id ?: 0L
@@ -186,43 +267,40 @@ internal class CustomerDisplayPoller(
                 if (detail != null) {
                     publish(CustomerDisplaySnapshotFactory.complete(detail, config.storeName, config.presentation))
                     lastPublishedSaleId = saleId
-                    completeUntil = now + config.completeSeconds * 1_000L
+                    if (detail.summary.changeAmount > 0L) {
+                        changeSnapshot = CustomerDisplaySnapshotFactory.complete(detail, config.storeName, config.presentation)
+                        changeUntil = now + config.changeSeconds * 1_000L
+                        completeUntil = 0L
+                    } else {
+                        changeUntil = 0L
+                        changeSnapshot = null
+                        completeUntil = now + config.completeSeconds * 1_000L
+                    }
                 }
+            } else if (changeUntil > 0L && now >= changeUntil) {
+                // The money is now settled; switch to a thank-you view rather than
+                // continuing to show change indefinitely during the COMPLETE phase.
+                val completed = changeSnapshot?.copy(
+                    changeAmount = 0L,
+                    message = "ありがとうございました",
+                )
+                if (completed != null) publish(completed)
+                changeSnapshot = null
+                changeUntil = 0L
+                completeUntil = now + config.completeSeconds * 1_000L
             } else if (completeUntil > 0L && now >= completeUntil) {
                 publish(CustomerDisplaySnapshotFactory.standby(config.storeName, config.presentation))
                 completeUntil = 0L
-                latestProductId = null
+                latestLineId = null
             } else if (previousCart.isNotEmpty() && saleId <= lastSeenSaleId && completeUntil == 0L) {
                 publish(CustomerDisplaySnapshotFactory.standby(config.storeName, config.presentation))
-                latestProductId = null
+                latestLineId = null
             }
             lastSeenSaleId = maxOf(lastSeenSaleId, saleId)
         }
 
         previousCart = cart
         lastCartFingerprint = cartFingerprint
-    }
-
-    private fun detectLatestProduct(before: List<CartItem>, after: List<CartItem>): String? {
-        val beforeById = before.associateBy { it.product.id }
-        return after.lastOrNull { current ->
-            val old = beforeById[current.product.id]
-            old == null || old.quantity != current.quantity || old.unitPrice != current.unitPrice || old.discountAmount != current.discountAmount
-        }?.product?.id
-    }
-
-    private fun fingerprint(items: List<CartItem>): String = items.joinToString("|") { item ->
-        listOf(
-            item.product.id,
-            item.product.name,
-            item.quantity,
-            item.unitPrice,
-            item.discountAmount,
-            item.note,
-            item.product.taxKey,
-            item.product.taxRatePercent,
-            item.product.taxIncluded,
-        ).joinToString(":")
     }
 
     companion object {

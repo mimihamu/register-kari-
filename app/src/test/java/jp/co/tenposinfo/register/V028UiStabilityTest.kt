@@ -51,7 +51,7 @@ class V028UiStabilityTest {
         assertTrue(main.contains("COMPACT_KEY_HEIGHT_DP = 42"))
         assertTrue(main.contains("COMPACT_KEY_GAP_DP = 5"))
         assertTrue(main.contains("COMPACT_FUNCTION_HEIGHT_DP = 40"))
-        assertTrue(main.contains("BlueButton(bottomActionLabel, onBottomAction, Modifier.weight(1f).height(buttonHeight))"))
+        assertTrue(main.contains("BlueButton(bottomActionLabel, onBottomAction, Modifier.weight(1f).height(buttonHeight), enabled = enabled)"))
         assertFalse(main.contains("Modifier.weight(1.4f).height(buttonHeight)"))
     }
 

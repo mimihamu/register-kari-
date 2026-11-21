@@ -75,9 +75,13 @@ enum class PrinterStatusProbeOutcomeFilter(val displayName: String) {
 class PrinterStatusLabActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 PrinterStatusLabScreen(onClose = { finish() })
+            }
+        
             }
         }
     }
@@ -87,11 +91,11 @@ class PrinterStatusLabActivity : ComponentActivity() {
 private fun PrinterStatusLabScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val settingsStore = remember { AdminSettingsStore(context.applicationContext) }
+    val profileStore = remember { PrinterProfileStoreV136(context.applicationContext) }
     val historyStore = remember { PrinterStatusProbeStore(context.applicationContext) }
     val actor = remember { OperatorSessionRegistry.lastKnownName() ?: "プリンター状態ラボ" }
 
-    var configuration by remember { mutableStateOf(settingsStore.loadPrinterConfiguration()) }
+    var configuration by remember { mutableStateOf(profileStore.resolve(DocumentPrintKindV136.SALE_RECEIPT) ?: PrinterConfiguration(enabled = false)) }
     var preset by remember { mutableStateOf(PrinterStatusProbePolicy.presetFor(configuration.profile)) }
     var experimentalConfirmed by remember { mutableStateOf(false) }
     var running by remember { mutableStateOf(false) }
@@ -158,7 +162,7 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
     DisposableEffect(Unit) {
         onDispose {
             historyStore.close()
-            settingsStore.close()
+            profileStore.close()
         }
     }
 
@@ -266,17 +270,7 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
 
     Surface(Modifier.fillMaxSize(), color = PlBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(64.dp).background(PlNavy).padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(24.dp))
-                Text("プリンター状態ラボ", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                Text("条件別RAW採取・履歴・最大4件比較", color = Color.White, fontSize = 14.sp)
-            }
-
+            RegisterTopBarV141(title = "プリンター状態ラボ", onBack = { if (!running) onClose() })
             Row(
                 Modifier.weight(1f).fillMaxWidth().padding(14.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -287,7 +281,7 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                         Spacer(Modifier.height(6.dp))
                         LabValue("プリンター", configuration.name)
                         LabValue("機種プロファイル", configuration.profile.displayName)
-                        LabValue("接続先", if (configuration.host.isBlank()) "未設定" else "${configuration.host}:${configuration.port}")
+                        LabValue("接続先", PrinterTransportPolicyV136.endpointDisplay(configuration).ifBlank { "未設定" })
                         LabValue(
                             "検証区分",
                             PrinterStatusCapabilityRegistry.forProfile(configuration.profile).verification.displayName,
@@ -402,7 +396,7 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                         Spacer(Modifier.height(8.dp))
                         OutlinedButton(
                             onClick = {
-                                configuration = settingsStore.loadPrinterConfiguration()
+                                configuration = profileStore.resolve(DocumentPrintKindV136.SALE_RECEIPT) ?: PrinterConfiguration(enabled = false)
                                 preset = PrinterStatusProbePolicy.presetFor(configuration.profile)
                                 experimentalConfirmed = false
                                 currentRecord = null
@@ -415,7 +409,7 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
                         Spacer(Modifier.height(6.dp))
                         Button(
                             onClick = ::startProbe,
-                            enabled = !running && configuration.host.isNotBlank() && runAllowed,
+                            enabled = !running && PrinterTransportPolicyV136.supportsRealtimeStatus(configuration) && PrinterTransportPolicyV136.isConfigured(configuration) && runAllowed,
                             modifier = Modifier.fillMaxWidth().height(54.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = PlBlue),
                         ) { Text(if (running) "実行中…" else "条件付きプローブを実行", fontWeight = FontWeight.Bold) }
@@ -715,13 +709,9 @@ private fun PrinterStatusLabScreen(onClose: () -> Unit) {
             }
 
             Row(
-                Modifier.fillMaxWidth().height(68.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 8.dp),
+                Modifier.fillMaxWidth().height(68.dp).background(RegisterSecondaryActionBarColorV159).padding(horizontal = 18.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(onClick = onClose, enabled = !running, modifier = Modifier.width(220.dp).fillMaxHeight()) {
-                    Text("閉じる", fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.weight(1f))
                 Text(
                     "条件ラベルは試験時の人による記録です。STAR／汎用の互換性確認完了を意味しません",
                     color = PlRed,

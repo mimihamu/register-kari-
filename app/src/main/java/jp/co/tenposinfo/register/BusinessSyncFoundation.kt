@@ -57,6 +57,7 @@ enum class JournalEventType {
     BUSINESS_OPEN,
     BUSINESS_STATE,
     MENU_REVISION,
+    MENU_APPLY_RESULT,
 }
 
 enum class SyncOutboxStatus {
@@ -159,8 +160,51 @@ object JournalOutboxSchema {
         SchemaMigration.ensureColumn(db, "sync_outbox", "processing_started_at", "INTEGER")
         SchemaMigration.ensureColumn(db, "sync_outbox", "lease_until", "INTEGER")
         SchemaMigration.ensureColumn(db, "sync_outbox", "worker_token", "TEXT")
+        // BKP-006/BKP-018: outbox is immutable with respect to terminal migration.
+        // Snapshot the identity that owned the event so a restored spare terminal can
+        // regenerate the exact old duplicate key instead of re-labelling it as a new terminal event.
+        SchemaMigration.ensureColumn(db, "sync_outbox", "source_store_id", "TEXT")
+        SchemaMigration.ensureColumn(db, "sync_outbox", "source_terminal_id", "TEXT")
+        SchemaMigration.ensureColumn(db, "sync_outbox", "source_generation", "INTEGER")
+        db.execSQL(
+            """
+            CREATE TRIGGER IF NOT EXISTS trg_v136_sync_outbox_identity_snapshot
+            AFTER INSERT ON sync_outbox
+            WHEN NEW.source_store_id IS NULL OR NEW.source_terminal_id IS NULL OR NEW.source_generation IS NULL
+            BEGIN
+                UPDATE sync_outbox
+                SET source_store_id = COALESCE(
+                        NEW.source_store_id,
+                        (SELECT setting_value FROM sync_runtime_settings WHERE setting_key='sales_journal_store_id'),
+                        'STORE-UNCONFIGURED'
+                    ),
+                    source_terminal_id = COALESCE(
+                        NEW.source_terminal_id,
+                        (SELECT setting_value FROM sync_runtime_settings WHERE setting_key='sales_journal_terminal_id')
+                    ),
+                    source_generation = COALESCE(
+                        NEW.source_generation,
+                        CAST((SELECT setting_value FROM sync_runtime_settings WHERE setting_key='sales_journal_terminal_generation') AS INTEGER),
+                        1
+                    )
+                WHERE id = NEW.id;
+            END
+            """.trimIndent(),
+        )
+        val identitySnapshot = SalesJournalIdentityStore.resolve(db)
+        db.execSQL(
+            """
+            UPDATE sync_outbox
+            SET source_store_id = COALESCE(source_store_id, ?),
+                source_terminal_id = COALESCE(source_terminal_id, ?),
+                source_generation = COALESCE(source_generation, ?)
+            WHERE source_store_id IS NULL OR source_terminal_id IS NULL OR source_generation IS NULL
+            """.trimIndent(),
+            arrayOf<Any>(identitySnapshot.storeId, identitySnapshot.terminalId, identitySnapshot.generation),
+        )
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_sync_outbox_status ON sync_outbox(status, next_attempt_at, created_at)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_sales_journal_business_date ON sales_journal(business_date, event_type, created_at)")
+        OutboxDocumentV150.ensureSchema(db)
     }
 
     /** 売上確定トランザクション内から呼び、売上と同期対象を同時に確定する。 */
@@ -186,6 +230,43 @@ object JournalOutboxSchema {
             createdAt = createdAt,
             folderName = folderName,
         )
+    }
+
+    fun recordMenuApplyResult(
+        db: SQLiteDatabase,
+        revisionId: Long,
+        status: String,
+        itemCount: Int,
+        reason: String,
+        actor: String,
+        createdAt: Long = System.currentTimeMillis(),
+    ): String {
+        ensureCore(db)
+        val cleanStatus = status.trim().ifBlank { "UNKNOWN" }.take(80)
+        val eventId = "menu-apply-result-$revisionId-$createdAt-$cleanStatus"
+        val payload = org.json.JSONObject()
+            .put("revisionId", revisionId)
+            .put("status", cleanStatus)
+            .put("itemCount", itemCount)
+            .put("reason", reason.take(1000))
+            .put("actor", actor.take(100))
+            .toString()
+        val folder = db.rawQuery(
+            "SELECT setting_value FROM sync_runtime_settings WHERE setting_key='folder_name' LIMIT 1",
+            null,
+        ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else "つぐレジ" }
+        insertJournalAndOutbox(
+            db = db,
+            eventId = eventId,
+            businessDate = BusinessDateResolver.current(db).toString(),
+            eventType = JournalEventType.MENU_APPLY_RESULT.name,
+            aggregateId = revisionId.toString(),
+            payloadJson = payload,
+            createdAt = createdAt,
+            folderName = folder,
+        )
+        OutboxDocumentV150.materialize(db, eventId)
+        return eventId
     }
 
     fun updateFolderName(db: SQLiteDatabase, folderName: String) {
@@ -462,6 +543,9 @@ class JournalOutboxStore(context: Context) : AutoCloseable {
         val folder = stagingRoot()
         folder.mkdirs()
         val now = System.currentTimeMillis()
+        // Pre-v1.50 rows are converted once as an explicit migration. New rows must already have
+        // immutable bytes from their business-finalization transaction.
+        OutboxDocumentV150.backfillLegacyMissing(db)
         recoverStaleProcessing(now)
         val token = UUID.randomUUID().toString()
         val candidates = db.run {
@@ -504,10 +588,10 @@ class JournalOutboxStore(context: Context) : AutoCloseable {
         var completed = 0
         candidates.forEach { record ->
             runCatching {
-                val payload = OutboxPayloadAssembler.build(db, record)
+                val payloadBytes = OutboxDocumentV150.loadVerifiedBytes(db, record.eventId)
                 val target = File(folder, record.objectKey)
                 target.parentFile?.mkdirs()
-                target.writeText(payload, Charsets.UTF_8)
+                target.writeBytes(payloadBytes)
                 markStaged(record.id, token)
                 completed++
             }.onFailure { error ->
@@ -612,6 +696,43 @@ class JournalOutboxStore(context: Context) : AutoCloseable {
 }
 
 object OutboxPayloadAssembler {
+    private data class ExactPayloadLine(
+        val productId: String,
+        val name: String,
+        val unitPrice: Long,
+        val legacyCategory: TaxCategory,
+        val legacyQuantity: Int,
+        val quantityScaled: Long,
+        val quantityMode: QuantityMode,
+        val discount: Long,
+        val note: String,
+        val snapshot: TaxSnapshot,
+    ) {
+        val quantityText: String get() = QuantityV136.fromHundredths(quantityScaled).format()
+
+        fun toCartItem(): CartItem {
+            quantityMode.requireAllowed(quantityScaled)
+            val product = snapshot.applyTo(
+                Product(
+                    id = productId,
+                    name = name,
+                    unitPrice = unitPrice,
+                    taxCategory = legacyCategory,
+                    displayOrder = 1,
+                    quantityMode = quantityMode,
+                ),
+            )
+            return CartItem(
+                product = product,
+                quantity = QuantityCompatibilityV136.legacyPositiveInt(quantityScaled),
+                unitPrice = unitPrice,
+                discountAmount = discount,
+                note = note,
+                quantityHundredths = quantityScaled,
+            )
+        }
+    }
+
     fun build(db: SQLiteDatabase, record: JournalOutboxRecord): String {
         val legacyPayload = when (record.eventType) {
             JournalEventType.SALE.name -> salePayload(db, record)
@@ -623,7 +744,7 @@ object OutboxPayloadAssembler {
         return SalesJournalJsonContract.wrap(
             record = record,
             legacyPayload = legacyPayload,
-            identity = SalesJournalIdentityStore.resolve(db),
+            identity = OutboxIdentitySnapshotV136.resolve(db, record.eventId),
         )
     }
 
@@ -641,7 +762,14 @@ object OutboxPayloadAssembler {
         }
         val payloadLines = db.rawQuery(
             """
-            SELECT si.product_id, si.product_name, si.unit_price, si.tax_category, si.quantity, si.discount_amount, si.note,
+            SELECT si.product_id, si.product_name, si.unit_price, si.tax_category, si.quantity,
+                   COALESCE(si.quantity_hundredths, si.quantity * 100) AS quantity_scaled,
+                   CASE
+                       WHEN si.quantity_mode IN ('INTEGER','DECIMAL') THEN si.quantity_mode
+                       WHEN COALESCE(si.quantity_hundredths, si.quantity * 100) % 100 <> 0 THEN 'DECIMAL'
+                       ELSE 'INTEGER'
+                   END AS quantity_mode,
+                   si.discount_amount, si.note,
                    COALESCE(lts.tax_key, si.tax_category),
                    COALESCE(lts.tax_label, si.tax_category),
                    COALESCE(lts.rate_percent, CASE si.tax_category WHEN 'INCLUDED_10' THEN 10 WHEN 'EXCLUDED_10' THEN 10 WHEN 'INCLUDED_8' THEN 8 WHEN 'EXCLUDED_8' THEN 8 ELSE 0 END),
@@ -660,15 +788,27 @@ object OutboxPayloadAssembler {
             buildList {
                 while (cursor.moveToNext()) {
                     val legacy = TaxCategory.valueOf(cursor.getString(3))
-                    val label = cursor.getString(8).takeUnless { it == legacy.name } ?: legacy.displayName
+                    val label = cursor.getString(10).takeUnless { it == legacy.name } ?: legacy.displayName
                     add(
-                        PayloadTaxLine(
-                            productId = cursor.getString(0), name = cursor.getString(1), unitPrice = cursor.getLong(2),
-                            legacyCategory = legacy, quantity = cursor.getInt(4), discount = cursor.getLong(5), note = cursor.getString(6),
+                        ExactPayloadLine(
+                            productId = cursor.getString(0),
+                            name = cursor.getString(1),
+                            unitPrice = cursor.getLong(2),
+                            legacyCategory = legacy,
+                            legacyQuantity = cursor.getInt(4),
+                            quantityScaled = cursor.getLong(5),
+                            quantityMode = runCatching { QuantityMode.valueOf(cursor.getString(6)) }
+                                .getOrDefault(QuantityMode.INTEGER),
+                            discount = cursor.getLong(7),
+                            note = cursor.getString(8),
                             snapshot = TaxSnapshot(
-                                key = cursor.getString(7), label = label, ratePercent = cursor.getInt(9),
-                                taxIncluded = cursor.getInt(10) != 0, taxable = cursor.getInt(11) != 0,
-                                reduced = cursor.getInt(12) != 0, symbol = cursor.getString(13),
+                                key = cursor.getString(9),
+                                label = label,
+                                ratePercent = cursor.getInt(11),
+                                taxIncluded = cursor.getInt(12) != 0,
+                                taxable = cursor.getInt(13) != 0,
+                                reduced = cursor.getInt(14) != 0,
+                                symbol = cursor.getString(15),
                             ),
                         ),
                     )
@@ -677,9 +817,9 @@ object OutboxPayloadAssembler {
         }
         val items = payloadLines.joinToString(",") { line ->
             val tax = line.snapshot
-            "{\"productId\":\"${escape(line.productId)}\",\"name\":\"${escape(line.name)}\",\"unitPrice\":${line.unitPrice},\"quantity\":${line.quantity},\"discount\":${line.discount},\"note\":\"${escape(line.note)}\",\"taxKey\":\"${escape(tax.key)}\",\"taxLabel\":\"${escape(tax.label)}\",\"taxRatePercent\":${tax.ratePercent},\"taxIncluded\":${tax.taxIncluded},\"taxable\":${tax.taxable},\"reduced\":${tax.reduced},\"taxSymbol\":\"${escape(tax.symbol)}\"}"
+            "{\"productId\":\"${escape(line.productId)}\",\"name\":\"${escape(line.name)}\",\"unitPrice\":${line.unitPrice},\"quantity\":${line.legacyQuantity},\"quantityScaled\":${line.quantityScaled},\"quantityScale\":2,\"quantityMode\":\"${line.quantityMode.name}\",\"quantityText\":\"${line.quantityText}\",\"discount\":${line.discount},\"note\":\"${escape(line.note)}\",\"taxKey\":\"${escape(tax.key)}\",\"taxLabel\":\"${escape(tax.label)}\",\"taxRatePercent\":${tax.ratePercent},\"taxIncluded\":${tax.taxIncluded},\"taxable\":${tax.taxable},\"reduced\":${tax.reduced},\"taxSymbol\":\"${escape(tax.symbol)}\"}"
         }
-        val taxTotals = PayloadTaxAggregation.calculate(payloadLines).buckets.joinToString(",") { bucket ->
+        val taxTotals = TaxEngine.calculate(payloadLines.map(ExactPayloadLine::toCartItem)).buckets.joinToString(",") { bucket ->
             val keys = bucket.sourceTaxKeys.joinToString(",") { "\"${escape(it)}\"" }
             "{\"ratePercent\":${bucket.ratePercent},\"taxable\":${bucket.taxable},\"netAmount\":${bucket.netAmount},\"taxAmount\":${bucket.taxAmount},\"grossAmount\":${bucket.grossAmount},\"taxKeys\":[$keys]}"
         }
@@ -708,36 +848,47 @@ object OutboxPayloadAssembler {
         }
         val payloadLines = db.rawQuery(
             """
-            SELECT product_id, product_name, unit_price, tax_category, return_quantity, discount_amount,
-                   tax_key, tax_label, tax_rate_percent, tax_included, taxable, reduced, tax_symbol
-            FROM reversal_items
-            WHERE reversal_id = ?
-            ORDER BY id
+            SELECT ri.product_id, ri.product_name, ri.unit_price, ri.tax_category, ri.return_quantity,
+                   COALESCE(ri.return_quantity_hundredths, ri.return_quantity * 100) AS quantity_scaled,
+                   CASE
+                       WHEN si.quantity_mode IN ('INTEGER','DECIMAL') THEN si.quantity_mode
+                       WHEN COALESCE(ri.original_quantity_hundredths, ri.original_quantity * 100) % 100 <> 0 THEN 'DECIMAL'
+                       ELSE 'INTEGER'
+                   END AS quantity_mode,
+                   ri.discount_amount,
+                   ri.tax_key, ri.tax_label, ri.tax_rate_percent, ri.tax_included, ri.taxable, ri.reduced, ri.tax_symbol
+            FROM reversal_items ri
+            LEFT JOIN sale_items si ON si.id = ri.sale_item_id
+            WHERE ri.reversal_id = ?
+            ORDER BY ri.id
             """.trimIndent(),
             arrayOf(id.toString()),
         ).use { cursor ->
             buildList {
                 while (cursor.moveToNext()) {
                     val legacy = TaxCategory.valueOf(cursor.getString(3))
-                    val hasSnapshot = cursor.getString(6).isNotBlank()
+                    val hasSnapshot = cursor.getString(8).isNotBlank()
                     add(
-                        PayloadTaxLine(
+                        ExactPayloadLine(
                             productId = cursor.getString(0),
                             name = cursor.getString(1),
                             unitPrice = cursor.getLong(2),
                             legacyCategory = legacy,
-                            quantity = cursor.getInt(4),
-                            discount = cursor.getLong(5),
+                            legacyQuantity = cursor.getInt(4),
+                            quantityScaled = cursor.getLong(5),
+                            quantityMode = runCatching { QuantityMode.valueOf(cursor.getString(6)) }
+                                .getOrDefault(QuantityMode.INTEGER),
+                            discount = cursor.getLong(7),
                             note = "",
                             snapshot = if (hasSnapshot) {
                                 TaxSnapshot(
-                                    key = cursor.getString(6),
-                                    label = cursor.getString(7).ifBlank { legacy.displayName },
-                                    ratePercent = cursor.getInt(8),
-                                    taxIncluded = cursor.getInt(9) != 0,
-                                    taxable = cursor.getInt(10) != 0,
-                                    reduced = cursor.getInt(11) != 0,
-                                    symbol = cursor.getString(12).ifBlank { legacy.symbol },
+                                    key = cursor.getString(8),
+                                    label = cursor.getString(9).ifBlank { legacy.displayName },
+                                    ratePercent = cursor.getInt(10),
+                                    taxIncluded = cursor.getInt(11) != 0,
+                                    taxable = cursor.getInt(12) != 0,
+                                    reduced = cursor.getInt(13) != 0,
+                                    symbol = cursor.getString(14).ifBlank { legacy.symbol },
                                 )
                             } else {
                                 TaxSnapshot.from(legacy)
@@ -749,9 +900,9 @@ object OutboxPayloadAssembler {
         }
         val items = payloadLines.joinToString(",") { line ->
             val tax = line.snapshot
-            "{\"productId\":\"${escape(line.productId)}\",\"name\":\"${escape(line.name)}\",\"unitPrice\":${line.unitPrice},\"quantity\":${line.quantity},\"discount\":${line.discount},\"taxKey\":\"${escape(tax.key)}\",\"taxLabel\":\"${escape(tax.label)}\",\"taxRatePercent\":${tax.ratePercent},\"taxIncluded\":${tax.taxIncluded},\"taxable\":${tax.taxable},\"reduced\":${tax.reduced},\"taxSymbol\":\"${escape(tax.symbol)}\"}"
+            "{\"productId\":\"${escape(line.productId)}\",\"name\":\"${escape(line.name)}\",\"unitPrice\":${line.unitPrice},\"quantity\":${line.legacyQuantity},\"quantityScaled\":${line.quantityScaled},\"quantityScale\":2,\"quantityMode\":\"${line.quantityMode.name}\",\"quantityText\":\"${line.quantityText}\",\"discount\":${line.discount},\"taxKey\":\"${escape(tax.key)}\",\"taxLabel\":\"${escape(tax.label)}\",\"taxRatePercent\":${tax.ratePercent},\"taxIncluded\":${tax.taxIncluded},\"taxable\":${tax.taxable},\"reduced\":${tax.reduced},\"taxSymbol\":\"${escape(tax.symbol)}\"}"
         }
-        val taxTotals = PayloadTaxAggregation.calculate(payloadLines).buckets.joinToString(",") { bucket ->
+        val taxTotals = TaxEngine.calculate(payloadLines.map(ExactPayloadLine::toCartItem)).buckets.joinToString(",") { bucket ->
             val keys = bucket.sourceTaxKeys.joinToString(",") { "\"${escape(it)}\"" }
             "{\"ratePercent\":${bucket.ratePercent},\"taxable\":${bucket.taxable},\"netAmount\":${bucket.netAmount},\"taxAmount\":${bucket.taxAmount},\"grossAmount\":${bucket.grossAmount},\"taxKeys\":[$keys]}"
         }

@@ -80,4 +80,12 @@ class V085StartupSchemaBootstrapTest {
         assertTrue(File(root, "docs/V0.85_STARTUP_SCHEMA_BOOTSTRAP.md").isFile)
         assertTrue(File(root, "docs/V0.85_RELEASE_NOTES.md").isFile)
     }
+
+    @Test
+    fun startupRequiresFractionalQuantityColumns() {
+        val source = File("src/main/java/jp/co/tenposinfo/register/DatabaseStartupSchemaBootstrapV085.kt").readText()
+        assertTrue(source.contains("\"cart_items\" to setOf(\"line_no\", \"discount_amount\", \"note\", \"quantity_hundredths\")"))
+        assertTrue(source.contains("\"sale_items\" to setOf(\"discount_amount\", \"note\", \"quantity_hundredths\")"))
+        assertTrue(source.contains("\"held_ticket_items\" to setOf(\"discount_amount\", \"note\", \"quantity_hundredths\")"))
+    }
 }

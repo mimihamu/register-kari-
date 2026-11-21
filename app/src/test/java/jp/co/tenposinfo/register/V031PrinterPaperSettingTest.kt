@@ -39,7 +39,13 @@ class V031PrinterPaperSettingTest {
         val coordinator = source("SecureOperationsCoordinator.kt")
         val receipt = source("Receipt.kt")
 
-        assertTrue(database.contains("fun enqueueReprint(saleId: Long): Long"))
+        // RCP-004 adds actor for audit, but paper width remains resolved from printer settings.
+        val enqueueReprintSignature = database
+            .substringAfter("fun enqueueReprint(")
+            .substringBefore("): Long")
+        assertTrue(enqueueReprintSignature.contains("saleId: Long"))
+        assertTrue(enqueueReprintSignature.contains("actor: String"))
+        assertFalse(enqueueReprintSignature.contains("paperWidth"))
         assertFalse(database.substringAfter("fun saveSale(").substringBefore("): Long").contains("paperWidthMm"))
         assertFalse(operations.substringAfter("fun previewSettlement(").substringBefore("): String").contains("paperWidth"))
         assertFalse(operations.substringAfter("fun reprintSettlement(").substringBefore("): Long").contains("paperWidth"))
@@ -49,7 +55,7 @@ class V031PrinterPaperSettingTest {
     }
 
     @Test
-    fun allPrintPathsResolveWidthFromPrinterSettings() {
+    fun allPrintPathsResolveWidthFromDocumentPrinterRoute() {
         val settings = source("AdminSettingsStore.kt")
         val database = source("RegisterDatabase.kt")
         val operations = source("OperationsStore.kt")
@@ -57,10 +63,11 @@ class V031PrinterPaperSettingTest {
         val receipt = source("Receipt.kt")
 
         assertTrue(settings.contains("object PrinterPaperSettingPolicy"))
-        assertTrue(database.contains("PrinterPaperSettingPolicy.currentWidthMm(applicationContext)"))
-        assertTrue(operations.contains("PrinterPaperSettingPolicy.currentWidthMm(appContext)"))
-        assertTrue(operations.contains("PrinterPaperSettingPolicy.currentPaper(appContext)"))
-        assertTrue(advanced.contains("PrinterPaperSettingPolicy.currentWidthMm(appContext)"))
+        assertTrue(settings.contains("PrinterRoutingV136.resolve(context.applicationContext, DocumentPrintKindV136.SALE_RECEIPT)"))
+        assertTrue(database.contains("PrinterRoutingV136.resolve("))
+        assertTrue(database.contains("DocumentPrintKindV136.SALE_RECEIPT"))
+        assertTrue(operations.contains("PrinterRoutingV136.resolve(appContext, documentPrintKind)"))
+        assertTrue(advanced.contains("PrinterRoutingV136.resolve(appContext, documentPrintKind)"))
         assertTrue(receipt.contains("PrinterPaperSettingPolicy.paper(configuration)"))
     }
 }

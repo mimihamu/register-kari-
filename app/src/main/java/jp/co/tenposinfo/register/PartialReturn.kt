@@ -20,16 +20,35 @@ data class ReturnableSaleLine(
     val note: String,
     val returnedQuantity: Int,
     val refundedDiscount: Long,
+    val originalQuantityHundredths: Long = Math.multiplyExact(originalQuantity.toLong(), QuantityV136.SCALE),
+    val returnedQuantityHundredths: Long = Math.multiplyExact(returnedQuantity.toLong(), QuantityV136.SCALE),
+    val quantityMode: QuantityMode = if (originalQuantityHundredths % QuantityV136.SCALE == 0L) QuantityMode.INTEGER else QuantityMode.DECIMAL,
 ) {
     val remainingQuantity: Int get() = (originalQuantity - returnedQuantity).coerceAtLeast(0)
+    val remainingQuantityHundredths: Long
+        get() = (originalQuantityHundredths - returnedQuantityHundredths).coerceAtLeast(0L)
+    val originalQuantityText: String get() = QuantityV136.fromHundredths(originalQuantityHundredths).format()
+    val returnedQuantityText: String get() = if (returnedQuantityHundredths == 0L) "0" else QuantityV136.fromHundredths(returnedQuantityHundredths).format()
+    val remainingQuantityText: String get() = if (remainingQuantityHundredths == 0L) "0" else QuantityV136.fromHundredths(remainingQuantityHundredths).format()
     val remainingDiscount: Long get() = (originalDiscount - refundedDiscount).coerceAtLeast(0)
 
     fun toReturnItem(quantity: Int): CartItem {
         require(quantity in 1..remainingQuantity) { "返品数量が残数を超えています" }
-        val allocatedDiscount = if (quantity == remainingQuantity) {
+        return toReturnItemHundredths(Math.multiplyExact(quantity.toLong(), QuantityV136.SCALE))
+    }
+
+    fun toReturnItemHundredths(quantityHundredths: Long): CartItem {
+        require(quantityHundredths in 1..remainingQuantityHundredths) { "返品数量が残数を超えています" }
+        quantityMode.requireAllowed(quantityHundredths)
+        require(originalQuantityHundredths > 0L) { "元売上数量が不正です" }
+        val allocatedDiscount = if (quantityHundredths == remainingQuantityHundredths) {
             remainingDiscount
         } else {
-            (originalDiscount * quantity / originalQuantity).coerceAtMost(remainingDiscount)
+            BigInteger.valueOf(originalDiscount)
+                .multiply(BigInteger.valueOf(quantityHundredths))
+                .divide(BigInteger.valueOf(originalQuantityHundredths))
+                .longValueExact()
+                .coerceAtMost(remainingDiscount)
         }
         val product = TaxSnapshot(
             key = taxKey,
@@ -39,8 +58,28 @@ data class ReturnableSaleLine(
             taxable = taxable,
             reduced = reduced,
             symbol = taxSymbol,
-        ).applyTo(Product(productId, productName, unitPrice, taxCategory, saleItemId.toInt()))
-        return CartItem(product, quantity, unitPrice, allocatedDiscount, note)
+        ).applyTo(
+            Product(
+                productId,
+                productName,
+                unitPrice,
+                taxCategory,
+                saleItemId.toInt(),
+                quantityMode = quantityMode,
+            ),
+        )
+        val legacyQuantity = (quantityHundredths / QuantityV136.SCALE)
+            .coerceAtLeast(1L)
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
+        return CartItem(
+            product = product,
+            quantity = legacyQuantity,
+            unitPrice = unitPrice,
+            discountAmount = allocatedDiscount,
+            note = note,
+            quantityHundredths = quantityHundredths,
+        )
     }
 }
 
@@ -67,18 +106,30 @@ object PartialReturnPolicy {
         type: ReversalType,
         lines: List<ReturnableSaleLine>,
         requestedQuantities: Map<Long, Int>,
+    ): List<Pair<ReturnableSaleLine, CartItem>> = selectHundredths(
+        type = type,
+        lines = lines,
+        requestedQuantityHundredths = requestedQuantities.mapValues { (_, quantity) ->
+            Math.multiplyExact(quantity.toLong(), QuantityV136.SCALE)
+        },
+    )
+
+    fun selectHundredths(
+        type: ReversalType,
+        lines: List<ReturnableSaleLine>,
+        requestedQuantityHundredths: Map<Long, Long>,
     ): List<Pair<ReturnableSaleLine, CartItem>> {
         require(lines.isNotEmpty()) { "元売上の商品明細が見つかりません" }
         if (type == ReversalType.CANCEL) {
-            require(lines.all { it.returnedQuantity == 0 }) { "一部返品済みの売上は取消できません" }
+            require(lines.all { it.returnedQuantityHundredths == 0L }) { "一部返品済みの売上は取消できません" }
         }
         val selected = lines.mapNotNull { line ->
-            val quantity = when (type) {
-                ReversalType.CANCEL -> line.remainingQuantity
-                ReversalType.RETURN -> requestedQuantities[line.saleItemId] ?: 0
+            val quantityHundredths = when (type) {
+                ReversalType.CANCEL -> line.remainingQuantityHundredths
+                ReversalType.RETURN -> requestedQuantityHundredths[line.saleItemId] ?: 0L
             }
-            require(quantity >= 0) { "返品数量は0以上で指定してください" }
-            if (quantity == 0) null else line to line.toReturnItem(quantity)
+            require(quantityHundredths >= 0L) { "返品数量は0以上で指定してください" }
+            if (quantityHundredths == 0L) null else line to line.toReturnItemHundredths(quantityHundredths)
         }
         require(selected.isNotEmpty()) { "返品する商品と数量を選択してください" }
         return selected

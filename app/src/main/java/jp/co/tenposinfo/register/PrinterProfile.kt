@@ -4,7 +4,7 @@ import java.io.ByteArrayOutputStream
 import java.nio.charset.Charset
 
 /**
- * TCP 9100で使用するESC/POS互換プロファイル。
+ * 接続方式から独立したESC/POS互換プロファイル。
  * 日本語コードページ、カット、ドロア、双方向ステータスの機種差分を集約する。
  */
 enum class PrinterStatusProtocol(val displayName: String) {
@@ -25,19 +25,19 @@ enum class PrinterProfile(
 ) {
     EPSON_TM_JAPAN(
         displayName = "EPSON TM（日本語）",
-        description = "TM-m30II／TM-T88系などのESC/POS対応機。Shift JIS漢字体系とDLE EOT状態取得を使用",
+        description = "TM-m30II／TM-T88系などのESC/POS対応機。Shift JIS漢字体系を使用し、LAN/TCP接続時はDLE EOT状態取得に対応",
         charsetName = "Shift_JIS",
         kanjiCodeSystem = 1,
         statusProtocol = PrinterStatusProtocol.EPSON_DLE_EOT,
     ),
     STAR_ESC_POS(
         displayName = "STAR ESC/POS",
-        description = "STAR機のESC/POSエミュレーション。印刷互換／状態取得は要実機確認",
+        description = "STAR機のESC/POSエミュレーション。印刷互換は要実機確認。状態取得はLAN/TCP接続時のみ使用",
         statusProtocol = PrinterStatusProtocol.ESC_POS_DLE_EOT_COMPATIBLE,
     ),
     GENERIC_ESC_POS(
         displayName = "汎用ESC/POS",
-        description = "TCP 9100対応の互換プリンター。状態取得は要実機確認",
+        description = "汎用ESC/POS互換プリンター。印刷互換は要実機確認。状態取得はLAN/TCP接続時のみ使用",
         statusProtocol = PrinterStatusProtocol.ESC_POS_DLE_EOT_COMPATIBLE,
     ),
 }
@@ -51,7 +51,9 @@ enum class PrinterCutMode(val displayName: String) {
 object PrinterPulsePolicy {
     fun command(port: Int, onMillis: Int, offMillis: Int): ByteArray {
         require(port == 0 || port == 1) { "ドロアポートはDK1またはDK2です" }
-        require(onMillis in 20..500) { "ドロアON時間は20～500msです" }
+        require(onMillis in CashDrawerSafetyPolicyV136.MIN_OPEN_PULSE_MS..CashDrawerSafetyPolicyV136.MAX_OPEN_PULSE_MS) {
+            "ドロアON時間は${CashDrawerSafetyPolicyV136.MIN_OPEN_PULSE_MS}～${CashDrawerSafetyPolicyV136.MAX_OPEN_PULSE_MS}msです"
+        }
         require(offMillis in 20..500) { "ドロアOFF時間は20～500msです" }
         val onUnits = (onMillis / 2).coerceIn(1, 255)
         val offUnits = (offMillis / 2).coerceIn(1, 255)
@@ -72,6 +74,7 @@ object PrinterCommandEncoder {
         configuration: PrinterConfiguration,
         openDrawer: Boolean = false,
         appendCut: Boolean = true,
+        trustedEmbeddedCommands: Boolean = false,
     ): ByteArray {
         val output = ByteArrayOutputStream()
         output.write(beginDocument(configuration))
@@ -84,9 +87,23 @@ object PrinterCommandEncoder {
                 ),
             )
         }
-        output.write(text.toByteArray(Charset.forName(configuration.profile.charsetName)))
+        val encodedText = if (trustedEmbeddedCommands) {
+            // Diagnostic/QR/raster documents contain app-generated binary ESC/POS commands.
+            // Never run those bytes through user-text control filtering.
+            text
+        } else {
+            val safeText = PrinterTextSafetyV136.sanitize(text, configuration.profile.charsetName)
+            safeText.substitutions.forEach { substitution ->
+                PrinterTextAuditV136.record(substitution, configuration.profile.charsetName)
+            }
+            safeText.text
+        }
+        output.write(encodedText.toByteArray(Charset.forName(configuration.profile.charsetName)))
         if (appendCut) {
-            output.write(byteArrayOf(0x0A, 0x0A, 0x0A))
+            require(configuration.feedLines in PrinterProfileContractV136.MIN_FEED_LINES..PrinterProfileContractV136.MAX_FEED_LINES) {
+                "紙送り行数は${PrinterProfileContractV136.MIN_FEED_LINES}～${PrinterProfileContractV136.MAX_FEED_LINES}行で指定してください"
+            }
+            kotlin.repeat(configuration.feedLines) { output.write(0x0A) }
             output.write(cutCommand(configuration.cutMode))
         }
         return output.toByteArray()
@@ -105,6 +122,59 @@ object PrinterCommandEncoder {
             output.write(byteArrayOf(0x1C, 0x43, codeSystem.toByte()))
         }
         output.write(byteArrayOf(0x1B, 0x61, 0x00))
+        return output.toByteArray()
+    }
+
+    fun encodeReceiptText(
+        text: String,
+        configuration: PrinterConfiguration,
+        appendCut: Boolean = true,
+    ): ByteArray = encodeStyledText(text, configuration, appendCut)
+
+    fun encodeStyledText(
+        text: String,
+        configuration: PrinterConfiguration,
+        appendCut: Boolean = true,
+    ): ByteArray {
+        val output = ByteArrayOutputStream()
+        output.write(beginDocument(configuration))
+        text.lineSequence().forEach { line ->
+            val safe = PrinterTextSafetyV136.sanitize(line, configuration.profile.charsetName)
+            safe.substitutions.forEach { PrinterTextAuditV136.record(it, configuration.profile.charsetName) }
+            val emphasisStyle = ReceiptPrintEmphasisV136.styleFor(
+                line,
+                PrinterPaperSettingPolicy.paper(configuration),
+            )
+            val emphasized = emphasisStyle != ReceiptEmphasisStyleV136.NONE
+            if (emphasized) output.write(byteArrayOf(0x1B, 0x45, 0x01))
+            if (emphasisStyle == ReceiptEmphasisStyleV136.BOLD_DOUBLE_HEIGHT) {
+                // GS ! 0x01 = double height only; width remains normal to preserve the laid-out columns.
+                output.write(byteArrayOf(0x1D, 0x21, 0x01))
+            }
+            PrinterTextSafetyV136.units(line, configuration.profile.charsetName).forEach { unit ->
+                val printable = unit.printableText
+                if (printable != null) {
+                    output.write(printable.toByteArray(Charset.forName(configuration.profile.charsetName)))
+                } else {
+                    val raster = PrinterGlyphFallbackV136.encodeOrNull(unit.original, configuration)
+                    if (raster != null) {
+                        output.write(raster)
+                    } else {
+                        output.write("□".toByteArray(Charset.forName(configuration.profile.charsetName)))
+                    }
+                }
+            }
+            if (emphasisStyle == ReceiptEmphasisStyleV136.BOLD_DOUBLE_HEIGHT) {
+                output.write(byteArrayOf(0x1D, 0x21, 0x00))
+            }
+            if (emphasized) output.write(byteArrayOf(0x1B, 0x45, 0x00))
+            output.write(0x0A)
+        }
+        if (appendCut) {
+            require(configuration.feedLines in PrinterProfileContractV136.MIN_FEED_LINES..PrinterProfileContractV136.MAX_FEED_LINES)
+            kotlin.repeat(configuration.feedLines) { output.write(0x0A) }
+            output.write(cutCommand(configuration.cutMode))
+        }
         return output.toByteArray()
     }
 

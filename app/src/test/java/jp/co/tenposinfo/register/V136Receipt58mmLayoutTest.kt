@@ -1,0 +1,151 @@
+package jp.co.tenposinfo.register
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class V136Receipt58mmLayoutTest {
+    @Test
+    fun longProductNameWrapsWithoutLossAt32Columns() {
+        val name = "特選海鮮盛り合わせ本まぐろ中とろ北海道産うに入り大サイズ"
+        val product = Product(
+            id = "LONG-001",
+            name = name,
+            unitPrice = 12_345_678L,
+            taxCategory = TaxCategory.INCLUDED_8,
+            displayOrder = 1,
+        )
+        val item = CartItem(product = product, quantity = 2)
+        val data = receiptData(item)
+
+        val rendered = ReceiptRenderer.render(data, ReceiptPaper.MM58)
+        val compact = rendered.replace("\n", "")
+        val amountLine = rendered.lineSequence().first { it.contains("24,691,356") }
+
+        assertTrue(compact.contains("$name [内※]"))
+        assertTrue(amountLine.trimEnd().endsWith("24,691,356"))
+        assertTrue(ReceiptLineWrapV136.displayWidth(amountLine) <= 32)
+        rendered.lineSequence().forEach { line ->
+            assertTrue("58mm line exceeds 32 columns: $line", ReceiptLineWrapV136.displayWidth(line) <= 32)
+        }
+    }
+
+    @Test
+    fun wrappingPreservesEveryCharacterAndTaxSuffix() {
+        val source = "あいうえおかきくけこさしすせそたちつてと [外※]"
+        val lines = ReceiptLineWrapV136.wrap(source, 32)
+
+        assertEquals(source, lines.joinToString(""))
+        assertTrue(lines.size >= 2)
+        lines.forEach { assertTrue(ReceiptLineWrapV136.displayWidth(it) <= 32) }
+    }
+
+    @Test
+    fun quantityUnitPriceAndAmountRemainSeparateFromProductNameOn58mm() {
+        val product = Product(
+            id = "ITEM-001",
+            name = "生ビール",
+            unitPrice = 550L,
+            taxCategory = TaxCategory.INCLUDED_10,
+            displayOrder = 1,
+        )
+        val item = CartItem(product = product, quantity = 2)
+        val rendered = ReceiptRenderer.render(receiptData(item), ReceiptPaper.MM58).lines()
+        val nameIndex = rendered.indexOfFirst { it.contains("生ビール [内]") }
+        val amountIndex = rendered.indexOfFirst { it.contains("2 ×") && it.contains("1,100") }
+
+        assertTrue(nameIndex >= 0)
+        assertEquals(nameIndex + 1, amountIndex)
+        assertTrue(ReceiptLineWrapV136.displayWidth(rendered[amountIndex]) <= 32)
+    }
+
+    private fun receiptData(item: CartItem): ReceiptData = ReceiptData(
+        storeName = "つぐレジ店",
+        registrationNumber = "",
+        saleId = 1L,
+        createdAt = 0L,
+        operatorName = "担当",
+        items = listOf(item),
+        taxSummary = TaxEngine.calculate(listOf(item)),
+        payments = emptyList(),
+        changeAmount = 0L,
+    )
+
+    @Test
+    fun wrappingDoesNotSplitSurrogatePairsOrCombiningGraphemes() {
+        val source = "商品😀e\u0301テスト商品😀e\u0301テスト"
+        val lines = ReceiptLineWrapV136.wrap(source, 10)
+
+        assertEquals(source, lines.joinToString(""))
+        lines.forEach { line ->
+            assertTrue("line exceeds width: $line", ReceiptLineWrapV136.displayWidth(line) <= 10)
+            assertTrue("line starts with combining mark: $line", line.firstOrNull() != '\u0301')
+            assertTrue("line ends with high surrogate: $line", line.lastOrNull()?.isHighSurrogate() != true)
+            assertTrue("line starts with low surrogate: $line", line.firstOrNull()?.isLowSurrogate() != true)
+        }
+    }
+
+
+    @Test
+    fun wideAmountMovesToNextLineWithoutDroppingLabelOn58mm() {
+        val product = Product(
+            id = "MAX-001",
+            name = "最大金額確認商品",
+            unitPrice = 9_999_999_999L,
+            taxCategory = TaxCategory.EXCLUDED_10,
+            displayOrder = 1,
+        )
+        val rendered = ReceiptRenderer.render(
+            receiptData(CartItem(product = product, quantity = 1)),
+            ReceiptPaper.MM58,
+        )
+        val lines = rendered.lines()
+
+        assertTrue(rendered.contains("9,999,999,999"))
+        assertTrue(rendered.contains("10%対象額（税込）"))
+        assertTrue(lines.any { it.trim().endsWith("9,999,999,999") })
+        lines.forEach { line ->
+            assertTrue("58mm line exceeds 32 columns: $line", ReceiptLineWrapV136.displayWidth(line) <= 32)
+        }
+    }
+
+
+    @Test
+    fun receiptShortNameIsUsedOnlyWhenFullNameExceedsTwoLines() {
+        val longName = "超特大北海道産海鮮ぜいたく盛り合わせ本まぐろ中とろうにいくらかに帆立入り宴会限定商品"
+        val shortName = "海鮮ぜいたく盛り"
+        val product = Product(
+            id = "SHORT-001",
+            name = longName,
+            unitPrice = 1_000L,
+            taxCategory = TaxCategory.INCLUDED_10,
+            displayOrder = 1,
+            receiptShortName = shortName,
+        )
+        val rendered = ReceiptRenderer.render(receiptData(CartItem(product = product, quantity = 1)), ReceiptPaper.MM58)
+
+        assertTrue(rendered.contains("$shortName [内]"))
+        assertTrue(!rendered.contains(longName))
+        assertTrue(rendered.contains("1 ×"))
+        assertTrue(rendered.contains("1,000"))
+    }
+
+    @Test
+    fun longNameWithoutShortNameMayUseThreeOrMoreLinesWithoutLoss() {
+        val name = "超特大北海道産海鮮ぜいたく盛り合わせ本まぐろ中とろうにいくらかに帆立入り宴会限定商品"
+        val product = Product(
+            id = "LONG-003",
+            name = name,
+            unitPrice = 1_000L,
+            taxCategory = TaxCategory.INCLUDED_10,
+            displayOrder = 1,
+        )
+        val rendered = ReceiptRenderer.render(receiptData(CartItem(product = product, quantity = 1)), ReceiptPaper.MM58)
+        val compact = rendered.replace("\n", "")
+
+        assertTrue(compact.contains("$name [内]"))
+        assertTrue(rendered.contains("1 ×"))
+        assertTrue(rendered.contains("1,000"))
+    }
+
+}

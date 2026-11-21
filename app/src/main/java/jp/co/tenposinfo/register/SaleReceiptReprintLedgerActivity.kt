@@ -72,8 +72,11 @@ class SaleReceiptReprintLedgerActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 SaleReceiptReprintLedgerRoute(onClose = { finish() })
+            }
+        
             }
         }
     }
@@ -194,17 +197,8 @@ private fun SaleReceiptReprintLedgerScreen(
         ?: entries.firstOrNull()
 
     Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().height(58.dp).background(ReprintLedgerNavy).padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.width(20.dp))
-            Text("SCR-648  通常レシート再印字 運用台帳", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.weight(1f))
-            Text("SQLite直接検索 / 検索時点固定 / keyset ${SaleReceiptReprintLedgerPolicy.DATABASE_PAGE_SIZE}件", color = Color.White)
-        }
-
+        // 検索時点固定: 検索スナップショットとkeysetページングはStablePagingStoreで維持する。
+        RegisterTopBarV141(title = "レシート再印字履歴", onBack = onClose)
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -524,16 +518,6 @@ private fun SaleReceiptReprintLedgerScreen(
             }
         }
 
-        Row(
-            Modifier.fillMaxWidth().height(68.dp).background(Color.White).padding(horizontal = 14.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedButton(onClick = onClose, modifier = Modifier.width(220.dp).fillMaxHeight()) {
-                Text("レジ管理へ戻る", fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.weight(1f))
-            Text("監査履歴は追記専用 / 復旧操作は統合印刷キューへ集約", color = ReprintLedgerGreen, fontWeight = FontWeight.Bold)
-        }
     }
 }
 

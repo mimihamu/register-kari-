@@ -62,8 +62,11 @@ class OutboxDeliverySettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureRegisterSystemBars(window)
         setContent {
+            RegisterSafeAreaV141 {
             MaterialTheme {
                 OutboxDeliverySettingsScreen(onClose = { finish() })
+            }
+        
             }
         }
     }
@@ -166,17 +169,7 @@ private fun OutboxDeliverySettingsScreen(onClose: () -> Unit) {
 
     Surface(Modifier.fillMaxSize(), color = OdsBackground) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(64.dp).background(OdsNavy).padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("つぐレジ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(24.dp))
-                Text("売上ジャーナル 外部自動送信", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                Text("SQLiteを正本として維持", color = Color.White)
-            }
-
+            RegisterTopBarV141(title = "売上ジャーナル 外部自動送信", onBack = onClose)
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                 val compact = maxWidth < 980.dp
                 Column(
@@ -353,12 +346,9 @@ private fun OutboxDeliverySettingsScreen(onClose: () -> Unit) {
             }
 
             Row(
-                Modifier.fillMaxWidth().height(76.dp).background(Color.White).padding(horizontal = 18.dp, vertical = 10.dp),
+                Modifier.fillMaxWidth().height(76.dp).background(RegisterSecondaryActionBarColorV159).padding(horizontal = 18.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(onClick = onClose, modifier = Modifier.width(220.dp).fillMaxHeight()) {
-                    Text("戻る", fontWeight = FontWeight.Bold)
-                }
                 message?.let {
                     Spacer(Modifier.width(18.dp))
                     Text(it, color = if (it.contains("エラー")) OdsRed else OdsGreen, fontWeight = FontWeight.Bold)
