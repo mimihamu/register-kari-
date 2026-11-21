@@ -411,6 +411,9 @@ private class SharedCustomerDisplaySession(
     private fun readFrames(input: InputStream, output: OutputStream) {
         var missedHeartbeats = 0
         var previousSnapshot: CustomerDisplaySnapshot? = null
+        // A successful HTTP 101 is not evidence that POS has supplied its
+        // authoritative business state. Bound the initial blank-screen period.
+        val connectedAtNanos = System.nanoTime()
         var awaitingSnapshot = false
         var snapshotRequestStartedNanos: Long? = null
         while (running.get()) {
@@ -422,6 +425,12 @@ private class SharedCustomerDisplaySession(
             ) {
                 throw EOFException(CustomerDisplayResyncDeadlineV194.RECONNECT_MESSAGE)
             }
+            if (CustomerDisplayInitialSnapshotDeadlineV195.exceeded(
+                    connectedAtNanos, previousSnapshot != null, System.nanoTime(),
+                )
+            ) {
+                throw EOFException(CustomerDisplayInitialSnapshotDeadlineV195.RECONNECT_MESSAGE)
+            }
             val first = try {
                 input.read()
             } catch (_: SocketTimeoutException) {
@@ -432,6 +441,12 @@ private class SharedCustomerDisplaySession(
                     )
                 ) {
                     throw EOFException(CustomerDisplayResyncDeadlineV194.RECONNECT_MESSAGE)
+                }
+                if (CustomerDisplayInitialSnapshotDeadlineV195.exceeded(
+                        connectedAtNanos, previousSnapshot != null, System.nanoTime(),
+                    )
+                ) {
+                    throw EOFException(CustomerDisplayInitialSnapshotDeadlineV195.RECONNECT_MESSAGE)
                 }
                 if (missedHeartbeats >= CustomerDisplayConnectionPolicy.MAX_MISSED_HEARTBEATS) {
                     throw EOFException("レジから一定時間応答がありません")
