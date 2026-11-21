@@ -412,10 +412,27 @@ private class SharedCustomerDisplaySession(
         var missedHeartbeats = 0
         var previousSnapshot: CustomerDisplaySnapshot? = null
         var awaitingSnapshot = false
+        var snapshotRequestStartedNanos: Long? = null
         while (running.get()) {
+            // The POS can keep delivering pong/update frames while a requested
+            // full snapshot is never received. Do not remain stuck awaiting it.
+            if (CustomerDisplayResyncDeadlineV194.exceeded(
+                    snapshotRequestStartedNanos, System.nanoTime(),
+                )
+            ) {
+                throw EOFException(CustomerDisplayResyncDeadlineV194.RECONNECT_MESSAGE)
+            }
             val first = try {
                 input.read()
             } catch (_: SocketTimeoutException) {
+                // A missing resync response is not rescued by unrelated ping/pong
+                // traffic. Reconnect to obtain the server's initial SNAPSHOT.
+                if (CustomerDisplayResyncDeadlineV194.exceeded(
+                        snapshotRequestStartedNanos, System.nanoTime(),
+                    )
+                ) {
+                    throw EOFException(CustomerDisplayResyncDeadlineV194.RECONNECT_MESSAGE)
+                }
                 if (missedHeartbeats >= CustomerDisplayConnectionPolicy.MAX_MISSED_HEARTBEATS) {
                     throw EOFException("レジから一定時間応答がありません")
                 }
@@ -455,12 +472,14 @@ private class SharedCustomerDisplaySession(
                         CustomerDisplayDeliveryDecision.APPLY -> {
                             previousSnapshot = incoming
                             awaitingSnapshot = false
+                            snapshotRequestStartedNanos = null
                             notifySnapshot(incoming)
                         }
                         CustomerDisplayDeliveryDecision.IGNORE -> Unit
                         CustomerDisplayDeliveryDecision.REQUEST_SNAPSHOT -> {
                             if (!awaitingSnapshot) {
                                 awaitingSnapshot = true
+                                snapshotRequestStartedNanos = System.nanoTime()
                                 notifyResyncRequired()
                                 val request = """{"messageType":"SNAPSHOT_REQUEST"}"""
                                 writeMaskedFrame(output, 0x1, request.toByteArray(StandardCharsets.UTF_8))
